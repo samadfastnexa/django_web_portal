@@ -1,0 +1,22 @@
+# Ignore Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore virtual environment
+venv/
+
+# Ignore Django database and runtime files
+web_portal/db.sqlite3
+web_portal/media/
+web_portal/staticfiles/
+web_portal/.env
+web_portal/*.log
+
+# Ignore editor/IDE settings
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
