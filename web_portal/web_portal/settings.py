@@ -44,9 +44,10 @@ INSTALLED_APPS = [
     'accounts',  # Custom app for user management
     'rest_framework_simplejwt',  # JWT authentication
     'rest_framework_simplejwt.token_blacklist',  # For token blacklisting
-
     'drf_yasg',
     'corsheaders',
+    'complaints',
+    'django_filters',
 ]
 
 MIDDLEWARE = [
@@ -153,6 +154,8 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,  # 👈 You can change this to any number you prefer
 }
 
 SIMPLE_JWT = {

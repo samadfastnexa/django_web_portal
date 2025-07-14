@@ -3,8 +3,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import get_user_model 
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .token_serializers import MyTokenObtainPairSerializer
-
+from .permissions import IsEditor  # Only Admin/Editor allowed
 from .models import Product, Order
+from rest_framework import viewsets
 from .permissions import IsAdmin, IsEditor, IsViewer  # ✅ Import custom permissions
 from .serializers import (
     ProductSerializer,
@@ -47,3 +48,9 @@ class OrderListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
          # Automatically assign current user to the order
         serializer.save(user=self.request.user)
+
+class ProductViewSet(viewsets.ModelViewSet):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    permission_classes = [IsEditor]
+
