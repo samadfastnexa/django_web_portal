@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 
 from accounts.views import SignupView
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 from accounts.views import SignupView, MyTokenObtainPairView
 from django.urls import re_path
 from rest_framework import permissions
@@ -49,6 +49,12 @@ urlpatterns = [
   
     # Include all API routes from the accounts app
     path('api/complaints/', include('complaints.urls')),
+
+     # Include all API routes from the farmers app
+    path('api/farmers/', include('farmers.urls')),
+
+# Include all API routes from the farmerMeetingDataEntry app
+    path('api/', include('farmerMeetingDataEntry.urls')),
 ]
 
  
