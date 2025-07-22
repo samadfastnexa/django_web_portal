@@ -1,31 +1,20 @@
-from django.contrib import admin
-from django.urls import path,include
-from .views import ProductViewSet 
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     SignupView,
     MyTokenObtainPairView,
     UserListAPIView,
-    ProductListCreateView,
-    OrderListCreateView
+    RoleViewSet,
 )
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
-from .views import UserListAPIView
-from .views import ProductListCreateView, OrderListCreateView
-from .views import ComplaintListCreateView
+from rest_framework_simplejwt.views import TokenRefreshView
+
 router = DefaultRouter()
-router.register(r'products', ProductViewSet)  # 👈 ViewSet registration
+router.register(r'roles', RoleViewSet)
+
 urlpatterns = [
-    # path('admin/', admin.site.urls),
     path('signup/', SignupView.as_view(), name='signup'),
-    path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),  # JWT login
+    path('login/', MyTokenObtainPairView.as_view(), name='login'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('users/', UserListAPIView.as_view(), name='user-list'),
-     path('products/', ProductListCreateView.as_view(), name='product-list'),
-    path('orders/', OrderListCreateView.as_view(), name='order-list'),
-    path('', include(router.urls)),  # 👈 include ViewSet routes
-     path('api/complaints/', ComplaintListCreateView.as_view(), name='complaint-list-create'),
+    path('', include(router.urls)),
 ]

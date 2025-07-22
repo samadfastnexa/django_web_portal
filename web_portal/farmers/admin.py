@@ -1,17 +1,9 @@
 from django.contrib import admin
-from .models import Farmer
-from django_google_maps.widgets import GoogleMapsAddressWidget
-from django import forms
+from attendance.models import Attendance
 
-class FarmerAdminForm(forms.ModelForm):
-    class Meta:
-        model = Farmer
-        fields = '__all__'
-        widgets = {
-            'farm_address': GoogleMapsAddressWidget,
-        }
+class AttendanceAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user_id', 'attendee_id', 'check_in_time', 'check_out_time', 'location', 'created_at']
+    list_filter = ['check_in_time', 'check_out_time']
+    search_fields = ['user_id__email', 'attendee_id']
 
-class FarmerAdmin(admin.ModelAdmin):
-    form = FarmerAdminForm
-
-admin.site.register(Farmer, FarmerAdmin)
+admin.site.register(Attendance, AttendanceAdmin)

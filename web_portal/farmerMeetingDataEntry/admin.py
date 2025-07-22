@@ -21,6 +21,6 @@ class MeetingAdmin(admin.ModelAdmin):
     ordering = ['-date']
 
 
-@admin.register(MeetingAttachment)
-class MeetingAttachmentAdmin(admin.ModelAdmin):
-    list_display = ['meeting', 'file', 'id']
+# @admin.register(MeetingAttachment)
+# class MeetingAttachmentAdmin(admin.ModelAdmin):
+#     list_display = ['meeting', 'file', 'id']

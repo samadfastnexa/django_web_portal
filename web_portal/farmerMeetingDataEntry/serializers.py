@@ -22,6 +22,7 @@ class MeetingSerializer(serializers.ModelSerializer):
         model = Meeting
         fields = [
             'id',
+            'user_id',    
             'fsm_name', 'territory', 'zone', 'region',
             'date', 'location', 'total_attendees',
             'key_topics_discussed', 'presence_of_zm_rsm',

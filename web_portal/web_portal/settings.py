@@ -55,6 +55,10 @@ INSTALLED_APPS = [
     'django_google_maps',
     'farmers',
     'farmerMeetingDataEntry',
+    'FieldAdvisoryService',
+    'preferences',  
+    'attendance',  #  app for attendance tracking
+    
 ]
 
 MIDDLEWARE = [
@@ -174,6 +178,17 @@ SIMPLE_JWT = {
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
-AUTH_USER_MODEL = 'accounts.CustomUser'
+AUTH_USER_MODEL = 'accounts.User'
 # GOOGLE_MAPS_API_KEY = os.getenv('AIzaSyCZcPsEBWJHgYF_m7FClyHKtVkmroi3bdA')
 GOOGLE_MAPS_API_KEY='AIzaSyCZcPsEBWJHgYF_m7FClyHKtVkmroi3bdA'
+
+SWAGGER_SETTINGS = {
+    'USE_SESSION_AUTH': False,
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    },
+}
