@@ -1,13 +1,12 @@
 from rest_framework import permissions
 
-class IsAdmin(permissions.BasePermission):
+class HasRolePermission(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'admin'
+        if not request.user.is_authenticated or not request.user.role:
+            return False
 
-class IsEditor(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ['admin', 'editor']
-
-class IsViewer(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ['admin', 'editor', 'viewer']
+        required_codename = getattr(view, 'required_permission', None)
+        if required_codename:
+            return request.user.role.permissions.filter(codename=required_codename).exists()
+        
+        return True  # Allow access if no specific permission is required

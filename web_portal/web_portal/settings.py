@@ -12,10 +12,14 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+import os
 
+
+# from decouple import config
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -44,9 +48,17 @@ INSTALLED_APPS = [
     'accounts',  # Custom app for user management
     'rest_framework_simplejwt',  # JWT authentication
     'rest_framework_simplejwt.token_blacklist',  # For token blacklisting
-
     'drf_yasg',
     'corsheaders',
+    'complaints',
+    'django_filters',
+    'django_google_maps',
+    'farmers',
+    'farmerMeetingDataEntry',
+    'FieldAdvisoryService',
+    'preferences',  
+    'attendance',  #  app for attendance tracking
+    
 ]
 
 MIDDLEWARE = [
@@ -142,6 +154,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+# STATIC_ROOT = os.path.join(BASE_DIR, 'static')  # collects static files here
+# STATICFILES_DIRS = [
+#     os.path.join(BASE_DIR, '', 'static'),  # if you have app-level static files
+# ]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -153,6 +169,8 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,  # 👈 You can change this to any number you prefer
 }
 
 SIMPLE_JWT = {
@@ -164,4 +182,18 @@ SIMPLE_JWT = {
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
-AUTH_USER_MODEL = 'accounts.CustomUser'
+AUTH_USER_MODEL = 'accounts.User'
+# GOOGLE_MAPS_API_KEY = os.getenv('AIzaSyCZcPsEBWJHgYF_m7FClyHKtVkmroi3bdA')
+GOOGLE_MAPS_API_KEY='AIzaSyCZcPsEBWJHgYF_m7FClyHKtVkmroi3bdA'
+
+SWAGGER_SETTINGS = {
+    'USE_SESSION_AUTH': False,
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    },
+}
+WEATHER_API_KEY = "36c4dcfbb24443b18b2112951252507"
