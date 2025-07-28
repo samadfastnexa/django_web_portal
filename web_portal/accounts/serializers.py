@@ -14,15 +14,14 @@ class UserListSerializer(serializers.ModelSerializer):
 class UserSignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
     first_name = serializers.CharField(
-        required=False,
-        allow_blank=True,
+        required=True,
         validators=[RegexValidator(r'^[A-Za-z\s]+$', 'Only letters and spaces are allowed.')]
     )
     last_name = serializers.CharField(
-        required=False,
-        allow_blank=True,
+        required=True,
         validators=[RegexValidator(r'^[A-Za-z\s]+$', 'Only letters and spaces are allowed.')]
     )
+    profile_image = serializers.ImageField(required=True)
 
     class Meta:
         model = User
@@ -46,12 +45,12 @@ class UserSignupSerializer(serializers.ModelSerializer):
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password'],
-            role=validated_data.get('role', 'viewer'),
-            first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', ''),
-            profile_image=validated_data.get('profile_image', None),
-            is_active=False,     # Require admin to activate
-             is_staff=False       # Only admin decides staff access
+            role=validated_data.get('role'),  # will be set to FirstRole in manager if not provided
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name'],
+            profile_image=validated_data['profile_image'],
+            is_active=False,
+            is_staff=False
         )
 
 class PermissionSerializer(serializers.ModelSerializer):
@@ -78,3 +77,19 @@ class AdminUserStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['is_active']
+class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=6, required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'password', 'first_name', 'last_name',
+            'profile_image', 'role', 'is_active', 'is_staff'
+        ]
+        read_only_fields = ['email', 'username', 'is_staff', 'is_active']
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        if password:
+            instance.set_password(password)
+        return super().update(instance, validated_data)

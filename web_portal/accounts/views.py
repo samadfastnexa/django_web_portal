@@ -4,14 +4,18 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import get_user_model
 from .serializers import AdminUserStatusSerializer
-
+from drf_yasg.utils import swagger_auto_schema
 from .models import Role
 from .serializers import (
     UserSignupSerializer,
     UserListSerializer,
-    RoleSerializer
+    RoleSerializer,
+    UserSerializer,
+    AdminUserStatusSerializer
 )
 from .token_serializers import MyTokenObtainPairSerializer
+from .serializers import UserSignupSerializer  # use your custom user creation serializer
+from .permissions import IsOwnerOrAdmin  # we'll define this below
 
 User = get_user_model()
 
@@ -62,3 +66,54 @@ class AdminUserStatusUpdateView(generics.UpdateAPIView):
     serializer_class = AdminUserStatusSerializer
     permission_classes = [permissions.IsAdminUser]  # Only admin users can access
     http_method_names = ['patch']  # 👈 Only allow PATCH
+
+
+class UserCreateAPIView(generics.CreateAPIView):
+    serializer_class = UserSignupSerializer
+    parser_classes = [MultiPartParser, FormParser]  # 👈 Important
+
+    @swagger_auto_schema(
+        operation_description="user CRUD",
+        request_body=UserSignupSerializer,
+        tags=["User CRUD"]
+    )
+    def post(self, request, *args, **kwargs):
+        return self.create(request, *args, **kwargs)
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    http_method_names = ['get', 'put', 'patch', 'delete']
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or user.is_staff:
+            return User.objects.all()
+        return User.objects.filter(id=user.id)
+
+    def perform_destroy(self, instance):
+        if instance != self.request.user and not self.request.user.is_superuser:
+            raise PermissionDenied("You can only delete your own account.")
+        instance.delete()
+
+    # ✅ Swagger docs customization
+    @swagger_auto_schema(tags=["User CRUD"])
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=["User CRUD"])
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=["User CRUD"])
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=["User CRUD"])
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=["User CRUD"])
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
