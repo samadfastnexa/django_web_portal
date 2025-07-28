@@ -1,22 +1,18 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 from django.core.exceptions import ValidationError
 import os
-from datetime import datetime, timedelta
-from django.utils import timezone
-from preferences.models import UserSetting
-# ✅ File size validator (already in your file)
+
+# ✅ File size validator
 def validate_file_size(value):
     limit = 2 * 1024 * 1024  # 2MB
     if value.size > limit:
         raise ValidationError("File size must be under 2MB.")
 
-# ✅ ✅ Add this below the size validator
+# ✅ File extension validator
 def validate_file_extension(value):
-    valid_extensions = [
-        '.png', '.jpg', '.jpeg', '.pdf',
-        '.doc', '.docx', '.xls', '.xlsx'
-    ]
+    valid_extensions = ['.png', '.jpg', '.jpeg', '.pdf', '.doc', '.docx', '.xls', '.xlsx']
     ext = os.path.splitext(value.name)[1].lower()
     if ext not in valid_extensions:
         raise ValidationError("Unsupported file type.")
@@ -26,61 +22,102 @@ class Attendance(models.Model):
     user_id = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='attendance_user'
+        related_name='attendance_records',
+        db_column='user_id'
     )
-    attendee_id = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='attendance_marked_by'
-    )
+    attendee_id = models.CharField(max_length=100)
     check_in_time = models.DateTimeField()
-    check_out_time = models.DateTimeField(blank=True, null=True)
-    check_in_gap = models.DurationField(blank=True, null=True)
-    check_out_gap = models.DurationField(blank=True, null=True)
-    location = models.CharField(max_length=255, blank=True)
+    check_out_time = models.DateTimeField(null=True, blank=True)
+    check_in_gap = models.DurationField(null=True, blank=True)
+    check_out_gap = models.DurationField(null=True, blank=True)
+    location = models.CharField(max_length=255)
     attachment = models.FileField(
         upload_to='attendance_attachments/',
         validators=[validate_file_size, validate_file_extension],
-        blank=True,
-        null=True
+        null=True,
+        blank=True
     )
     created_at = models.DateTimeField(auto_now_add=True)
-    
-    def __str__(self):
-        return f"Attendance of {self.user_id.email} on {self.created_at.strftime('%Y-%m-%d')}"
-
-    class Meta:
-        ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-        now = timezone.now()
-
-        # Try to get user-specific setting or fallback to global
-        try:
-            setting = UserSetting.objects.get(user=self.user_id, slug="attendance-policy")
-        except UserSetting.DoesNotExist:
-            setting = UserSetting.objects.filter(user__isnull=True, slug="attendance-policy").first()
-
-        # Default to 09:00-17:00 if not set
-        company_timings = setting.company_timings if setting and setting.company_timings else {"start": "09:00", "end": "17:00"}
-
-        try:
-            company_start = datetime.strptime(company_timings["start"], "%H:%M").time()
-            company_end = datetime.strptime(company_timings["end"], "%H:%M").time()
-        except (KeyError, ValueError):
-            company_start = datetime.strptime("09:00", "%H:%M").time()
-            company_end = datetime.strptime("17:00", "%H:%M").time()
-
-        # Calculate check-in gap (from official start time)
-        if self.check_in_time:
-            official_start = self.check_in_time.replace(hour=company_start.hour, minute=company_start.minute, second=0)
-            self.check_in_gap = self.check_in_time - official_start
-
-        # Calculate check-out gap (from official end time)
-        if self.check_out_time:
-            official_end = self.check_out_time.replace(hour=company_end.hour, minute=company_end.minute, second=0)
-            self.check_out_gap = self.check_out_time - official_end
-
+        if self.check_in_time and not self.check_in_gap:
+            self.check_in_gap = timezone.now() - self.check_in_time
+        if self.check_out_time and self.check_in_time:
+            self.check_out_gap = self.check_out_time - self.check_in_time
         super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user_id.username} - {self.check_in_time.date()}"
+
+    class Meta:
+        verbose_name = "Attendance"
+        verbose_name_plural = "Attendances"
+
+class AttendanceRequest(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    CHECK_TYPE_CHOICES = [
+        ('check_in', 'Check In'),
+        ('check_out', 'Check Out'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='attendance_requests'
+    )
+    attendance = models.ForeignKey(
+        Attendance,
+        on_delete=models.CASCADE,
+        related_name='requests',
+        db_column='attendance_id'
+    )
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    check_type = models.CharField(max_length=10, choices=CHECK_TYPE_CHOICES)
+    check_in_time = models.DateTimeField()
+    check_out_time = models.DateTimeField()
+    check_in_gap = models.DurationField()
+    check_out_gap = models.DurationField()
+    reason = models.TextField(null=False, blank=False)
+    attachment = models.FileField(
+        upload_to='attendance_request_attachments/',
+        validators=[validate_file_size, validate_file_extension],
+        null=True,
+        blank=True
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def can_check_in(self):
+        return self.status == 'approved' and self.check_type == 'check_in'
+
+    def __str__(self):
+        return f"Request by {self.user.email} - {self.status} - {self.check_type}"
+
+    def save(self, *args, **kwargs):
+        if self.check_in_time and not self.check_in_gap:
+            self.check_in_gap = timezone.now() - self.check_in_time
+        if self.check_out_time and self.check_in_time and not self.check_out_gap:
+            self.check_out_gap = self.check_out_time - self.check_in_time
+        super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = "Attendance Request"
+        verbose_name_plural = "Attendance Requests"
+        permissions = [
+            ("approve_attendance_request", "Can approve/reject attendance requests"),
+        ]
+
+    
+
+# ✅ Temporary Test Model (optional)
+class TestAdminModel(models.Model):
+    name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.name

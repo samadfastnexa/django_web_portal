@@ -36,5 +36,5 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
             'user_id': user.id,
             'email': user.email,
             'username': user.username,
-           'role': str(user.role), 
+            'role': str(user.role), 
         }

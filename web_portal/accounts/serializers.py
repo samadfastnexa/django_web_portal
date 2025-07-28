@@ -6,22 +6,18 @@ from .models import Role
 
 User = get_user_model()
 
-# ✅ User List Serializer
 class UserListSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile_image']
 
-# ✅ Signup Serializer with validation
 class UserSignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
-
     first_name = serializers.CharField(
         required=False,
         allow_blank=True,
         validators=[RegexValidator(r'^[A-Za-z\s]+$', 'Only letters and spaces are allowed.')]
     )
-
     last_name = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -50,13 +46,14 @@ class UserSignupSerializer(serializers.ModelSerializer):
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password'],
-            role=validated_data.get('role'),
+            role=validated_data.get('role', 'viewer'),
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
-            profile_image=validated_data.get('profile_image', None)
+            profile_image=validated_data.get('profile_image', None),
+            is_active=False,     # Require admin to activate
+             is_staff=False       # Only admin decides staff access
         )
 
-# ✅ Role & Permission Serializers (if you still use them)
 class PermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Permission
@@ -75,16 +72,9 @@ class RoleSerializer(serializers.ModelSerializer):
         model = Role
         fields = ['id', 'name', 'permissions', 'permission_ids']
 
-# # ✅ Product Serializer
-# class ProductSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = Product
-#         fields = '__all__'
+User = get_user_model()
 
-# # ✅ Order Serializer
-# class OrderSerializer(serializers.ModelSerializer):
-#     user = serializers.ReadOnlyField(source='user.email')  # Optional: show user's email in response
-
-    # class Meta:
-    #     model = Order
-    #     fields = '__all__'
+class AdminUserStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['is_active']

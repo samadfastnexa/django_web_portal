@@ -3,7 +3,7 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.conf import settings
 from django.core.exceptions import ValidationError
-
+from django.utils import timezone
 # ✅ Custom Validator
 def validate_image_size(image):
     max_size_mb = 2
@@ -23,6 +23,7 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError("Email address is required.")
         email = self.normalize_email(email)
+        extra_fields.setdefault('is_active', True)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save()
@@ -31,6 +32,12 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
+
+        if not extra_fields.get('is_staff'):
+            raise ValueError("Superuser must have is_staff=True.")
+        if not extra_fields.get('is_superuser'):
+            raise ValueError("Superuser must have is_superuser=True.")
+
         return self.create_user(email, password, **extra_fields)
 
 # ✅ User Model
@@ -39,6 +46,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     
     username = models.CharField(
         max_length=150,
+        unique=True,
         validators=[RegexValidator(r'^[\w.@+-]+$', 'Enter a valid username.')],
     )
     
@@ -63,7 +71,7 @@ class User(AbstractBaseUser, PermissionsMixin):
             validate_image_size,
         ]
     )
-
+    date_joined = models.DateTimeField(default=timezone.now)
     role = models.ForeignKey(Role, null=True, blank=True, on_delete=models.SET_NULL)
 
     is_active = models.BooleanField(default=True)
