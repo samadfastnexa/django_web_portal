@@ -16,10 +16,11 @@ import requests  # ✅ Required to make the HTTP call
 class UserSettingListCreateView(generics.ListCreateAPIView):
     serializer_class = UserSettingSerializer
     permission_classes = [IsAuthenticated]
-
+    swagger_tags = ['Settings']
     @swagger_auto_schema(
         operation_description="List user-specific and global settings. Global settings are listed first.",
-        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))}
+        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))},
+        tags=["Settings"]
     )
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
@@ -27,7 +28,8 @@ class UserSettingListCreateView(generics.ListCreateAPIView):
     @swagger_auto_schema(
         operation_description="Create a new setting. Use `is_global=true` to create a global setting (superuser only).",
         request_body=UserSettingSerializer,
-        responses={201: UserSettingSerializer}
+        responses={201: UserSettingSerializer},
+        tags=["Settings"]
     )
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
@@ -72,7 +74,8 @@ class GlobalSettingListCreateView(generics.ListCreateAPIView):
 
     @swagger_auto_schema(
         operation_description="List global settings only (superusers only).",
-        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))}
+        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))},
+        tags=["Settings"]
     )
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
@@ -80,7 +83,8 @@ class GlobalSettingListCreateView(generics.ListCreateAPIView):
     @swagger_auto_schema(
         operation_description="Create a global setting (superusers only).",
         request_body=UserSettingSerializer,
-        responses={201: UserSettingSerializer}
+        responses={201: UserSettingSerializer},
+        tags=["Settings"]
     )
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
@@ -106,7 +110,8 @@ class UserSpecificSettingView(generics.ListCreateAPIView):
 
     @swagger_auto_schema(
         operation_description="List user-specific settings only.",
-        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))}
+        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))},
+        tags=["Settings"]
     )
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
@@ -114,7 +119,8 @@ class UserSpecificSettingView(generics.ListCreateAPIView):
     @swagger_auto_schema(
         operation_description="Create a user-specific setting.",
         request_body=UserSettingSerializer,
-        responses={201: UserSettingSerializer}
+        responses={201: UserSettingSerializer},
+        tags=["Settings"]
     )
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
@@ -138,7 +144,8 @@ class SettingsView(generics.ListCreateAPIView):
             )
         ],
         operation_description="Unified endpoint to fetch all, global, or user settings.",
-        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))}
+        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))},
+        tags=["Settings"]
     )
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
@@ -146,7 +153,8 @@ class SettingsView(generics.ListCreateAPIView):
     @swagger_auto_schema(
         operation_description="Create a setting (global if is_global=true, user-specific otherwise).",
         request_body=UserSettingSerializer,
-        responses={201: UserSettingSerializer}
+        responses={201: UserSettingSerializer},
+        tags=["Settings"]
     )
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)

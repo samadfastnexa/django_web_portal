@@ -13,8 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from datetime import timedelta
 import os
-
-
+from decouple import config, Csv
 # from decouple import config
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,7 +29,7 @@ SECRET_KEY = 'django-insecure-nxhfgb@1)cee-3+^2h^v747%+n(63fbxa0bug@^%1vn!6+(3=3
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+# ALLOWED_HOSTS = ['*']
 # ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 # ALLOWED_HOSTS = ['192.168.18.222', 'localhost', '127.0.0.1']
 # ALLOWED_HOSTS = ['192.168.18.222', 'localhost', '127.0.0.1', '0.0.0.0', '192.168.18.209']
@@ -73,13 +72,16 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
  
 ]
-CORS_ALLOW_ALL_ORIGINS = True 
+# CORS_ALLOW_ALL_ORIGINS = True 
 CORS_ALLOW_CREDENTIALS = True
 
 # CORS_ALLOWED_ORIGINS = [
-#       "http://192.168.18.209:3000",
+#     #   "http://192.168.18.209:3000",
+#     # "http://localhost:3000",  # your Next.js frontend
 #     "http://localhost:3000",  # your Next.js frontend
+
 # ]
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', cast=Csv())
 ROOT_URLCONF = 'web_portal.urls'
 
 TEMPLATES = [
@@ -170,8 +172,13 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,  # 👈 You can change this to any number you prefer
+    'PAGE_SIZE': 10,
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.OrderingFilter',  # ✅ must be inside the list
+    ],
 }
+
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # change as needed

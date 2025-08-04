@@ -3,38 +3,51 @@ from .models import Attendance, AttendanceRequest
 
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = [
-        'user_id', 'attendee_id', 'check_in_time', 'check_out_time',
-        'check_in_gap', 'check_out_gap', 'location', 'created_at'
-    ]
-    readonly_fields = ['check_in_gap', 'check_out_gap', 'created_at']
-    list_filter = ['created_at', 'user_id']
-    search_fields = ['user_id__email', 'attendee_id', 'location']
+    list_display = ('attendee', 'user', 'check_in_time', 'check_out_time', 'source')
+    list_filter = ('source', 'created_at')
+    search_fields = ('attendee__username', 'user__username')
+
+    
 
 
 @admin.register(AttendanceRequest)
 class AttendanceRequestAdmin(admin.ModelAdmin):
-    list_display = [
-        'user', 'check_in_time', 'check_out_time', 'can_check_in_display',
-        'status', 'reason', 'created_at'
-    ]
-    list_filter = ['status', 'created_at']
-    search_fields = ['user__email', 'reason']
-    readonly_fields = ['created_at', 'updated_at', 'check_in_gap', 'check_out_gap']
+    list_display = ['user', 'check_type', 'attendance', 'created_at']
+    fields = ['user', 'check_type', 'check_in_time', 'check_out_time', 'reason', 'attendance']
 
-    def can_check_in_display(self, obj):
-        return obj.can_check_in
-    can_check_in_display.boolean = True
-    can_check_in_display.short_description = 'Can Check In'
+    def save_model(self, request, obj, form, change):
+        # Custom logic to auto-create/update Attendance
+        user = obj.user
+        check_type = obj.check_type
+        check_in_time = obj.check_in_time
+        check_out_time = obj.check_out_time
 
-    def get_readonly_fields(self, request, obj=None):
-        fields = list(super().get_readonly_fields(request, obj))
+        # Use check_in_time or check_out_time to detect date
+        target_date = check_in_time.date() if check_type == 'check_in' and check_in_time else \
+                      check_out_time.date() if check_out_time else None
 
-        # 🚫 If the user lacks approval permission, make 'status' read-only
-        if not request.user.is_superuser and (
-            not request.user.role or
-            not request.user.role.permissions.filter(codename="approve_attendance_request").exists()
-        ):
-            fields.append('status')
+        if target_date:
+            attendance = Attendance.objects.filter(
+                attendee=user,
+                check_in_time__date=target_date
+            ).first()
 
-        return fields
+            if attendance:
+                if check_type == 'check_in':
+                    attendance.check_in_time = check_in_time
+                elif check_type == 'check_out':
+                    attendance.check_out_time = check_out_time
+                attendance.source = 'request'
+                attendance.save()
+            else:
+                attendance = Attendance.objects.create(
+                    user=user,
+                    attendee=user,
+                    check_in_time=check_in_time if check_type == 'check_in' else None,
+                    check_out_time=check_out_time if check_type == 'check_out' else None,
+                    source='request'
+                )
+
+            obj.attendance = attendance
+
+        super().save_model(request, obj, form, change)

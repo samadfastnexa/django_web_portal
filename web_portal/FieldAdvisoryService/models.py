@@ -1,7 +1,9 @@
 from django.db import models
 from django.conf import settings
-from attendance.models import Attendance
-
+# from attendance.models import Attendance
+from django.db import models
+from django.contrib.auth import get_user_model
+User = get_user_model()
 class Dealer(models.Model):
     name = models.CharField(max_length=100)
     contact_number = models.CharField(max_length=20, blank=True)
@@ -62,6 +64,7 @@ class DealerRequest(models.Model):
         on_delete=models.CASCADE,
         related_name='dealer_requests'
     )
+    requested_by = models.ForeignKey(User, related_name='dealer_requests', on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
     contact_number = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
