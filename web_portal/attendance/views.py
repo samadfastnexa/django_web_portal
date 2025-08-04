@@ -4,9 +4,10 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-
+from rest_framework.decorators import action
 from .models import Attendance, AttendanceRequest
 from .serializers import AttendanceSerializer, AttendanceRequestSerializer
+from rest_framework.permissions import IsAuthenticated
 
 
 # ✅ List & Create Attendance (Only for logged-in user)
@@ -35,7 +36,8 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
         return Attendance.objects.filter(user_id=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(user_id=self.request.user)
+        # serializer.save(user_id=self.request.user)
+          serializer.save(user=self.request.user)
 
 
 # ✅ Retrieve, Update, Delete Attendance (Only for logged-in user)
@@ -157,3 +159,31 @@ class AttendanceRequestViewSet(viewsets.ModelViewSet):
                 user.role.permissions.filter(codename="approve_attendance_request").exists()
             )
         )
+    @action(detail=True, methods=['post'], url_path='approve', permission_classes=[permissions.IsAdminUser])
+    @swagger_auto_schema(operation_description="Approve attendance request and create attendance", tags=["Attendance Request"])
+    def approve(self, request, pk=None):
+        instance = self.get_object()
+
+        if instance.status == "approved":
+            return Response({"detail": "Already approved."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ Change status to approved
+        instance.status = "approved"
+        instance.save()
+
+        # ✅ Create corresponding attendance entry
+        Attendance.objects.create(
+            # user_id=instance.user,
+            user=instance.user,  
+            attendee_id=instance.attendee,
+            check_in_time=instance.check_in_time,
+            check_out_time=instance.check_out_time,
+            source="request"
+        )
+
+        return Response({"detail": "Request approved and attendance created."}, status=status.HTTP_200_OK)
+
+class AttendanceRequestCreateAPIView(generics.CreateAPIView):
+    queryset = AttendanceRequest.objects.all()
+    serializer_class = AttendanceRequestSerializer
+    permission_classes = [IsAuthenticated]

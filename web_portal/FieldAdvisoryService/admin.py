@@ -13,3 +13,8 @@ class DealerRequestAdmin(admin.ModelAdmin):
     list_filter = ('status', 'created_at')
     search_fields = ('name', 'requested_by__email', 'reviewed_by__email')
     readonly_fields = ('requested_by', 'reviewed_by', 'created_at', 'reviewed_at')
+
+    def save_model(self, request, obj, form, change):
+        if not obj.pk:  # Only set on create, not update
+            obj.requested_by = request.user
+        super().save_model(request, obj, form, change)

@@ -8,7 +8,7 @@ from django.utils import timezone
 def validate_image_size(image):
     max_size_mb = 2
     if image.size > max_size_mb * 1024 * 1024:
-        raise ValidationError(f"Image file too large ( > {max_size_mb}MB )")
+        raise ValidationError(f"Image file too large ( > {max_size_mb}MB )") # ✅ size check
 
 # ✅ Role Model
 class Role(models.Model):
@@ -29,8 +29,8 @@ class UserManager(BaseUserManager):
             raise ValueError("First name is required.")
         if not extra_fields.get('last_name'):
             raise ValueError("Last name is required.")
-        if not extra_fields.get('profile_image'):
-            raise ValueError("Profile image is required.")
+        # if not extra_fields.get('profile_image'):
+        #     raise ValueError("Profile image is required.")
 
         email = self.normalize_email(email)
 
@@ -91,8 +91,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     profile_image = models.ImageField(
         upload_to='profile_images/',
         validators=[
-            FileExtensionValidator(['jpg', 'jpeg', 'png']),
-            validate_image_size,
+            FileExtensionValidator(['jpg', 'jpeg', 'png']), # ✅ Format check
+            validate_image_size,                            # ✅ Size check
         ]
     )
 
@@ -106,7 +106,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'first_name', 'last_name', 'profile_image']
+    REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
 
     def __str__(self):
         return self.email
