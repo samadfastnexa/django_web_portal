@@ -3,7 +3,9 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-
+from django.conf import settings
+# Import models from FieldAdvisoryService
+from FieldAdvisoryService.models import Region, Zone, Territory
 # ✅ Image size validator
 def validate_image_size(image):
     max_size_mb = 2
@@ -14,7 +16,7 @@ def validate_image_size(image):
 class Role(models.Model):
     name = models.CharField(max_length=50, unique=True)
     permissions = models.ManyToManyField(Permission, blank=True)
-
+    # permissions = models.ManyToManyField(Permission, related_name='roles')
     def __str__(self):
         return self.name
 
@@ -99,10 +101,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(default=timezone.now)
 
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=False)
-
-    is_active = models.BooleanField(default=True)
+    
     is_staff = models.BooleanField(default=False)
-
+    is_active = models.BooleanField(default=True)
+    is_sales_staff = models.BooleanField(default=False)  # ✅ New field
     objects = UserManager()
 
     USERNAME_FIELD = 'email'
@@ -110,3 +112,49 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+class SalesStaffProfile(models.Model):
+# link to User via AUTH_USER_MODEL to avoid import timing issues
+    user = models.OneToOneField(
+    settings.AUTH_USER_MODEL,
+    on_delete=models.CASCADE,
+    related_name='sales_profile'  # ✅ must match the serializer field
+)
+    employee_code = models.CharField(max_length=50)
+    phone_number = models.CharField(max_length=20)
+    address = models.TextField()
+    designation = models.CharField(max_length=100)
+
+    # use lazy app.model strings to avoid circular import
+    company = models.ForeignKey(
+    'FieldAdvisoryService.Company',
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True
+)
+    region = models.ForeignKey('FieldAdvisoryService.Region', on_delete=models.SET_NULL, null=True, blank=True)
+    zone = models.ForeignKey('FieldAdvisoryService.Zone', on_delete=models.SET_NULL, null=True, blank=True)
+    territory = models.ForeignKey('FieldAdvisoryService.Territory', on_delete=models.SET_NULL, null=True, blank=True)
+  
+    hod = models.ForeignKey('self', related_name='sales_hod', on_delete=models.SET_NULL, null=True, blank=True)
+    master_hod = models.ForeignKey('self', related_name='sales_master_hod', on_delete=models.SET_NULL, null=True, blank=True)
+    
+     #  leave quota fields
+    sick_leave_quota = models.PositiveIntegerField(default=0)
+    casual_leave_quota = models.PositiveIntegerField(default=0)
+    others_leave_quota = models.PositiveIntegerField(default=0)
+    
+    def clean(self):
+        # if linked user is marked sales staff, all fields must be present
+        if self.user and getattr(self.user, 'is_sales_staff', False):
+            missing = [f for f in ['employee_code','phone_number','address','designation','company','region','zone','territory']
+                       if not getattr(self, f)]
+            if missing:
+                raise ValidationError({f: "This field is required for sales staff." for f in missing})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()   # validate
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Sales profile for {self.user.email}"

@@ -9,6 +9,35 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
+    # def validate(self, attrs):
+    #     email = attrs.get('email')
+    #     password = attrs.get('password')
+
+    #     if not email or not password:
+    #         raise serializers.ValidationError('Email and password are required.')
+
+    #     try:
+    #         user = User.objects.get(email=email)
+    #     except User.DoesNotExist:
+    #         raise serializers.ValidationError('No user found with this email address.')
+
+    #     if not user.check_password(password):
+    #         raise serializers.ValidationError('Incorrect password.')
+
+    #     if not user.is_active:
+    #         raise serializers.ValidationError('User account is inactive.')
+
+    #     # ✅ Generate JWT tokens manually
+    #     refresh = RefreshToken.for_user(user)
+
+    #     return {
+    #         'refresh': str(refresh),
+    #         'access': str(refresh.access_token),
+    #         'user_id': user.id,
+    #         'email': user.email,
+    #         'username': user.username,
+    #         'role': str(user.role), 
+    #     }
     def validate(self, attrs):
         email = attrs.get('email')
         password = attrs.get('password')
@@ -30,11 +59,23 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
         # ✅ Generate JWT tokens manually
         refresh = RefreshToken.for_user(user)
 
+        # ✅ Get role name
+        role = getattr(user, 'role', None)
+        role_name = role.name if role else None
+
+        # ✅ Get permissions (id + codename)
+        permissions = []
+        if role:
+            permissions = list(
+                role.permissions.values('id', 'codename')
+            )
+
         return {
             'refresh': str(refresh),
             'access': str(refresh.access_token),
             'user_id': user.id,
             'email': user.email,
             'username': user.username,
-            'role': str(user.role), 
+            'role': role_name,
+            'permissions': permissions,  # ✅ each item: {"id": x, "codename": "xyz"}
         }

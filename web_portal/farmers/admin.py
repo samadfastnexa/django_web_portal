@@ -1,9 +1,14 @@
-# from django.contrib import admin
-# from attendance.models import Attendance
-
-# class AttendanceAdmin(admin.ModelAdmin):
-#     list_display = ['id', 'user_id', 'attendee_id', 'check_in_time', 'check_out_time', 'location', 'created_at']
-#     list_filter = ['check_in_time', 'check_out_time']
-#     search_fields = ['user_id__email', 'attendee_id']
+from django.contrib import admin
+from attendance.models import Attendance
+from .models import Farmer
+class AttendanceAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user_id', 'attendee_id', 'check_in_time', 'check_out_time', 'location', 'created_at']
+    list_filter = ['check_in_time', 'check_out_time']
+    search_fields = ['user_id__email', 'attendee_id']
 
 # admin.site.register(Attendance, AttendanceAdmin)
+
+@admin.register(Farmer)
+class FarmerAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'current_latitude', 'current_longitude', 'farm_latitude', 'farm_longitude')
+    search_fields = ('name',)

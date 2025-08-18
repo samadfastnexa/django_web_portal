@@ -35,7 +35,7 @@ DEBUG = True
 # ALLOWED_HOSTS = ['192.168.18.222', 'localhost', '127.0.0.1', '0.0.0.0', '192.168.18.209']
 # ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.18.209:3000']
 # Application definition
-
+AUTH_USER_MODEL = 'accounts.User'
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -43,8 +43,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles', # required for serving swagger ui's css/js files
-    'rest_framework',
     'accounts',  # Custom app for user management
+    'rest_framework',
     'rest_framework_simplejwt',  # JWT authentication
     'rest_framework_simplejwt.token_blacklist',  # For token blacklisting
     'drf_yasg',
@@ -189,7 +189,7 @@ SIMPLE_JWT = {
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
-AUTH_USER_MODEL = 'accounts.User'
+
 # GOOGLE_MAPS_API_KEY = os.getenv('AIzaSyCZcPsEBWJHgYF_m7FClyHKtVkmroi3bdA')
 GOOGLE_MAPS_API_KEY='AIzaSyCZcPsEBWJHgYF_m7FClyHKtVkmroi3bdA'
 

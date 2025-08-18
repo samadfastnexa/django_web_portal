@@ -1,201 +1,84 @@
-from rest_framework import generics, status
-from rest_framework.response import Response
+
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import PermissionDenied
-from django.db import models
-
-from .models import UserSetting
-from .serializers import UserSettingSerializer
-
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
-
+from accounts.permissions import HasRolePermission
 from rest_framework.views import APIView
 from django.conf import settings
 import requests  # ✅ Required to make the HTTP call
-class UserSettingListCreateView(generics.ListCreateAPIView):
-    serializer_class = UserSettingSerializer
-    permission_classes = [IsAuthenticated]
-    swagger_tags = ['Settings']
+from rest_framework import viewsets
+from .models import Setting
+from .serializers import SettingSerializer
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
+class SettingViewSet(viewsets.ModelViewSet):
+    queryset = Setting.objects.all()
+    serializer_class = SettingSerializer
+    # permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasRolePermission]
     @swagger_auto_schema(
-        operation_description="List user-specific and global settings. Global settings are listed first.",
-        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))},
+        operation_description="Create a new setting",
+        tags=["Settings"],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'user': openapi.Schema(type=openapi.TYPE_INTEGER, example=1),
+                'slug': openapi.Schema(type=openapi.TYPE_STRING, example='company_timmings'),
+                'value': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    example={
+                        "opening-time": "9:00",
+                        "closing-time": "6:00"
+                    }
+                ),
+            },
+            required=['user', 'slug', 'value']
+        )
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="List all settings",
         tags=["Settings"]
     )
-    def get(self, request, *args, **kwargs):
-        return self.list(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Create a new setting. Use `is_global=true` to create a global setting (superuser only).",
-        request_body=UserSettingSerializer,
-        responses={201: UserSettingSerializer},
-        tags=["Settings"]
-    )
-    def post(self, request, *args, **kwargs):
-        return self.create(request, *args, **kwargs)
-
-    def get_queryset(self):
-        global_settings = UserSetting.objects.filter(user__isnull=True)
-        user_settings = UserSetting.objects.filter(user=self.request.user)
-        return global_settings.union(user_settings).order_by('slug', 'user_id')
-
-    def perform_create(self, serializer):
-        if self.request.data.get('is_global', False):
-            if not self.request.user.is_superuser:
-                raise PermissionDenied("Only superusers can create global settings")
-            serializer.save(user=None)
-        else:
-            serializer.save(user=self.request.user)
-
     def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        global_settings = []
-        user_settings = []
+        return super().list(request, *args, **kwargs)
 
-        for setting in queryset:
-            serialized_data = self.get_serializer(setting).data
-            if setting.user is None:
-                serialized_data['type'] = 'global'
-                global_settings.append(serialized_data)
-            else:
-                serialized_data['type'] = 'user'
-                user_settings.append(serialized_data)
-
-        return Response({
-            'global_settings': global_settings,
-            'user_settings': user_settings,
-            'count': len(global_settings) + len(user_settings)
-        })
-
-
-class GlobalSettingListCreateView(generics.ListCreateAPIView):
-    serializer_class = UserSettingSerializer
-    permission_classes = [IsAuthenticated]
+    # @swagger_auto_schema(
+    #     operation_description="Create a new setting",
+    #     tags=["Settings"]
+    # )
+    # def create(self, request, *args, **kwargs):
+    #     return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="List global settings only (superusers only).",
-        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))},
+        operation_description="Retrieve a setting",
         tags=["Settings"]
     )
-    def get(self, request, *args, **kwargs):
-        return self.list(request, *args, **kwargs)
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Create a global setting (superusers only).",
-        request_body=UserSettingSerializer,
-        responses={201: UserSettingSerializer},
+        operation_description="Update a setting",
         tags=["Settings"]
     )
-    def post(self, request, *args, **kwargs):
-        return self.create(request, *args, **kwargs)
-
-    def get_queryset(self):
-        return UserSetting.objects.filter(user__isnull=True)
-
-    def perform_create(self, serializer):
-        if not self.request.user.is_superuser:
-            raise PermissionDenied("Only superusers can manage global settings")
-        serializer.save(user=None)
-
-    def get_permissions(self):
-        if self.request.user.is_authenticated and self.request.user.is_superuser:
-            return [IsAuthenticated()]
-        else:
-            raise PermissionDenied("Only superusers can access global settings")
-
-
-class UserSpecificSettingView(generics.ListCreateAPIView):
-    serializer_class = UserSettingSerializer
-    permission_classes = [IsAuthenticated]
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="List user-specific settings only.",
-        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))},
+        operation_description="Partially update a setting",
         tags=["Settings"]
     )
-    def get(self, request, *args, **kwargs):
-        return self.list(request, *args, **kwargs)
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Create a user-specific setting.",
-        request_body=UserSettingSerializer,
-        responses={201: UserSettingSerializer},
+        operation_description="Delete a setting",
         tags=["Settings"]
     )
-    def post(self, request, *args, **kwargs):
-        return self.create(request, *args, **kwargs)
-
-    def get_queryset(self):
-        return UserSetting.objects.filter(user=self.request.user)
-
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
-
-
-class SettingsView(generics.ListCreateAPIView):
-    serializer_class = UserSettingSerializer
-    permission_classes = [IsAuthenticated]
-
-    @swagger_auto_schema(
-        manual_parameters=[
-            openapi.Parameter(
-                'type', openapi.IN_QUERY, description="Filter by type: global, user, or all",
-                type=openapi.TYPE_STRING, enum=['global', 'user', 'all']
-            )
-        ],
-        operation_description="Unified endpoint to fetch all, global, or user settings.",
-        responses={200: openapi.Response("Success", UserSettingSerializer(many=True))},
-        tags=["Settings"]
-    )
-    def get(self, request, *args, **kwargs):
-        return self.list(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Create a setting (global if is_global=true, user-specific otherwise).",
-        request_body=UserSettingSerializer,
-        responses={201: UserSettingSerializer},
-        tags=["Settings"]
-    )
-    def post(self, request, *args, **kwargs):
-        return self.create(request, *args, **kwargs)
-
-    def get_queryset(self):
-        setting_type = self.request.query_params.get('type', 'all')
-
-        if setting_type == 'global':
-            return UserSetting.objects.filter(user__isnull=True)
-        elif setting_type == 'user':
-            return UserSetting.objects.filter(user=self.request.user)
-        else:
-            global_settings = UserSetting.objects.filter(user__isnull=True)
-            user_settings = UserSetting.objects.filter(user=self.request.user)
-            return global_settings.union(user_settings)
-
-    def perform_create(self, serializer):
-        is_global = self.request.data.get('is_global', False)
-
-        if is_global:
-            if not self.request.user.is_superuser:
-                raise PermissionDenied("Only superusers can create global settings")
-            serializer.save(user=None)
-        else:
-            serializer.save(user=self.request.user)
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-
-        for item in serializer.data:
-            if 'user' in item and item['user'] is None:
-                item['type'] = 'global'
-            else:
-                item['type'] = 'user'
-
-        return Response({
-            'results': serializer.data,
-            'count': len(serializer.data)
-        })
-
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+    
 class WeatherTestView(APIView):
     def get(self, request):
         city = request.query_params.get('city', 'Lahore')

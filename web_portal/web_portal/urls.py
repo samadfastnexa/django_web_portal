@@ -31,9 +31,10 @@ urlpatterns = [
     path('api/', include('accounts.urls')),  # ✅ all accounts related routes
     path('api/complaints/', include('complaints.urls')),
     path('api/farmers/', include('farmers.urls')),
-    path('api/preferences/', include('preferences.urls')),
-    path('FieldAdvisoryService/fas/', include('FieldAdvisoryService.urls')),
+    path('api /', include('preferences.urls')),
+   #  path('FieldAdvisoryService/fas/', include('FieldAdvisoryService.urls')),
     path('api/', include('attendance.urls')),
     path('api/', include('farmerMeetingDataEntry.urls')),
+    path('api/field/', include('FieldAdvisoryService.urls')), 
     
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
