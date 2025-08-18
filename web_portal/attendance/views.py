@@ -8,12 +8,14 @@ from rest_framework.decorators import action
 from .models import Attendance, AttendanceRequest
 from .serializers import AttendanceSerializer, AttendanceRequestSerializer
 from rest_framework.permissions import IsAuthenticated
-
-
+from accounts.permissions import HasRolePermission
+from rest_framework.exceptions import ValidationError
+from .services import mark_attendance
 # ✅ List & Create Attendance (Only for logged-in user)
 class AttendanceListCreateView(generics.ListCreateAPIView):
     serializer_class = AttendanceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    # permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasRolePermission]
     parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(
@@ -24,7 +26,7 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
         return super().get(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Submit a new attendance record.",
+        operation_description="Submit a new attendance record. At least one of check_in_time or check_out_time must be provided.",
         tags=["Attendance"]
     )
     def post(self, request, *args, **kwargs):
@@ -35,9 +37,80 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
             return Attendance.objects.none()
         return Attendance.objects.filter(user_id=self.request.user)
 
+    # def perform_create(self, serializer):
+    #     user = self.request.user
+    #     data = serializer.validated_data
+    #     attendee = data.get('attendee')
+    #     check_in_time = data.get('check_in_time')
+    #     check_out_time = data.get('check_out_time')
+
+    #     if check_in_time and not check_out_time:
+    #         attendance = mark_attendance(user=user, attendee=attendee, check_type="check_in", timestamp=check_in_time)
+    #     elif check_out_time and not check_in_time:
+    #         attendance = mark_attendance(user=user, attendee=attendee, check_type="check_out", timestamp=check_out_time)
+    #     elif check_in_time and check_out_time:
+    #         mark_attendance(user=user, attendee=attendee, check_type="check_in", timestamp=check_in_time)
+    #         attendance = mark_attendance(user=user, attendee=attendee, check_type="check_out", timestamp=check_out_time)
+    #     else:
+    #         raise ValidationError("At least one of check_in_time or check_out_time must be provided.")
+
+    #     serializer.instance = attendance
     def perform_create(self, serializer):
-        # serializer.save(user_id=self.request.user)
-          serializer.save(user=self.request.user)
+        user = self.request.user
+        data = serializer.validated_data
+        attendee = data.get('attendee')
+        check_in_time = data.get('check_in_time')
+        check_out_time = data.get('check_out_time')
+
+        if not check_in_time and not check_out_time:
+            raise ValidationError("At least one of check_in_time or check_out_time must be provided.")
+
+        # ✅ Save record first (so lat/lon/attachment are stored)
+        attendance = serializer.save(user=user)
+
+        # ✅ Apply your check-in / check-out logic
+        if check_in_time and not check_out_time:
+            mark_attendance(
+                user=user,
+                attendee=attendee,
+                check_type="check_in",
+                timestamp=check_in_time,
+                latitude=attendance.latitude,
+                longitude=attendance.longitude,
+                attachment=attendance.attachment
+            )
+        elif check_out_time and not check_in_time:
+            mark_attendance(
+                user=user,
+                attendee=attendee,
+                check_type="check_out",
+                timestamp=check_out_time,
+                latitude=attendance.latitude,
+                longitude=attendance.longitude,
+                attachment=attendance.attachment
+            )
+        elif check_in_time and check_out_time:
+            mark_attendance(
+                user=user,
+                attendee=attendee,
+                check_type="check_in",
+                timestamp=check_in_time,
+                latitude=attendance.latitude,
+                longitude=attendance.longitude,
+                attachment=attendance.attachment
+            )
+            mark_attendance(
+                user=user,
+                attendee=attendee,
+                check_type="check_out",
+                timestamp=check_out_time,
+                latitude=attendance.latitude,
+                longitude=attendance.longitude,
+                attachment=attendance.attachment
+            )
+
+        # ✅ Ensure response returns this saved instance
+        serializer.instance = attendance
 
 
 # ✅ Retrieve, Update, Delete Attendance (Only for logged-in user)
@@ -82,7 +155,8 @@ class AttendanceDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ✅ AttendanceRequest ViewSet (For requests with permission-protected status changes)
 class AttendanceRequestViewSet(viewsets.ModelViewSet):
     serializer_class = AttendanceRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    # permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasRolePermission]
     parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
@@ -186,4 +260,55 @@ class AttendanceRequestViewSet(viewsets.ModelViewSet):
 class AttendanceRequestCreateAPIView(generics.CreateAPIView):
     queryset = AttendanceRequest.objects.all()
     serializer_class = AttendanceRequestSerializer
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasRolePermission] 
+    
+    
+# class AttendanceReportView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request, *args, **kwargs):
+#         user = request.user
+#         today = now().date()
+
+#         # Date ranges
+#         week_start = today - timedelta(days=today.weekday())  # Monday
+#         week_end = week_start + timedelta(days=6)
+
+#         month_start = today.replace(day=1)
+#         next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
+#         month_end = next_month - timedelta(days=1)
+
+#         weekly_attendance = Attendance.objects.filter(
+#             user=user,
+#             check_in_time__date__range=(week_start, week_end)
+#         )
+
+#         monthly_attendance = Attendance.objects.filter(
+#             user=user,
+#             check_in_time__date__range=(month_start, month_end)
+#         )
+
+#         # Aggregations
+#         weekly_summary = weekly_attendance.aggregate(
+#             total_hours=Sum('total_work_hours'),
+#             days_present=Count('id')
+#         )
+
+#         monthly_summary = monthly_attendance.aggregate(
+#             total_hours=Sum('total_work_hours'),
+#             days_present=Count('id')
+#         )
+
+#         return Response({
+#             "week_range": f"{week_start} to {week_end}",
+#             "weekly": {
+#                 "days_present": weekly_summary['days_present'],
+#                 "total_hours": str(weekly_summary['total_hours'] or timedelta(0)),
+#             },
+#             "month_range": f"{month_start} to {month_end}",
+#             "monthly": {
+#                 "days_present": monthly_summary['days_present'],
+#                 "total_hours": str(monthly_summary['total_hours'] or timedelta(0)),
+#             },
+#         })

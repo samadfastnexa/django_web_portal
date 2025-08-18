@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from .models import Dealer, MeetingSchedule, SalesOrder, SalesOrderAttachment,DealerRequest
-
+import re
+from .models import Company, Region, Zone, Territory
+from rest_framework import viewsets
 class DealerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dealer
@@ -23,22 +25,121 @@ class SalesOrderSerializer(serializers.ModelSerializer):
         model = SalesOrder
         fields = '__all__'
 
+# class DealerRequestSerializer(serializers.ModelSerializer):
+#     requested_by = serializers.StringRelatedField(read_only=True)
+#     reviewed_by = serializers.StringRelatedField(read_only=True)
+#     status = serializers.CharField(read_only=True)  # Optional: if you want status to be admin-only
+
+#     class Meta:
+#         model = DealerRequest
+#         fields = [
+#             'id',
+#             'name',
+#             'contact_number',
+#             'address',
+#             'status',
+#             'requested_by',
+#             'reviewed_by',
+#             'reviewed_at',
+#             'created_at',
+#         ]
+#         read_only_fields = ['requested_by', 'reviewed_by', 'reviewed_at', 'created_at']
+
 class DealerRequestSerializer(serializers.ModelSerializer):
-    requested_by = serializers.StringRelatedField(read_only=True)
-    reviewed_by = serializers.StringRelatedField(read_only=True)
-    status = serializers.CharField(read_only=True)  # Optional: if you want status to be admin-only
+    requested_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
+
+    def validate_cnic_number(self, value):
+        # Remove non-digit characters
+        digits_only = re.sub(r'\D', '', value)
+
+        # Ensure 13 digits
+        if len(digits_only) != 13:
+            raise serializers.ValidationError("CNIC must have exactly 13 digits.")
+
+        # Format to 12345-1234567-1
+        formatted = f"{digits_only[:5]}-{digits_only[5:12]}-{digits_only[12]}"
+        return formatted
+
+
+    def validate_minimum_investment(self, value):
+        if value < 500000:
+            raise serializers.ValidationError("Minimum investment must be at least 5 lakh (500,000).")
+        return value
+
+    def validate_cnic_front(self, image):
+        return self.validate_image(image, field="CNIC front")
+
+    def validate_cnic_back(self, image):
+        return self.validate_image(image, field="CNIC back")
+
+    def validate_image(self, image, field="Image"):
+        max_size_mb = 2  # Max 2 MB
+        valid_mime_types = ['image/jpeg', 'image/png']
+        
+        # Check MIME type
+        if hasattr(image, 'content_type'):
+            if image.content_type not in valid_mime_types:
+                raise serializers.ValidationError(
+                    f"{field} must be JPEG or PNG."
+                )
+
+        # Check file size
+        if image.size > max_size_mb * 1024 * 1024:
+            raise serializers.ValidationError(
+                f"{field} size must not exceed {max_size_mb} MB."
+            )
+
+        return image
 
     class Meta:
         model = DealerRequest
-        fields = [
-            'id',
-            'name',
-            'contact_number',
-            'address',
-            'status',
-            'requested_by',
-            'reviewed_by',
-            'reviewed_at',
-            'created_at',
-        ]
-        read_only_fields = ['requested_by', 'reviewed_by', 'reviewed_at', 'created_at']
+        fields = '__all__'
+
+
+class CompanySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Company
+        fields = '__all__'
+
+class RegionSerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source='company.name', read_only=True)
+
+    class Meta:
+        model = Region
+        fields = '__all__'
+
+class ZoneSerializer(serializers.ModelSerializer):
+    region_name = serializers.CharField(source='region.name', read_only=True)
+
+    class Meta:
+        model = Zone
+        fields = '__all__'
+
+class TerritorySerializer(serializers.ModelSerializer):
+    zone_name = serializers.CharField(source='zone.name', read_only=True)
+
+    class Meta:
+        model = Territory
+        fields = '__all__'
+
+class ZoneNestedSerializer(serializers.ModelSerializer):
+    territories = TerritorySerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Zone
+        fields = ['id', 'name', 'territories']
+
+class RegionNestedSerializer(serializers.ModelSerializer):
+    zones = ZoneNestedSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Region
+        fields = ['id', 'name', 'zones']
+
+class CompanyNestedSerializer(serializers.ModelSerializer):
+    regions = RegionNestedSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Company
+        fields = ['id', 'name', 'regions']
+

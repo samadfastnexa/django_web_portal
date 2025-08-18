@@ -1,8 +1,13 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Role
+from .models import User, Role, SalesStaffProfile
 
-# ✅ Custom User Admin if you want to see more fields in the admin
+# Inline for Sales Staff profile
+class SalesProfileInline(admin.StackedInline):
+    model = SalesStaffProfile
+    can_delete = False
+    verbose_name_plural = 'Sales Profile'
+
 @admin.register(User)
 class CustomUserAdmin(BaseUserAdmin):
     list_display = ['id', 'username', 'email', 'first_name', 'last_name', 'role']
@@ -18,8 +23,8 @@ class CustomUserAdmin(BaseUserAdmin):
         (None, {'fields': ('role', 'profile_image')}),
     )
 
+    inlines = [SalesProfileInline]  # ✅ Attach inline here
 
-# ✅ Role Admin
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
     list_display = ['id', 'name']
