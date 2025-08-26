@@ -6,11 +6,31 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.decorators import action
 from .models import Attendance, AttendanceRequest
-from .serializers import AttendanceSerializer, AttendanceRequestSerializer
+from .serializers import AttendanceSerializer, AttendanceRequestSerializer,AttendanceReportSerializer,EmptySerializer
 from rest_framework.permissions import IsAuthenticated
 from accounts.permissions import HasRolePermission
 from rest_framework.exceptions import ValidationError
+from rest_framework.views import APIView
 from .services import mark_attendance
+from django.utils.timezone import now
+from datetime import timedelta
+from .models import LeaveRequest
+from .serializers import LeaveRequestSerializer
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework import viewsets, status, permissions
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+from drf_yasg.utils import swagger_auto_schema
+from .models import AttendanceRequest, Attendance
+from .serializers import AttendanceRequestSerializer
+from rest_framework import serializers
+import logging
+logger = logging.getLogger(__name__) 
+
+
 # ✅ List & Create Attendance (Only for logged-in user)
 class AttendanceListCreateView(generics.ListCreateAPIView):
     serializer_class = AttendanceSerializer
@@ -37,39 +57,22 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
             return Attendance.objects.none()
         return Attendance.objects.filter(user_id=self.request.user)
 
-    # def perform_create(self, serializer):
-    #     user = self.request.user
-    #     data = serializer.validated_data
-    #     attendee = data.get('attendee')
-    #     check_in_time = data.get('check_in_time')
-    #     check_out_time = data.get('check_out_time')
-
-    #     if check_in_time and not check_out_time:
-    #         attendance = mark_attendance(user=user, attendee=attendee, check_type="check_in", timestamp=check_in_time)
-    #     elif check_out_time and not check_in_time:
-    #         attendance = mark_attendance(user=user, attendee=attendee, check_type="check_out", timestamp=check_out_time)
-    #     elif check_in_time and check_out_time:
-    #         mark_attendance(user=user, attendee=attendee, check_type="check_in", timestamp=check_in_time)
-    #         attendance = mark_attendance(user=user, attendee=attendee, check_type="check_out", timestamp=check_out_time)
-    #     else:
-    #         raise ValidationError("At least one of check_in_time or check_out_time must be provided.")
-
-    #     serializer.instance = attendance
     def perform_create(self, serializer):
         user = self.request.user
         data = serializer.validated_data
-        attendee = data.get('attendee')
-        check_in_time = data.get('check_in_time')
-        check_out_time = data.get('check_out_time')
+
+        attendee = data.get("attendee", user)
+        check_in_time = data.get("check_in_time")
+        check_out_time = data.get("check_out_time")
 
         if not check_in_time and not check_out_time:
             raise ValidationError("At least one of check_in_time or check_out_time must be provided.")
 
-        # ✅ Save record first (so lat/lon/attachment are stored)
+        # ✅ Save extra fields like lat/lon/attachment
         attendance = serializer.save(user=user)
 
-        # ✅ Apply your check-in / check-out logic
-        if check_in_time and not check_out_time:
+        # ✅ Funnel everything to centralized mark_attendance
+        if check_in_time:
             mark_attendance(
                 user=user,
                 attendee=attendee,
@@ -77,47 +80,29 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
                 timestamp=check_in_time,
                 latitude=attendance.latitude,
                 longitude=attendance.longitude,
-                attachment=attendance.attachment
-            )
-        elif check_out_time and not check_in_time:
-            mark_attendance(
-                user=user,
-                attendee=attendee,
-                check_type="check_out",
-                timestamp=check_out_time,
-                latitude=attendance.latitude,
-                longitude=attendance.longitude,
-                attachment=attendance.attachment
-            )
-        elif check_in_time and check_out_time:
-            mark_attendance(
-                user=user,
-                attendee=attendee,
-                check_type="check_in",
-                timestamp=check_in_time,
-                latitude=attendance.latitude,
-                longitude=attendance.longitude,
-                attachment=attendance.attachment
-            )
-            mark_attendance(
-                user=user,
-                attendee=attendee,
-                check_type="check_out",
-                timestamp=check_out_time,
-                latitude=attendance.latitude,
-                longitude=attendance.longitude,
-                attachment=attendance.attachment
+                attachment=attendance.attachment,
             )
 
-        # ✅ Ensure response returns this saved instance
+        if check_out_time:
+            mark_attendance(
+                user=user,
+                attendee=attendee,
+                check_type="check_out",
+                timestamp=check_out_time,
+                latitude=attendance.latitude,
+                longitude=attendance.longitude,
+                attachment=attendance.attachment,
+            )
+
+        # ✅ Ensure serializer returns this saved instance
         serializer.instance = attendance
 
 
 # ✅ Retrieve, Update, Delete Attendance (Only for logged-in user)
 class AttendanceDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AttendanceSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
+    # permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasRolePermission]
     @swagger_auto_schema(
         operation_description="Retrieve a specific attendance record.",
         tags=["Attendance"]
@@ -152,75 +137,56 @@ class AttendanceDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Attendance.objects.filter(user_id=self.request.user)
 
 
-# ✅ AttendanceRequest ViewSet (For requests with permission-protected status changes)
+# views.py (at the top, before your viewset)
+# ----------------------------------
+# Serializers for action responses
+# ----------------------------------
+class AttendanceRequestActionSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)  # ✅ Add request ID in response
+    status = serializers.CharField(read_only=True)
+    detail = serializers.CharField(read_only=True)
+
+
+class EmptySerializer(serializers.Serializer):
+    """Used for Swagger to show no input fields"""
+    pass
+
+
 class AttendanceRequestViewSet(viewsets.ModelViewSet):
     serializer_class = AttendanceRequestSerializer
-    # permission_classes = [permissions.IsAuthenticated]
-    permission_classes = [IsAuthenticated, HasRolePermission]
+    permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
+    def get_serializer_class(self):
+        # Use EmptySerializer for approve/reject actions to avoid validation issues
+        if self.action in ['approve', 'reject']:
+            return EmptySerializer
+        return AttendanceRequestSerializer
+
+    # --------------------------
+    # Queryset
+    # --------------------------
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return AttendanceRequest.objects.none()
-
         user = self.request.user
         if self._has_approval_permission(user):
             return AttendanceRequest.objects.all()
         return AttendanceRequest.objects.filter(user=user)
 
-    @swagger_auto_schema(
-        operation_description="List all your attendance requests.",
-        tags=["Attendance Request"]
-    )
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Submit a new attendance request.",
-        tags=["Attendance Request"]
-    )
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Retrieve a specific attendance request.",
-        tags=["Attendance Request"]
-    )
-    def retrieve(self, request, *args, **kwargs):
-        return super().retrieve(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Update an attendance request (status requires permission).",
-        tags=["Attendance Request"]
-    )
-    def update(self, request, *args, **kwargs):
-        self._check_status_change_permission(request)
-        return super().update(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Partially update an attendance request (status requires permission).",
-        tags=["Attendance Request"]
-    )
-    def partial_update(self, request, *args, **kwargs):
-        self._check_status_change_permission(request)
-        return super().partial_update(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Delete an attendance request.",
-        tags=["Attendance Request"]
-    )
-    def destroy(self, request, *args, **kwargs):
-        return super().destroy(request, *args, **kwargs)
-
+    # --------------------------
+    # Create
+    # --------------------------
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    # --------------------------
+    # Permission helpers
+    # --------------------------
     def _check_status_change_permission(self, request):
         instance = self.get_object()
         incoming_status = request.data.get("status")
-        current_status = instance.status
-
-        if incoming_status and incoming_status != current_status:
+        if incoming_status and incoming_status != instance.status:
             if not self._has_approval_permission(request.user):
                 raise PermissionDenied("You do not have permission to change the status.")
 
@@ -233,82 +199,369 @@ class AttendanceRequestViewSet(viewsets.ModelViewSet):
                 user.role.permissions.filter(codename="approve_attendance_request").exists()
             )
         )
-    @action(detail=True, methods=['post'], url_path='approve', permission_classes=[permissions.IsAdminUser])
-    @swagger_auto_schema(operation_description="Approve attendance request and create attendance", tags=["Attendance Request"])
+
+    # --------------------------
+    # Default CRUD actions with Swagger
+    # --------------------------
+    @swagger_auto_schema(operation_description="List all your attendance requests.", tags=["Attendance Request"])
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_description="Submit a new attendance request.", tags=["Attendance Request"])
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_description="Retrieve a specific attendance request.", tags=["Attendance Request"])
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_description="Update an attendance request (status requires permission).", tags=["Attendance Request"])
+    def update(self, request, *args, **kwargs):
+        self._check_status_change_permission(request)
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_description="Partially update an attendance request (status requires permission).", tags=["Attendance Request"])
+    def partial_update(self, request, *args, **kwargs):
+        self._check_status_change_permission(request)
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_description="Delete an attendance request.", tags=["Attendance Request"])
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+    # --------------------------
+    # Approve action
+    # --------------------------
+    # @action(
+    #     detail=True,
+    #     methods=['post'],
+    #     url_path='approve',
+    #     permission_classes=[permissions.IsAdminUser]
+    # )
+    # @swagger_auto_schema(
+    #     request_body=EmptySerializer,
+    #     responses={
+    #         200: openapi.Response(
+    #             description="Request approved and attendance recorded.",
+    #             schema=AttendanceRequestActionSerializer()
+    #         ),
+    #         400: openapi.Response(
+    #             description="Already approved or invalid request.",
+    #             schema=AttendanceRequestActionSerializer()
+    #         ),
+    #     },
+    #     operation_description="Approve an attendance request. Admin does not need to provide any time.",
+    #     tags=["Attendance Request"]
+    # )
+    # -----------------------
+    # Approve Attendance Request
+    # -----------------------
+   
+    @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
-        instance = self.get_object()
+        attendance_request = self.get_object()
 
-        if instance.status == "approved":
-            return Response({"detail": "Already approved."}, status=status.HTTP_400_BAD_REQUEST)
+        # ✅ Permission check
+        if not self._has_approval_permission(request.user):
+            return Response(
+                {"error": "You are not allowed to approve requests."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
-        # ✅ Change status to approved
-        instance.status = "approved"
-        instance.save()
+        if attendance_request.status == AttendanceRequest.STATUS_APPROVED:
+            return Response(
+                {"error": "This request is already approved."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # ✅ Create corresponding attendance entry
-        Attendance.objects.create(
-            # user_id=instance.user,
-            user=instance.user,  
-            attendee_id=instance.attendee,
-            check_in_time=instance.check_in_time,
-            check_out_time=instance.check_out_time,
-            source="request"
-        )
+        try:
+            # 1️⃣ Mark attendance
+            attendance = mark_attendance(
+                user=request.user,  # Admin/staff approving
+                attendee=attendance_request.user,  # Original requester
+                check_type=attendance_request.check_type,
+                timestamp=attendance_request.check_in_time or attendance_request.check_out_time,
+                latitude=getattr(attendance_request, "latitude", None),
+                longitude=getattr(attendance_request, "longitude", None),
+                attachment=getattr(attendance_request, "attachment", None),
+                source="request"
+            )
 
-        return Response({"detail": "Request approved and attendance created."}, status=status.HTTP_200_OK)
+            # 2️⃣ Update request status
+            attendance_request.status = AttendanceRequest.STATUS_APPROVED
+            attendance_request.attendance = attendance
+            attendance_request.save()
 
-class AttendanceRequestCreateAPIView(generics.CreateAPIView):
-    queryset = AttendanceRequest.objects.all()
-    serializer_class = AttendanceRequestSerializer
+            return Response({
+                "message": "Request approved successfully",
+                "attendance_id": attendance.id,
+            }, status=status.HTTP_200_OK)
+
+        except ValidationError as ve:
+            return Response({"error": ve.message_dict if hasattr(ve, "message_dict") else str(ve)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception("Error approving attendance request")
+            return Response({"error": ["An unexpected error occurred while marking attendance."]},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+# ✅ Attendance Report View (Daily, Weekly, Monthly, Custom)
+# This view allows users to get attendance reports based on different time periods.
+class AttendanceReportView(APIView):
     # permission_classes = [IsAuthenticated]
-    permission_classes = [IsAuthenticated, HasRolePermission] 
-    
-    
-# class AttendanceReportView(APIView):
-#     permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasRolePermission]
+    # 🔹 Swagger parameters
+    @swagger_auto_schema(
+        operation_description="Get attendance report (daily, weekly, monthly, or custom)",
+        tags=["Attendance Report"],
+        manual_parameters=[
+            openapi.Parameter(
+                "type",
+                openapi.IN_QUERY,
+                description="Report type (daily, weekly, monthly, or custom)",
+                type=openapi.TYPE_STRING,
+                enum=["daily", "weekly", "monthly", "custom"],
+                required=False
+            ),
+            openapi.Parameter(
+                "start_date",
+                openapi.IN_QUERY,
+                description="Custom start date (YYYY-MM-DD) — only works if type=custom",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                "end_date",
+                openapi.IN_QUERY,
+                description="Custom end date (YYYY-MM-DD) — only works if type=custom",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                "user_id",
+                openapi.IN_QUERY,
+                description="Filter by attendee user ID",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={200: AttendanceReportSerializer(many=True)},
+    )
+    def get(self, request):
+        report_type = request.query_params.get("type", "weekly")
+        user_id = request.query_params.get("user_id")
+        start_date_param = request.query_params.get("start_date")
+        end_date_param = request.query_params.get("end_date")
 
-#     def get(self, request, *args, **kwargs):
-#         user = request.user
-#         today = now().date()
+        today = now().date()
 
-#         # Date ranges
-#         week_start = today - timedelta(days=today.weekday())  # Monday
-#         week_end = week_start + timedelta(days=6)
+        # 🔹 Handle date ranges
+        if report_type == "daily":
+            start_date, end_date = today, today
+        elif report_type == "weekly":
+            start_date, end_date = today - timedelta(days=7), today
+        elif report_type == "monthly":
+            start_date, end_date = today - timedelta(days=30), today
+        elif report_type == "custom" and start_date_param and end_date_param:
+            from datetime import datetime
+            try:
+                start_date = datetime.strptime(start_date_param, "%Y-%m-%d").date()
+                end_date = datetime.strptime(end_date_param, "%Y-%m-%d").date()
+            except ValueError:
+                return Response({"error": "Invalid date format, use YYYY-MM-DD"}, status=400)
+        else:
+            return Response({"error": "Invalid or incomplete report parameters"}, status=400)
 
-#         month_start = today.replace(day=1)
-#         next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
-#         month_end = next_month - timedelta(days=1)
+        # 🔹 Filter attendance
+        qs = Attendance.objects.filter(check_in_time__date__gte=start_date,
+                                       check_in_time__date__lte=end_date)
 
-#         weekly_attendance = Attendance.objects.filter(
-#             user=user,
-#             check_in_time__date__range=(week_start, week_end)
-#         )
+        if user_id:
+            qs = qs.filter(attendee_id=user_id)
 
-#         monthly_attendance = Attendance.objects.filter(
-#             user=user,
-#             check_in_time__date__range=(month_start, month_end)
-#         )
+        serializer = AttendanceReportSerializer(qs, many=True)
+        return Response({
+            "report_type": report_type,
+            "start_date": str(start_date),
+            "end_date": str(end_date),
+            "records": serializer.data
+        })
+        
+# ✅ Enum values
+LEAVE_TYPE_CHOICES = ["sick", "casual", "annual"]
+STATUS_CHOICES = ["pending", "approved", "rejected"]
 
-#         # Aggregations
-#         weekly_summary = weekly_attendance.aggregate(
-#             total_hours=Sum('total_work_hours'),
-#             days_present=Count('id')
-#         )
+# ✅ Swagger Request Schema
+leave_request_example = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        "leave_type": openapi.Schema(
+            type=openapi.TYPE_STRING,
+            enum=LEAVE_TYPE_CHOICES,
+            example="sick"
+        ),
+        "start_date": openapi.Schema(
+            type=openapi.TYPE_STRING,
+            format="date",
+            example="2025-08-20"
+        ),
+        "end_date": openapi.Schema(
+            type=openapi.TYPE_STRING,
+            format="date",
+            example="2025-08-25"
+        ),
+        "reason": openapi.Schema(
+            type=openapi.TYPE_STRING,
+            example="Medical leave due to illness"
+        ),
+        "status": openapi.Schema(
+            type=openapi.TYPE_STRING,
+            enum=STATUS_CHOICES,
+            example="pending"
+        ),
+    },
+    required=["leave_type", "start_date", "end_date", "reason"]
+)
 
-#         monthly_summary = monthly_attendance.aggregate(
-#             total_hours=Sum('total_work_hours'),
-#             days_present=Count('id')
-#         )
+# ✅ Swagger Response Example
+leave_response_example = {
+    "id": 12,
+    "user": 3,
+    "leave_type": "sick",
+    "start_date": "2025-08-20",
+    "end_date": "2025-08-25",
+    "reason": "Medical leave due to illness",
+    "status": "pending",
+    "created_at": "2025-08-18T10:30:00Z",
+    "updated_at": "2025-08-18T10:30:00Z"
+}
 
-#         return Response({
-#             "week_range": f"{week_start} to {week_end}",
-#             "weekly": {
-#                 "days_present": weekly_summary['days_present'],
-#                 "total_hours": str(weekly_summary['total_hours'] or timedelta(0)),
-#             },
-#             "month_range": f"{month_start} to {month_end}",
-#             "monthly": {
-#                 "days_present": monthly_summary['days_present'],
-#                 "total_hours": str(monthly_summary['total_hours'] or timedelta(0)),
-#             },
-#         })
+# ✅ Query params for filtering
+leave_filter_params = [
+    openapi.Parameter(
+        "status", openapi.IN_QUERY, description="Filter by status",
+        type=openapi.TYPE_STRING, enum=STATUS_CHOICES
+    ),
+    openapi.Parameter(
+        "leave_type", openapi.IN_QUERY, description="Filter by leave type",
+        type=openapi.TYPE_STRING, enum=LEAVE_TYPE_CHOICES
+    ),
+    openapi.Parameter(
+        "start_date", openapi.IN_QUERY, description="Filter by start_date (YYYY-MM-DD)",
+        type=openapi.TYPE_STRING, format="date"
+    ),
+    openapi.Parameter(
+        "end_date", openapi.IN_QUERY, description="Filter by end_date (YYYY-MM-DD)",
+        type=openapi.TYPE_STRING, format="date"
+    ),
+    openapi.Parameter(
+        "user", openapi.IN_QUERY, description="Filter by user ID",
+        type=openapi.TYPE_INTEGER
+    ),
+]
+
+
+# ✅ List + Create View
+class LeaveRequestListCreateView(generics.ListCreateAPIView):
+    serializer_class = LeaveRequestSerializer
+    permission_classes = [IsAuthenticated, HasRolePermission]
+
+    filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
+    filterset_fields = ["status", "leave_type", "start_date", "end_date", "user"]
+    ordering_fields = ["start_date", "end_date", "status", "created_at"]
+    search_fields = ["reason", "user__username", "user__email"]
+
+    def get_queryset(self):
+        user = self.request.user
+        if getattr(self, "swagger_fake_view", False):
+            return LeaveRequest.objects.none()
+        if not (user.is_staff or user.is_superuser):
+            return LeaveRequest.objects.filter(user=user)
+        return LeaveRequest.objects.all()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    # ✅ Swagger for GET
+    @swagger_auto_schema(
+        manual_parameters=leave_filter_params,
+        responses={200: LeaveRequestSerializer(many=True)},
+        operation_summary="List all leave requests",
+        operation_description="Admins see all leave requests, normal users only see their own.",
+        tags=["Leave Requests"]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    # ✅ Swagger for POST
+    @swagger_auto_schema(
+        request_body=leave_request_example,
+        responses={
+            201: openapi.Response(
+                "Created",
+                LeaveRequestSerializer,
+                examples={"application/json": leave_response_example}
+            )
+        },
+        operation_summary="Create a new leave request",
+        operation_description="Submit a new leave request with leave_type, start_date, end_date, and reason.",
+        tags=["Leave Requests"]
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
+
+# ✅ Retrieve + Update + Delete View
+class LeaveRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = LeaveRequestSerializer
+    permission_classes = [IsAuthenticated, HasRolePermission]
+
+    def get_queryset(self):
+        user = self.request.user
+        if getattr(self, "swagger_fake_view", False):
+            return LeaveRequest.objects.none()
+        if not (user.is_staff or user.is_superuser):
+            return LeaveRequest.objects.filter(user=user)
+        return LeaveRequest.objects.all()
+
+    # ✅ Swagger GET by ID
+    @swagger_auto_schema(
+        responses={200: LeaveRequestSerializer()},
+        operation_summary="Retrieve leave request by ID",
+        operation_description="Admins can retrieve any request, users only their own.",
+        tags=["Leave Requests"]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    # ✅ Swagger PUT
+    @swagger_auto_schema(
+        request_body=leave_request_example,
+        responses={200: LeaveRequestSerializer()},
+        operation_summary="Update leave request",
+        operation_description="Update all fields of a leave request (only owner or admin).",
+        tags=["Leave Requests"]
+    )
+    def put(self, request, *args, **kwargs):
+        return super().put(request, *args, **kwargs)
+
+    # ✅ Swagger PATCH
+    @swagger_auto_schema(
+        request_body=leave_request_example,
+        responses={200: LeaveRequestSerializer()},
+        operation_summary="Partially update leave request",
+        operation_description="Update selected fields of a leave request (only owner or admin).",
+        tags=["Leave Requests"]
+    )
+    def patch(self, request, *args, **kwargs):
+        return super().patch(request, *args, **kwargs)
+
+    # ✅ Swagger DELETE
+    @swagger_auto_schema(
+        responses={204: "No Content"},
+        operation_summary="Delete leave request",
+        operation_description="Delete a leave request (only owner or admin).",
+        tags=["Leave Requests"]
+    )
+    def delete(self, request, *args, **kwargs):
+        return super().delete(request, *args, **kwargs)

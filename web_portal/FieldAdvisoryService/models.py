@@ -32,12 +32,15 @@ class BaseInfoModel(BaseAuditModel):
     class Meta:
         abstract = True
 
+
 class Company(BaseInfoModel):
     Company_name = models.CharField(max_length=100)
+
     def __str__(self):
-        return f"{self.name} ({self.company.name})"
+        return self.Company_name  # or self.name if BaseInfoModel has 'name'
+    
 class Region(models.Model):
-    company = models.ForeignKey('Company', on_delete=models.PROTECT)
+    company = models.ForeignKey('Company', on_delete=models.PROTECT, related_name='regions')
     name = models.CharField(max_length=100)  # ✅ Region's own name
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

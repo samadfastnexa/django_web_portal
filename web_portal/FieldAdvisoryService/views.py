@@ -280,9 +280,18 @@ class TerritoryViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
+# class CompanyNestedViewSet(viewsets.ReadOnlyModelViewSet):
+#     queryset = Company.objects.all()
+#     serializer_class = CompanyNestedSerializer
+
+#     @swagger_auto_schema(tags=["Company (Nested View)"])
+#     def list(self, request, *args, **kwargs):
+#         return super().list(request, *args, **kwargs)
 class CompanyNestedViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Company.objects.all()
     serializer_class = CompanyNestedSerializer
+    queryset = Company.objects.prefetch_related(
+        'regions__zones__territories'
+    ).all()
 
     @swagger_auto_schema(tags=["Company (Nested View)"])
     def list(self, request, *args, **kwargs):
