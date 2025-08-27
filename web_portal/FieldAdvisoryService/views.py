@@ -3,7 +3,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Dealer, MeetingSchedule, SalesOrder
 from .serializers import DealerSerializer, DealerRequestSerializer,MeetingScheduleSerializer, SalesOrderSerializer
-from .serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer,DealerRequestSerializer,CompanyNestedSerializer
+from .serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer,DealerRequestSerializer,CompanyNestedSerializer,RegionNestedSerializer,ZoneNestedSerializer,TerritoryNestedSerializer
 from .models import DealerRequest
 from .models import Company, Region, Zone, Territory
 from drf_yasg.utils import swagger_auto_schema
@@ -11,12 +11,10 @@ from .permissions import IsAdminOrReadOnly
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from accounts.permissions import HasRolePermission
-
-
-
 from rest_framework import viewsets
-from drf_yasg.utils import swagger_auto_schema
+
 from drf_yasg import openapi
+
 
 class MeetingScheduleViewSet(viewsets.ModelViewSet):
     """
@@ -229,6 +227,7 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
+
 class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
@@ -236,6 +235,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, HasRolePermission]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
+    
 
     @swagger_auto_schema(tags=["Company"])
     def list(self, request, *args, **kwargs):
@@ -280,10 +280,41 @@ class TerritoryViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
+
 class CompanyNestedViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Company.objects.all()
     serializer_class = CompanyNestedSerializer
+    queryset = Company.objects.prefetch_related(
+        'regions__zones__territories'
+    ).all()
 
     @swagger_auto_schema(tags=["Company (Nested View)"])
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+class RegionNestedViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = RegionNestedSerializer
+    queryset = Region.objects.prefetch_related(
+        'zones__territories'
+    ).all()
+
+    @swagger_auto_schema(tags=["Region (Nested View)"])
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+class ZoneNestedViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = ZoneNestedSerializer
+    queryset = Zone.objects.prefetch_related(
+        'territories'
+    ).all()
+
+    @swagger_auto_schema(tags=["Zone (Nested View)"])
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+    
+class TerritoryNestedViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = TerritoryNestedSerializer
+    queryset = Territory.objects.select_related('company', 'zone__company', 'zone__region').all()
+
+    @swagger_auto_schema(tags=["Territory (Nested View)"])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)

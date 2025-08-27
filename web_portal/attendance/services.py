@@ -1,123 +1,210 @@
-# your_app/services.py
-from django.core.exceptions import ValidationError
-from .models import Attendance
+# from django.utils import timezone
+# from django.core.exceptions import ValidationError
+# from datetime import datetime
+# from .models import Attendance, LeaveRequest, Holiday
 
-# def mark_attendance(user, attendee, check_type, timestamp):
-#     today = timestamp.date()
-#     attendance = Attendance.objects.filter(attendee=attendee, check_in_time__date=today).first()
+# def mark_attendance(
+#     user,
+#     attendee,
+#     check_type,
+#     timestamp,
+#     latitude=None,
+#     longitude=None,
+#     attachment=None
+# ):
+#     """
+#     Marks attendance safely. Handles check_in/check_out with fallback to created_at.
+#     """
 
+#     # -----------------------
+#     # 1️⃣ Validate check_type
+#     # -----------------------
+#     if check_type not in ["check_in", "check_out"]:
+#         raise ValidationError("Invalid check_type. Must be 'check_in' or 'check_out'.")
+
+#     # -----------------------
+#     # 2️⃣ Validate timestamp
+#     # -----------------------
+#     if not timestamp:
+#         raise ValidationError("Timestamp must be provided to mark attendance.")
+
+#     if timestamp > timezone.now():
+#         raise ValidationError("Attendance time cannot be in the future.")
+
+#     # -----------------------
+#     # 3️⃣ Safe record_date
+#     # -----------------------
+#     if isinstance(timestamp, datetime):
+#         record_date = timestamp.date()
+#     else:
+#         # fallback if timestamp is a string (rare)
+#         record_date = datetime.strptime(str(timestamp), "%Y-%m-%d %H:%M:%S").date()
+
+#     # -----------------------
+#     # 4️⃣ Prevent weekends/holidays for non-staff
+#     # -----------------------
+#     if not (user.is_staff or user.is_superuser):
+#         if record_date.weekday() in [5, 6]:
+#             raise ValidationError("Cannot mark attendance on weekends.")
+#         if Holiday.objects.filter(date=record_date).exists():
+#             raise ValidationError("Cannot mark attendance on holiday.")
+
+#     # -----------------------
+#     # 5️⃣ Prevent attendance on approved leave
+#     # -----------------------
+#     if not (user.is_staff or user.is_superuser):
+#         leave_exists = LeaveRequest.objects.filter(
+#             user=attendee,
+#             status='approved',
+#             start_date__lte=record_date,
+#             end_date__gte=record_date
+#         ).exists()
+#         if leave_exists:
+#             raise ValidationError("Cannot mark attendance on approved leave day.")
+
+#     # -----------------------
+#     # 6️⃣ Find existing attendance
+#     # -----------------------
+#     attendance = Attendance.objects.filter(
+#         attendee=attendee,
+#         check_in_time__date=record_date
+#     ).first()
+
+#     # -----------------------
+#     # 7️⃣ Create or update attendance
+#     # -----------------------
 #     if not attendance:
-#         if check_type == "check_in":
-#             attendance = Attendance.objects.create(user=user, attendee=attendee, check_in_time=timestamp)
-#         elif check_type == "check_out":
-#             attendance = Attendance.objects.create(user=user, attendee=attendee, check_out_time=timestamp)
+#         attendance = Attendance.objects.create(
+#             user=user,
+#             attendee=attendee,
+#             check_in_time=timestamp if check_type=="check_in" else None,
+#             check_out_time=timestamp if check_type=="check_out" else None,
+#             latitude=latitude,
+#             longitude=longitude,
+#             attachment=attachment
+#         )
 #         return attendance
 
+#     # Update existing attendance
 #     if check_type == "check_in":
 #         if attendance.check_in_time is None or timestamp < attendance.check_in_time:
 #             attendance.check_in_time = timestamp
-#             attendance.save()
-#     elif check_type == "check_out":
+#     else:  # check_out
 #         if attendance.check_out_time is None or timestamp > attendance.check_out_time:
 #             attendance.check_out_time = timestamp
-#             # _calculate_gap(attendance)
-#             attendance.save()
+
+#     if latitude is not None:
+#         attendance.latitude = latitude
+#     if longitude is not None:
+#         attendance.longitude = longitude
+#     if attachment is not None:
+#         attendance.attachment = attachment
+
+#     # Calculate gaps
+#     if attendance.check_in_time and not attendance.check_in_gap:
+#         attendance.check_in_gap = timezone.now() - attendance.check_in_time
+#     if attendance.check_in_time and attendance.check_out_time and not attendance.check_out_gap:
+#         attendance.check_out_gap = attendance.check_out_time - attendance.check_in_time
+
+#     attendance.save()
 #     return attendance
 
+import logging
+from datetime import datetime
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.utils import timezone
+from .models import Attendance  # make sure this import does not create circular imports
+
+logger = logging.getLogger(__name__)
 
 def mark_attendance(
     user,
     attendee,
     check_type,
-    timestamp,
+    timestamp=None,
     latitude=None,
     longitude=None,
-    attachment=None
+    attachment=None,
+    source="request",  # ✅ mark source as request when called from approved AttendanceRequest
 ):
     """
-    Marks attendance for a given attendee on a specific date.
+    Centralized function to handle attendance marking.
 
-    Args:
-        user (User): The user marking the attendance (logged-in user).
-        attendee (User): The user whose attendance is being marked.
-        check_type (str): Either "check_in" or "check_out".
-        timestamp (datetime): The datetime for the check-in/check-out.
-        latitude (Decimal, optional): GPS latitude.
-        longitude (Decimal, optional): GPS longitude.
-        attachment (File, optional): Any file/image attachment.
+    - Automatically creates or updates Attendance record for the day.
+    - Does NOT crash if check-in/check-out already exists.
+    - Updates optional fields (latitude, longitude, attachment) if provided.
+    - source='request' by default to indicate it comes from a request approval.
 
     Returns:
-        Attendance: The updated or newly created Attendance record.
-
+        Attendance object
     Raises:
-        ValidationError: If parameters are invalid.
+        ValidationError for invalid inputs only.
     """
 
-    # 1️⃣ Validate check_type
     if check_type not in ["check_in", "check_out"]:
         raise ValidationError("Invalid check_type. Must be 'check_in' or 'check_out'.")
 
-    # 2️⃣ Prevent marking attendance in the future
-    if timestamp > timezone.now():
-        raise ValidationError("Attendance time cannot be in the future.")
+    # Normalize timestamp
+    if timestamp:
+        if isinstance(timestamp, str):
+            try:
+                timestamp = datetime.fromisoformat(timestamp)
+            except Exception:
+                raise ValidationError("Invalid timestamp format. Use ISO format.")
+    else:
+        timestamp = timezone.now()
 
-    today = timestamp.date()
+    attendance_date = timestamp.date()
 
-    # 3️⃣ Find an existing record for the same date
-    attendance = Attendance.objects.filter(
-        attendee=attendee,
-        check_in_time__date=today
-    ).first()
-
-    # 4️⃣ Create a new attendance record if none exists
-    if not attendance:
-        if check_type == "check_in":
-            attendance = Attendance.objects.create(
-                user=user,
+    try:
+        with transaction.atomic():
+            # Get existing attendance for this user & day or create a new one
+            attendance, created = Attendance.objects.get_or_create(
                 attendee=attendee,
-                check_in_time=timestamp,
-                latitude=latitude,
-                longitude=longitude,
-                attachment=attachment
+                check_in_time__date=attendance_date if check_type == "check_in" else None,
+                defaults={
+                    "user": user,
+                    "attendee": attendee,
+                    "check_in_time": timestamp if check_type == "check_in" else None,
+                    "check_out_time": timestamp if check_type == "check_out" else None,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "attachment": attachment,
+                    "source": source,
+                },
             )
-        elif check_type == "check_out":
-            attendance = Attendance.objects.create(
-                user=user,
-                attendee=attendee,
-                check_out_time=timestamp,
-                latitude=latitude,
-                longitude=longitude,
-                attachment=attachment
-            )
-        return attendance
 
-    # 5️⃣ Update check-in time if earlier than current
-    if check_type == "check_in":
-        if attendance.check_in_time is None or timestamp < attendance.check_in_time:
-            attendance.check_in_time = timestamp
+            # Update existing record if needed
+            if not created:
+                if check_type == "check_in" and not attendance.check_in_time:
+                    attendance.check_in_time = timestamp
+                if check_type == "check_out" and not attendance.check_out_time:
+                    # Prevent check-out without check-in
+                    if not attendance.check_in_time:
+                        raise ValidationError("Cannot check-out without check-in first.")
+                    attendance.check_out_time = timestamp
 
-    # 6️⃣ Update check-out time if later than current
-    elif check_type == "check_out":
-        if attendance.check_out_time is None or timestamp > attendance.check_out_time:
-            attendance.check_out_time = timestamp
+                # Update optional fields if provided
+                if latitude:
+                    attendance.latitude = latitude
+                if longitude:
+                    attendance.longitude = longitude
+                if attachment:
+                    attendance.attachment = attachment
 
-    # 7️⃣ Update location and attachment if provided (no overwriting with None)
-    if latitude is not None:
-        attendance.latitude = latitude
-    if longitude is not None:
-        attendance.longitude = longitude
-    if attachment is not None:
-        attendance.attachment = attachment
+                # Always update source
+                attendance.source = source
 
-    # 8️⃣ Automatically calculate gaps if possible
-    if attendance.check_in_time and not attendance.check_in_gap:
-        attendance.check_in_gap = timezone.now() - attendance.check_in_time
-    if attendance.check_in_time and attendance.check_out_time and not attendance.check_out_gap:
-        attendance.check_out_gap = attendance.check_out_time - attendance.check_in_time
+                attendance.save()
 
-    # 9️⃣ Save updated record
-    attendance.save()
+            return attendance
 
-    return attendance
+    except ValidationError as ve:
+        # Known validation errors
+        raise ve
+
+    except Exception as e:
+        # Unexpected errors logged for debugging
+        logger.exception("mark_attendance failed")
+        raise ValidationError(["An unexpected error occurred while marking attendance."])

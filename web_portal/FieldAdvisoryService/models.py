@@ -32,12 +32,15 @@ class BaseInfoModel(BaseAuditModel):
     class Meta:
         abstract = True
 
+
 class Company(BaseInfoModel):
     Company_name = models.CharField(max_length=100)
+
     def __str__(self):
-        return f"{self.name} ({self.company.name})"
+        return self.Company_name  # or self.name if BaseInfoModel has 'name'
+    
 class Region(models.Model):
-    company = models.ForeignKey('Company', on_delete=models.PROTECT)
+    company = models.ForeignKey('Company', on_delete=models.PROTECT, related_name='regions')
     name = models.CharField(max_length=100)  # ✅ Region's own name
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -80,70 +83,7 @@ class Territory(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.zone.name} - {self.company.name})"
-# class Region(models.Model):
-#     company = models.ForeignKey(Company, on_delete=models.PROTECT)
-#     created_by = models.ForeignKey(
-#         settings.AUTH_USER_MODEL,
-#         on_delete=models.SET_NULL,
-#         null=True,
-#         blank=True,
-#         related_name='created_regions'
-#     )
 
-#     def __str__(self):
-#         return f"{self.company} - {self.id}"
-
-
-# class Zone(models.Model):
-#     company = models.ForeignKey(Company, on_delete=models.PROTECT)
-#     region = models.ForeignKey(Region, on_delete=models.PROTECT)
-#     created_by = models.ForeignKey(
-#         settings.AUTH_USER_MODEL,
-#         on_delete=models.SET_NULL,
-#         null=True,
-#         blank=True,
-#         related_name='created_zones'
-#     )
-
-    # def __str__(self):
-    #     return f"{self.company} - {self.region} - {self.id}"
-
-
-# class Territory(models.Model):
-#     company = models.ForeignKey(Company, on_delete=models.PROTECT)
-#     zone = models.ForeignKey(Zone, on_delete=models.PROTECT)
-#     created_by = models.ForeignKey(
-#         settings.AUTH_USER_MODEL,
-#         on_delete=models.SET_NULL,
-#         null=True,
-#         blank=True,
-#         related_name='created_territories'
-#     )
-
-# class Region(BaseAuditModel):  # No email, address, etc.
-#     name = models.CharField(max_length=100)
-#     description = models.TextField(blank=True, null=True)
-#     remarks = models.TextField(blank=True, null=True)
-#     company = models.ForeignKey(Company, related_name='regions', on_delete=models.CASCADE)
-
-#     def __str__(self):
-#         return f"{self.name} ({self.company.name})"
-
-# class Zone(BaseAuditModel):
-#     name = models.CharField(max_length=100)
-#     description = models.TextField(blank=True, null=True)
-#     remarks = models.TextField(blank=True, null=True)
-#     region = models.ForeignKey(Region, related_name='zones', on_delete=models.CASCADE)
-
-#     def __str__(self):
-#         return f"{self.name} ({self.region.name})"
-
-# class Territory(BaseInfoModel):  # Needs address + location
-#     zone = models.ForeignKey(Zone, related_name='territories', on_delete=models.CASCADE)
-
-#     def __str__(self):
-#         return f"{self.name} ({self.zone.name})"
-    
 class Dealer(models.Model):
     name = models.CharField(max_length=100)
     cnic_number = models.CharField(

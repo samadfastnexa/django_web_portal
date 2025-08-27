@@ -25,8 +25,9 @@ class SalesStaffSerializer(serializers.ModelSerializer):
         model = SalesStaffProfile
         fields = [
             'id', 'user', 'employee_code', 'phone_number',
-            'address', 'designation', 'region', 'zone', 'territory',
-            'hod', 'master_hod'
+            'address', 'designation', 'company', 'region', 'zone', 'territory',
+            'hod', 'master_hod',
+            'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
 
 class UserSignupSerializer(serializers.ModelSerializer):
@@ -46,8 +47,15 @@ class UserSignupSerializer(serializers.ModelSerializer):
     # Sales staff fields (optional, allow blank/null)
     employee_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    # ✅ FIX: HODs must be ForeignKeys, not CharFields
+    hod = serializers.PrimaryKeyRelatedField(queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True)
+    master_hod = serializers.PrimaryKeyRelatedField(queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True)
+   
     address = serializers.CharField(write_only=True, required=False, allow_blank=True)
     designation = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    company = serializers.PrimaryKeyRelatedField(
+        queryset=Company.objects.all(), write_only=True, required=False, allow_null=True
+    )
     region = serializers.PrimaryKeyRelatedField(
         queryset=Region.objects.all(), write_only=True, required=False, allow_null=True
     )
@@ -57,16 +65,19 @@ class UserSignupSerializer(serializers.ModelSerializer):
     territory = serializers.PrimaryKeyRelatedField(
         queryset=Territory.objects.all(), write_only=True, required=False, allow_null=True
     )
-
+    sick_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
+    casual_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
+    others_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'password',
             'first_name', 'last_name', 'profile_image',
             'role', 'is_active', 'is_staff',
-            'is_sales_staff',
-            'employee_code', 'phone_number', 'address', 'designation',
-            'region', 'zone', 'territory',
+            'is_sales_staff','date_joined',
+            # SalesStaffProfile fields
+            'employee_code', 'phone_number', 'address', 'designation','company','hod', 'master_hod',
+            'region', 'zone', 'territory','sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
         read_only_fields = ['id', 'is_staff']
 
@@ -82,7 +93,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         if data.get('is_sales_staff'):
-            required_fields = ['employee_code', 'phone_number', 'address', 'designation', 'region', 'zone', 'territory']
+            required_fields = ['employee_code', 'phone_number', 'address', 'designation', 'region', 'zone', 'territory','company']
             missing = []
             blank = []
             for field in required_fields:
@@ -107,9 +118,17 @@ class UserSignupSerializer(serializers.ModelSerializer):
 
         sales_staff_data = {}
         if is_sales:
-            sales_staff_fields = ['employee_code', 'phone_number', 'address', 'designation', 'region', 'zone', 'territory']
+            sales_staff_fields = [
+    'employee_code', 'phone_number', 'address', 'designation',
+    'company', 'region', 'zone', 'territory',
+    'hod', 'master_hod',
+    'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
+]
+            
+            # for field in sales_staff_fields:
+            #     sales_staff_data[field] = validated_data.pop(field)
             for field in sales_staff_fields:
-                sales_staff_data[field] = validated_data.pop(field)
+                 sales_staff_data[field] = validated_data.pop(field, None)
 
         password = validated_data.pop('password')
         user = User(**validated_data)
@@ -155,128 +174,53 @@ class AdminUserStatusSerializer(serializers.ModelSerializer):
 
 
 class SalesStaffProfileSerializer(serializers.ModelSerializer):
-    company = CompanySerializer(read_only=True)
-    region = RegionSerializer(read_only=True)
-    zone = ZoneSerializer(read_only=True)
-    territory = TerritorySerializer(read_only=True)
+    companies = serializers.PrimaryKeyRelatedField(many=True, queryset=Company.objects.all(), required=False)
+    regions = serializers.PrimaryKeyRelatedField(many=True, queryset=Region.objects.all(), required=False)
+    zones = serializers.PrimaryKeyRelatedField(many=True, queryset=Zone.objects.all(), required=False)
+    territories = serializers.PrimaryKeyRelatedField(many=True, queryset=Territory.objects.all(), required=False)
 
     class Meta:
         model = SalesStaffProfile
-        fields = [
-            'employee_code',
-            'phone_number',
-            'address',
-            'designation',
-            'company',
-            'region',
-            'zone',
-            'territory',
-            'sick_leave_quota',
-            'casual_leave_quota',
-            'others_leave_quota'
-        ]
+        fields = "__all__"
+        read_only_fields = ['id', 'user']
+        
 # ----------------------
 # Admin: Full User View/Update (password is optional)
 # ----------------------
 class UserSerializer(serializers.ModelSerializer):
-    # password = serializers.CharField(write_only=True, min_length=6, required=False)
-    # is_sales_staff = serializers.BooleanField(write_only=True, required=False)
-    # sales_staff_profile = SalesStaffProfileSerializer(write_only=True, required=False)
+    sales_profile = serializers.SerializerMethodField()
+    password = serializers.CharField(write_only=True, min_length=6, required=False)
+    is_sales_staff = serializers.BooleanField(write_only=True, default=False, required=False)
 
-    # class Meta:
-    #     model = User
-    #     fields = [
-    #         'id', 'username', 'email', 'password', 'first_name', 'last_name',
-    #         'profile_image', 'role', 'is_active', 'is_staff',
-    #         'is_sales_staff', 'sales_staff_profile'
-    #     ]
-    #     read_only_fields = ['id', 'is_staff', 'is_active']
-
-    # def create(self, validated_data):
-    #     sales_staff_flag = validated_data.pop('is_sales_staff', False)
-    #     sales_staff_data = validated_data.pop('sales_staff_profile', None)
-
-    #     password = validated_data.pop('password', None)
-    #     user = User(**validated_data)
-
-    #     if password:
-    #         user.set_password(password)
-    #     user.save()
-
-    #     if sales_staff_flag:
-    #         if not sales_staff_data:
-    #             raise serializers.ValidationError("Sales staff details are required when is_sales_staff is true.")
-    #         SalesStaffProfile.objects.create(user=user, **sales_staff_data)
-
-    #     return user
-    
-    # latest is below
-    # password = serializers.CharField(write_only=True, min_length=6, required=False)
-    # is_sales_staff = serializers.BooleanField(write_only=True, required=False)
-
-    # # Nested sales profile
-    # sales_profile = SalesStaffProfileSerializer(read_only=True)
-
-    # # Input fields for creating profile
-    # employee_code = serializers.CharField(write_only=True, required=False)
-    # designation = serializers.CharField(write_only=True, required=False)
-    # region = serializers.PrimaryKeyRelatedField(queryset=Region.objects.all(), write_only=True, required=False)
-    # zone = serializers.PrimaryKeyRelatedField(queryset=Zone.objects.all(), write_only=True, required=False)
-    # territory = serializers.PrimaryKeyRelatedField(queryset=Territory.objects.all(), write_only=True, required=False)
-    # sick_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
-    # casual_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
-
-    # class Meta:
-    #     model = User
-    #     fields = [
-    #         'id', 'username', 'email', 'password', 'first_name', 'last_name',
-    #         'role', 'is_active', 'is_staff', 'is_sales_staff',
-    #         'sales_profile',
-    #         # write-only input fields
-    #         'employee_code', 'designation', 'region', 'zone', 'territory',
-    #         'sick_leave_quota', 'casual_leave_quota'
-    #     ]
-    #     read_only_fields = ['id', 'is_staff', 'is_active']
-
-    # def create(self, validated_data):
-    #     sales_staff_flag = validated_data.pop('is_sales_staff', False)
-    #     password = validated_data.pop('password', None)
-
-    #     # Extract profile fields
-    #     profile_data = {
-    #         'employee_code': validated_data.pop('employee_code', None),
-    #         'designation': validated_data.pop('designation', None),
-    #         'region': validated_data.pop('region', None),
-    #         'zone': validated_data.pop('zone', None),
-    #         'territory': validated_data.pop('territory', None),
-    #         'sick_leave_quota': validated_data.pop('sick_leave_quota', 0),
-    #         'casual_leave_quota': validated_data.pop('casual_leave_quota', 0)
-    #     }
-
-    #     # Create user
-    #     user = User(**validated_data)
-    #     if password:
-    #         user.set_password(password)
-    #     user.save()
-
-    #     # Create sales staff profile if flagged
-    #     if sales_staff_flag:
-    #         SalesStaffProfile.objects.create(user=user, **profile_data)
-
-    #     return user
-    sales_profile = SalesStaffProfileSerializer(read_only=True)
-    password = serializers.CharField(write_only=True, min_length=6)
-    is_sales_staff = serializers.BooleanField(write_only=True, default=False)
-
-    # Write-only fields for creating SalesStaffProfile
+    # Write-only SalesStaffProfile fields (using ManyToMany field names)
     employee_code = serializers.CharField(write_only=True, required=False)
     phone_number = serializers.CharField(write_only=True, required=False)
     address = serializers.CharField(write_only=True, required=False)
     designation = serializers.CharField(write_only=True, required=False)
-    company = serializers.PrimaryKeyRelatedField(queryset=Company.objects.all(), write_only=True, required=False)
-    region = serializers.PrimaryKeyRelatedField(queryset=Region.objects.all(), write_only=True, required=False)
-    zone = serializers.PrimaryKeyRelatedField(queryset=Zone.objects.all(), write_only=True, required=False)
-    territory = serializers.PrimaryKeyRelatedField(queryset=Territory.objects.all(), write_only=True, required=False)
+    
+    # Use plural field names to match the model's ManyToMany fields
+    companies = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Company.objects.all(), write_only=True, required=False
+    )
+    regions = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Region.objects.all(), write_only=True, required=False
+    )
+    zones = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Zone.objects.all(), write_only=True, required=False
+    )
+    territories = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Territory.objects.all(), write_only=True, required=False
+    )
+
+    # HOD fields (profile-only)
+    hod = serializers.PrimaryKeyRelatedField(
+        queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True
+    )
+    master_hod = serializers.PrimaryKeyRelatedField(
+        queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True
+    )
+
+    # Leave quotas (profile-only)
     sick_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
     casual_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
     others_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
@@ -287,64 +231,128 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'password', 'first_name', 'last_name',
             'role', 'is_active', 'is_staff', 'is_sales_staff',
             'sales_profile',
-            'employee_code','phone_number','address','designation',
-            'company','region','zone','territory',
-            'sick_leave_quota','casual_leave_quota','others_leave_quota'
+            # Extra sales staff input fields (using plural names for M2M)
+            'employee_code', 'phone_number', 'address', 'designation',
+            'companies', 'regions', 'zones', 'territories',
+            'hod', 'master_hod',
+            'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
-        read_only_fields = ['id','is_staff','is_active']
-
+        read_only_fields = ['id', 'is_staff', 'is_active']
+        
+    def get_sales_profile(self, obj):
+        profile = getattr(obj, 'sales_profile', None)
+        if not profile:
+            return None
+        return SalesStaffProfileSerializer(profile).data
+    
     def validate(self, attrs):
-        # Ensure required fields for sales staff
         if attrs.get('is_sales_staff'):
-            required_fields = ['employee_code','phone_number','address','designation','company','region','zone','territory']
-            missing = [f for f in required_fields if not attrs.get(f)]
+            required = ['employee_code', 'phone_number', 'address', 'designation']
+            missing = [f for f in required if not attrs.get(f)]
             if missing:
                 raise serializers.ValidationError({f: "This field is required for sales staff." for f in missing})
+            
+            # For M2M fields, check if they have at least one value
+            m2m_required = ['companies', 'regions', 'zones', 'territories']
+            for field in m2m_required:
+                if field in attrs and not attrs[field]:
+                    raise serializers.ValidationError({field: f"At least one {field[:-1]} is required for sales staff."})
+                    
         return attrs
 
     def create(self, validated_data):
         sales_staff_flag = validated_data.pop('is_sales_staff', False)
-        password = validated_data.pop('password')
+        password = validated_data.pop('password', None)
+        
+        # Extract profile data
+        profile_fields = [
+            'employee_code', 'phone_number', 'address', 'designation',
+            'companies', 'regions', 'zones', 'territories',
+            'hod', 'master_hod',
+            'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
+        ]
+        
+        profile_data = {f: validated_data.pop(f, None) for f in profile_fields if f in validated_data}
 
-        # Extract profile fields
-        profile_data = {k: validated_data.pop(k, None) for k in [
-            'employee_code','phone_number','address','designation',
-            'company','region','zone','territory',
-            'sick_leave_quota','casual_leave_quota','others_leave_quota'
-        ]}
-
+        # Create user
         user = User(**validated_data)
-        user.set_password(password)
+        if password:
+            user.set_password(password)
         user.save()
 
-        # Create SalesStaffProfile if flagged
+        # Create sales profile if needed
         if sales_staff_flag:
-            SalesStaffProfile.objects.create(user=user, **profile_data)
-
+            # Extract M2M data before creating the profile
+            m2m_data = {}
+            for field in ['companies', 'regions', 'zones', 'territories']:
+                if field in profile_data:
+                    m2m_data[field] = profile_data.pop(field)
+            
+            # Create profile without M2M fields first
+            profile = SalesStaffProfile.objects.create(user=user, **profile_data)
+            
+            # Set M2M relationships
+            for field, values in m2m_data.items():
+                if values:
+                    getattr(profile, field).set(values)
+        
         return user
 
     def update(self, instance, validated_data):
-        # Update basic user fields
         password = validated_data.pop('password', None)
         if password:
             instance.set_password(password)
+            
+        sales_staff_flag = validated_data.pop('is_sales_staff', instance.is_sales_staff)
+
+        # Extract profile data
+        profile_fields = [
+            'employee_code', 'phone_number', 'address', 'designation',
+            'companies', 'regions', 'zones', 'territories',
+            'hod', 'master_hod',
+            'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
+        ]
+        
+        profile_data = {f: validated_data.pop(f, None) for f in profile_fields if f in validated_data}
+
+        # Update User fields
         for attr, value in validated_data.items():
-            if attr not in ['employee_code','phone_number','address','designation','company','region','zone','territory','sick_leave_quota','casual_leave_quota','others_leave_quota','is_sales_staff']:
-                setattr(instance, attr, value)
+            setattr(instance, attr, value)
+        
+        instance.is_sales_staff = sales_staff_flag
         instance.save()
 
-        # Update or create sales profile if flagged
-        if validated_data.get('is_sales_staff', False):
-            profile_data = {k: validated_data[k] for k in [
-                'employee_code','phone_number','address','designation',
-                'company','region','zone','territory',
-                'sick_leave_quota','casual_leave_quota','others_leave_quota'
-            ] if k in validated_data}
-            profile, created = SalesStaffProfile.objects.get_or_create(user=instance)
-            for key, value in profile_data.items():
-                setattr(profile, key, value)
+        # Handle sales profile
+        try:
+            profile = instance.sales_profile
+        except SalesStaffProfile.DoesNotExist:
+            profile = None
+            
+        if sales_staff_flag:
+            if not profile:
+                # Create new profile if it doesn't exist
+                profile = SalesStaffProfile.objects.create(user=instance)
+            
+            # Update profile fields
+            for field in ['employee_code', 'phone_number', 'address', 'designation',
+                         'hod', 'master_hod', 'sick_leave_quota', 
+                         'casual_leave_quota', 'others_leave_quota']:
+                if field in profile_data and profile_data[field] is not None:
+                    setattr(profile, field, profile_data[field])
+            
+            # Update M2M fields
+            for field in ['companies', 'regions', 'zones', 'territories']:
+                if field in profile_data and profile_data[field] is not None:
+                    getattr(profile, field).set(profile_data[field])
+            
             profile.save()
-
+        else:
+            # If user is no longer sales staff, detach the profile
+            if profile:
+                profile.user = None
+                profile.is_vacant = True
+                profile.save()
+        
         return instance
 # ----------------------
 # User (Non-admin) Profile Update
@@ -356,7 +364,6 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             'email', 'username', 'first_name', 'last_name',
             'profile_image', 'role', 'is_active'
         ]
-        # ✅ Allow PATCH requests with only partial fields
         extra_kwargs = {
             'email': {'required': False},
             'username': {'required': False},
@@ -368,23 +375,22 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         }
 
     def get_fields(self):
-        """
-        Dynamically set certain fields as read-only for non-staff users.
-        """
         fields = super().get_fields()
         request = self.context.get('request')
-        if request and not request.user.is_staff:
-            for field in ['email', 'username', 'role', 'is_active']:
+
+        # ❌ Important: Don’t hide fields from Swagger schema
+        # Only set them as read-only at runtime if not admin
+        if request and not (request.user.is_staff or request.user.is_superuser):
+            for field in ['role', 'is_active']:
                 fields[field].read_only = True
         return fields
 
     def validate(self, attrs):
-        """
-        Ensure non-staff users cannot submit restricted fields even via tools like Postman.
-        """
         request = self.context.get('request')
-        if request and not request.user.is_staff:
-            for field in ['email', 'username', 'role', 'is_active']:
+
+        # Enforce at runtime
+        if request and not (request.user.is_staff or request.user.is_superuser):
+            for field in ['role', 'is_active', 'email', 'username']:
                 attrs.pop(field, None)
         return attrs
     
