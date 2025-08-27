@@ -25,25 +25,6 @@ class SalesOrderSerializer(serializers.ModelSerializer):
         model = SalesOrder
         fields = '__all__'
 
-# class DealerRequestSerializer(serializers.ModelSerializer):
-#     requested_by = serializers.StringRelatedField(read_only=True)
-#     reviewed_by = serializers.StringRelatedField(read_only=True)
-#     status = serializers.CharField(read_only=True)  # Optional: if you want status to be admin-only
-
-#     class Meta:
-#         model = DealerRequest
-#         fields = [
-#             'id',
-#             'name',
-#             'contact_number',
-#             'address',
-#             'status',
-#             'requested_by',
-#             'reviewed_by',
-#             'reviewed_at',
-#             'created_at',
-#         ]
-#         read_only_fields = ['requested_by', 'reviewed_by', 'reviewed_at', 'created_at']
 
 class DealerRequestSerializer(serializers.ModelSerializer):
     requested_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
@@ -102,18 +83,25 @@ class CompanySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class RegionSerializer(serializers.ModelSerializer):
-    company_name = serializers.CharField(source='company.name', read_only=True)
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
 
     class Meta:
         model = Region
         fields = '__all__'
 
+# class ZoneSerializer(serializers.ModelSerializer):
+#     region_name = serializers.CharField(source='region.name', read_only=True)
+
+#     class Meta:
+#         model = Zone
+#         fields = '__all__'
 class ZoneSerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
     region_name = serializers.CharField(source='region.name', read_only=True)
 
     class Meta:
         model = Zone
-        fields = '__all__'
+        fields = ['id', 'name', 'company', 'company_name', 'region', 'region_name', 'created_by']
 
 class TerritorySerializer(serializers.ModelSerializer):
     zone_name = serializers.CharField(source='zone.name', read_only=True)
@@ -121,20 +109,42 @@ class TerritorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Territory
         fields = '__all__'
+        
+        # nested serializers for hierarchical representation
 
+class TerritoryNestedSerializer(serializers.ModelSerializer):
+    company = serializers.PrimaryKeyRelatedField(read_only=True)
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
+    zone = ZoneSerializer(read_only=True)  # 👈 re-use your ZoneSerializer (already has company_name, region_name)
+
+    class Meta:
+        model = Territory
+        fields = [
+            'id',
+            'name',
+            'company',
+            'company_name',
+            'zone',
+            'created_by'
+        ]
+        
 class ZoneNestedSerializer(serializers.ModelSerializer):
+    company = serializers.PrimaryKeyRelatedField(read_only=True)   # company id
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
     territories = TerritorySerializer(many=True, read_only=True)
 
     class Meta:
         model = Zone
-        fields = ['id', 'name', 'territories']
-
+        fields = ['id', 'name', 'company', 'company_name', 'territories']
+        
 class RegionNestedSerializer(serializers.ModelSerializer):
     zones = ZoneNestedSerializer(many=True, read_only=True)
+    company = serializers.PrimaryKeyRelatedField(read_only=True)   # returns company id
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
 
     class Meta:
         model = Region
-        fields = ['id', 'name', 'zones']
+        fields = ['id', 'name', 'company', 'company_name', 'zones']
 
 class CompanyNestedSerializer(serializers.ModelSerializer):
     regions = RegionNestedSerializer(many=True, read_only=True)

@@ -1,52 +1,11 @@
-# from rest_framework.routers import DefaultRouter
-# from django.urls import path, include
-# from .views import DealerViewSet, MeetingScheduleViewSet, SalesOrderViewSet
-# from .views import DealerRequestListCreateView, DealerRequestDetailView
-# from .views import CompanyViewSet, RegionViewSet, ZoneViewSet, TerritoryViewSet
-# router = DefaultRouter()
-# router.register(r'dealers', DealerViewSet)
-# router.register(r'schedule', MeetingScheduleViewSet)
-# router.register(r'sales-orders', SalesOrderViewSet)
-
-# router.register(r'companies', CompanyViewSet)
-# router.register(r'regions', RegionViewSet)
-# router.register(r'zones', ZoneViewSet)
-# router.register(r'territories', TerritoryViewSet)
-# urlpatterns = [
-#     path('', include(router.urls)),
-#      path('dealer-requests/', DealerRequestListCreateView.as_view(), name='dealer-request-list-create'),
-#     path('dealer-requests/<int:pk>/', DealerRequestDetailView.as_view(), name='dealer-request-detail'),
-# ]
-
-# router = DefaultRouter()
-# router.register(r'dealers', DealerViewSet)
-# router.register(r'schedule', MeetingScheduleViewSet)
-# router.register(r'sales-orders', SalesOrderViewSet)
-# router.register(r'companies', CompanyViewSet)
-# router.register(r'regions', RegionViewSet)
-# router.register(r'zones', ZoneViewSet)
-# router.register(r'territories', TerritoryViewSet)
-
-
-# urlpatterns = [
-#     path('', include(router.urls)),
-#     path('dealer-requests/', include([
-#     path('', DealerRequestListCreateView.as_view(), name='dealer-request-list-create'),
-#     path('<int:pk>/', DealerRequestDetailView.as_view(), name='dealer-request-detail'),
-    
-#     ])),
-# ]
-# Separate router for dealer requests (clean grouping in Swagger)
-
-
-
+# django_wed_panel/web_portal/FieldAdvisoryService/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views import (
     DealerViewSet, MeetingScheduleViewSet, SalesOrderViewSet,
     CompanyViewSet, RegionViewSet, ZoneViewSet, TerritoryViewSet,
-    DealerRequestViewSet, CompanyNestedViewSet  # 👈 Don't forget this import!
+    DealerRequestViewSet, CompanyNestedViewSet ,RegionNestedViewSet, ZoneNestedViewSet,TerritoryNestedViewSet
 )
 
 # 📦 Core API Router
@@ -59,6 +18,9 @@ core_router.register(r'regions', RegionViewSet)
 core_router.register(r'zones', ZoneViewSet)
 core_router.register(r'territories', TerritoryViewSet)
 core_router.register(r'companies-nested', CompanyNestedViewSet, basename='company-nested')  # ✅ Correct router
+core_router.register(r'regions-nested', RegionNestedViewSet, basename='region-nested')
+core_router.register(r'zones-nested', ZoneNestedViewSet, basename='zone-nested')
+core_router.register(r'territories-nested', TerritoryNestedViewSet, basename='territory-nested')
 
 # 📦 Dealer Request Router (optional Swagger grouping)
 dealer_router = DefaultRouter()
