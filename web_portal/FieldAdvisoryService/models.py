@@ -1,10 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
-# from django.contrib.auth import get_user_model
-
-# User = get_user_model()
-
+from django.db.models import UniqueConstraint
 from FieldAdvisoryService.validators import (
     cnic_validator, phone_number_validator,
     validate_latitude, validate_longitude,email_validator,validate_image  ,
@@ -85,13 +82,21 @@ class Territory(models.Model):
         return f"{self.name} ({self.zone.name} - {self.company.name})"
 
 class Dealer(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='dealer',               # ← already different, OK
+        null=True,
+        blank=True
+    )
+    card_code = models.CharField(max_length=20, unique=True, blank=True, null=True)
     name = models.CharField(max_length=100)
     cnic_number = models.CharField(
-        max_length=13,
+        max_length=15,
         unique=True,
         validators=[cnic_validator]
     )
-    email = models.EmailField(validators=[email_validator])
+    # email = models.EmailField(validators=[email_validator])
     contact_number = models.CharField(
         max_length=20,
         unique=True,
@@ -109,21 +114,30 @@ class Dealer(models.Model):
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
 
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dealers_created'      # ← NEW
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
     cnic_front_image = models.ImageField(
         upload_to='dealers/cnic_front/',
         validators=[validate_image],
-        default='dealers/cnic_front/default.jpg'
+        # default='dealers/cnic_front/default.jpg'
     )
     cnic_back_image = models.ImageField(
         upload_to='dealers/cnic_back/',
         validators=[validate_image],
-        default='dealers/cnic_back/default.jpg'
+        # default='dealers/cnic_back/default.jpg'
     )
-
+    class Meta:
+     constraints = [
+        UniqueConstraint(fields=['user'], name='unique_user_dealer')
+    ]
     def __str__(self):
         return f"{self.name} - {self.company.name}"
 
@@ -208,6 +222,15 @@ class DealerRequest(models.Model):
         permissions = [
             ("approve_dealer_request", "Can approve or reject dealer requests"),
         ]
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._previous_status = self.status
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._previous_status = self.status
+
 class MeetingSchedule(models.Model):
     staff = models.ForeignKey(
         settings.AUTH_USER_MODEL,

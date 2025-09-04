@@ -24,10 +24,10 @@ core_router.register(r'territories-nested', TerritoryNestedViewSet, basename='te
 
 # 📦 Dealer Request Router (optional Swagger grouping)
 dealer_router = DefaultRouter()
-dealer_router.register(r'requests', DealerRequestViewSet, basename='dealer-requests')
+dealer_router.register(r'requests',DealerRequestViewSet, basename='dealer-requests')
 
 # ✅ Combined URL Patterns
 urlpatterns = [
-    path('', include(core_router.urls)),
-    path('dealer-requests/', include(dealer_router.urls)),
+    path('',include(core_router.urls)),
+    path('dealer-requests/',include(dealer_router.urls)),
 ]

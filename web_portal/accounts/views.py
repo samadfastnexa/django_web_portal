@@ -9,6 +9,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.filters import OrderingFilter
 from .models import Role
+from rest_framework import status
 from rest_framework.response import Response
 from .serializers import (
     UserSignupSerializer,
@@ -54,15 +55,41 @@ class SignupView(generics.CreateAPIView):
 
 
 # ✅ JWT Login View
+# class MyTokenObtainPairView(TokenObtainPairView):
+#     serializer_class = MyTokenObtainPairSerializer
+
+#     @swagger_auto_schema(
+#         operation_description="Authenticate user and obtain JWT tokens",
+#         request_body=MyTokenObtainPairSerializer,  # 👈 important
+#         tags=["Authentication"]
+#     )
+#     def post(self, request, *args, **kwargs):
+#         return super().post(request, *args, **kwargs)
+
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
 
     @swagger_auto_schema(
         operation_description="Authenticate user and obtain JWT tokens",
+        request_body=MyTokenObtainPairSerializer,
         tags=["Authentication"]
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
+
+    def handle_exception(self, exc):
+        response = super().handle_exception(exc)
+
+        # Flatten {"message": ["..."]} → {"message": "..."}
+        if response.status_code == status.HTTP_400_BAD_REQUEST:
+            if isinstance(response.data, dict) and "message" in response.data:
+                msg = response.data["message"]
+                if isinstance(msg, list) and msg:
+                    response.data["message"] = msg[0]
+                else:
+                    response.data["message"] = str(msg)
+
+        return response
 
 
 # # ✅ List all users (requires view_user permission)
@@ -193,14 +220,6 @@ class AdminUserStatusUpdateView(generics.UpdateAPIView):
 #         return self.create(request, *args, **kwargs)
 
 
-# # # ✅ Full user CRUD viewset
-# # class UserViewSet(viewsets.ModelViewSet):
-# #     queryset = User.objects.all()
-# #     # serializer_class = UserSerializer 
-# #     # permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
-# #     permission_classes = [IsAuthenticated, HasRolePermission]
-# #     parser_classes = [MultiPartParser, FormParser]
-# #     http_method_names = ['get', 'put', 'patch', 'delete']
 
 # # class SalesStaffViewSet(viewsets.ModelViewSet):
 # #     # queryset = SalesStaffProfile.objects.select_related('user').all()

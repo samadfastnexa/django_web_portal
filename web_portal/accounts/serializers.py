@@ -113,22 +113,44 @@ class UserSignupSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(errors)
         return data
 
+#     def create(self, validated_data):
+#         is_sales = validated_data.pop('is_sales_staff', False)
+
+#         sales_staff_data = {}
+#         if is_sales:
+#             sales_staff_fields = [
+#     'employee_code', 'phone_number', 'address', 'designation',
+#     'company', 'region', 'zone', 'territory',
+#     'hod', 'master_hod',
+#     'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
+# ]
+            
+#             # for field in sales_staff_fields:
+#             #     sales_staff_data[field] = validated_data.pop(field)
+#             for field in sales_staff_fields:
+#                  sales_staff_data[field] = validated_data.pop(field, None)
+
+#         password = validated_data.pop('password')
+#         user = User(**validated_data)
+#         user.set_password(password)
+#         user.is_sales_staff = is_sales
+#         user.save()
+
+#         if is_sales:
+#             SalesStaffProfile.objects.create(user=user, **sales_staff_data)
+
+#         return user
     def create(self, validated_data):
         is_sales = validated_data.pop('is_sales_staff', False)
 
-        sales_staff_data = {}
-        if is_sales:
-            sales_staff_fields = [
-    'employee_code', 'phone_number', 'address', 'designation',
-    'company', 'region', 'zone', 'territory',
-    'hod', 'master_hod',
-    'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
-]
-            
-            # for field in sales_staff_fields:
-            #     sales_staff_data[field] = validated_data.pop(field)
-            for field in sales_staff_fields:
-                 sales_staff_data[field] = validated_data.pop(field, None)
+        # Always remove sales staff–only fields from User data
+        sales_staff_fields = [
+            'employee_code', 'phone_number', 'address', 'designation',
+            'company', 'region', 'zone', 'territory',
+            'hod', 'master_hod',
+            'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
+        ]
+        sales_staff_data = {field: validated_data.pop(field, None) for field in sales_staff_fields}
 
         password = validated_data.pop('password')
         user = User(**validated_data)

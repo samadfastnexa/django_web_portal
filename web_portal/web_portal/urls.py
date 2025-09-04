@@ -29,12 +29,11 @@ urlpatterns = [
 
     # App APIs
     path('api/', include('accounts.urls')),  # ✅ all accounts related routes
-    path('api/complaints/', include('complaints.urls')),
-    path('api/farmers/', include('farmers.urls')),
-    path('api /', include('preferences.urls')),
-   #  path('FieldAdvisoryService/fas/', include('FieldAdvisoryService.urls')),
-    path('api/', include('attendance.urls')),
-    path('api/', include('farmerMeetingDataEntry.urls')),
-    path('api/field/', include('FieldAdvisoryService.urls')), 
-    
+    path('api/complaints/',include('complaints.urls')),
+    path('api/farmers/',include('farmers.urls')),
+    path('api/',include('preferences.urls')),
+    path('api/',include('attendance.urls')),
+    path('api/',include('farmerMeetingDataEntry.urls')),
+    path('api/field/',include('FieldAdvisoryService.urls')), 
+    path('api/sap/', include('sap_integration.urls')),
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

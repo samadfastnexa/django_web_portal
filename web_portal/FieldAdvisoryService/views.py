@@ -240,6 +240,25 @@ class CompanyViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(tags=["Company"])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+    @swagger_auto_schema(tags=["Company"])
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=["Company"])
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=["Company"])
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=["Company"])
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=["Company"])
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
 
 class RegionViewSet(viewsets.ModelViewSet):
     queryset = Region.objects.all()
@@ -290,6 +309,10 @@ class CompanyNestedViewSet(viewsets.ReadOnlyModelViewSet):
     @swagger_auto_schema(tags=["Company (Nested View)"])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+    
+    @swagger_auto_schema(tags=["Company (Nested View)"])
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
 class RegionNestedViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = RegionNestedSerializer

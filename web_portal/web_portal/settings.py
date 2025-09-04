@@ -39,10 +39,11 @@ AUTH_USER_MODEL = 'accounts.User'
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
-    'django.contrib.contenttypes',
+    'django.contrib.contenttypes', 
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles', # required for serving swagger ui's css/js files
+    # 'django_extensions',  # for shell_plus
     'accounts',  # Custom app for user management
     'rest_framework',
     'rest_framework_simplejwt',  # JWT authentication
@@ -57,6 +58,7 @@ INSTALLED_APPS = [
     'FieldAdvisoryService',
     'preferences',  
     'attendance',  #  app for attendance tracking
+    'sap_integration', # app for SAP integration
     
 ]
 
