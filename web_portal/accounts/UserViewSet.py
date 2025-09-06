@@ -149,7 +149,7 @@ class UserViewSet(viewsets.ModelViewSet):
 #     # ----------------------
     # Swagger documentation
     @swagger_auto_schema(
-        tags=["User CRUD"],
+        tags=["02. User Management"],
         manual_parameters=[
             openapi.Parameter('is_active', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, description="Filter by active status", enum=[True, False]),
             openapi.Parameter('role', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Filter by role ID"),
@@ -264,7 +264,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     #     return Response(self.get_serializer(user).data, status=status.HTTP_201_CREATED)
     @swagger_auto_schema(
-    tags=["User CRUD"],
+    tags=["02. User Management"],
     manual_parameters=m2m_parameters,
     request_body=None  # ⛔ important: avoid conflicts with serializer
     # manual_parameters=[
@@ -348,7 +348,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return Response(self.get_serializer(user).data, status=status.HTTP_201_CREATED)
 
-    @swagger_auto_schema(tags=["User CRUD"],
+    @swagger_auto_schema(tags=["02. User Management"],
                          operation_description=(
             "Update a user.\n\n"
             "**Note:** Only admin/superuser can update `role` and `is_active`.\n"
@@ -418,7 +418,7 @@ class UserViewSet(viewsets.ModelViewSet):
 #     # ----------------------
 #     # Swagger: partial_update
 #     # ----------------------
-    @swagger_auto_schema(tags=["User CRUD"],
+    @swagger_auto_schema(tags=["02. User Management"],
                          operation_description=(
             "Partially update a user.\n\n"
             "**Note:** Only admin/superuser can update `role` and `is_active`.\n"
@@ -428,7 +428,7 @@ class UserViewSet(viewsets.ModelViewSet):
         kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
 
-    @swagger_auto_schema(tags=["User CRUD"])
+    @swagger_auto_schema(tags=["02. User Management"])
     def destroy(self, request, *args, **kwargs):
         """
         Soft delete a user.

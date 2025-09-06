@@ -91,9 +91,45 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     # ---------------- List / Retrieve ----------------
     @swagger_auto_schema(
-        tags=["Farmer Advisory Meeting"],
-        operation_description="List all Farmer Meetings with filters, search, and ordering.",
-        responses={200: MeetingSerializer(many=True)},
+        tags=["12. Farmer Advisory Meeting"],
+        operation_description="Retrieve a list of all farmer advisory meetings with comprehensive filtering, search, and ordering capabilities. Includes related company, region, zone, and territory data.",
+        responses={
+            200: openapi.Response(
+                description='List of farmer meetings with dropdown data',
+                examples={
+                    'application/json': {
+                        'results': [
+                            {
+                                'id': 1,
+                                'fsm_name': 'Ahmed Ali',
+                                'region': 'Punjab',
+                                'zone': 'Lahore',
+                                'territory': 'Model Town',
+                                'date': '2024-01-15',
+                                'location': 'Community Center, Model Town',
+                                'total_attendees': 25,
+                                'key_topics_discussed': 'Crop rotation, pest management',
+                                'presence_of_zm_rsm': 'Yes',
+                                'feedback_from_attendees': 'Very informative session',
+                                'suggestions_for_future': 'More practical demonstrations',
+                                'attendees': [
+                                    {
+                                        'name': 'Farmer John',
+                                        'contact': '+92-300-1234567',
+                                        'acreage': 5.5,
+                                        'crop': 'Wheat'
+                                    }
+                                ]
+                            }
+                        ],
+                        'companies': [{'id': 1, 'name': 'ABC Agriculture'}],
+                        'regions': [{'id': 1, 'name': 'Punjab'}],
+                        'zones': [{'id': 1, 'name': 'Lahore'}],
+                        'territories': [{'id': 1, 'name': 'Model Town'}]
+                    }
+                }
+            )
+        },
         manual_parameters=[
             openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
                             description='Filter by FSM name'),
@@ -113,26 +149,86 @@ class MeetingViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        tags=["Farmer Advisory Meeting"],
-        operation_description="Retrieve a specific Farmer Meeting by ID.",
-        responses={200: MeetingSerializer},
+        tags=["12. Farmer Advisory Meeting"],
+        operation_description="Retrieve detailed information of a specific farmer advisory meeting including all attendees and attachments.",
+        responses={
+            200: openapi.Response(
+                description='Meeting details with attendees and attachments',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'fsm_name': 'Ahmed Ali',
+                        'region': 'Punjab',
+                        'zone': 'Lahore',
+                        'territory': 'Model Town',
+                        'date': '2024-01-15',
+                        'location': 'Community Center, Model Town',
+                        'total_attendees': 25,
+                        'key_topics_discussed': 'Crop rotation, pest management, irrigation techniques',
+                        'presence_of_zm_rsm': 'Yes - ZM Present',
+                        'feedback_from_attendees': 'Very informative session, farmers appreciated practical tips',
+                        'suggestions_for_future': 'More practical demonstrations, field visits',
+                        'attendees': [
+                            {
+                                'name': 'Farmer John',
+                                'contact': '+92-300-1234567',
+                                'acreage': 5.5,
+                                'crop': 'Wheat'
+                            },
+                            {
+                                'name': 'Farmer Ali',
+                                'contact': '+92-301-7654321',
+                                'acreage': 3.2,
+                                'crop': 'Rice'
+                            }
+                        ],
+                        'attachments': [
+                            {
+                                'id': 1,
+                                'file': '/media/meetings/presentation.pdf',
+                                'uploaded_at': '2024-01-15T10:30:00Z'
+                            }
+                        ]
+                    }
+                }
+            ),
+            404: 'Meeting not found'
+        }
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
     # ---------------- Create ----------------
     @swagger_auto_schema(
-        tags=["Farmer Advisory Meeting"],
-        operation_description="Create a new Farmer Meeting with attendees and file attachments.",
+        tags=["12. Farmer Advisory Meeting"],
+        operation_description="Create a new farmer advisory meeting with multiple attendees and file attachments. Supports bulk attendee data entry.",
         manual_parameters=common_parameters,
-        responses={201: MeetingSerializer}
+        responses={
+            201: openapi.Response(
+                description='Meeting created successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'fsm_name': 'Ahmed Ali',
+                        'region': 'Punjab',
+                        'zone': 'Lahore',
+                        'territory': 'Model Town',
+                        'date': '2024-01-15',
+                        'location': 'Community Center',
+                        'total_attendees': 25,
+                        'created_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid data or missing required fields'
+        }
     )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
     # ---------------- Update ----------------
     @swagger_auto_schema(
-        tags=["Farmer Advisory Meeting"],
+        tags=["12. Farmer Advisory Meeting"],
         operation_description="Update an existing Farmer Meeting (attendees + files supported).",
         manual_parameters=common_parameters,
         responses={200: MeetingSerializer}
@@ -142,7 +238,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     # ---------------- Partial Update ----------------
     @swagger_auto_schema(
-        tags=["Farmer Advisory Meeting"],
+        tags=["12. Farmer Advisory Meeting"],
         operation_description="Partial update of a Farmer Meeting.",
         manual_parameters=common_parameters,
         responses={200: MeetingSerializer}
@@ -153,7 +249,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     # ---------------- Delete ----------------
     @swagger_auto_schema(
-        tags=["Farmer Advisory Meeting"],
+        tags=["12. Farmer Advisory Meeting"],
         operation_description="Delete a Farmer Meeting.",
         responses={204: "Meeting deleted"}
     )
@@ -218,9 +314,37 @@ class FieldDayViewSet(viewsets.ModelViewSet):
 
     # ---------------- List ----------------
     @swagger_auto_schema(
-        tags=["Field Day"],
-        operation_description="List all Field Days with filters, search, and ordering.",
-        responses={200: FieldDaySerializer(many=True)},
+        tags=["13. Field Day"],
+        operation_description="Retrieve a list of all field day events with comprehensive filtering, search, and ordering capabilities. Field days are educational events for farmers.",
+        responses={
+            200: openapi.Response(
+                description='List of field day events',
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'title': 'Modern Irrigation Techniques Workshop',
+                            'region': 'Punjab',
+                            'zone': 'Lahore',
+                            'territory': 'Model Town',
+                            'date': '2024-02-15',
+                            'location': 'Agricultural Research Center',
+                            'objectives': 'Demonstrate drip irrigation and water conservation',
+                            'remarks': 'Successful event with high farmer participation',
+                            'status': 'completed',
+                            'attendees': [
+                                {
+                                    'name': 'Farmer Hassan',
+                                    'contact': '+92-300-9876543',
+                                    'acreage': 8.0,
+                                    'crop': 'Cotton'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            )
+        },
         manual_parameters=[
             openapi.Parameter('region', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
                               description='Filter by region'),
@@ -239,16 +363,51 @@ class FieldDayViewSet(viewsets.ModelViewSet):
 
     # ---------------- Retrieve ----------------
     @swagger_auto_schema(
-        tags=["Field Day"],
-        operation_description="Retrieve details of a specific Field Day by ID.",
-        responses={200: FieldDaySerializer},
+        tags=["13. Field Day"],
+        operation_description="Retrieve detailed information of a specific field day event including all attendees and event outcomes.",
+        responses={
+            200: openapi.Response(
+                description='Field day details with attendees',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'title': 'Modern Irrigation Techniques Workshop',
+                        'region': 'Punjab',
+                        'zone': 'Lahore',
+                        'territory': 'Model Town',
+                        'date': '2024-02-15',
+                        'location': 'Agricultural Research Center, Lahore',
+                        'objectives': 'Demonstrate drip irrigation, water conservation techniques, and modern farming equipment',
+                        'remarks': 'Successful event with high farmer participation. 95% satisfaction rate.',
+                        'status': 'completed',
+                        'attendees': [
+                            {
+                                'name': 'Farmer Hassan',
+                                'contact': '+92-300-9876543',
+                                'acreage': 8.0,
+                                'crop': 'Cotton'
+                            },
+                            {
+                                'name': 'Farmer Fatima',
+                                'contact': '+92-301-1122334',
+                                'acreage': 4.5,
+                                'crop': 'Sugarcane'
+                            }
+                        ],
+                        'created_at': '2024-02-10T09:00:00Z',
+                        'updated_at': '2024-02-15T17:00:00Z'
+                    }
+                }
+            ),
+            404: 'Field day not found'
+        }
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
     # ---------------- Create ----------------
     @swagger_auto_schema(
-        tags=["Field Day"],
+        tags=["13. Field Day"],
         operation_description="Create a new Field Day with attendees.",
         manual_parameters=common_parameters,
         responses={201: FieldDaySerializer}
@@ -258,7 +417,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
 
     # ---------------- Update ----------------
     @swagger_auto_schema(
-        tags=["Field Day"],
+        tags=["13. Field Day"],
         operation_description="Update a Field Day with attendees.",
         manual_parameters=common_parameters,
         responses={200: FieldDaySerializer}
@@ -268,7 +427,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
 
     # ---------------- Partial Update ----------------
     @swagger_auto_schema(
-        tags=["Field Day"],
+        tags=["13. Field Day"],
         operation_description="Partially update a Field Day.",
         manual_parameters=common_parameters,
         responses={200: FieldDaySerializer}
@@ -279,7 +438,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
 
     # ---------------- Delete ----------------
     @swagger_auto_schema(
-        tags=["Field Day"],
+        tags=["13. Field Day"],
         operation_description="Delete a Field Day.",
         responses={204: "Field Day deleted"}
     )

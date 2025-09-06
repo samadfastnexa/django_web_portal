@@ -21,64 +21,119 @@ class SettingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, HasRolePermission]
     @swagger_auto_schema(
         operation_description="Create a new setting",
-        tags=["Settings"],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'user': openapi.Schema(type=openapi.TYPE_INTEGER, example=1),
-                'slug': openapi.Schema(type=openapi.TYPE_STRING, example='company_timmings'),
-                'value': openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    example={
-                        "opening-time": "9:00",
-                        "closing-time": "6:00"
-                    }
-                ),
-            },
-            required=['user', 'slug', 'value']
-        )
+        tags=["26. Settings"],
+        request_body=SettingSerializer,
+        responses={
+            201: 'Setting created successfully',
+            400: 'Bad Request - Invalid data'
+        }
     )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="List all settings",
-        tags=["Settings"]
+        operation_description="Retrieve a list of all user settings. Each setting contains configuration data for different application features.",
+        responses={
+            200: openapi.Response(
+                description='List of settings',
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'user': 1,
+                            'slug': 'company_timings',
+                            'value': {
+                                'opening-time': '9:00',
+                                'closing-time': '6:00'
+                            },
+                            'created_at': '2024-01-15T10:30:00Z'
+                        },
+                        {
+                            'id': 2,
+                            'user': 1,
+                            'slug': 'notification_preferences',
+                            'value': {
+                                'email_notifications': True,
+                                'sms_notifications': False
+                            },
+                            'created_at': '2024-01-16T11:00:00Z'
+                        }
+                    ]
+                }
+            )
+        },
+        tags=["26. Settings"]
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
     # @swagger_auto_schema(
     #     operation_description="Create a new setting",
-    #     tags=["Settings"]
+    #     tags=["26. Settings"]
     # )
     # def create(self, request, *args, **kwargs):
     #     return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Retrieve a setting",
-        tags=["Settings"]
+        operation_description="Retrieve detailed information of a specific setting by its ID.",
+        responses={
+            200: openapi.Response(
+                description='Setting details',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'user': 1,
+                        'slug': 'company_timings',
+                        'value': {
+                            'opening-time': '9:00',
+                            'closing-time': '6:00'
+                        },
+                        'created_at': '2024-01-15T10:30:00Z',
+                        'updated_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
+            404: 'Setting not found'
+        },
+        tags=["26. Settings"]
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Update a setting",
-        tags=["Settings"]
+        operation_description="Update all fields of an existing setting with new configuration data.",
+        request_body=SettingSerializer,
+        responses={
+            200: 'Setting updated successfully',
+            400: 'Bad Request - Invalid data',
+            404: 'Setting not found'
+        },
+        tags=["26. Settings"]
     )
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Partially update a setting",
-        tags=["Settings"]
+        operation_description="Partially update specific fields of a setting without affecting other fields.",
+        request_body=SettingSerializer,
+        responses={
+            200: 'Setting updated successfully',
+            400: 'Bad Request - Invalid data',
+            404: 'Setting not found'
+        },
+        tags=["26. Settings"]
     )
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Delete a setting",
-        tags=["Settings"]
+        operation_description="Permanently delete a setting and all its configuration data.",
+        responses={
+            204: 'Setting deleted successfully',
+            404: 'Setting not found',
+            403: 'Forbidden - You can only delete your own settings'
+        },
+        tags=["26. Settings"]
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
@@ -180,7 +235,7 @@ class WeatherTestView(APIView):
                 }
             )
         ],
-        tags=["Weather"],
+        tags=["27. Weather"],
         responses={
             200: openapi.Response(
                 description="Successful response with weather data",
@@ -302,7 +357,7 @@ class WeatherTestView(APIView):
     
 class AvailableLocationsView(APIView):
     @swagger_auto_schema(
-        tags=["Weather"],
+        tags=["27. Weather"],
         responses={
             200: openapi.Response(
                 description="List of all available Zones and Territories",

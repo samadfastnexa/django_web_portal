@@ -48,7 +48,7 @@ class SignupView(generics.CreateAPIView):
     @swagger_auto_schema(
         operation_description="Register a new user",
         request_body=UserSignupSerializer,
-        tags=["Authentication"]
+        tags=["01. Authentication"]
     )
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
@@ -72,7 +72,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
     @swagger_auto_schema(
         operation_description="Authenticate user and obtain JWT tokens",
         request_body=MyTokenObtainPairSerializer,
-        tags=["Authentication"]
+        tags=["01. Authentication"]
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -140,7 +140,7 @@ class RoleViewSet(viewsets.ModelViewSet):
     filterset_fields = ['id','name']  # 👈 enable filtering by role ID
 
     @swagger_auto_schema(
-    tags=["Role Management"],
+    tags=["03. Role Management"],
     operation_description="List all roles. You can filter by role ID or name using query parameters.",
     manual_parameters=[
         openapi.Parameter(
@@ -160,24 +160,80 @@ class RoleViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @swagger_auto_schema(tags=["Role Management"])
+    @swagger_auto_schema(
+        operation_description="Create a new role with specific permissions for user access control.",
+        request_body=RoleSerializer,
+        responses={
+            201: openapi.Response(
+                description='Role created successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'name': 'Field Manager',
+                        'permissions': [1, 2, 5, 8],
+                        'created_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid data or role name already exists'
+        },
+        tags=["03. Role Management"]
+    )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
-    @swagger_auto_schema(tags=["Role Management"])
+    @swagger_auto_schema(
+        operation_description="Update all fields of an existing role including name and permissions.",
+        responses={
+            200: 'Role updated successfully',
+            404: 'Role not found',
+            400: 'Bad Request - Invalid data provided'
+        },
+        tags=["03. Role Management"]
+    )
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
 
-    @swagger_auto_schema(tags=["Role Management"])
+    @swagger_auto_schema(
+        operation_description="Permanently delete a role from the system. Users with this role will lose their permissions.",
+        responses={
+            204: 'Role deleted successfully',
+            404: 'Role not found',
+            400: 'Bad Request - Cannot delete role that is assigned to users'
+        },
+        tags=["03. Role Management"]
+    )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=['get'], url_path='permissions', permission_classes=[IsAuthenticated])
     @swagger_auto_schema(
-        tags=["Role Management"],
-        operation_id="get_role_permissions",  # 👈 unique name to identify in Swagger
-        operation_description="Get all permissions assigned to a specific role."
-                         )
+        tags=["03. Role Management"],
+        operation_id="get_role_permissions",
+        operation_description="Retrieve all permissions assigned to a specific role with detailed permission information.",
+        responses={
+            200: openapi.Response(
+                description='List of permissions for the role',
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'name': 'Can add user',
+                            'codename': 'add_user',
+                            'content_type': 'auth.user'
+                        },
+                        {
+                            'id': 2,
+                            'name': 'Can view attendance',
+                            'codename': 'view_attendance',
+                            'content_type': 'attendance.attendance'
+                        }
+                    ]
+                }
+            ),
+            404: 'Role not found'
+        }
+    )
     
     def permissions_list(self, request, pk=None):
         role = self.get_object()
@@ -196,8 +252,25 @@ class AdminUserStatusUpdateView(generics.UpdateAPIView):
     http_method_names = ['patch']
 
     @swagger_auto_schema(
-        operation_description="Partially update user's status (admin only)",
-        tags=["Admin Control"]
+        tags=["04. Admin Control"],
+        operation_description="Update user account status (activate or deactivate) by admin. Deactivated users cannot login to the system.",
+        request_body=AdminUserStatusSerializer,
+        responses={
+            200: openapi.Response(
+                description='User status updated successfully',
+                examples={
+                    'application/json': {
+                        'message': 'User status updated successfully',
+                        'user_id': 123,
+                        'is_active': True,
+                        'updated_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
+            404: 'User not found',
+            400: 'Bad Request - Invalid data provided',
+            403: 'Permission denied - Admin access required'
+        }
     )
     def patch(self, request, *args, **kwargs):
         return self.partial_update(request, *args, **kwargs)
@@ -296,7 +369,7 @@ class PermissionListAPIView(generics.ListAPIView):
 
     @swagger_auto_schema(
         operation_description="List all system permissions. If pagination parameters (`limit`, `offset`, `page`) are not provided, all permissions will be returned.",
-        tags=["Permission Management"]
+        tags=["05. Permission Management"]
     )
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
