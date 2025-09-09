@@ -265,7 +265,10 @@ class MeetingViewSet(viewsets.ModelViewSet):
 # Field Day ViewSet (similar structure to MeetingViewSet)
 # ------------------------------------------------
 class FieldDayViewSet(viewsets.ModelViewSet):
-    queryset = FieldDay.objects.all()
+    queryset = FieldDay.objects.select_related(
+        'region_fk', 'zone_fk', 'territory_fk'
+    ).all()
+    # queryset = FieldDay.objects.all()
     serializer_class = FieldDaySerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -275,7 +278,19 @@ class FieldDayViewSet(viewsets.ModelViewSet):
     filterset_fields = ["region", "zone", "territory", "location", "status"]
     search_fields = ["title", "region", "zone", "territory", "location", "objectives"]
     ordering_fields = ["date", "title", "region", "zone", "territory"]
+     # ---------------- Global Extra Data ----------------
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
 
+        # Add extra dropdown data only on success
+        if response.status_code in [200, 201]:
+            if isinstance(response.data, dict):
+                response.data["companies"] = CompanySerializer(Company.objects.all(), many=True).data
+                response.data["regions"] = RegionSerializer(Region.objects.all(), many=True).data
+                response.data["zones"] = ZoneSerializer(Zone.objects.all(), many=True).data
+                response.data["territories"] = TerritorySerializer(Territory.objects.all(), many=True).data
+
+        return response
     # ---------------- Common Parameters ----------------
     common_parameters = [
         openapi.Parameter('title', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,

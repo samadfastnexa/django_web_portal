@@ -161,6 +161,16 @@ class FieldDayAttendanceSerializer(serializers.ModelSerializer):
 class FieldDaySerializer(serializers.ModelSerializer):
     attendees = serializers.SerializerMethodField(read_only=True)
 
+      # IDs (writable on create/update)
+    region_id   = serializers.IntegerField(source='region_fk_id',   read_only=True)
+    zone_id     = serializers.IntegerField(source='zone_fk_id',     read_only=True)
+    territory_id = serializers.IntegerField(source='territory_fk_id', read_only=True)
+
+    # Human-readable names
+    region_name  = serializers.CharField(source='region_fk.name',   read_only=True)
+    zone_name    = serializers.CharField(source='zone_fk.name',     read_only=True)
+    territory_name = serializers.CharField(source='territory_fk.name', read_only=True)
+    
     # Multiple fields for attendee input (like MeetingSerializer)
     attendee_name = serializers.ListField(
         child=serializers.CharField(),
@@ -190,10 +200,14 @@ class FieldDaySerializer(serializers.ModelSerializer):
     class Meta:
         model = FieldDay
         fields = [
-            "id", "title", "territory", "zone", "region",
+            "id", "title",
+            "region_id", "region_name",
+            "zone_id", "zone_name",
+            "territory_id", "territory_name",
             "date", "location", "objectives", "remarks",
-            "status", "attendees", "attendee_name", "attendee_contact",
-            "attendee_acreage", "attendee_crop", "user", "is_active"
+            "status", "attendees",
+            "attendee_name", "attendee_contact", "attendee_acreage", "attendee_crop",
+            "user", "is_active"
         ]
         read_only_fields = ["user"]
 

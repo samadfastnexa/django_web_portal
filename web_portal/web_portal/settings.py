@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'FieldAdvisoryService',
     'preferences',  
     'attendance',  #  app for attendance tracking
+    'farm',  # app for farm management
     'sap_integration', # app for SAP integration
     
 ]
@@ -204,5 +205,24 @@ SWAGGER_SETTINGS = {
             'in': 'header'
         }
     },
+    'DEFAULT_MODEL_RENDERING': 'example',
+    'DEFAULT_FIELD_INSPECTORS': [
+        'drf_yasg.inspectors.CamelCaseJSONFilter',
+        'drf_yasg.inspectors.ReferencingSerializerInspector',
+        'drf_yasg.inspectors.RelatedFieldInspector',
+        'drf_yasg.inspectors.ChoiceFieldInspector',
+        'drf_yasg.inspectors.FileFieldInspector',
+        'drf_yasg.inspectors.DictFieldInspector',
+        'drf_yasg.inspectors.SimpleFieldInspector',
+        'drf_yasg.inspectors.StringDefaultFieldInspector',
+    ],
+    'DEFAULT_AUTO_SCHEMA_CLASS': 'drf_yasg.inspectors.SwaggerAutoSchema',
+    'SUPPORTED_SUBMIT_METHODS': ['get', 'post', 'put', 'delete', 'patch'],
+    'OPERATIONS_SORTER': 'alpha',
+    'TAGS_SORTER': 'alpha',
+    'DOC_EXPANSION': 'none',
+    'DEEP_LINKING': True,
+    'SHOW_EXTENSIONS': True,
+    'DEFAULT_MODEL_DEPTH': 3,
 }
 WEATHER_API_KEY = "36c4dcfbb24443b18b2112951252507"

@@ -109,9 +109,34 @@ class MeetingAttachment(models.Model):
 class FieldDay(models.Model):
     id = models.CharField(max_length=20, primary_key=True, editable=False)
     title = models.CharField(max_length=200)
+   
     territory = models.CharField(max_length=100)
     zone = models.CharField(max_length=100)
     region = models.CharField(max_length=100)
+    
+    # ✅ Proper ForeignKey relationships (like Meeting)
+    region_fk = models.ForeignKey(
+        Region,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='field_days_region'
+    )
+    zone_fk = models.ForeignKey(
+        Zone,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='field_days_zone'
+    )
+    territory_fk = models.ForeignKey(
+        Territory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='field_days_territory'
+    )
+    
     date = models.DateField()
     location = models.CharField(max_length=200)
     objectives = models.TextField(default="Not specified")

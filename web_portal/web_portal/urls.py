@@ -35,5 +35,6 @@ urlpatterns = [
     path('api/',include('attendance.urls')),
     path('api/',include('farmerMeetingDataEntry.urls')),
     path('api/field/',include('FieldAdvisoryService.urls')), 
+    path('api/farm/',include('farm.urls')),
     path('api/sap/', include('sap_integration.urls')),
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
