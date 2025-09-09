@@ -73,9 +73,9 @@ class Command(BaseCommand):
         """
         parser.add_argument('--email', type=str, default='superuser@gmail.com', help='Admin email')
         parser.add_argument('--password', type=str, default='123456789', help='Admin password')
-        parser.add_argument('--username', type=str, default='superadmin', help='Admin username')
-        parser.add_argument('--first-name', type=str, default='Super', help='Admin first name')
-        parser.add_argument('--last-name', type=str, default='Admin', help='Admin last name')
+        parser.add_argument('--username', type=str, default='superuser', help='Admin username')
+        parser.add_argument('--first-name', type=str, default='super', help='Admin first name')
+        parser.add_argument('--last-name', type=str, default='user', help='Admin last name')
         parser.add_argument('--with-image', action='store_true', help='Attach default profile image')
 
     def create_default_profile_image(self):
