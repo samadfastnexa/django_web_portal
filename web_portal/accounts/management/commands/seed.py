@@ -71,8 +71,8 @@ class Command(BaseCommand):
         """
         Define optional command-line arguments with default values.
         """
-        parser.add_argument('--email', type=str, default='superadmin@my.com', help='Admin email')
-        parser.add_argument('--password', type=str, default='123456', help='Admin password')
+        parser.add_argument('--email', type=str, default='superuser@gmail.com', help='Admin email')
+        parser.add_argument('--password', type=str, default='123456789', help='Admin password')
         parser.add_argument('--username', type=str, default='superadmin', help='Admin username')
         parser.add_argument('--first-name', type=str, default='Super', help='Admin first name')
         parser.add_argument('--last-name', type=str, default='Admin', help='Admin last name')
