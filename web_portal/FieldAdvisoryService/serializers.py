@@ -3,10 +3,31 @@ from .models import Dealer, MeetingSchedule, SalesOrder, SalesOrderAttachment,De
 import re
 from .models import Company, Region, Zone, Territory
 from rest_framework import viewsets
+from django.contrib.auth import get_user_model
+User = get_user_model() 
+# class DealerSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Dealer
+#         fields = '__all__'
 class DealerSerializer(serializers.ModelSerializer):
+    # read-only fields that come from User
+    email        = serializers.EmailField(source='user.email', read_only=True)
+    first_name   = serializers.CharField(source='user.first_name', read_only=True)
+    last_name    = serializers.CharField(source='user.last_name', read_only=True)
+
+    # optional: allow choosing an existing user when creating a dealer
+    user         = serializers.PrimaryKeyRelatedField(
+                      queryset=User.objects.all(),
+                      required=False, allow_null=True)
+
     class Meta:
-        model = Dealer
-        fields = '__all__'
+        model  = Dealer
+        fields = [
+            'id','user','email','first_name','last_name','name','cnic_number',
+            'contact_number','company','region','zone','territory',
+            'address','latitude','longitude','remarks','is_active',
+            'cnic_front_image','cnic_back_image'
+        ]
 
 class MeetingScheduleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -27,7 +48,7 @@ class SalesOrderSerializer(serializers.ModelSerializer):
 
 
 class DealerRequestSerializer(serializers.ModelSerializer):
-    requested_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    requested_by = serializers.PrimaryKeyRelatedField(read_only=True)
 
     def validate_cnic_number(self, value):
         # Remove non-digit characters
@@ -72,6 +93,10 @@ class DealerRequestSerializer(serializers.ModelSerializer):
 
         return image
 
+    def create(self, validated_data):
+        validated_data['requested_by'] = self.context['request'].user
+        return super().create(validated_data)
+
     class Meta:
         model = DealerRequest
         fields = '__all__'
@@ -89,12 +114,6 @@ class RegionSerializer(serializers.ModelSerializer):
         model = Region
         fields = '__all__'
 
-# class ZoneSerializer(serializers.ModelSerializer):
-#     region_name = serializers.CharField(source='region.name', read_only=True)
-
-#     class Meta:
-#         model = Zone
-#         fields = '__all__'
 class ZoneSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.Company_name', read_only=True)
     region_name = serializers.CharField(source='region.name', read_only=True)

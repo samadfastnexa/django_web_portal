@@ -1,7 +1,5 @@
 from django.contrib import admin
-from .models import Meeting, FarmerAttendance, MeetingAttachment
-
-
+from .models import Meeting, FarmerAttendance, MeetingAttachment,FieldDay,FieldDayAttendance
 class FarmerAttendanceInline(admin.TabularInline):
     model = FarmerAttendance
     extra = 1
@@ -12,15 +10,64 @@ class MeetingAttachmentInline(admin.TabularInline):
     extra = 1
 
 
+# @admin.register(Meeting)
+# class MeetingAdmin(admin.ModelAdmin):
+#     inlines = [FarmerAttendanceInline, MeetingAttachmentInline]
+#     list_display = ['id', 'fsm_name', 'date', 'region', 'zone', 'territory', 'total_attendees']
+#     search_fields = ['fsm_name', 'region', 'zone', 'territory', 'location']
+#     list_filter = ['region', 'zone', 'territory', 'date']
+#     ordering = ['-date']
 @admin.register(Meeting)
 class MeetingAdmin(admin.ModelAdmin):
     inlines = [FarmerAttendanceInline, MeetingAttachmentInline]
-    list_display = ['id', 'fsm_name', 'date', 'region', 'zone', 'territory', 'total_attendees']
-    search_fields = ['fsm_name', 'region', 'zone', 'territory', 'location']
-    list_filter = ['region', 'zone', 'territory', 'date']
+
+    list_display = [
+        'id',
+        'fsm_name',
+        'date',
+        'region_fk',
+        'zone_fk',
+        'territory_fk',
+        'total_attendees',
+    ]
+
+    search_fields = [
+        'fsm_name',
+        'region_fk__name',
+        'zone_fk__name',
+        'territory_fk__name',
+        'location',
+    ]
+
+    list_filter = [
+        'region_fk',
+        'zone_fk',
+        'territory_fk',
+        'date',
+    ]
+
     ordering = ['-date']
 
 
-# @admin.register(MeetingAttachment)
-# class MeetingAttachmentAdmin(admin.ModelAdmin):
-#     list_display = ['meeting', 'file', 'id']
+class FieldDayAttendanceInline(admin.TabularInline):
+    model = FieldDayAttendance
+    extra = 1
+    fields = ('farmer_name', 'contact_number', 'acreage', 'crop')
+    readonly_fields = ()
+
+@admin.register(FieldDay)
+class FieldDayAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'title', 'territory', 'zone', 'region', 
+        'date', 'status', 'user', 'is_active'
+    )
+    list_filter = ('status', 'region', 'zone', 'territory', 'is_active')
+    search_fields = ('id', 'title', 'territory', 'zone', 'region', 'user__email')
+    readonly_fields = ('id',)
+    inlines = [FieldDayAttendanceInline]
+
+@admin.register(FieldDayAttendance)
+class FieldDayAttendanceAdmin(admin.ModelAdmin):
+    list_display = ('field_day', 'farmer_name', 'contact_number', 'acreage', 'crop')
+    search_fields = ('farmer_name', 'contact_number', 'crop')
+    list_filter = ('crop',)

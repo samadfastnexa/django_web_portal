@@ -69,7 +69,7 @@ class ComplaintPagination(PageNumberPagination):
 #             openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Page size"),
 #         ],
 #         responses={200: ComplaintSerializer(many=True)},
-#         tags=["Complaints"]
+#         tags=["07. Complaints"]
 #     )
 #     def get(self, request, *args, **kwargs):
 #         return super().get(request, *args, **kwargs)
@@ -81,7 +81,7 @@ class ComplaintPagination(PageNumberPagination):
 #             openapi.Parameter('image', openapi.IN_FORM, type=openapi.TYPE_FILE, description='Optional image upload', required=False),
 #         ],
 #         responses={201: ComplaintSerializer},
-#         tags=["Complaints"]
+#         tags=["07. Complaints"]
 #     )
 #     def post(self, request, *args, **kwargs):
 #         return super().post(request, *args, **kwargs)
@@ -139,31 +139,68 @@ class ComplaintListCreateView(generics.ListCreateAPIView):
         serializer.save(user=self.request.user, complaint_id=complaint_id)
 
     @swagger_auto_schema(
-        operation_description="List complaints. Admins see all, users see their own. "
-                              "Supports filtering by status, user_id (admin or self), date range, ordering, and pagination.",
+        operation_description="Retrieve a paginated list of complaints with filtering and sorting options. Admins can view all complaints, while regular users can only see their own complaints.",
         manual_parameters=[
-            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Filter by complaint status"),
-            openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Filter by specific user ID (admin only for others)"),
-            openapi.Parameter('start_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, format='date', description="Filter complaints created on or after this date (YYYY-MM-DD)"),
-            openapi.Parameter('end_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, format='date', description="Filter complaints created on or before this date (YYYY-MM-DD)"),
-            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Order by created_at, e.g., 'created_at' or '-created_at'"),
-            openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Page number"),
-            openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Page size"),
+            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Filter by complaint status (pending, in_progress, resolved, closed)", example="pending"),
+            openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Filter by specific user ID (admin only for viewing other users' complaints)", example=1),
+            openapi.Parameter('start_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, format='date', description="Filter complaints created on or after this date (YYYY-MM-DD)", example="2024-01-01"),
+            openapi.Parameter('end_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, format='date', description="Filter complaints created on or before this date (YYYY-MM-DD)", example="2024-12-31"),
+            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Order by created_at field (use '-created_at' for descending)", example="-created_at"),
+            openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Page number for pagination", example=1),
+            openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Number of complaints per page (max 100)", example=10),
         ],
-        responses={200: ComplaintSerializer(many=True)},
-        tags=["Complaints"]
+        responses={
+            200: openapi.Response(
+                description='List of complaints',
+                examples={
+                    'application/json': {
+                        'count': 25,
+                        'next': 'http://localhost:8000/api/complaints/?page=2',
+                        'previous': None,
+                        'results': [
+                            {
+                                'id': 1,
+                                'complaint_id': 'FB12345678',
+                                'user': 1,
+                                'status': 'pending',
+                                'message': 'Issue with water supply in my farm area',
+                                'image': 'http://localhost:8000/media/complaint_images/farm_issue.jpg',
+                                'created_at': '2024-01-15T10:30:00Z'
+                            }
+                        ]
+                    }
+                }
+            )
+        },
+        tags=["07. Complaints"]
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Create a new complaint (authenticated users only).",
+        operation_description="Submit a new complaint to the system. A unique complaint ID will be automatically generated.",
         manual_parameters=[
-            openapi.Parameter('message', openapi.IN_FORM, type=openapi.TYPE_STRING, description='Complaint message', required=True),
-            openapi.Parameter('image', openapi.IN_FORM, type=openapi.TYPE_FILE, description='Optional image upload', required=False),
+            openapi.Parameter('message', openapi.IN_FORM, type=openapi.TYPE_STRING, description='Detailed description of the complaint or issue', required=True, example='Water shortage in my farm area for the past week'),
+            openapi.Parameter('image', openapi.IN_FORM, type=openapi.TYPE_FILE, description='Optional image evidence to support the complaint', required=False),
         ],
-        responses={201: ComplaintSerializer},
-        tags=["Complaints"]
+        responses={
+            201: openapi.Response(
+                description='Complaint created successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'complaint_id': 'FB12345678',
+                        'user': 1,
+                        'status': 'pending',
+                        'message': 'Water shortage in my farm area for the past week',
+                        'image': 'http://localhost:8000/media/complaint_images/evidence.jpg',
+                        'created_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid data provided'
+        },
+        tags=["07. Complaints"]
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -188,7 +225,7 @@ class ComplaintListCreateView(generics.ListCreateAPIView):
 #     @swagger_auto_schema(
 #         operation_description="Retrieve a single complaint. Users can only see their own complaints.",
 #         responses={200: ComplaintSerializer},
-#         tags=["Complaints"]
+#         tags=["07. Complaints"]
 #     )
 #     def get(self, request, *args, **kwargs):
 #         return super().get(request, *args, **kwargs)
@@ -203,7 +240,7 @@ class ComplaintListCreateView(generics.ListCreateAPIView):
 #             required=['status'],
 #         ),
 #         responses={200: ComplaintSerializer},
-#         tags=["Complaints"]
+#         tags=["07. Complaints"]
 #     )
 #     def patch(self, request, *args, **kwargs):
 #         return self.update(request, *args, **kwargs)
@@ -217,7 +254,7 @@ class ComplaintListCreateView(generics.ListCreateAPIView):
 #             required=['status'],
 #         ),
 #         responses={200: ComplaintSerializer},
-#         tags=["Complaints"]
+#         tags=["07. Complaints"]
 #     )
 #     def put(self, request, *args, **kwargs):
 #         return self.update(request, *args, **kwargs)
@@ -251,54 +288,80 @@ class ComplaintRetrieveUpdateView(generics.RetrieveUpdateAPIView):
         return obj
 
     @swagger_auto_schema(
-        operation_description=(
-            "Retrieve a single complaint by ID.\n\n"
-            "**Access rules:**\n"
-            "- Admins: Can view any complaint.\n"
-            "- Normal users: Can only view their own complaints."
-        ),
-        responses={200: ComplaintSerializer},
-        tags=["Complaints"]
+        operation_description="Retrieve detailed information of a specific complaint by its ID. Access is restricted based on user permissions.",
+        responses={
+            200: openapi.Response(
+                description='Complaint details',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'complaint_id': 'FB12345678',
+                        'user': 1,
+                        'status': 'in_progress',
+                        'message': 'Water shortage in my farm area for the past week',
+                        'image': 'http://localhost:8000/media/complaint_images/evidence.jpg',
+                        'created_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
+            403: 'Forbidden - You can only view your own complaints',
+            404: 'Complaint not found'
+        },
+        tags=["07. Complaints"]
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description=(
-            "Partially update complaint status.\n\n"
-            "**Access rules:**\n"
-            "- Requires `complaints.change_complaint` permission.\n"
-            "- Only the `status` field can be changed."
-        ),
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'status': openapi.Schema(type=openapi.TYPE_STRING, description='New complaint status'),
-            },
-            required=['status'],
-        ),
-        responses={200: ComplaintSerializer},
-        tags=["Complaints"]
+        operation_description="Update the status of a complaint (partial update). Only authorized staff can change complaint status.",
+        request_body=ComplaintSerializer,
+        responses={
+            200: openapi.Response(
+                description='Complaint status updated successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'complaint_id': 'FB12345678',
+                        'user': 1,
+                        'status': 'in_progress',
+                        'message': 'Water shortage in my farm area for the past week',
+                        'image': 'http://localhost:8000/media/complaint_images/evidence.jpg',
+                        'created_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
+            403: 'Forbidden - Insufficient permissions',
+            404: 'Complaint not found',
+            400: 'Bad Request - Invalid status value'
+        },
+        tags=["07. Complaints"]
     )
     def patch(self, request, *args, **kwargs):
         return self.update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description=(
-            "Fully update complaint status.\n\n"
-            "**Access rules:**\n"
-            "- Requires `complaints.change_complaint` permission.\n"
-            "- Only the `status` field is allowed in request body."
-        ),
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'status': openapi.Schema(type=openapi.TYPE_STRING, description='New complaint status'),
-            },
-            required=['status'],
-        ),
-        responses={200: ComplaintSerializer},
-        tags=["Complaints"]
+        operation_description="Fully update the complaint status (complete replacement). Only authorized staff can change complaint status.",
+        request_body=ComplaintSerializer,
+        responses={
+            200: openapi.Response(
+                description='Complaint status updated successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'complaint_id': 'FB12345678',
+                        'user': 1,
+                        'status': 'resolved',
+                        'message': 'Water shortage in my farm area for the past week',
+                        'image': 'http://localhost:8000/media/complaint_images/evidence.jpg',
+                        'created_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
+            403: 'Forbidden - Insufficient permissions',
+            404: 'Complaint not found',
+            400: 'Bad Request - Invalid status value'
+        },
+        tags=["07. Complaints"]
     )
     def put(self, request, *args, **kwargs):
         return self.update(request, *args, **kwargs)

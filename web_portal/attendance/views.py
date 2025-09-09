@@ -39,15 +39,54 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
     parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(
-        operation_description="Get a list of your attendance records.",
-        tags=["Attendance"]
+        operation_description="Retrieve a paginated list of your attendance records with check-in/check-out times, locations, and attachments.",
+        responses={
+            200: openapi.Response(
+                description='List of attendance records',
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'user': 1,
+                            'attendee': 1,
+                            'check_in_time': '2024-01-15T09:00:00Z',
+                            'check_out_time': '2024-01-15T17:30:00Z',
+                            'latitude': '31.5204',
+                            'longitude': '74.3587',
+                            'attachment': '/media/attendance/photo_123.jpg',
+                            'created_at': '2024-01-15T09:00:00Z'
+                        }
+                    ]
+                }
+            )
+        },
+        tags=["08. Attendance"]
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Submit a new attendance record. At least one of check_in_time or check_out_time must be provided.",
-        tags=["Attendance"]
+        operation_description="Submit a new attendance record with location data and optional photo attachment. At least one of check_in_time or check_out_time must be provided.",
+        request_body=AttendanceSerializer,
+        responses={
+            201: openapi.Response(
+                description='Attendance record created successfully',
+                schema=AttendanceSerializer,
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'user': 1,
+                        'attendee': 1,
+                        'check_in_time': '2024-01-15T09:00:00Z',
+                        'latitude': '31.5204',
+                        'longitude': '74.3587',
+                        'created_at': '2024-01-15T09:00:00Z'
+                    }
+                }
+            ),
+            400: 'Bad Request - At least one of check_in_time or check_out_time must be provided'
+        },
+        tags=["08. Attendance"]
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -104,29 +143,63 @@ class AttendanceDetailView(generics.RetrieveUpdateDestroyAPIView):
     # permission_classes = [permissions.IsAuthenticated]
     permission_classes = [IsAuthenticated, HasRolePermission]
     @swagger_auto_schema(
-        operation_description="Retrieve a specific attendance record.",
-        tags=["Attendance"]
+        operation_description="Retrieve detailed information of a specific attendance record including timestamps, location, and attachments.",
+        responses={
+            200: openapi.Response(
+                description='Attendance record details',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'user': 1,
+                        'attendee': 1,
+                        'check_in_time': '2024-01-15T09:00:00Z',
+                        'check_out_time': '2024-01-15T17:30:00Z',
+                        'latitude': '31.5204',
+                        'longitude': '74.3587',
+                        'attachment': '/media/attendance/photo_123.jpg',
+                        'created_at': '2024-01-15T09:00:00Z',
+                        'updated_at': '2024-01-15T17:30:00Z'
+                    }
+                }
+            ),
+            404: 'Attendance record not found'
+        },
+        tags=["08. Attendance"]
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Update an existing attendance record.",
-        tags=["Attendance"]
+        operation_description="Update all fields of an existing attendance record (full update).",
+        responses={
+            200: 'Attendance record updated successfully',
+            404: 'Attendance record not found',
+            400: 'Bad Request - Invalid data provided'
+        },
+        tags=["08. Attendance"]
     )
     def put(self, request, *args, **kwargs):
         return super().put(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Partially update an attendance record.",
-        tags=["Attendance"]
+        operation_description="Update specific fields of an attendance record (partial update).",
+        responses={
+            200: 'Attendance record updated successfully',
+            404: 'Attendance record not found',
+            400: 'Bad Request - Invalid data provided'
+        },
+        tags=["08. Attendance"]
     )
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Delete an attendance record.",
-        tags=["Attendance"]
+        operation_description="Permanently delete an attendance record from the system.",
+        responses={
+            204: 'Attendance record deleted successfully',
+            404: 'Attendance record not found'
+        },
+        tags=["08. Attendance"]
     )
     def delete(self, request, *args, **kwargs):
         return super().delete(request, *args, **kwargs)
@@ -203,29 +276,122 @@ class AttendanceRequestViewSet(viewsets.ModelViewSet):
     # --------------------------
     # Default CRUD actions with Swagger
     # --------------------------
-    @swagger_auto_schema(operation_description="List all your attendance requests.", tags=["Attendance Request"])
+    @swagger_auto_schema(
+        operation_description="Retrieve a paginated list of attendance requests. Admins can view all requests, while regular users can only see their own submissions.",
+        responses={
+            200: openapi.Response(
+                description='List of attendance requests',
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'user': 1,
+                            'request_type': 'late_arrival',
+                            'date': '2024-01-15',
+                            'reason': 'Traffic jam due to road construction',
+                            'status': 'pending',
+                            'attachment': '/media/requests/proof_123.jpg',
+                            'created_at': '2024-01-15T08:30:00Z',
+                            'updated_at': '2024-01-15T08:30:00Z'
+                        }
+                    ]
+                }
+            )
+        },
+        tags=["09. Attendance Request"]
+    )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Submit a new attendance request.", tags=["Attendance Request"])
+    @swagger_auto_schema(
+        operation_description="Submit a new attendance request for late arrival, early departure, or missed attendance with supporting documentation.",
+        request_body=AttendanceRequestSerializer,
+        responses={
+            201: openapi.Response(
+                description='Attendance request created successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'user': 1,
+                        'request_type': 'late_arrival',
+                        'date': '2024-01-15',
+                        'reason': 'Traffic jam due to road construction',
+                        'status': 'pending',
+                        'created_at': '2024-01-15T08:30:00Z'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid data or missing required fields'
+        },
+        tags=["09. Attendance Request"]
+    )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Retrieve a specific attendance request.", tags=["Attendance Request"])
+    @swagger_auto_schema(
+        operation_description="Retrieve detailed information of a specific attendance request including status and approval history.",
+        responses={
+            200: openapi.Response(
+                description='Attendance request details',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'user': 1,
+                        'request_type': 'late_arrival',
+                        'date': '2024-01-15',
+                        'reason': 'Traffic jam due to road construction on main highway',
+                        'status': 'approved',
+                        'attachment': '/media/requests/proof_123.jpg',
+                        'approved_by': 2,
+                        'approval_date': '2024-01-15T10:00:00Z',
+                        'created_at': '2024-01-15T08:30:00Z',
+                        'updated_at': '2024-01-15T10:00:00Z'
+                    }
+                }
+            ),
+            404: 'Attendance request not found'
+        },
+        tags=["09. Attendance Request"]
+    )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Update an attendance request (status requires permission).", tags=["Attendance Request"])
+    @swagger_auto_schema(
+        operation_description="Update all fields of an attendance request. Status changes require admin permissions.",
+        responses={
+            200: 'Attendance request updated successfully',
+            404: 'Attendance request not found',
+            403: 'Forbidden - Insufficient permissions to change status',
+            400: 'Bad Request - Invalid data provided'
+        },
+        tags=["09. Attendance Request"]
+    )
     def update(self, request, *args, **kwargs):
         self._check_status_change_permission(request)
         return super().update(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Partially update an attendance request (status requires permission).", tags=["Attendance Request"])
+    @swagger_auto_schema(
+        operation_description="Update specific fields of an attendance request. Status changes require admin permissions.",
+        responses={
+            200: 'Attendance request updated successfully',
+            404: 'Attendance request not found',
+            403: 'Forbidden - Insufficient permissions to change status',
+            400: 'Bad Request - Invalid data provided'
+        },
+        tags=["09. Attendance Request"]
+    )
     def partial_update(self, request, *args, **kwargs):
         self._check_status_change_permission(request)
         return super().partial_update(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Delete an attendance request.", tags=["Attendance Request"])
+    @swagger_auto_schema(
+        operation_description="Permanently delete an attendance request from the system.",
+        responses={
+            204: 'Attendance request deleted successfully',
+            404: 'Attendance request not found'
+        },
+        tags=["09. Attendance Request"]
+    )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
 
@@ -313,7 +479,7 @@ class AttendanceReportView(APIView):
     # 🔹 Swagger parameters
     @swagger_auto_schema(
         operation_description="Get attendance report (daily, weekly, monthly, or custom)",
-        tags=["Attendance Report"],
+        tags=["10. Attendance Report"],
         manual_parameters=[
             openapi.Parameter(
                 "type",
@@ -488,7 +654,7 @@ class LeaveRequestListCreateView(generics.ListCreateAPIView):
         responses={200: LeaveRequestSerializer(many=True)},
         operation_summary="List all leave requests",
         operation_description="Admins see all leave requests, normal users only see their own.",
-        tags=["Leave Requests"]
+        tags=["11. Leave Requests"]
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -505,7 +671,7 @@ class LeaveRequestListCreateView(generics.ListCreateAPIView):
         },
         operation_summary="Create a new leave request",
         operation_description="Submit a new leave request with leave_type, start_date, end_date, and reason.",
-        tags=["Leave Requests"]
+        tags=["11. Leave Requests"]
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -529,7 +695,7 @@ class LeaveRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
         responses={200: LeaveRequestSerializer()},
         operation_summary="Retrieve leave request by ID",
         operation_description="Admins can retrieve any request, users only their own.",
-        tags=["Leave Requests"]
+        tags=["11. Leave Requests"]
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -540,7 +706,7 @@ class LeaveRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
         responses={200: LeaveRequestSerializer()},
         operation_summary="Update leave request",
         operation_description="Update all fields of a leave request (only owner or admin).",
-        tags=["Leave Requests"]
+        tags=["11. Leave Requests"]
     )
     def put(self, request, *args, **kwargs):
         return super().put(request, *args, **kwargs)
@@ -551,7 +717,7 @@ class LeaveRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
         responses={200: LeaveRequestSerializer()},
         operation_summary="Partially update leave request",
         operation_description="Update selected fields of a leave request (only owner or admin).",
-        tags=["Leave Requests"]
+        tags=["11. Leave Requests"]
     )
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
@@ -561,7 +727,7 @@ class LeaveRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
         responses={204: "No Content"},
         operation_summary="Delete leave request",
         operation_description="Delete a leave request (only owner or admin).",
-        tags=["Leave Requests"]
+        tags=["11. Leave Requests"]
     )
     def delete(self, request, *args, **kwargs):
         return super().delete(request, *args, **kwargs)

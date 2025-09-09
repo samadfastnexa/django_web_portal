@@ -1,34 +1,3 @@
-# from django.contrib import admin
-# from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-# from .models import User, Role, SalesStaffProfile
-
-# # Inline for Sales Staff profile
-# class SalesProfileInline(admin.StackedInline):
-#     model = SalesStaffProfile
-#     can_delete = False
-#     verbose_name_plural = 'Sales Profile'
-
-# @admin.register(User)
-# class CustomUserAdmin(BaseUserAdmin):
-#     list_display = ['id', 'username', 'email', 'first_name', 'last_name', 'role']
-#     list_filter = ['role', 'is_active', 'is_staff']
-#     search_fields = ['username', 'email']
-#     ordering = ['id']
-
-#     fieldsets = BaseUserAdmin.fieldsets + (
-#         ('Custom Fields', {'fields': ('role', 'profile_image')}),
-#     )
-
-#     add_fieldsets = BaseUserAdmin.add_fieldsets + (
-#         (None, {'fields': ('role', 'profile_image')}),
-#     )
-
-#     inlines = [SalesProfileInline]  # ✅ Attach inline here
-
-# @admin.register(Role)
-# class RoleAdmin(admin.ModelAdmin):
-#     list_display = ['id', 'name']
-#     filter_horizontal = ['permissions']
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User, Role, SalesStaffProfile
@@ -43,7 +12,7 @@ class SalesProfileInline(admin.StackedInline):
             'fields': ('employee_code', 'phone_number', 'designation', 'address')
         }),
         ('Location', {
-            'fields': ('company', 'region', 'zone', 'territory')
+            'fields': ('companies', 'regions', 'zones', 'territories')  # ✅ updated M2M
         }),
         ('Reporting', {
             'fields': ('hod', 'master_hod')
@@ -52,6 +21,7 @@ class SalesProfileInline(admin.StackedInline):
             'fields': ('sick_leave_quota', 'casual_leave_quota', 'others_leave_quota')
         }),
     )
+    filter_horizontal = ('companies', 'regions', 'zones', 'territories')  # ✅ better M2M UI
 
 
 @admin.register(User)
@@ -72,7 +42,7 @@ class CustomUserAdmin(BaseUserAdmin):
     )
 
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
-        (None, {'fields': ('email','role', 'profile_image', 'is_sales_staff')}),
+        (None, {'fields': ('email', 'role', 'profile_image', 'is_sales_staff')}),
     )
 
     inlines = [SalesProfileInline]  # Attach inline here
