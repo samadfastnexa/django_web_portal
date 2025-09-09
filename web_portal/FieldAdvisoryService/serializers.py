@@ -48,7 +48,7 @@ class SalesOrderSerializer(serializers.ModelSerializer):
 
 
 class DealerRequestSerializer(serializers.ModelSerializer):
-    requested_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    requested_by = serializers.PrimaryKeyRelatedField(read_only=True)
 
     def validate_cnic_number(self, value):
         # Remove non-digit characters
@@ -92,6 +92,10 @@ class DealerRequestSerializer(serializers.ModelSerializer):
             )
 
         return image
+
+    def create(self, validated_data):
+        validated_data['requested_by'] = self.context['request'].user
+        return super().create(validated_data)
 
     class Meta:
         model = DealerRequest
