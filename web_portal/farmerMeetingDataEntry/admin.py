@@ -58,11 +58,14 @@ class FieldDayAttendanceInline(admin.TabularInline):
 @admin.register(FieldDay)
 class FieldDayAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'title', 'territory', 'zone', 'region', 
+        'id', 'title', 'company_fk', 'territory_fk', 'zone_fk', 'region_fk', 
         'date', 'status', 'user', 'is_active'
     )
-    list_filter = ('status', 'region', 'zone', 'territory', 'is_active')
-    search_fields = ('id', 'title', 'territory', 'zone', 'region', 'user__email')
+    list_filter = ('status', 'company_fk', 'region_fk', 'zone_fk', 'territory_fk', 'is_active')
+    search_fields = (
+        'id', 'title', 'company_fk__Company_name', 'territory_fk__name', 
+        'zone_fk__name', 'region_fk__name', 'user__email'
+    )
     readonly_fields = ('id',)
     inlines = [FieldDayAttendanceInline]
 

@@ -30,11 +30,13 @@ class MeetingSerializer(serializers.ModelSerializer):
     attachments = MeetingAttachmentSerializer(many=True, read_only=True)
     
      # IDs (writable on create/update)
-    region_id   = serializers.IntegerField(source='region_fk_id',   read_only=True)
-    zone_id     = serializers.IntegerField(source='zone_fk_id',     read_only=True)
-    territory_id = serializers.IntegerField(source='territory_fk_id', read_only=True)
+    company_id   = serializers.IntegerField(source='company_fk_id',   required=False, allow_null=True)
+    region_id   = serializers.IntegerField(source='region_fk_id',   required=False, allow_null=True)
+    zone_id     = serializers.IntegerField(source='zone_fk_id',     required=False, allow_null=True)
+    territory_id = serializers.IntegerField(source='territory_fk_id', required=False, allow_null=True)
 
     # Human-readable names
+    company_name = serializers.CharField(source='company_fk.Company_name', read_only=True)
     region_name  = serializers.CharField(source='region_fk.name',   read_only=True)
     zone_name    = serializers.CharField(source='zone_fk.name',     read_only=True)
     territory_name = serializers.CharField(source='territory_fk.name', read_only=True)
@@ -69,6 +71,7 @@ class MeetingSerializer(serializers.ModelSerializer):
         model = Meeting
         fields = [
             'id', 'user_id', 'fsm_name',
+            'company_id', 'company_name',
             'region_id', 'region_name',
             'zone_id', 'zone_name',
             'territory_id', 'territory_name',
@@ -162,11 +165,13 @@ class FieldDaySerializer(serializers.ModelSerializer):
     attendees = serializers.SerializerMethodField(read_only=True)
 
       # IDs (writable on create/update)
-    region_id   = serializers.IntegerField(source='region_fk_id',   read_only=True)
-    zone_id     = serializers.IntegerField(source='zone_fk_id',     read_only=True)
-    territory_id = serializers.IntegerField(source='territory_fk_id', read_only=True)
+    company_id   = serializers.IntegerField(source='company_fk_id',   required=False, allow_null=True)
+    region_id   = serializers.IntegerField(source='region_fk_id',   required=False, allow_null=True)
+    zone_id     = serializers.IntegerField(source='zone_fk_id',     required=False, allow_null=True)
+    territory_id = serializers.IntegerField(source='territory_fk_id', required=False, allow_null=True)
 
     # Human-readable names
+    company_name = serializers.CharField(source='company_fk.Company_name', read_only=True)
     region_name  = serializers.CharField(source='region_fk.name',   read_only=True)
     zone_name    = serializers.CharField(source='zone_fk.name',     read_only=True)
     territory_name = serializers.CharField(source='territory_fk.name', read_only=True)
@@ -201,6 +206,7 @@ class FieldDaySerializer(serializers.ModelSerializer):
         model = FieldDay
         fields = [
             "id", "title",
+            "company_id", "company_name",
             "region_id", "region_name",
             "zone_id", "zone_name",
             "territory_id", "territory_name",

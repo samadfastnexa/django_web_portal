@@ -8,7 +8,7 @@ import uuid
 import os
 from django.core.validators import FileExtensionValidator
 from django.core.exceptions import ValidationError
-from FieldAdvisoryService.serializers import Region,Zone,Territory
+from FieldAdvisoryService.models import Region,Zone,Territory,Company
 class Meeting(models.Model):
     id = models.CharField(
         max_length=20,
@@ -17,11 +17,9 @@ class Meeting(models.Model):
         editable=False
     )
     fsm_name = models.CharField(max_length=100, default="Unknown FSM")
-    territory = models.CharField(max_length=100, default="Unknown Territory")
-    zone = models.CharField(max_length=100, default="Unknown Zone")
-    region = models.CharField(max_length=100, default="Unknown Region")
-       # NEW – real FKs
-    # company   = models.ForeignKey(Company,   on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Foreign Key relationships
+    company_fk = models.ForeignKey(Company, on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_company')
     region_fk = models.ForeignKey(Region,on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_region')
     zone_fk   = models.ForeignKey(Zone,on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_zone')
     territory_fk = models.ForeignKey(Territory, on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_territory')
@@ -109,12 +107,15 @@ class MeetingAttachment(models.Model):
 class FieldDay(models.Model):
     id = models.CharField(max_length=20, primary_key=True, editable=False)
     title = models.CharField(max_length=200)
-   
-    territory = models.CharField(max_length=100)
-    zone = models.CharField(max_length=100)
-    region = models.CharField(max_length=100)
     
-    # ✅ Proper ForeignKey relationships (like Meeting)
+    # Foreign Key relationships
+    company_fk = models.ForeignKey(
+        Company,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='field_days_company'
+    )
     region_fk = models.ForeignKey(
         Region,
         on_delete=models.SET_NULL,

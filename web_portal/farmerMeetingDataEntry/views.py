@@ -14,7 +14,7 @@ from FieldAdvisoryService.serializers import CompanySerializer, RegionSerializer
 class MeetingViewSet(viewsets.ModelViewSet):
     # queryset = Meeting.objects.all()  # Use .filter(is_active=True) after adding the field
     queryset = Meeting.objects.select_related(
-        'region_fk', 'zone_fk', 'territory_fk'
+        'region_fk', 'zone_fk', 'territory_fk', 'company_fk'
     ).all()
     serializer_class = MeetingSerializer
     permission_classes = [IsAuthenticated]
@@ -22,7 +22,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     # Filters, search, ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["fsm_name", "region", "zone", "territory", "presence_of_zm_rsm", "location"]
+    filterset_fields = ["fsm_name", "region_fk", "zone_fk", "territory_fk", "company_fk", "presence_of_zm_rsm", "location"]
     search_fields = [
         'fsm_name',
         'region_fk__name',
@@ -31,7 +31,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
         'location',
         'key_topics_discussed',
     ]
-    ordering_fields = ["date", "fsm_name", "region", "zone", "territory", "total_attendees"]
+    ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees"]
     
      # ---------------- Global Extra Data ----------------
     def finalize_response(self, request, response, *args, **kwargs):
@@ -51,12 +51,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
     common_parameters = [
         openapi.Parameter('fsm_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
                          description='Field Sales Manager name'),
-        openapi.Parameter('territory', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
-                         description='Territory name'),
-        openapi.Parameter('zone', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
-                         description='Zone name'),
-        openapi.Parameter('region', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
-                         description='Region name'),
+        openapi.Parameter('company_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                         description='Company ID (Foreign Key)'),
+        openapi.Parameter('territory_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                         description='Territory ID (Foreign Key)'),
+        openapi.Parameter('zone_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                         description='Zone ID (Foreign Key)'),
+        openapi.Parameter('region_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                         description='Region ID (Foreign Key)'),
         openapi.Parameter('date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True,
                          description='Meeting date (YYYY-MM-DD)'),
         openapi.Parameter('location', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
@@ -102,9 +104,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
                             {
                                 'id': 1,
                                 'fsm_name': 'Ahmed Ali',
-                                'region': 'Punjab',
-                                'zone': 'Lahore',
-                                'territory': 'Model Town',
+                                'company_id': 1,
+                         'company_name': 'ABC Agriculture',
+                         'region_id': 1,
+                         'region_name': 'Punjab',
+                         'zone_id': 1,
+                         'zone_name': 'Lahore',
+                         'territory_id': 1,
+                         'territory_name': 'Model Town',
                                 'date': '2024-01-15',
                                 'location': 'Community Center, Model Town',
                                 'total_attendees': 25,
@@ -133,12 +140,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
         manual_parameters=[
             openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
                             description='Filter by FSM name'),
-            openapi.Parameter('region', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
-                            description='Filter by region'),
-            openapi.Parameter('zone', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
-                            description='Filter by zone'),
-            openapi.Parameter('territory', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
-                            description='Filter by territory'),
+            openapi.Parameter('company_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                            description='Filter by company ID'),
+            openapi.Parameter('region_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                            description='Filter by region ID'),
+            openapi.Parameter('zone_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                            description='Filter by zone ID'),
+            openapi.Parameter('territory_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                            description='Filter by territory ID'),
             openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
                             description='Filter by location'),
             openapi.Parameter('presence_of_zm_rsm', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
@@ -158,9 +167,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
                     'application/json': {
                         'id': 1,
                         'fsm_name': 'Ahmed Ali',
-                        'region': 'Punjab',
-                        'zone': 'Lahore',
-                        'territory': 'Model Town',
+                        'company_id': 1,
+                        'company_name': 'ABC Agriculture',
+                        'region_id': 1,
+                        'region_name': 'Punjab',
+                        'zone_id': 1,
+                        'zone_name': 'Lahore',
+                        'territory_id': 1,
+                        'territory_name': 'Model Town',
                         'date': '2024-01-15',
                         'location': 'Community Center, Model Town',
                         'total_attendees': 25,
@@ -210,9 +224,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
                     'application/json': {
                         'id': 1,
                         'fsm_name': 'Ahmed Ali',
-                        'region': 'Punjab',
-                        'zone': 'Lahore',
-                        'territory': 'Model Town',
+                        'company_id': 1,
+                         'company_name': 'ABC Agriculture',
+                         'region_id': 1,
+                         'region_name': 'Punjab',
+                         'zone_id': 1,
+                         'zone_name': 'Lahore',
+                         'territory_id': 1,
+                         'territory_name': 'Model Town',
                         'date': '2024-01-15',
                         'location': 'Community Center',
                         'total_attendees': 25,
@@ -266,7 +285,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 # ------------------------------------------------
 class FieldDayViewSet(viewsets.ModelViewSet):
     queryset = FieldDay.objects.select_related(
-        'region_fk', 'zone_fk', 'territory_fk'
+        'region_fk', 'zone_fk', 'territory_fk', 'company_fk'
     ).all()
     # queryset = FieldDay.objects.all()
     serializer_class = FieldDaySerializer
@@ -275,9 +294,9 @@ class FieldDayViewSet(viewsets.ModelViewSet):
 
     # Filters, search, ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["region", "zone", "territory", "location", "status"]
-    search_fields = ["title", "region", "zone", "territory", "location", "objectives"]
-    ordering_fields = ["date", "title", "region", "zone", "territory"]
+    filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location", "status"]
+    search_fields = ["title", "region_fk__name", "zone_fk__name", "territory_fk__name", "company_fk__Company_name", "location", "objectives"]
+    ordering_fields = ["date", "title", "region_fk__name", "zone_fk__name", "territory_fk__name"]
      # ---------------- Global Extra Data ----------------
     def finalize_response(self, request, response, *args, **kwargs):
         response = super().finalize_response(request, response, *args, **kwargs)
@@ -295,12 +314,14 @@ class FieldDayViewSet(viewsets.ModelViewSet):
     common_parameters = [
         openapi.Parameter('title', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
                           description='Title of the Field Day'),
-        openapi.Parameter('region', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
-                          description='Region name'),
-        openapi.Parameter('zone', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
-                          description='Zone name'),
-        openapi.Parameter('territory', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
-                          description='Territory name'),
+        openapi.Parameter('company_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                          description='Company ID (Foreign Key)'),
+        openapi.Parameter('region_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                          description='Region ID (Foreign Key)'),
+        openapi.Parameter('zone_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                          description='Zone ID (Foreign Key)'),
+        openapi.Parameter('territory_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                          description='Territory ID (Foreign Key)'),
         openapi.Parameter('date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True,
                           description='Field Day date (YYYY-MM-DD)'),
         openapi.Parameter('location', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
@@ -339,9 +360,14 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                         {
                             'id': 1,
                             'title': 'Modern Irrigation Techniques Workshop',
-                            'region': 'Punjab',
-                            'zone': 'Lahore',
-                            'territory': 'Model Town',
+                            'company_id': 1,
+                            'company_name': 'ABC Agriculture',
+                            'region_id': 1,
+                            'region_name': 'Punjab',
+                            'zone_id': 1,
+                            'zone_name': 'Lahore',
+                            'territory_id': 1,
+                            'territory_name': 'Model Town',
                             'date': '2024-02-15',
                             'location': 'Agricultural Research Center',
                             'objectives': 'Demonstrate drip irrigation and water conservation',
@@ -361,12 +387,14 @@ class FieldDayViewSet(viewsets.ModelViewSet):
             )
         },
         manual_parameters=[
-            openapi.Parameter('region', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
-                              description='Filter by region'),
-            openapi.Parameter('zone', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
-                              description='Filter by zone'),
-            openapi.Parameter('territory', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
-                              description='Filter by territory'),
+            openapi.Parameter('company_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                              description='Filter by company ID'),
+            openapi.Parameter('region_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                              description='Filter by region ID'),
+            openapi.Parameter('zone_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                              description='Filter by zone ID'),
+            openapi.Parameter('territory_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                              description='Filter by territory ID'),
             openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
                               description='Filter by location'),
             openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
@@ -387,9 +415,14 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                     'application/json': {
                         'id': 1,
                         'title': 'Modern Irrigation Techniques Workshop',
-                        'region': 'Punjab',
-                        'zone': 'Lahore',
-                        'territory': 'Model Town',
+                        'company_id': 1,
+                        'company_name': 'ABC Agriculture',
+                        'region_id': 1,
+                        'region_name': 'Punjab',
+                        'zone_id': 1,
+                        'zone_name': 'Lahore',
+                        'territory_id': 1,
+                        'territory_name': 'Model Town',
                         'date': '2024-02-15',
                         'location': 'Agricultural Research Center, Lahore',
                         'objectives': 'Demonstrate drip irrigation, water conservation techniques, and modern farming equipment',
