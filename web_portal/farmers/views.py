@@ -1,7 +1,7 @@
 from rest_framework import generics, viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
 from .models import Farmer, FarmingHistory
@@ -28,7 +28,7 @@ class FarmerViewSet(viewsets.ModelViewSet):
     - Custom actions for statistics and farming history
     """
     queryset = Farmer.objects.all().select_related('registered_by').prefetch_related('farming_history')
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = FarmerFilter
     search_fields = [

@@ -5,18 +5,16 @@ from .views import (
     FarmerListCreateView, FarmerDetailView  # Legacy views
 )
 
-# Create router for ViewSets
 router = DefaultRouter()
-router.register(r'farmers', FarmerViewSet, basename='farmer')
+router.register(r'', FarmerViewSet, basename='farmer')  # ⚡ root → /api/farmers/
 router.register(r'farming-history', FarmingHistoryViewSet, basename='farming-history')
 
 urlpatterns = [
-    # New ViewSet-based URLs (recommended)
-    path('api/', include(router.urls)),
-    
-    # Legacy URLs for backward compatibility
-    path('', FarmerListCreateView.as_view(), name='farmer-list-legacy'),
-    path('farmers/<int:pk>/', FarmerDetailView.as_view(), name='farmer-detail-legacy'),
+    path('', include(router.urls)),
+
+    # Legacy URLs under /legacy/ to avoid overlap
+    path('legacy/', FarmerListCreateView.as_view(), name='farmer-list-legacy'),
+    path('legacy/<int:pk>/', FarmerDetailView.as_view(), name='farmer-detail-legacy'),
 ]
 
 # The new API endpoints will be:

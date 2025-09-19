@@ -128,6 +128,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user = self.context['request'].user
         attendee = validated_data.get("attendee", user)
+        validated_data["attendee"] = attendee  # Ensure attendee is in validated_data
         record_date = None
         if validated_data.get("check_in_time"):
             record_date = localdate(validated_data["check_in_time"])
@@ -153,19 +154,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
             validated_data["user"] = user
         return super().update(instance, validated_data)
     
-class AttendanceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Attendance
-        fields = [
-            "id",
-            "user",
-            "check_in_time",
-            "check_out_time",
-            "latitude",
-            "longitude",
-            "attachment",
-            "source",
-        ]
+# Duplicate AttendanceSerializer removed - using the main one above with attendee field
 
 
 # class AttendanceRequestSerializer(serializers.ModelSerializer):

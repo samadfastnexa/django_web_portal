@@ -12,54 +12,54 @@ router.register(r'research', views.CropResearchViewSet, basename='cropresearch')
 
 # The API URLs are now determined automatically by the router
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
     
     # Additional custom endpoints
-    path('api/crops/<int:crop_id>/varieties/', 
+    path('crops/<int:crop_id>/varieties/', 
          views.CropViewSet.as_view({'get': 'varieties'}), 
          name='crop-varieties'),
     
-    path('api/crops/<int:crop_id>/yield-summary/', 
+    path('crops/<int:crop_id>/yield-summary/', 
          views.CropViewSet.as_view({'get': 'yield_summary'}), 
          name='crop-yield-summary'),
     
-    path('api/crops/<int:crop_id>/analytics/', 
+    path('crops/<int:crop_id>/analytics/', 
          views.CropViewSet.as_view({'get': 'analytics'}), 
          name='crop-analytics'),
     
-    path('api/varieties/<int:variety_id>/yield-data/', 
+    path('varieties/<int:variety_id>/yield-data/', 
          views.CropVarietyViewSet.as_view({'get': 'yield_data'}), 
          name='variety-yield-data'),
     
-    path('api/yield-data/summary/', 
+    path('yield-data/summary/', 
          views.YieldDataViewSet.as_view({'get': 'summary'}), 
          name='yield-summary'),
     
-    path('api/yield-data/analytics/', 
+    path('yield-data/analytics/', 
          views.YieldDataViewSet.as_view({'get': 'analytics'}), 
          name='yield-analytics'),
     
-    path('api/yield-data/trends/', 
+    path('yield-data/trends/', 
          views.YieldDataViewSet.as_view({'get': 'trends'}), 
          name='yield-trends'),
     
-    path('api/farming-practices/by-crop/<int:crop_id>/', 
+    path('farming-practices/by-crop/<int:crop_id>/', 
          views.FarmingPracticeViewSet.as_view({'get': 'by_crop'}), 
          name='practices-by-crop'),
     
-    path('api/farming-practices/recommended/', 
+    path('farming-practices/recommended/', 
          views.FarmingPracticeViewSet.as_view({'get': 'recommended'}), 
          name='recommended-practices'),
     
-    path('api/research/by-crop/<int:crop_id>/', 
+    path('research/by-crop/<int:crop_id>/', 
          views.CropResearchViewSet.as_view({'get': 'by_crop'}), 
          name='research-by-crop'),
     
-    path('api/research/recent/', 
+    path('research/recent/', 
          views.CropResearchViewSet.as_view({'get': 'recent'}), 
          name='recent-research'),
     
-    path('api/research/published/', 
+    path('research/published/', 
          views.CropResearchViewSet.as_view({'get': 'published'}), 
          name='published-research'),
 ]

@@ -61,6 +61,7 @@ class FarmerDetailSerializer(serializers.ModelSerializer):
 
 class FarmerCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating farmers"""
+    farmer_id = serializers.CharField(required=False, allow_blank=True, help_text="Leave blank for auto-generation")
     
     class Meta:
         model = Farmer
@@ -78,9 +79,14 @@ class FarmerCreateUpdateSerializer(serializers.ModelSerializer):
             'family_members_count', 'dependents_count', 'family_involved_in_farming',
             'is_active', 'is_verified', 'notes', 'profile_picture'
         ]
+        read_only_fields = ['id', 'registration_date', 'last_updated']
     
     def validate_farmer_id(self, value):
         """Validate farmer ID uniqueness"""
+        # If value is empty or None, it will be auto-generated, so no validation needed
+        if not value:
+            return value
+            
         if self.instance:
             # For updates, exclude current instance
             if Farmer.objects.exclude(pk=self.instance.pk).filter(farmer_id=value).exists():

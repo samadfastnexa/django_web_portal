@@ -78,9 +78,13 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
                         'user': 1,
                         'attendee': 1,
                         'check_in_time': '2024-01-15T09:00:00Z',
+                        'check_out_time': '2024-01-15T09:00:00Z',
                         'latitude': '31.5204',
                         'longitude': '74.3587',
-                        'created_at': '2024-01-15T09:00:00Z'
+                        'attachment': 'http://localhost:8000/media/attendance_attachments/pexels-mustafa-el-taie-746834423-30201309.jpg',
+                        'source': 'manull/request',
+                        'created_at': '2024-01-15T09:00:00Z',
+                        'updated_at': '2024-01-15T09:00:00Z'
                     }
                 }
             ),
@@ -94,7 +98,10 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Attendance.objects.none()
-        return Attendance.objects.filter(user_id=self.request.user)
+        user = self.request.user
+        if user.is_authenticated:
+            return Attendance.objects.filter(user_id=user)
+        return Attendance.objects.none()
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -107,8 +114,8 @@ class AttendanceListCreateView(generics.ListCreateAPIView):
         if not check_in_time and not check_out_time:
             raise ValidationError("At least one of check_in_time or check_out_time must be provided.")
 
-        # ✅ Save extra fields like lat/lon/attachment
-        attendance = serializer.save(user=user)
+        # ✅ Save extra fields like lat/lon/attachment and set attendee
+        attendance = serializer.save(user=user, attendee=attendee)
 
         # ✅ Funnel everything to centralized mark_attendance
         if check_in_time:
@@ -207,7 +214,10 @@ class AttendanceDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Attendance.objects.none()
-        return Attendance.objects.filter(user_id=self.request.user)
+        user = self.request.user
+        if user.is_authenticated:
+            return Attendance.objects.filter(user_id=user)
+        return Attendance.objects.none()
 
 
 # views.py (at the top, before your viewset)

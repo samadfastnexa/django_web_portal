@@ -121,7 +121,43 @@ class Farmer(models.Model):
     def save(self, *args, **kwargs):
         # Auto-generate full name from first and last name
         self.name = f"{self.first_name} {self.last_name}"
+        
+        # Auto-generate farmer_id if not provided
+        if not self.farmer_id:
+            self.farmer_id = self.generate_unique_farmer_id()
+        
         super().save(*args, **kwargs)
+    
+    def generate_unique_farmer_id(self):
+        """Generate a unique farmer ID based on district and sequential number"""
+        import re
+        from datetime import datetime
+        
+        # Clean district name for ID generation
+        district_clean = re.sub(r'[^a-zA-Z]', '', self.district.upper())[:3] if self.district else 'GEN'
+        
+        # Get current year
+        current_year = datetime.now().year
+        
+        # Find the highest existing farmer ID for this district and year
+        prefix = f"{district_clean}{current_year}"
+        existing_ids = Farmer.objects.filter(
+            farmer_id__startswith=prefix
+        ).values_list('farmer_id', flat=True)
+        
+        # Extract numbers from existing IDs and find the next sequential number
+        numbers = []
+        for farmer_id in existing_ids:
+            # Extract number part after prefix
+            number_part = farmer_id[len(prefix):]
+            if number_part.isdigit():
+                numbers.append(int(number_part))
+        
+        # Get next number (start from 1 if no existing IDs)
+        next_number = max(numbers) + 1 if numbers else 1
+        
+        # Format: DISTRICT_CODE + YEAR + 4-digit sequential number
+        return f"{prefix}{next_number:04d}"
     
     @property
     def full_name(self):
