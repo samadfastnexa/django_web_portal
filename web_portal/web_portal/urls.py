@@ -38,4 +38,5 @@ urlpatterns = [
     path('api/farm/',include('farm.urls')),
     path('api/sap/', include('sap_integration.urls')),
     path('api/crop-management/', include('crop_management.urls')),
+     path('api/', include('crop_manage.urls')),  # <-- add this
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

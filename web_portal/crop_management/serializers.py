@@ -27,6 +27,7 @@ class CropSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'is_active', 'varieties_count', 'yield_records_count'
         ]
         read_only_fields = ['created_by', 'created_at', 'updated_at']
+        ref_name = 'CropManagementCropSerializer'
     
     def get_varieties_count(self, obj):
         return obj.varieties.filter(is_active=True).count()

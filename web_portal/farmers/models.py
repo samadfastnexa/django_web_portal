@@ -23,29 +23,15 @@ class Farmer(models.Model):
         ('phd', _('PhD')),
     ]
     
-    FARM_OWNERSHIP_CHOICES = [
-        ('owned', _('Owned')),
-        ('leased', _('Leased')),
-        ('shared', _('Shared/Partnership')),
-        ('tenant', _('Tenant Farming')),
-    ]
-    
-    FARMING_EXPERIENCE_CHOICES = [
-        ('beginner', _('0-2 years')),
-        ('intermediate', _('3-10 years')),
-        ('experienced', _('11-20 years')),
-        ('expert', _('20+ years')),
-    ]
-    
     # Personal Information
-    farmer_id = models.CharField(max_length=20, unique=True, verbose_name=_('Farmer ID'))
+    farmer_id = models.CharField(max_length=10, unique=True, verbose_name=_('Farmer ID'))
     first_name = models.CharField(max_length=50, verbose_name=_('First Name'))
     last_name = models.CharField(max_length=50, verbose_name=_('Last Name'))
     name = models.CharField(max_length=100, verbose_name=_('Full Name'))  # Keep for backward compatibility
     father_name = models.CharField(max_length=100, blank=True, verbose_name=_('Father Name'))
     date_of_birth = models.DateField(null=True, blank=True, verbose_name=_('Date of Birth'))
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, verbose_name=_('Gender'))
-    national_id = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name=_('National ID/CNIC'))
+    cnic = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name=_('CNIC'))
     
     # Contact Information
     phone_regex = RegexValidator(regex=r'^\+?1?\d{9,15}$', message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed.")
@@ -59,45 +45,16 @@ class Farmer(models.Model):
     tehsil = models.CharField(max_length=100, verbose_name=_('Tehsil'))
     district = models.CharField(max_length=100, verbose_name=_('District'))
     province = models.CharField(max_length=100, verbose_name=_('Province/State'))
-    postal_code = models.CharField(max_length=10, blank=True, verbose_name=_('Postal Code'))
     
-    # Location coordinates (existing fields)
-    current_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name=_('Current Latitude'))
-    current_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name=_('Current Longitude'))
-    farm_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name=_('Farm Latitude'))
-    farm_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name=_('Farm Longitude'))
-    
-    # Education and Background
+    # Education
     education_level = models.CharField(max_length=20, choices=EDUCATION_CHOICES, default='primary', verbose_name=_('Education Level'))
-    occupation_besides_farming = models.CharField(max_length=200, blank=True, verbose_name=_('Other Occupation'))
     
-    # Farm Ownership and Details
+    # Farm Details
     total_land_area = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text=_('Total land area in acres'), verbose_name=_('Total Land Area (acres)'))
-    cultivated_area = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text=_('Currently cultivated area in acres'), verbose_name=_('Cultivated Area (acres)'))
-    farm_ownership_type = models.CharField(max_length=20, choices=FARM_OWNERSHIP_CHOICES, verbose_name=_('Farm Ownership Type'))
-    land_documents = models.TextField(blank=True, help_text=_('Details about land ownership documents'), verbose_name=_('Land Documents'))
-    
-    # Farming Experience and History
-    farming_experience = models.CharField(max_length=20, choices=FARMING_EXPERIENCE_CHOICES, verbose_name=_('Farming Experience'))
-    years_of_farming = models.PositiveIntegerField(default=0, verbose_name=_('Years of Farming'))
-    main_crops_grown = models.TextField(help_text=_('List of main crops grown by the farmer'), verbose_name=_('Main Crops Grown'))
-    farming_methods = models.TextField(blank=True, help_text=_('Traditional, modern, organic, etc.'), verbose_name=_('Farming Methods'))
-    irrigation_source = models.CharField(max_length=200, blank=True, verbose_name=_('Irrigation Source'))
-    
-    # Financial Information
-    annual_income_range = models.CharField(max_length=100, blank=True, verbose_name=_('Annual Income Range'))
-    bank_account_details = models.TextField(blank=True, verbose_name=_('Bank Account Details'))
-    
-    # Family Information
-    family_members_count = models.PositiveIntegerField(default=1, verbose_name=_('Family Members Count'))
-    dependents_count = models.PositiveIntegerField(default=0, verbose_name=_('Dependents Count'))
-    family_involved_in_farming = models.BooleanField(default=False, verbose_name=_('Family Involved in Farming'))
     
     # Registration and Status
     registration_date = models.DateTimeField(auto_now_add=True, verbose_name=_('Registration Date'))
     last_updated = models.DateTimeField(auto_now=True, verbose_name=_('Last Updated'))
-    is_active = models.BooleanField(default=True, verbose_name=_('Is Active'))
-    is_verified = models.BooleanField(default=False, verbose_name=_('Is Verified'))
     registered_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='registered_farmers', verbose_name=_('Registered By'))
     
     # Additional Notes
@@ -112,7 +69,7 @@ class Farmer(models.Model):
             models.Index(fields=['farmer_id']),
             models.Index(fields=['district', 'tehsil']),
             models.Index(fields=['registration_date']),
-            models.Index(fields=['is_active', 'is_verified']),
+
         ]
     
     def __str__(self):
@@ -129,35 +86,26 @@ class Farmer(models.Model):
         super().save(*args, **kwargs)
     
     def generate_unique_farmer_id(self):
-        """Generate a unique farmer ID based on district and sequential number"""
-        import re
-        from datetime import datetime
+        """Generate a simple sequential farmer ID like FM01, FM02, etc."""
         
-        # Clean district name for ID generation
-        district_clean = re.sub(r'[^a-zA-Z]', '', self.district.upper())[:3] if self.district else 'GEN'
-        
-        # Get current year
-        current_year = datetime.now().year
-        
-        # Find the highest existing farmer ID for this district and year
-        prefix = f"{district_clean}{current_year}"
+        # Find the highest existing farmer ID with FM prefix
         existing_ids = Farmer.objects.filter(
-            farmer_id__startswith=prefix
+            farmer_id__startswith='FM'
         ).values_list('farmer_id', flat=True)
         
         # Extract numbers from existing IDs and find the next sequential number
         numbers = []
         for farmer_id in existing_ids:
-            # Extract number part after prefix
-            number_part = farmer_id[len(prefix):]
+            # Extract number part after 'FM' prefix
+            number_part = farmer_id[2:]  # Remove 'FM' prefix
             if number_part.isdigit():
                 numbers.append(int(number_part))
         
         # Get next number (start from 1 if no existing IDs)
         next_number = max(numbers) + 1 if numbers else 1
         
-        # Format: DISTRICT_CODE + YEAR + 4-digit sequential number
-        return f"{prefix}{next_number:04d}"
+        # Format: FM + 2-digit sequential number (FM01, FM02, etc.)
+        return f"FM{next_number:02d}"
     
     @property
     def full_name(self):
@@ -181,7 +129,7 @@ class FarmingHistory(models.Model):
         ('zaid', _('Zaid (Spring)')),
     ]
     
-    farmer = models.ForeignKey(Farmer, on_delete=models.CASCADE, related_name='farming_history', verbose_name=_('Farmer'))
+    farmer = models.ForeignKey(Farmer, on_delete=models.CASCADE, related_name='history_records', verbose_name=_('Farmer'))
     year = models.PositiveIntegerField(verbose_name=_('Year'))
     season = models.CharField(max_length=10, choices=SEASON_CHOICES, verbose_name=_('Season'))
     crop_name = models.CharField(max_length=100, verbose_name=_('Crop Name'))

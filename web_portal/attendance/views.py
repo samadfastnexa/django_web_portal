@@ -133,7 +133,7 @@ class AttendanceCheckInView(generics.CreateAPIView):
         return Attendance.objects.all()
     
     @swagger_auto_schema(
-        operation_description="Check-in with image upload. Creates a new attendance record with check-in time and image. Expects multipart/form-data with fields: attendee (integer), check_in_time (datetime), latitude (number), longitude (number), check_in_image (file).",
+        operation_description="Check-in with image upload. Creates a new attendance record with check-in time and image. Expects multipart/form-data with fields: attendee (integer), check_in_time (datetime), check_in_latitude (number), check_in_longitude (number), check_in_image (file).",
         request_body=AttendanceCheckInSerializer,
         responses={
             201: openapi.Response(
@@ -144,8 +144,8 @@ class AttendanceCheckInView(generics.CreateAPIView):
                         'id': 1,
                         'attendee': 1,
                         'check_in_time': '2024-01-15T09:00:00Z',
-                        'latitude': '31.5204',
-                        'longitude': '74.3587',
+                        'check_in_latitude': '31.5204',
+                        'check_in_longitude': '74.3587',
                         'check_in_image': '/media/attendance_checkin/photo_123.jpg'
                     }
                 }
@@ -177,6 +177,15 @@ class AttendanceUpdateView(generics.RetrieveUpdateDestroyAPIView):
             return Attendance.objects.none()
         attendee_id = self.kwargs.get('attendee_id')
         return Attendance.objects.filter(attendee_id=attendee_id)
+    
+    def get_object(self):
+        """Override to return the latest attendance record for the attendee"""
+        queryset = self.get_queryset()
+        if not queryset.exists():
+            from django.http import Http404
+            raise Http404("No attendance records found for this attendee")
+        # Return the latest attendance record based on created_at
+        return queryset.order_by('-created_at').first()
     
     def get_serializer_class(self):
         if self.request.method == 'PATCH':
@@ -248,8 +257,8 @@ class AttendanceUpdateView(generics.RetrieveUpdateDestroyAPIView):
                     'application/json': {
                         'id': 1,
                         'check_out_time': '2024-01-15T17:30:00Z',
-                        'latitude': '31.5204',
-                        'longitude': '74.3587',
+                        'check_out_latitude': '31.5204',
+                        'check_out_longitude': '74.3587',
                         'check_out_image': '/media/attendance_checkout/photo_124.jpg'
                     }
                 }
@@ -283,10 +292,14 @@ class AttendanceByAttendeeView(generics.ListAPIView):
         if getattr(self, 'swagger_fake_view', False):
             return Attendance.objects.none()
         
-        attendee_id = self.kwargs.get('attendee_id')
+        attendee_id = self.request.query_params.get('attendee_id')
         filter_type = self.request.query_params.get('filter', 'daily')
         
-        queryset = Attendance.objects.filter(attendee_id=attendee_id)
+        # If attendee_id is None (not provided), return all records; otherwise filter by attendee_id
+        if attendee_id is None:
+            queryset = Attendance.objects.all()
+        else:
+            queryset = Attendance.objects.filter(attendee_id=attendee_id)
         
         from django.utils import timezone
         from datetime import timedelta
@@ -314,8 +327,15 @@ class AttendanceByAttendeeView(generics.ListAPIView):
         return queryset.order_by('-check_in_time')
     
     @swagger_auto_schema(
-        operation_description="Get attendance records for a specific attendee with time-based filtering (daily, weekly, monthly).",
+        operation_description="Get attendance records with time-based filtering (daily, weekly, monthly). If attendee_id is provided as a query parameter, returns records for that specific user. If attendee_id is not provided, returns all attendance records for all users.",
         manual_parameters=[
+            openapi.Parameter(
+                'attendee_id',
+                openapi.IN_QUERY,
+                description='Optional: Attendee ID to filter records for a specific user. If not provided, returns all users.',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
             openapi.Parameter(
                 'filter',
                 openapi.IN_QUERY,
@@ -327,7 +347,7 @@ class AttendanceByAttendeeView(generics.ListAPIView):
         ],
         responses={
             200: openapi.Response(
-                description='List of attendance records for the specified attendee',
+                description='List of attendance records. Returns all users when attendee_id is not provided, or specific user records when attendee_id is provided as a query parameter.',
                 schema=AttendanceSerializer(many=True),
                 examples={
                     'application/json': [
@@ -345,7 +365,7 @@ class AttendanceByAttendeeView(generics.ListAPIView):
                     ]
                 }
             ),
-            404: 'No attendance records found for this attendee'
+            404: 'No attendance records found'
         },
         tags=["08. Attendance"]
     )

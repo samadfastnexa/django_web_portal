@@ -20,7 +20,6 @@ urlpatterns = [
 # The new API endpoints will be:
 # GET/POST    /api/farmers/                    - List/Create farmers with search & filtering
 # GET/PUT/PATCH/DELETE /api/farmers/{id}/     - Retrieve/Update/Delete specific farmer
-# GET         /api/farmers/{id}/farming_history/ - Get farming history for farmer
 # GET         /api/farmers/statistics/         - Get farmer statistics
 # GET/POST    /api/farming-history/            - List/Create farming history records
 # GET/PUT/PATCH/DELETE /api/farming-history/{id}/ - Manage specific farming history record

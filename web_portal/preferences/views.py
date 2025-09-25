@@ -138,81 +138,6 @@ class SettingViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
     
-# ✅ Place the function here, above your view
-# def get_zone_territory_choices():
-#     choices = []
-#     zones = Zone.objects.prefetch_related('territories').all()
-    
-#     for zone in zones:
-#         # Add zone itself
-#         choices.append((zone.name, zone.name))
-        
-#         # Add territories under the zone
-#         for terr in zone.territories.all():
-#             choices.append((f"{zone.name} -> {terr.name}", f"{zone.name} -> {terr.name}"))
-    
-#     return choices
-# # Example list of cities for dropdown
-# CITIES = ["Karachi", "Lahore", "Islamabad", "Multan", "Peshawar", "Quetta"]
-
-# class WeatherTestView(APIView):
-#     """
-#     Fetch current weather + 3-day forecast for a city.
-#     Query param: ?q=CityName
-#     """
-
-#     @swagger_auto_schema(
-#         manual_parameters=[
-#             openapi.Parameter(
-#                 name="q",
-#                 in_=openapi.IN_QUERY,
-#                 type=openapi.TYPE_STRING,
-#                 description="City to get weather for",
-#                 enum=CITIES  # dropdown options
-#             )
-#         ],
-#         responses={200: "Current weather + 3-day forecast"}
-#     )
-#     def get(self, request):
-#         city = request.query_params.get('q', 'Lahore')
-#         api_key = settings.WEATHER_API_KEY
-#         url = f"http://api.weatherapi.com/v1/forecast.json?key={api_key}&q={city}&days=3&aqi=no&alerts=no"
-
-#         try:
-#             response = requests.get(url)
-#             data = response.json()
-
-#             # Current weather
-#             current = {
-#                 "temperature_c": data["current"]["temp_c"],
-#                 "condition": data["current"]["condition"]["text"],
-#                 "humidity": data["current"]["humidity"],
-#                 "wind_kph": data["current"]["wind_kph"],
-#             }
-
-#             # 3-day forecast
-#             forecast_days = []
-#             for day in data["forecast"]["forecastday"]:
-#                 forecast_days.append({
-#                     "date": day["date"],
-#                     "max_temp_c": day["day"]["maxtemp_c"],
-#                     "min_temp_c": day["day"]["mintemp_c"],
-#                     "condition": day["day"]["condition"]["text"],
-#                     "chance_of_rain": day["day"].get("daily_chance_of_rain"),
-#                 })
-
-#             return Response({
-#                 "city": data["location"]["name"],
-#                 "region": data["location"]["region"],
-#                 "country": data["location"]["country"],
-#                 "localtime": data["location"]["localtime"],
-#                 "current": current,
-#                 "forecast": forecast_days
-#             }, status=status.HTTP_200_OK)
-
-#         except Exception as e:
-#             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class WeatherTestView(APIView):
     # permission_classes = [IsAuthenticated]
@@ -256,7 +181,9 @@ class WeatherTestView(APIView):
                             properties={
                                 'temperature': openapi.Schema(type=openapi.TYPE_STRING, description='Current temperature in Celsius'),
                                 'condition': openapi.Schema(type=openapi.TYPE_STRING, description='Current weather condition'),
-                                'humidity': openapi.Schema(type=openapi.TYPE_STRING, description='Current humidity percentage')
+                                'humidity': openapi.Schema(type=openapi.TYPE_STRING, description='Current humidity percentage'),
+                                'icon': openapi.Schema(type=openapi.TYPE_STRING, description='Weather icon path from WeatherAPI.com'),
+                                'icon_url': openapi.Schema(type=openapi.TYPE_STRING, description='Full HTTPS URL to weather icon')
                             }
                         ),
                         'forecast': openapi.Schema(
@@ -267,7 +194,9 @@ class WeatherTestView(APIView):
                                 properties={
                                     'day': openapi.Schema(type=openapi.TYPE_STRING, description='Day number (Day 1, Day 2, Day 3)'),
                                     'temperature': openapi.Schema(type=openapi.TYPE_STRING, description='Maximum temperature for the day'),
-                                    'condition': openapi.Schema(type=openapi.TYPE_STRING, description='Weather condition for the day')
+                                    'condition': openapi.Schema(type=openapi.TYPE_STRING, description='Weather condition for the day'),
+                                    'icon': openapi.Schema(type=openapi.TYPE_STRING, description='Weather icon path from WeatherAPI.com'),
+                                    'icon_url': openapi.Schema(type=openapi.TYPE_STRING, description='Full HTTPS URL to weather icon')
                                 }
                             )
                         )
@@ -280,23 +209,31 @@ class WeatherTestView(APIView):
                         "current_weather": {
                             "temperature": "28°C",
                             "condition": "Partly cloudy",
-                            "humidity": "62%"
+                            "humidity": "62%",
+                            "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png",
+                            "icon_url": "https://cdn.weatherapi.com/weather/64x64/day/116.png"
                         },
                         "forecast": [
                             {
                                 "day": "Day 1",
                                 "temperature": "30°C",
-                                "condition": "Sunny"
+                                "condition": "Sunny",
+                                "icon": "//cdn.weatherapi.com/weather/64x64/day/113.png",
+                                "icon_url": "https://cdn.weatherapi.com/weather/64x64/day/113.png"
                             },
                             {
                                 "day": "Day 2",
                                 "temperature": "27°C",
-                                "condition": "Light rain"
+                                "condition": "Light rain",
+                                "icon": "//cdn.weatherapi.com/weather/64x64/day/296.png",
+                                "icon_url": "https://cdn.weatherapi.com/weather/64x64/day/296.png"
                             },
                             {
                                 "day": "Day 3",
                                 "temperature": "29°C",
-                                "condition": "Partly cloudy"
+                                "condition": "Partly cloudy",
+                                "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png",
+                                "icon_url": "https://cdn.weatherapi.com/weather/64x64/day/116.png"
                             }
                         ]
                     }
@@ -346,7 +283,11 @@ class WeatherTestView(APIView):
             territory = Territory.objects.filter(name__icontains=query).select_related("zone").first()
             if territory:
                 location_name = f"Territory: {territory.name} (Zone: {territory.zone.name})"
-                location_for_weather = territory.name
+                # Use latitude,longitude if available, otherwise use territory name
+                if territory.latitude and territory.longitude:
+                    location_for_weather = f"{territory.latitude},{territory.longitude}"
+                else:
+                    location_for_weather = territory.name
             else:
                 return Response({"error": f"No Zone/Territory found matching '{query}'"}, status=404)
 
@@ -364,21 +305,26 @@ class WeatherTestView(APIView):
             location_data = weather_api_data.get("location", {})
             forecast_data = weather_api_data.get("forecast", {}).get("forecastday", [])
             
-            # Format current weather
+            # Format current weather with icon
             current_weather = {
                 "temperature": f"{current.get('temp_c', 'N/A')}°C",
                 "condition": current.get("condition", {}).get("text", "Unknown"),
-                "humidity": f"{current.get('humidity', 'N/A')}%"
+                "humidity": f"{current.get('humidity', 'N/A')}%",
+                "icon": current.get("condition", {}).get("icon", ""),
+                "icon_url": f"https:{current.get('condition', {}).get('icon', '')}" if current.get('condition', {}).get('icon') else ""
             }
             
-            # Format 3-day forecast
+            # Format 3-day forecast with icons
             forecast = []
             for i, day_data in enumerate(forecast_data[:3]):
                 day_info = day_data.get("day", {})
+                condition_info = day_info.get("condition", {})
                 forecast.append({
                     "day": f"Day {i + 1}",
                     "temperature": f"{day_info.get('maxtemp_c', 'N/A')}°C",
-                    "condition": day_info.get("condition", {}).get("text", "Unknown")
+                    "condition": condition_info.get("text", "Unknown"),
+                    "icon": condition_info.get("icon", ""),
+                    "icon_url": f"https:{condition_info.get('icon', '')}" if condition_info.get('icon') else ""
                 })
             
             weather_data = {

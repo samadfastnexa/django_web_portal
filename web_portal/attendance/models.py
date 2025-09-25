@@ -51,8 +51,11 @@ class Attendance(models.Model):
     check_out_time = models.DateTimeField(null=True, blank=True)
     check_in_gap = models.DurationField(null=True, blank=True)
     check_out_gap = models.DurationField(null=True, blank=True)
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_in_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_in_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_out_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_out_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    
     check_in_image = models.ImageField(upload_to='attendance_checkin/',
                                        validators=[validate_file_size],
                                        null=True, blank=True)

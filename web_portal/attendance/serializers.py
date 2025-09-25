@@ -15,7 +15,8 @@ class AttendanceSerializer(serializers.ModelSerializer):
         model = Attendance
         fields = [
             'id', 'attendee', 'check_in_time', 'check_out_time',
-            'check_in_gap', 'check_out_gap', 'latitude', 'longitude',
+            'check_in_gap', 'check_out_gap', 'check_in_latitude', 'check_in_longitude',
+            'check_out_latitude', 'check_out_longitude',
             'check_in_image', 'check_out_image', 'source', 'created_at', 'user'
         ]
         read_only_fields = ['user', 'check_in_gap', 'check_out_gap', 'created_at', 'source']
@@ -23,14 +24,26 @@ class AttendanceSerializer(serializers.ModelSerializer):
     # -------------------
     # Field-level validation
     # -------------------
-    def validate_latitude(self, value):
+
+
+    def validate_check_in_latitude(self, value):
         if value is not None and (value < -90 or value > 90):
-            raise serializers.ValidationError("Latitude must be between -90 and 90.")
+            raise serializers.ValidationError("Check-in latitude must be between -90 and 90.")
         return value
 
-    def validate_longitude(self, value):
+    def validate_check_in_longitude(self, value):
         if value is not None and (value < -180 or value > 180):
-            raise serializers.ValidationError("Longitude must be between -180 and 180.")
+            raise serializers.ValidationError("Check-in longitude must be between -180 and 180.")
+        return value
+
+    def validate_check_out_latitude(self, value):
+        if value is not None and (value < -90 or value > 90):
+            raise serializers.ValidationError("Check-out latitude must be between -90 and 90.")
+        return value
+
+    def validate_check_out_longitude(self, value):
+        if value is not None and (value < -180 or value > 180):
+            raise serializers.ValidationError("Check-out longitude must be between -180 and 180.")
         return value
 
     # -------------------
@@ -163,18 +176,18 @@ class AttendanceCheckInSerializer(serializers.ModelSerializer):
         model = Attendance
         fields = [
             'id', 'attendee', 'check_in_time',
-            'latitude', 'longitude', 'check_in_image', 'created_at', 'user'
+            'check_in_latitude', 'check_in_longitude', 'check_in_image', 'created_at', 'user'
         ]
         read_only_fields = ['user', 'created_at']
 
-    def validate_latitude(self, value):
+    def validate_check_in_latitude(self, value):
         if value is not None and (value < -90 or value > 90):
-            raise serializers.ValidationError("Latitude must be between -90 and 90.")
+            raise serializers.ValidationError("Check-in latitude must be between -90 and 90.")
         return value
 
-    def validate_longitude(self, value):
+    def validate_check_in_longitude(self, value):
         if value is not None and (value < -180 or value > 180):
-            raise serializers.ValidationError("Longitude must be between -180 and 180.")
+            raise serializers.ValidationError("Check-in longitude must be between -180 and 180.")
         return value
 
     def validate(self, data):
@@ -186,18 +199,18 @@ class AttendanceCheckOutSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attendance
         fields = [
-            'id', 'check_out_time', 'latitude', 'longitude', 'check_out_image'
+            'id', 'check_out_time', 'check_out_latitude', 'check_out_longitude', 'check_out_image'
         ]
         read_only_fields = ['id']
 
-    def validate_latitude(self, value):
+    def validate_check_out_latitude(self, value):
         if value is not None and (value < -90 or value > 90):
-            raise serializers.ValidationError("Latitude must be between -90 and 90.")
+            raise serializers.ValidationError("Check-out latitude must be between -90 and 90.")
         return value
 
-    def validate_longitude(self, value):
+    def validate_check_out_longitude(self, value):
         if value is not None and (value < -180 or value > 180):
-            raise serializers.ValidationError("Longitude must be between -180 and 180.")
+            raise serializers.ValidationError("Check-out longitude must be between -180 and 180.")
         return value
 
     def validate(self, data):

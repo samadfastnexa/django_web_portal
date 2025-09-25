@@ -28,32 +28,10 @@ class FarmerFilter(django_filters.FilterSet):
     # Farm information filters
     total_land_area_min = django_filters.NumberFilter(field_name='total_land_area', lookup_expr='gte')
     total_land_area_max = django_filters.NumberFilter(field_name='total_land_area', lookup_expr='lte')
-    cultivated_area_min = django_filters.NumberFilter(field_name='cultivated_area', lookup_expr='gte')
-    cultivated_area_max = django_filters.NumberFilter(field_name='cultivated_area', lookup_expr='lte')
     
-    farm_ownership_type = django_filters.ChoiceFilter(choices=Farmer.FARM_OWNERSHIP_CHOICES)
-    farming_experience = django_filters.ChoiceFilter(choices=Farmer.FARMING_EXPERIENCE_CHOICES)
     education_level = django_filters.ChoiceFilter(choices=Farmer.EDUCATION_CHOICES)
-    irrigation_source = django_filters.CharFilter(lookup_expr='icontains')
-    annual_income_range = django_filters.CharFilter(lookup_expr='icontains')
     
-    # Farming details
-    main_crops_grown = django_filters.CharFilter(lookup_expr='icontains')
-    farming_methods = django_filters.CharFilter(lookup_expr='icontains')
-    
-    # Experience filters
-    years_of_farming_min = django_filters.NumberFilter(field_name='years_of_farming', lookup_expr='gte')
-    years_of_farming_max = django_filters.NumberFilter(field_name='years_of_farming', lookup_expr='lte')
-    farming_experience_years = django_filters.NumberFilter(field_name='farming_experience', lookup_expr='exact')
-    
-    # Family information
-    family_members_count_min = django_filters.NumberFilter(field_name='family_members_count', lookup_expr='gte')
-    family_members_count_max = django_filters.NumberFilter(field_name='family_members_count', lookup_expr='lte')
-    family_involved_in_farming = django_filters.BooleanFilter()
-    
-    # Status filters
-    is_active = django_filters.BooleanFilter()
-    is_verified = django_filters.BooleanFilter()
+
     
     # Date filters
     registration_date_from = django_filters.DateFilter(field_name='registration_date', lookup_expr='gte')
@@ -74,12 +52,7 @@ class FarmerFilter(django_filters.FilterSet):
             'province': ['exact', 'icontains'],
             'gender': ['exact'],
             'education_level': ['exact'],
-            'farm_ownership_type': ['exact'],
-            'farming_experience': ['exact'],
-            'irrigation_source': ['exact'],
-            'annual_income_range': ['exact'],
-            'is_active': ['exact'],
-            'is_verified': ['exact'],
+
             'registration_date': ['exact', 'gte', 'lte'],
         }
     
@@ -99,8 +72,6 @@ class FarmerFilter(django_filters.FilterSet):
             Q(tehsil__icontains=value) |
             Q(district__icontains=value) |
             Q(province__icontains=value) |
-            Q(main_crops_grown__icontains=value) |
-            Q(farming_methods__icontains=value) |
             Q(national_id__icontains=value)
         )
     

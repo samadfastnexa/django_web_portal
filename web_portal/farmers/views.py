@@ -27,18 +27,18 @@ class FarmerViewSet(viewsets.ModelViewSet):
     - Delete farmers
     - Custom actions for statistics and farming history
     """
-    queryset = Farmer.objects.all().select_related('registered_by').prefetch_related('farming_history')
-    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    queryset = Farmer.objects.all().select_related('registered_by')
+    parser_classes = [MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = FarmerFilter
     search_fields = [
         'farmer_id', 'first_name', 'last_name', 'father_name',
         'primary_phone', 'email', 'village', 'district', 'province',
-        'main_crops_grown', 'farming_methods', 'national_id'
+        'cnic'
     ]
     ordering_fields = [
         'registration_date', 'first_name', 'last_name', 'total_land_area',
-        'farming_experience', 'years_of_farming', 'is_verified'
+        'education_level'
     ]
     ordering = ['-registration_date']
     
@@ -59,8 +59,8 @@ class FarmerViewSet(viewsets.ModelViewSet):
             # For list view, we don't need farming history
             return queryset.select_related('registered_by')
         else:
-            # For detail views, include farming history
-            return queryset.select_related('registered_by').prefetch_related('farming_history')
+            # For detail views
+            return queryset.select_related('registered_by')
     
     @swagger_auto_schema(
         operation_description="Retrieve a searchable and filterable list of farmers",
@@ -69,14 +69,37 @@ class FarmerViewSet(viewsets.ModelViewSet):
             openapi.Parameter('village', openapi.IN_QUERY, description="Filter by village", type=openapi.TYPE_STRING),
             openapi.Parameter('district', openapi.IN_QUERY, description="Filter by district", type=openapi.TYPE_STRING),
             openapi.Parameter('gender', openapi.IN_QUERY, description="Filter by gender", type=openapi.TYPE_STRING),
-            openapi.Parameter('farming_experience', openapi.IN_QUERY, description="Filter by farming experience", type=openapi.TYPE_STRING),
-            openapi.Parameter('is_verified', openapi.IN_QUERY, description="Filter by verification status", type=openapi.TYPE_BOOLEAN),
+            openapi.Parameter('education_level', openapi.IN_QUERY, description="Filter by education level", type=openapi.TYPE_STRING),
+
             openapi.Parameter('total_land_area_min', openapi.IN_QUERY, description="Minimum land area", type=openapi.TYPE_NUMBER),
             openapi.Parameter('total_land_area_max', openapi.IN_QUERY, description="Maximum land area", type=openapi.TYPE_NUMBER),
             openapi.Parameter('ordering', openapi.IN_QUERY, description="Order by field (prefix with - for descending)", type=openapi.TYPE_STRING),
         ],
         responses={
-            200: FarmerListSerializer(many=True)
+            200: openapi.Response(
+                description="List of farmers retrieved successfully",
+                schema=FarmerListSerializer(many=True),
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'farmer_id': 'FM01',
+                            'first_name': 'Ahmed',
+                            'last_name': 'Khan',
+                            'full_name': 'Ahmed Khan',
+                            'primary_phone': '+923001234567',
+                            'village': 'Chak 123',
+                            'district': 'Faisalabad',
+                            'total_land_area': '25.50',
+                            'education_level': 'secondary',
+
+                            'registration_date': '2024-01-15T10:30:00Z',
+                            'age': 45,
+                            'profile_picture': 'http://example.com/media/farmer_profiles/ahmed_khan.jpg'
+                        }
+                    ]
+                }
+            )
         },
         tags=["06. Farmers"]
     )
@@ -84,11 +107,46 @@ class FarmerViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
     
     @swagger_auto_schema(
-        operation_description="Create a new farmer with detailed information",
-        request_body=FarmerCreateUpdateSerializer,
+        operation_description="Create a new farmer with detailed information using form data format. Example form data: first_name=Ahmed, last_name=Khan, primary_phone=+923001234567, village=Chak 123, district=Faisalabad, total_land_area=25.50, education_level=secondary, profile_picture=<image_file>",
+        consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
-            201: FarmerDetailSerializer,
-            400: 'Bad Request - Invalid data provided'
+            201: openapi.Response(
+                description="Farmer created successfully",
+                schema=FarmerDetailSerializer,
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'farmer_id': 'FM01',
+                        'first_name': 'Ahmed',
+                        'last_name': 'Khan',
+                        'full_name': 'Ahmed Khan',
+                        'name': 'Ahmed Khan',
+                        'father_name': 'Muhammad Khan',
+                        'date_of_birth': '1979-05-15',
+                        'age': 45,
+                        'gender': 'male',
+                        'cnic': '12345-6789012-3',
+                        'primary_phone': '+923001234567',
+                        'secondary_phone': '+923009876543',
+                        'email': 'ahmed.khan@example.com',
+                        'address': 'House 123, Street 5, Chak 123',
+                        'village': 'Chak 123',
+                        'tehsil': 'Jaranwala',
+                        'district': 'Faisalabad',
+                        'province': 'Punjab',
+                        'education_level': 'secondary',
+                        'total_land_area': '25.50',
+                        'registration_date': '2024-01-15T10:30:00Z',
+                        'last_updated': '2024-01-15T10:30:00Z',
+
+                        'registered_by': 1,
+                        'registered_by_name': 'Admin User',
+                        'notes': 'Progressive farmer interested in modern techniques',
+                        'profile_picture': 'http://example.com/media/farmer_profiles/ahmed_khan.jpg'
+                    }
+                }
+            ),
+            400: openapi.Response(description="Bad Request - Invalid data provided")
         },
         tags=["06. Farmers"]
     )
@@ -110,8 +168,43 @@ class FarmerViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(
         operation_description="Retrieve detailed information of a specific farmer",
         responses={
-            200: FarmerDetailSerializer,
-            404: 'Farmer not found'
+            200: openapi.Response(
+                description="Farmer details retrieved successfully",
+                schema=FarmerDetailSerializer,
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'farmer_id': 'FM01',
+                        'first_name': 'Ahmed',
+                        'last_name': 'Khan',
+                        'full_name': 'Ahmed Khan',
+                        'name': 'Ahmed Khan',
+                        'father_name': 'Muhammad Khan',
+                        'date_of_birth': '1979-05-15',
+                        'age': 45,
+                        'gender': 'male',
+                        'cnic': '12345-6789012-3',
+                        'primary_phone': '+923001234567',
+                        'secondary_phone': '+923009876543',
+                        'email': 'ahmed.khan@example.com',
+                        'address': 'House 123, Street 5, Chak 123',
+                        'village': 'Chak 123',
+                        'tehsil': 'Jaranwala',
+                        'district': 'Faisalabad',
+                        'province': 'Punjab',
+                        'education_level': 'secondary',
+                        'total_land_area': '25.50',
+                        'registration_date': '2024-01-15T10:30:00Z',
+                        'last_updated': '2024-01-15T10:30:00Z',
+
+                        'registered_by': 1,
+                        'registered_by_name': 'Admin User',
+                        'notes': 'Progressive farmer interested in modern techniques',
+                        'profile_picture': 'http://example.com/media/farmer_profiles/ahmed_khan.jpg'
+                    }
+                }
+            ),
+            404: openapi.Response(description="Farmer not found")
         },
         tags=["06. Farmers"]
     )
@@ -119,12 +212,47 @@ class FarmerViewSet(viewsets.ModelViewSet):
         return super().retrieve(request, *args, **kwargs)
     
     @swagger_auto_schema(
-        operation_description="Update farmer information",
-        request_body=FarmerCreateUpdateSerializer,
+        operation_description="Update all fields of a farmer using form data format. Example form data: first_name=Ahmed, last_name=Khan, primary_phone=+923001234567, village=Chak 123, district=Faisalabad, total_land_area=25.50, education_level=secondary, profile_picture=<image_file>",
+        consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
-            200: FarmerDetailSerializer,
-            400: 'Bad Request - Invalid data provided',
-            404: 'Farmer not found'
+            200: openapi.Response(
+                description="Farmer updated successfully",
+                schema=FarmerDetailSerializer,
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'farmer_id': 'FM01',
+                        'first_name': 'Ahmed',
+                        'last_name': 'Khan',
+                        'full_name': 'Ahmed Khan',
+                        'name': 'Ahmed Khan',
+                        'father_name': 'Muhammad Khan',
+                        'date_of_birth': '1979-05-15',
+                        'age': 45,
+                        'gender': 'male',
+                        'cnic': '12345-6789012-3',
+                        'primary_phone': '+923001234567',
+                        'secondary_phone': '+923009876543',
+                        'email': 'ahmed.khan@example.com',
+                        'address': 'House 123, Street 5, Chak 123',
+                        'village': 'Chak 123',
+                        'tehsil': 'Jaranwala',
+                        'district': 'Faisalabad',
+                        'province': 'Punjab',
+                        'education_level': 'secondary',
+                        'total_land_area': '25.50',
+                        'registration_date': '2024-01-15T10:30:00Z',
+                        'last_updated': '2024-01-15T10:30:00Z',
+
+                        'registered_by': 1,
+                        'registered_by_name': 'Admin User',
+                        'notes': 'Progressive farmer interested in modern techniques',
+                        'profile_picture': 'http://example.com/media/farmer_profiles/ahmed_khan.jpg'
+                    }
+                }
+            ),
+            400: openapi.Response(description="Bad Request - Invalid data provided"),
+            404: openapi.Response(description="Farmer not found")
         },
         tags=["06. Farmers"]
     )
@@ -132,12 +260,66 @@ class FarmerViewSet(viewsets.ModelViewSet):
         return super().update(request, *args, **kwargs)
     
     @swagger_auto_schema(
-        operation_description="Partially update farmer information",
-        request_body=FarmerCreateUpdateSerializer,
+        operation_description="Partially update farmer information using form data format. Example form data: first_name=Ahmed, primary_phone=+923001234567, profile_picture=<image_file>",
+        consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
-            200: FarmerDetailSerializer,
-            400: 'Bad Request - Invalid data provided',
-            404: 'Farmer not found'
+            200: openapi.Response(
+                description="Farmer partially updated successfully",
+                schema=FarmerDetailSerializer,
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'farmer_id': 'FM01',
+                        'first_name': 'Ahmed',
+                        'last_name': 'Khan',
+                        'full_name': 'Ahmed Khan',
+                        'name': 'Ahmed Khan',
+                        'father_name': 'Muhammad Khan',
+                        'date_of_birth': '1979-05-15',
+                        'age': 45,
+                        'gender': 'male',
+                        'cnic': '12345-6789012-3',
+                        'primary_phone': '+923001234567',
+                        'secondary_phone': '+923009876543',
+                        'email': 'ahmed.khan@example.com',
+                        'address': 'House 123, Street 5, Chak 123',
+                        'village': 'Chak 123',
+                        'tehsil': 'Jaranwala',
+                        'district': 'Faisalabad',
+                        'province': 'Punjab',
+                        'postal_code': '38000',
+                        'current_latitude': '31.4504',
+                        'current_longitude': '73.1350',
+                        'farm_latitude': '31.4520',
+                        'farm_longitude': '73.1380',
+                        'education_level': 'secondary',
+                        'occupation_besides_farming': 'Small business',
+                        'total_land_area': '25.50',
+                        'cultivated_area': '22.00',
+                        'farm_ownership_type': 'owned',
+                        'land_documents': 'Registry, Khasra',
+                        'farming_experience': 'experienced',
+                        'years_of_farming': 20,
+                        'main_crops_grown': 'Wheat, Rice, Cotton',
+                        'farming_methods': 'Traditional with some modern techniques',
+                        'irrigation_source': 'Tube well, Canal',
+                        'annual_income_range': '500000-1000000',
+                        'bank_account_details': 'HBL Account: 12345678901',
+                        'family_members_count': 6,
+                        'dependents_count': 4,
+                        'family_involved_in_farming': True,
+                        'registration_date': '2024-01-15T10:30:00Z',
+                        'last_updated': '2024-01-15T10:30:00Z',
+
+                        'registered_by': 1,
+                        'registered_by_name': 'Admin User',
+                        'notes': 'Progressive farmer interested in modern techniques',
+                        'profile_picture': 'http://example.com/media/farmer_profiles/ahmed_khan.jpg'
+                    }
+                }
+            ),
+            400: openapi.Response(description="Bad Request - Invalid data provided"),
+            404: openapi.Response(description="Farmer not found")
         },
         tags=["06. Farmers"]
     )
@@ -145,32 +327,17 @@ class FarmerViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
     
     @swagger_auto_schema(
-        operation_description="Delete a farmer record",
+        operation_description="Delete a farmer",
         responses={
-            204: 'Farmer deleted successfully',
-            404: 'Farmer not found'
+            204: openapi.Response(description="Farmer deleted successfully"),
+            404: openapi.Response(description="Farmer not found")
         },
         tags=["06. Farmers"]
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
     
-    @action(detail=True, methods=['get'])
-    @swagger_auto_schema(
-        operation_description="Get farming history for a specific farmer",
-        responses={
-            200: FarmingHistorySerializer(many=True),
-            404: 'Farmer not found'
-        },
-        tags=["06. Farmers"]
-    )
-    def farming_history(self, request, pk=None):
-        """Get farming history for a specific farmer"""
-        farmer = self.get_object()
-        history = farmer.farming_history.all().order_by('-year', '-season')
-        serializer = FarmingHistorySerializer(history, many=True)
-        return Response(serializer.data)
-    
+
     @action(detail=False, methods=['get'])
     @swagger_auto_schema(
         operation_description="Get farmer statistics and summary",
@@ -180,8 +347,6 @@ class FarmerViewSet(viewsets.ModelViewSet):
                 examples={
                     'application/json': {
                         'total_farmers': 150,
-                        'verified_farmers': 120,
-                        'active_farmers': 140,
                         'total_land_area': 2500.5,
                         'average_land_per_farmer': 16.67,
                         'farmers_by_district': {
@@ -189,10 +354,12 @@ class FarmerViewSet(viewsets.ModelViewSet):
                             'Faisalabad': 30,
                             'Multan': 25
                         },
-                        'farmers_by_experience': {
-                            'beginner': 20,
-                            'intermediate': 80,
-                            'experienced': 50
+                        'farmers_by_education': {
+                            'primary': 20,
+                            'secondary': 80,
+                            'higher_secondary': 30,
+                            'bachelor': 15,
+                            'master': 5
                         }
                     }
                 }
@@ -208,8 +375,6 @@ class FarmerViewSet(viewsets.ModelViewSet):
         
         # Basic counts
         total_farmers = queryset.count()
-        verified_farmers = queryset.filter(is_verified=True).count()
-        active_farmers = queryset.filter(is_active=True).count()
         
         # Land statistics
         land_stats = queryset.aggregate(
@@ -242,8 +407,6 @@ class FarmerViewSet(viewsets.ModelViewSet):
         
         return Response({
             'total_farmers': total_farmers,
-            'verified_farmers': verified_farmers,
-            'active_farmers': active_farmers,
             'total_land_area': land_stats['total_land'] or 0,
             'average_land_per_farmer': round(land_stats['average_land'] or 0, 2),
             'total_cultivated_area': land_stats['total_cultivated'] or 0,

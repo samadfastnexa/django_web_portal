@@ -61,7 +61,7 @@ INSTALLED_APPS = [
     'farm',  # app for farm management
     'sap_integration', # app for SAP integration
     'crop_management',  # app for crop management - R&D & MIS
-    
+    'crop_manage',
 ]
 
 MIDDLEWARE = [

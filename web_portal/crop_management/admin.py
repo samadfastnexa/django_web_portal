@@ -20,7 +20,7 @@ class CropAdmin(admin.ModelAdmin):
     ]
     search_fields = [
         'name', 'scientific_name', 'description',
-        'nutritional_info', 'market_info'
+        'market_availability', 'economic_importance'
     ]
     readonly_fields = ['created_at', 'updated_at', 'varieties_count']
     fieldsets = (
@@ -30,11 +30,11 @@ class CropAdmin(admin.ModelAdmin):
         ('Growth Information', {
             'fields': (
                 'growth_cycle_days', 'growth_season', 'water_requirement',
-                'soil_requirements', 'climate_requirements'
+                'soil_type_preference', 'climate_requirement'
             )
         }),
         ('Additional Information', {
-            'fields': ('nutritional_info', 'market_info', 'image'),
+            'fields': ('nutritional_value', 'market_availability', 'economic_importance'),
             'classes': ('collapse',)
         }),
         ('Status & Timestamps', {

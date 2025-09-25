@@ -12,21 +12,26 @@ class AttendanceAdmin(admin.ModelAdmin):
 class FarmingHistoryInline(admin.TabularInline):
     model = FarmingHistory
     extra = 1
-    fields = ('year', 'season', 'crop_name', 'area_cultivated', 'total_yield', 'input_cost', 'total_income')
+    fields = (
+        'year', 'season', 'crop_name', 'area_cultivated', 
+        'total_yield', 'yield_per_acre', 'input_cost', 
+        'market_price', 'total_income', 'profit_loss'
+    )
     readonly_fields = ('created_at', 'updated_at')
+    ordering = ['-year', '-created_at']
 
 @admin.register(Farmer)
 class FarmerAdmin(admin.ModelAdmin):
     list_display = (
         'farmer_id', 'full_name', 'primary_phone', 'village', 'district', 
-        'total_land_area', 'farming_experience', 'is_active', 'is_verified', 'registration_date'
+        'total_land_area', 'education_level', 'registration_date'
     )
     list_filter = (
-        'is_active', 'is_verified', 'gender', 'education_level', 'farming_experience',
-        'farm_ownership_type', 'district', 'province', 'registration_date'
+        'gender', 'education_level',
+        'district', 'province', 'registration_date'
     )
     search_fields = (
-        'farmer_id', 'first_name', 'last_name', 'name', 'father_name', 'national_id',
+        'farmer_id', 'first_name', 'last_name', 'name', 'father_name', 'cnic',
         'primary_phone', 'email', 'village', 'tehsil', 'district'
     )
     readonly_fields = ('registration_date', 'last_updated', 'age')
@@ -35,53 +40,28 @@ class FarmerAdmin(admin.ModelAdmin):
         ('Basic Information', {
             'fields': (
                 'farmer_id', 'first_name', 'last_name', 'name', 'father_name',
-                'date_of_birth', 'gender', 'national_id'
+                'date_of_birth', 'gender', 'cnic'
             )
         }),
         ('Contact Information', {
             'fields': (
                 'primary_phone', 'secondary_phone', 'email', 'address',
-                'village', 'tehsil', 'district', 'province', 'postal_code'
+                'village', 'tehsil', 'district', 'province'
             )
         }),
-        ('Location Coordinates', {
-            'fields': (
-                'current_latitude', 'current_longitude', 'farm_latitude', 'farm_longitude'
-            ),
-            'classes': ('collapse',)
-        }),
-        ('Education & Occupation', {
-            'fields': ('education_level', 'occupation_besides_farming')
-        }),
-        ('Farm Details', {
-            'fields': (
-                'total_land_area', 'cultivated_area', 'farm_ownership_type',
-                'land_documents', 'main_crops_grown', 'farming_methods', 'irrigation_source'
-            )
-        }),
-        ('Farming Experience', {
-            'fields': ('farming_experience', 'years_of_farming')
-        }),
-        ('Financial Information', {
-            'fields': ('annual_income_range', 'bank_account_details'),
-            'classes': ('collapse',)
-        }),
-        ('Family Information', {
-            'fields': (
-                'family_members_count', 'dependents_count', 'family_involved_in_farming'
-            ),
-            'classes': ('collapse',)
+        ('Education & Farm Details', {
+            'fields': ('education_level', 'total_land_area')
         }),
         ('System Information', {
             'fields': (
-                'is_active', 'is_verified', 'registered_by', 'registration_date',
+                'registered_by', 'registration_date',
                 'last_updated', 'notes', 'profile_picture'
             ),
             'classes': ('collapse',)
         })
     )
     
-    inlines = [FarmingHistoryInline]
+    # inlines = [FarmingHistoryInline]  # Removed farming history inline
     
     def full_name(self, obj):
         return obj.full_name

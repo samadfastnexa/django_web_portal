@@ -1,0 +1,1 @@
+# Seeders package for accounts app
