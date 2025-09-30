@@ -243,6 +243,16 @@ class MeetingViewSet(viewsets.ModelViewSet):
         }
     )
     def create(self, request, *args, **kwargs):
+        # Automatically assign company based on logged-in user's sales profile
+        if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
+            # Get the first company from user's sales profile (many-to-many relationship)
+            user_companies = request.user.sales_profile.companies.all()
+            if user_companies.exists() and 'company_id' not in request.data:
+                # Create a mutable copy of request.data
+                data = request.data.copy()
+                data['company_id'] = user_companies.first().id
+                request._full_data = data
+        
         return super().create(request, *args, **kwargs)
 
     # ---------------- Update ----------------
@@ -286,16 +296,15 @@ class MeetingViewSet(viewsets.ModelViewSet):
 class FieldDayViewSet(viewsets.ModelViewSet):
     queryset = FieldDay.objects.select_related(
         'region_fk', 'zone_fk', 'territory_fk', 'company_fk'
-    ).all()
-    # queryset = FieldDay.objects.all()
+    ).filter(is_active=True)
     serializer_class = FieldDaySerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     # Filters, search, ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location", "status"]
-    search_fields = ["title", "region_fk__name", "zone_fk__name", "territory_fk__name", "company_fk__Company_name", "location", "objectives"]
+    filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location"]
+    search_fields = ["title", "region_fk__name", "zone_fk__name", "territory_fk__name", "company_fk__Company_name", "location", "feedback"]
     ordering_fields = ["date", "title", "region_fk__name", "zone_fk__name", "territory_fk__name"]
      # ---------------- Global Extra Data ----------------
     def finalize_response(self, request, response, *args, **kwargs):
@@ -312,10 +321,10 @@ class FieldDayViewSet(viewsets.ModelViewSet):
         return response
     # ---------------- Common Parameters ----------------
     common_parameters = [
-        openapi.Parameter('title', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
-                          description='Title of the Field Day'),
+        openapi.Parameter('fsm_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
+                          description='Name of FSM'),
         openapi.Parameter('company_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
-                          description='Company ID (Foreign Key)'),
+                          description='Company ID (Foreign Key) - Automatically assigned from logged-in user if not provided'),
         openapi.Parameter('region_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
                           description='Region ID (Foreign Key)'),
         openapi.Parameter('zone_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
@@ -326,12 +335,12 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                           description='Field Day date (YYYY-MM-DD)'),
         openapi.Parameter('location', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
                           description='Field Day location'),
-        openapi.Parameter('objectives', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
-                          description='Objectives of the Field Day'),
-        openapi.Parameter('remarks', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
-                          description='Remarks about the Field Day'),
-        openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
-                          description='Status of the Field Day (draft, scheduled, completed)'),
+        openapi.Parameter('demonstrations_conducted', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                          description='Number of demonstrations conducted during the Field Day'),
+        openapi.Parameter('feedback', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
+                          description='Feedback about the Field Day'),
+        openapi.Parameter('attachments', openapi.IN_FORM, type=openapi.TYPE_FILE, required=False,
+                          description='File attachments (can upload multiple photos/documents)'),
 
         # Multiple attendees
         openapi.Parameter('attendee_name', openapi.IN_FORM, type=openapi.TYPE_ARRAY,
@@ -359,7 +368,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                     'application/json': [
                         {
                             'id': 1,
-                            'title': 'Modern Irrigation Techniques Workshop',
+                            'fsm_name': 'Ahmed Hassan',
                             'company_id': 1,
                             'company_name': 'ABC Agriculture',
                             'region_id': 1,
@@ -370,15 +379,21 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                             'territory_name': 'Model Town',
                             'date': '2024-02-15',
                             'location': 'Agricultural Research Center',
-                            'objectives': 'Demonstrate drip irrigation and water conservation',
-                            'remarks': 'Successful event with high farmer participation',
-                            'status': 'completed',
+                            'demonstrations_conducted': 3,
+                            'feedback': 'Successful event with high farmer participation and positive feedback',
                             'attendees': [
                                 {
                                     'name': 'Farmer Hassan',
                                     'contact': '+92-300-9876543',
                                     'acreage': 8.0,
                                     'crop': 'Cotton'
+                                }
+                            ],
+                            'attachments': [
+                                {
+                                    'id': 1,
+                                    'file': '/media/field_day_uploads/field_photo_1.jpg',
+                                    'uploaded_at': '2024-02-15T14:30:00Z'
                                 }
                             ]
                         }
@@ -397,8 +412,6 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                               description='Filter by territory ID'),
             openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
                               description='Filter by location'),
-            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
-                              description='Filter by status'),
         ]
     )
     def list(self, request, *args, **kwargs):
@@ -414,7 +427,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                 examples={
                     'application/json': {
                         'id': 1,
-                        'title': 'Modern Irrigation Techniques Workshop',
+                        'fsm_name': 'Ahmed Hassan',
                         'company_id': 1,
                         'company_name': 'ABC Agriculture',
                         'region_id': 1,
@@ -425,9 +438,8 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                         'territory_name': 'Model Town',
                         'date': '2024-02-15',
                         'location': 'Agricultural Research Center, Lahore',
-                        'objectives': 'Demonstrate drip irrigation, water conservation techniques, and modern farming equipment',
-                        'remarks': 'Successful event with high farmer participation. 95% satisfaction rate.',
-                        'status': 'completed',
+                        'demonstrations_conducted': 5,
+                        'feedback': 'Successful event with high farmer participation. 95% satisfaction rate. Farmers appreciated the practical demonstrations.',
                         'attendees': [
                             {
                                 'name': 'Farmer Hassan',
@@ -440,6 +452,18 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                                 'contact': '+92-301-1122334',
                                 'acreage': 4.5,
                                 'crop': 'Sugarcane'
+                            }
+                        ],
+                        'attachments': [
+                            {
+                                'id': 1,
+                                'file': '/media/field_day_uploads/field_photo_1.jpg',
+                                'uploaded_at': '2024-02-15T14:30:00Z'
+                            },
+                            {
+                                'id': 2,
+                                'file': '/media/field_day_uploads/field_photo_2.jpg',
+                                'uploaded_at': '2024-02-15T15:00:00Z'
                             }
                         ],
                         'created_at': '2024-02-10T09:00:00Z',
@@ -461,6 +485,16 @@ class FieldDayViewSet(viewsets.ModelViewSet):
         responses={201: FieldDaySerializer}
     )
     def create(self, request, *args, **kwargs):
+        # Automatically assign company based on logged-in user's sales profile
+        if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
+            # Get the first company from user's sales profile (many-to-many relationship)
+            user_companies = request.user.sales_profile.companies.all()
+            if user_companies.exists() and 'company_id' not in request.data:
+                # Create a mutable copy of request.data
+                data = request.data.copy()
+                data['company_id'] = user_companies.first().id
+                request._full_data = data
+        
         return super().create(request, *args, **kwargs)
 
     # ---------------- Update ----------------
@@ -487,10 +521,11 @@ class FieldDayViewSet(viewsets.ModelViewSet):
     # ---------------- Delete ----------------
     @swagger_auto_schema(
         tags=["13. Field Day"],
-        operation_description="Delete a Field Day.",
+        operation_description="Soft delete a Field Day by setting is_active to False.",
         responses={204: "Field Day deleted"}
     )
     def destroy(self, request, *args, **kwargs):
         field_day = self.get_object()
-        field_day.delete()
+        field_day.is_active = False
+        field_day.save()
         return Response({"detail": "Field Day deleted."}, status=status.HTTP_204_NO_CONTENT)

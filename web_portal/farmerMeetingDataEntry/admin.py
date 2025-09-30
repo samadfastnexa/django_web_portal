@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Meeting, FarmerAttendance, MeetingAttachment,FieldDay,FieldDayAttendance
+from .models import Meeting, FarmerAttendance, MeetingAttachment, FieldDay, FieldDayAttendance, FieldDayAttachment
 class FarmerAttendanceInline(admin.TabularInline):
     model = FarmerAttendance
     extra = 1
@@ -43,9 +43,10 @@ class MeetingAdmin(admin.ModelAdmin):
         'region_fk',
         'zone_fk',
         'territory_fk',
-        'date',
+        ('date', admin.DateFieldListFilter),
     ]
 
+    date_hierarchy = 'date'
     ordering = ['-date']
 
 
@@ -55,19 +56,28 @@ class FieldDayAttendanceInline(admin.TabularInline):
     fields = ('farmer_name', 'contact_number', 'acreage', 'crop')
     readonly_fields = ()
 
+class FieldDayAttachmentInline(admin.TabularInline):
+    model = FieldDayAttachment
+    extra = 1
+
 @admin.register(FieldDay)
 class FieldDayAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'title', 'company_fk', 'territory_fk', 'zone_fk', 'region_fk', 
-        'date', 'status', 'user', 'is_active'
+        'date', 'demonstrations_conducted', 'user', 'is_active'
     )
-    list_filter = ('status', 'company_fk', 'region_fk', 'zone_fk', 'territory_fk', 'is_active')
+    list_filter = (
+        'company_fk', 'region_fk', 'zone_fk', 'territory_fk', 
+        ('date', admin.DateFieldListFilter), 'demonstrations_conducted', 'is_active'
+    )
     search_fields = (
         'id', 'title', 'company_fk__Company_name', 'territory_fk__name', 
-        'zone_fk__name', 'region_fk__name', 'user__email'
+        'zone_fk__name', 'region_fk__name', 'user__email', 'feedback'
     )
     readonly_fields = ('id',)
-    inlines = [FieldDayAttendanceInline]
+    date_hierarchy = 'date'
+    ordering = ['-date']
+    inlines = [FieldDayAttendanceInline, FieldDayAttachmentInline]
 
 @admin.register(FieldDayAttendance)
 class FieldDayAttendanceAdmin(admin.ModelAdmin):

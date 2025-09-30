@@ -37,10 +37,10 @@ class FarmerMeetingSeeder:
     def create_field_days(self, users, regions, zones, territories, companies):
         """Create sample field days"""
         field_days = []
-        statuses = ['draft', 'scheduled', 'completed', 'draft', 'scheduled']
+        fsm_names = ['Ahmed Hassan', 'Fatima Ali', 'Muhammad Khan', 'Sara Ahmed', 'Ali Raza']
         for i in range(1, 6):
             field_day, created = FieldDay.objects.get_or_create(
-                title=f'Field Day {i}',
+                title=fsm_names[i-1],
                 defaults={
                     'company_fk': companies[i-1],
                     'region_fk': regions[i-1],
@@ -48,9 +48,8 @@ class FarmerMeetingSeeder:
                     'territory_fk': territories[i-1],
                     'date': date.today() + timedelta(days=i*5),
                     'location': f'Field Day Location {i}',
-                    'objectives': f'Objectives for field day {i}',
-                    'remarks': f'Remarks for field day {i}',
-                    'status': statuses[i-1],
+                    'demonstrations_conducted': i * 2,
+                    'feedback': f'Positive feedback received from farmers at field day {i}. They appreciated the practical demonstrations and found them very helpful.',
                     'user': users[i-1],
                 }
             )

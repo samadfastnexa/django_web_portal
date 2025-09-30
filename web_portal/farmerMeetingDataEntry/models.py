@@ -24,7 +24,7 @@ class Meeting(models.Model):
     zone_fk   = models.ForeignKey(Zone,on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_zone')
     territory_fk = models.ForeignKey(Territory, on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_territory')
     
-    date = models.DateField()
+    date = models.DateTimeField()
     location = models.CharField(max_length=200, default="Not specified")
     total_attendees = models.PositiveIntegerField(default=0)
     key_topics_discussed = models.TextField(default="Not specified")
@@ -106,7 +106,7 @@ class MeetingAttachment(models.Model):
 # field day 
 class FieldDay(models.Model):
     id = models.CharField(max_length=20, primary_key=True, editable=False)
-    title = models.CharField(max_length=200)
+    title = models.CharField(max_length=200, verbose_name="Name of FSM", help_text="Enter the name of the Field Service Manager (FSM)")
     
     # Foreign Key relationships
     company_fk = models.ForeignKey(
@@ -138,11 +138,10 @@ class FieldDay(models.Model):
         related_name='field_days_territory'
     )
     
-    date = models.DateField()
+    date = models.DateTimeField()
     location = models.CharField(max_length=200)
-    objectives = models.TextField(default="Not specified")
-    remarks = models.TextField(blank=True, null=True)
-    status = models.CharField(max_length=20, default="draft", choices=[("draft","Draft"),("scheduled","Scheduled"),("completed","Completed")])
+    demonstrations_conducted = models.PositiveIntegerField(default=0, help_text="Number of demonstrations conducted")
+    feedback = models.TextField(blank=True, null=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="field_days")
     is_active = models.BooleanField(default=True)
 
@@ -157,3 +156,22 @@ class FieldDayAttendance(models.Model):
     contact_number = models.CharField(max_length=15)
     acreage = models.FloatField(default=0.0)
     crop = models.CharField(max_length=100)
+
+def upload_to_field_day(instance, filename):
+    return f"field_day_uploads/{filename}"
+
+class FieldDayAttachment(models.Model):
+    field_day = models.ForeignKey(FieldDay, related_name='attachments', on_delete=models.CASCADE)
+    file = models.FileField(
+        upload_to=upload_to_field_day,
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=['png', 'jpg', 'jpeg', 'pdf', 'doc', 'docx', 'xls', 'xlsx']
+            ),
+            validate_file_size,
+        ]
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True) 
+
+    def __str__(self):
+        return os.path.basename(self.file.name)

@@ -1,11 +1,17 @@
 from rest_framework import serializers
-from .models import Meeting, FarmerAttendance, MeetingAttachment, FieldDay, FieldDayAttendance
+from .models import Meeting, FarmerAttendance, MeetingAttachment, FieldDay, FieldDayAttendance, FieldDayAttachment
 import json
 
 # ✅ Attachment Serializer (define this FIRST)
 class MeetingAttachmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = MeetingAttachment
+        fields = ['id', 'file', 'uploaded_at']
+
+# ✅ Field Day Attachment Serializer
+class FieldDayAttachmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FieldDayAttachment
         fields = ['id', 'file', 'uploaded_at']
 
 
@@ -163,6 +169,10 @@ class FieldDayAttendanceSerializer(serializers.ModelSerializer):
 # ✅ Field Day Serializer (similar to MeetingSerializer)
 class FieldDaySerializer(serializers.ModelSerializer):
     attendees = serializers.SerializerMethodField(read_only=True)
+    attachments = FieldDayAttachmentSerializer(many=True, read_only=True)
+    
+    # Field mapping for API parameter name
+    fsm_name = serializers.CharField(source='title', max_length=200, help_text="Name of FSM", required=False)
 
       # IDs (writable on create/update)
     company_id   = serializers.IntegerField(source='company_fk_id',   required=False, allow_null=True)
@@ -205,17 +215,17 @@ class FieldDaySerializer(serializers.ModelSerializer):
     class Meta:
         model = FieldDay
         fields = [
-            "id", "title",
+            "id", "fsm_name",
             "company_id", "company_name",
             "region_id", "region_name",
             "zone_id", "zone_name",
             "territory_id", "territory_name",
-            "date", "location", "objectives", "remarks",
-            "status", "attendees",
+            "date", "location", "demonstrations_conducted", "feedback",
+            "attendees", "attachments",
             "attendee_name", "attendee_contact", "attendee_acreage", "attendee_crop",
             "user", "is_active"
         ]
-        read_only_fields = ["user"]
+        read_only_fields = ["user", "is_active"]
 
     def get_attendees(self, obj):
         """Return serialized attendees for read operations"""
@@ -223,16 +233,19 @@ class FieldDaySerializer(serializers.ModelSerializer):
         return FieldDayAttendanceSerializer(attendees, many=True).data
 
     def create(self, validated_data):
-        # Extract attendee data
+        # Extract attendee data from multiple fields
         names = validated_data.pop('attendee_name', [])
         contacts = validated_data.pop('attendee_contact', [])
         acreages = validated_data.pop('attendee_acreage', [])
         crops = validated_data.pop('attendee_crop', [])
+        
+        request = self.context.get("request")
 
-        # ✅ Create the field day
-        field_day = FieldDay.objects.create(**validated_data, user=self.context["request"].user)
+        # ✅ Create the field day first
+        user = request.user if request and request.user.is_authenticated else None
+        field_day = FieldDay.objects.create(**validated_data, user=user, is_active=True)
 
-        # ✅ Save attendees
+        # ✅ Save attendees from multiple fields
         for i, name in enumerate(names):
             FieldDayAttendance.objects.create(
                 field_day=field_day,
@@ -242,23 +255,33 @@ class FieldDaySerializer(serializers.ModelSerializer):
                 crop=crops[i] if i < len(crops) else ''
             )
 
+        # ✅ Save uploaded files
+        if request and request.FILES:
+            for f in request.FILES.getlist("attachments"):
+                FieldDayAttachment.objects.create(field_day=field_day, file=f)
+
         return field_day
 
     def update(self, instance, validated_data):
-        # Extract attendee data
+        # Extract attendee data from multiple fields
         names = validated_data.pop('attendee_name', None)
         contacts = validated_data.pop('attendee_contact', None)
         acreages = validated_data.pop('attendee_acreage', None)
         crops = validated_data.pop('attendee_crop', None)
+        
+        request = self.context.get("request")
 
         # Update other fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-        # If attendee data is provided, replace old ones
+        # Process attendees if provided
         if names is not None:
+            # Clear existing attendees
             instance.attendees.all().delete()
+            
+            # Add new attendees
             for i, name in enumerate(names):
                 FieldDayAttendance.objects.create(
                     field_day=instance,
@@ -267,5 +290,10 @@ class FieldDaySerializer(serializers.ModelSerializer):
                     acreage=acreages[i] if acreages and i < len(acreages) else None,
                     crop=crops[i] if crops and i < len(crops) else ''
                 )
+
+        # Handle file uploads
+        if request and request.FILES:
+            for f in request.FILES.getlist("attachments"):
+                FieldDayAttachment.objects.create(field_day=instance, file=f)
 
         return instance
