@@ -324,7 +324,7 @@ class CropResearchAdmin(admin.ModelAdmin):
         )
 
 
-# Custom admin site configuration
-admin.site.site_header = "Crop Management - R&D & MIS Admin"
-admin.site.site_title = "Crop Management Admin"
-admin.site.index_title = "Welcome to Crop Management Administration"
+# # Custom admin site configuration
+# admin.site.site_header = "Tarzan Admin Panel by Fastnexa"
+# admin.site.site_title = "Tarzan Management Admin"
+# admin.site.index_title = "Welcome to Tarzan by Fastnexa"

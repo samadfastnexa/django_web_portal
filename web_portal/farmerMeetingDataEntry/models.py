@@ -28,7 +28,8 @@ class Meeting(models.Model):
     location = models.CharField(max_length=200, default="Not specified")
     total_attendees = models.PositiveIntegerField(default=0)
     key_topics_discussed = models.TextField(default="Not specified")
-    presence_of_zm_rsm = models.BooleanField(default=False)
+    presence_of_zm = models.BooleanField(default=False)
+    presence_of_rsm = models.BooleanField(default=False)
     feedback_from_attendees = models.TextField(blank=True, null=True)
     suggestions_for_future = models.TextField(blank=True, null=True)
   
@@ -55,8 +56,16 @@ class Meeting(models.Model):
 
 class FarmerAttendance(models.Model):
     meeting = models.ForeignKey(Meeting, related_name='attendees', on_delete=models.CASCADE)
-    farmer_name = models.CharField(max_length=100)
-    contact_number = models.CharField(max_length=15)
+    
+    # Link to farmer record (optional)
+    farmer = models.ForeignKey('farmers.Farmer', on_delete=models.CASCADE, null=True, blank=True, 
+                              related_name='meeting_attendances', 
+                              help_text="Link to farmer record")
+    
+    farmer_name = models.CharField(max_length=100, blank=True,
+                                  help_text="Farmer name (auto-filled from farmer record if linked)")
+    contact_number = models.CharField(max_length=15, blank=True,
+                                     help_text="Contact number (auto-filled from farmer record if linked)")
     acreage = models.FloatField(default=0.0)
     crop = models.CharField(max_length=100)
 
@@ -140,6 +149,7 @@ class FieldDay(models.Model):
     
     date = models.DateTimeField()
     location = models.CharField(max_length=200)
+    total_participants = models.PositiveIntegerField(default=0, help_text="Total number of participants in the field day")
     demonstrations_conducted = models.PositiveIntegerField(default=0, help_text="Number of demonstrations conducted")
     feedback = models.TextField(blank=True, null=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="field_days")
@@ -152,10 +162,37 @@ class FieldDay(models.Model):
 
 class FieldDayAttendance(models.Model):
     field_day = models.ForeignKey(FieldDay, related_name="attendees", on_delete=models.CASCADE)
-    farmer_name = models.CharField(max_length=100)
-    contact_number = models.CharField(max_length=15)
-    acreage = models.FloatField(default=0.0)
-    crop = models.CharField(max_length=100)
+    
+    # ✅ Link to farmer record (optional)
+    farmer = models.ForeignKey('farmers.Farmer', on_delete=models.CASCADE, null=True, blank=True, 
+                              related_name='field_day_attendances', 
+                              help_text="Link to farmer record")
+    
+    # ✅ Attendee information (auto-filled from farmer if linked)
+    farmer_name = models.CharField(max_length=100, blank=True, 
+                                  help_text="Farmer name (auto-filled from farmer record if linked)")
+    contact_number = models.CharField(max_length=15, blank=True,
+                                     help_text="Contact number (auto-filled from farmer record if linked)")
+    acreage = models.FloatField(default=0.0, help_text="Acreage for this specific field day")
+    crop = models.CharField(max_length=100, blank=True, help_text="Crop discussed/demonstrated (deprecated - use crops relationship)")
+
+
+class FieldDayAttendanceCrop(models.Model):
+    """Model to handle multiple crops per field day attendance"""
+    attendance = models.ForeignKey(FieldDayAttendance, related_name="crops", on_delete=models.CASCADE)
+    crop_name = models.CharField(max_length=100, help_text="Name of the crop")
+    acreage = models.FloatField(default=0.0, help_text="Acreage for this specific crop")
+    
+    class Meta:
+        unique_together = ['attendance', 'crop_name']  # Prevent duplicate crops for same attendance
+        db_table = 'field_day_attendance_crops'
+    
+    def __str__(self):
+        return f"{self.attendance.farmer_name} - {self.crop_name} ({self.acreage} acres)"
+    
+    def save(self, *args, **kwargs):
+        # No special logic needed for FieldDayAttendanceCrop
+        super().save(*args, **kwargs)
 
 def upload_to_field_day(instance, filename):
     return f"field_day_uploads/{filename}"

@@ -22,7 +22,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     # Filters, search, ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["fsm_name", "region_fk", "zone_fk", "territory_fk", "company_fk", "presence_of_zm_rsm", "location"]
+    filterset_fields = ["fsm_name", "region_fk", "zone_fk", "territory_fk", "company_fk", "presence_of_zm", "presence_of_rsm", "location"]
     search_fields = [
         'fsm_name',
         'region_fk__name',
@@ -34,18 +34,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
     ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees"]
     
      # ---------------- Global Extra Data ----------------
-    def finalize_response(self, request, response, *args, **kwargs):
-        response = super().finalize_response(request, response, *args, **kwargs)
-
-        # Add extra dropdown data only on success
-        if response.status_code in [200, 201]:
-            if isinstance(response.data, dict):
-                response.data["companies"] = CompanySerializer(Company.objects.all(), many=True).data
-                response.data["regions"] = RegionSerializer(Region.objects.all(), many=True).data
-                response.data["zones"] = ZoneSerializer(Zone.objects.all(), many=True).data
-                response.data["territories"] = TerritorySerializer(Territory.objects.all(), many=True).data
-
-        return response
+    # Removed verbose nested data to reduce response size
+    # The API now returns only IDs and names for companies, regions, zones, and territories
     
     # Define common parameters
     common_parameters = [
@@ -67,8 +57,10 @@ class MeetingViewSet(viewsets.ModelViewSet):
                          description='Total number of attendees'),
         openapi.Parameter('key_topics_discussed', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
                          description='Key topics discussed in the meeting'),
-        openapi.Parameter('presence_of_zm_rsm', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
-                         description='Presence of ZM/RSM'),
+        openapi.Parameter('presence_of_zm', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, required=False,
+                         description='Presence of Zone Manager (ZM)'),
+        openapi.Parameter('presence_of_rsm', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, required=False,
+                         description='Presence of Regional Sales Manager (RSM)'),
         openapi.Parameter('feedback_from_attendees', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
                          description='Feedback from attendees'),
         openapi.Parameter('suggestions_for_future', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
@@ -116,7 +108,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
                                 'location': 'Community Center, Model Town',
                                 'total_attendees': 25,
                                 'key_topics_discussed': 'Crop rotation, pest management',
-                                'presence_of_zm_rsm': 'Yes',
+                                'presence_of_zm': True,
+                                'presence_of_rsm': False,
                                 'feedback_from_attendees': 'Very informative session',
                                 'suggestions_for_future': 'More practical demonstrations',
                                 'attendees': [
@@ -150,8 +143,10 @@ class MeetingViewSet(viewsets.ModelViewSet):
                             description='Filter by territory ID'),
             openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
                             description='Filter by location'),
-            openapi.Parameter('presence_of_zm_rsm', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
-                            description='Filter by ZM/RSM presence'),
+            openapi.Parameter('presence_of_zm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False,
+                             description='Filter by presence of Zone Manager (ZM)'),
+            openapi.Parameter('presence_of_rsm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False,
+                             description='Filter by presence of Regional Sales Manager (RSM)'),
         ]
     )
     def list(self, request, *args, **kwargs):
@@ -179,7 +174,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
                         'location': 'Community Center, Model Town',
                         'total_attendees': 25,
                         'key_topics_discussed': 'Crop rotation, pest management, irrigation techniques',
-                        'presence_of_zm_rsm': 'Yes - ZM Present',
+                        'presence_of_zm': True,
+                        'presence_of_rsm': True,
                         'feedback_from_attendees': 'Very informative session, farmers appreciated practical tips',
                         'suggestions_for_future': 'More practical demonstrations, field visits',
                         'attendees': [
@@ -235,6 +231,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
                         'date': '2024-01-15',
                         'location': 'Community Center',
                         'total_attendees': 25,
+                        'presence_of_zm': True,
+                        'presence_of_rsm': False,
                         'created_at': '2024-01-15T10:30:00Z'
                     }
                 }
@@ -243,6 +241,20 @@ class MeetingViewSet(viewsets.ModelViewSet):
         }
     )
     def create(self, request, *args, **kwargs):
+        # DEBUG: Log raw request data
+        print("=== FieldDayViewSet CREATE DEBUG ===")
+        print(f"Raw request.data: {request.data}")
+        print(f"attendee_farmer_id: {request.data.get('attendee_farmer_id', 'NOT_PROVIDED')}")
+        print(f"attendee_crop: {request.data.get('attendee_crop', 'NOT_PROVIDED')}")
+        print(f"attendee_farmer_id type: {type(request.data.get('attendee_farmer_id'))}")
+        print(f"attendee_crop type: {type(request.data.get('attendee_crop'))}")
+        if 'attendee_crop' in request.data:
+            crop_data = request.data.get('attendee_crop')
+            if isinstance(crop_data, list):
+                for i, crop in enumerate(crop_data):
+                    print(f"  attendee_crop[{i}]: '{crop}' (type: {type(crop)})")
+        print("=== END DEBUG ===")
+        
         # Automatically assign company based on logged-in user's sales profile
         if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
             # Get the first company from user's sales profile (many-to-many relationship)
@@ -303,22 +315,12 @@ class FieldDayViewSet(viewsets.ModelViewSet):
 
     # Filters, search, ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location"]
+    filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location", "total_participants"]
     search_fields = ["title", "region_fk__name", "zone_fk__name", "territory_fk__name", "company_fk__Company_name", "location", "feedback"]
     ordering_fields = ["date", "title", "region_fk__name", "zone_fk__name", "territory_fk__name"]
      # ---------------- Global Extra Data ----------------
-    def finalize_response(self, request, response, *args, **kwargs):
-        response = super().finalize_response(request, response, *args, **kwargs)
-
-        # Add extra dropdown data only on success
-        if response.status_code in [200, 201]:
-            if isinstance(response.data, dict):
-                response.data["companies"] = CompanySerializer(Company.objects.all(), many=True).data
-                response.data["regions"] = RegionSerializer(Region.objects.all(), many=True).data
-                response.data["zones"] = ZoneSerializer(Zone.objects.all(), many=True).data
-                response.data["territories"] = TerritorySerializer(Territory.objects.all(), many=True).data
-
-        return response
+    # Removed finalize_response method to eliminate verbose nested data for companies, regions, zones, and territories
+    # The API now returns only IDs and names for these entities to reduce response size
     # ---------------- Common Parameters ----------------
     common_parameters = [
         openapi.Parameter('fsm_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
@@ -335,6 +337,8 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                           description='Field Day date (YYYY-MM-DD)'),
         openapi.Parameter('location', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
                           description='Field Day location'),
+        openapi.Parameter('total_participants', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                          description='Total number of participants in the field day'),
         openapi.Parameter('demonstrations_conducted', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
                           description='Number of demonstrations conducted during the Field Day'),
         openapi.Parameter('feedback', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
@@ -342,19 +346,22 @@ class FieldDayViewSet(viewsets.ModelViewSet):
         openapi.Parameter('attachments', openapi.IN_FORM, type=openapi.TYPE_FILE, required=False,
                           description='File attachments (can upload multiple photos/documents)'),
 
-        # Multiple attendees
+        # Multiple attendees - can link existing farmers or add manual entries
+        openapi.Parameter('attendee_farmer_id', openapi.IN_FORM, type=openapi.TYPE_ARRAY,
+                          items=openapi.Items(type=openapi.TYPE_INTEGER), required=False,
+                          description='List of farmer IDs to link existing farmers. When provided, attendee_name, attendee_contact, and attendee_acreage are auto-filled from farmer records. Example: [1, 2, 3]'),
         openapi.Parameter('attendee_name', openapi.IN_FORM, type=openapi.TYPE_ARRAY,
                           items=openapi.Items(type=openapi.TYPE_STRING), required=False,
-                          description='List of farmer names. Example: ["Ali", "Ahmed"]'),
+                          description='List of farmer names. Auto-filled from linked farmer records when attendee_farmer_id is provided. For manual entry (when not linking existing farmers), provide names directly. Example: ["Ali", "Ahmed"]'),
         openapi.Parameter('attendee_contact', openapi.IN_FORM, type=openapi.TYPE_ARRAY,
                           items=openapi.Items(type=openapi.TYPE_STRING), required=False,
-                          description='List of contact numbers.'),
+                          description='List of contact numbers. Auto-filled from linked farmer records when attendee_farmer_id is provided. Can be overridden for additional contact info or manual entry.'),
         openapi.Parameter('attendee_acreage', openapi.IN_FORM, type=openapi.TYPE_ARRAY,
                           items=openapi.Items(type=openapi.TYPE_NUMBER), required=False,
-                          description='List of acreage values.'),
+                          description='List of acreage values for each attendee. Auto-filled from farmer total_land_area when attendee_farmer_id is provided and acreage is 0.0. Can be overridden with specific values.'),
         openapi.Parameter('attendee_crop', openapi.IN_FORM, type=openapi.TYPE_ARRAY,
                           items=openapi.Items(type=openapi.TYPE_STRING), required=False,
-                          description='List of crops.'),
+                          description='List of crops for each farmer attendee. Each entry corresponds to one farmer attendee (comma-separated for multiple crops per farmer). Example: ["rice,wheat", "cotton", "potato,sugarcane"] - farmer 1 has rice and wheat, farmer 2 has cotton, farmer 3 has potato and sugarcane'),
     ]
 
     # ---------------- List ----------------
@@ -379,14 +386,29 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                             'territory_name': 'Model Town',
                             'date': '2024-02-15',
                             'location': 'Agricultural Research Center',
+                            'total_participants': 15,
                             'demonstrations_conducted': 3,
                             'feedback': 'Successful event with high farmer participation and positive feedback',
                             'attendees': [
                                 {
-                                    'name': 'Farmer Hassan',
-                                    'contact': '+92-300-9876543',
+                                    'id': 1,
+                                    'farmer': 15,
+                                    'farmer_id': 'F-2024-001',
+                                    'farmer_full_name': 'Hassan Ali Khan',
+                                    'farmer_primary_phone': '+92-300-9876543',
+                                    'farmer_district': 'Lahore',
+                                    'farmer_village': 'Model Town',
+                                    'farmer_name': 'Hassan Ali Khan',
+                                    'contact_number': '+92-300-9876543',
                                     'acreage': 8.0,
-                                    'crop': 'Cotton'
+                                    'crop': 'Cotton',
+                                    'crops': [
+                                        {
+                                            'id': 1,
+                                            'crop_name': 'Cotton',
+                                            'acreage': 8.0
+                                        }
+                                    ]
                                 }
                             ],
                             'attachments': [
@@ -412,6 +434,8 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                               description='Filter by territory ID'),
             openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
                               description='Filter by location'),
+            openapi.Parameter('total_participants', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                              description='Filter by total number of participants'),
         ]
     )
     def list(self, request, *args, **kwargs):
@@ -438,20 +462,54 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                         'territory_name': 'Model Town',
                         'date': '2024-02-15',
                         'location': 'Agricultural Research Center, Lahore',
+                        'total_participants': 25,
                         'demonstrations_conducted': 5,
                         'feedback': 'Successful event with high farmer participation. 95% satisfaction rate. Farmers appreciated the practical demonstrations.',
                         'attendees': [
                             {
-                                'name': 'Farmer Hassan',
-                                'contact': '+92-300-9876543',
+                                'id': 1,
+                                'farmer': 15,
+                                'farmer_id': 'F-2024-001',
+                                'farmer_full_name': 'Hassan Ali Khan',
+                                'farmer_primary_phone': '+92-300-9876543',
+                                'farmer_district': 'Lahore',
+                                'farmer_village': 'Model Town',
+                                'farmer_name': 'Hassan Ali Khan',
+                                'contact_number': '+92-300-9876543',
                                 'acreage': 8.0,
-                                'crop': 'Cotton'
+                                'crop': 'Cotton',
+                                'crops': [
+                                    {
+                                        'id': 1,
+                                        'crop_name': 'Cotton',
+                                        'acreage': 8.0
+                                    }
+                                ]
                             },
                             {
-                                'name': 'Farmer Fatima',
-                                'contact': '+92-301-1122334',
+                                'id': 2,
+                                'farmer': 22,
+                                'farmer_id': 'F-2024-002',
+                                'farmer_full_name': 'Fatima Bibi',
+                                'farmer_primary_phone': '+92-301-1122334',
+                                'farmer_district': 'Lahore',
+                                'farmer_village': 'Johar Town',
+                                'farmer_name': 'Fatima Bibi',
+                                'contact_number': '+92-301-1122334',
                                 'acreage': 4.5,
-                                'crop': 'Sugarcane'
+                                'crop': 'Sugarcane,Rice',
+                                'crops': [
+                                    {
+                                        'id': 2,
+                                        'crop_name': 'Sugarcane',
+                                        'acreage': 2.5
+                                    },
+                                    {
+                                        'id': 3,
+                                        'crop_name': 'Rice',
+                                        'acreage': 2.0
+                                    }
+                                ]
                             }
                         ],
                         'attachments': [
