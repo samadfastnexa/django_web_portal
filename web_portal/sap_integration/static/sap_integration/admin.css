@@ -121,3 +121,45 @@
 #content-main .module tbody tr:hover {
   background-color: #fff6f3;
 }
+
+/* ---------------------------
+   Login: Show Password Toggle
+   --------------------------- */
+.password-field-wrapper {
+  position: relative;
+  display: block;
+}
+.password-field-wrapper input[type="password"],
+.password-field-wrapper input[type="text"] {
+  padding-right: 40px; /* room for eye icon */
+}
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--orange-dark);
+  cursor: pointer;
+}
+.password-toggle:hover {
+  color: var(--orange);
+}
+.password-toggle:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(231, 111, 81, 0.3);
+  border-radius: 4px;
+}
+.password-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.password-toggle .icon-eye-off { display: none; }
+.password-toggle[data-state="visible"] .icon-eye { display: none; }
+.password-toggle[data-state="visible"] .icon-eye-off { display: inline; }

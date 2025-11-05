@@ -25,21 +25,24 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
     # 2.  All custom checks → single string under "message"
     # -----------------------------------------------------------
     def validate(self, attrs):
-        email = attrs.get("email")
+        # Normalize inputs
+        raw_email = attrs.get("email")
         password = attrs.get("password")
+        email = (raw_email or "").strip()
 
         if not email:
             raise serializers.ValidationError({"message": "Email is required."})
         if not password:
             raise serializers.ValidationError({"message": "Password is required."})
 
+        # Case-insensitive lookup and uniform error to avoid account enumeration
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
-            raise serializers.ValidationError({"message": "No user found with this email address."})
+            raise serializers.ValidationError({"message": "Invalid email or password."})
 
         if not user.check_password(password):
-            raise serializers.ValidationError({"message": "Incorrect password."})
+            raise serializers.ValidationError({"message": "Invalid email or password."})
 
         if not user.is_active:
             raise serializers.ValidationError({"message": "User account is inactive."})

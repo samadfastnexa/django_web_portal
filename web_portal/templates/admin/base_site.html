@@ -4,6 +4,54 @@
 {% block extrahead %}
   {{ block.super }}
   <link rel="stylesheet" href="{% static 'sap_integration/admin.css' %}">
+  <script>
+    (function() {
+      function ready(fn){
+        if(document.readyState !== 'loading'){ fn(); }
+        else { document.addEventListener('DOMContentLoaded', fn); }
+      }
+      ready(function(){
+        var pwd = document.getElementById('id_password');
+        if(!pwd) return; // only on login page
+
+        // Wrap password input to position the eye icon inside the field
+        var wrapper = document.createElement('span');
+        wrapper.className = 'password-field-wrapper';
+        pwd.parentNode.insertBefore(wrapper, pwd);
+        wrapper.appendChild(pwd);
+
+        // Add space for the icon inside the input
+        try { pwd.style.paddingRight = '40px'; } catch(e) {}
+
+        // create eye toggle button (icon only)
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'password-toggle';
+        btn.setAttribute('aria-label', 'Show password');
+        btn.setAttribute('aria-controls', 'id_password');
+        btn.setAttribute('data-state', 'hidden');
+        btn.innerHTML = (
+          '<svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
+          + '<path fill="currentColor" d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/>'
+          + '</svg>'
+          + '<svg class="icon-eye-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
+          + '<path fill="currentColor" d="M2 4.27L3.28 3 21 20.72 19.73 22l-3.88-3.88A11.86 11.86 0 0112 19c-5 0-9.27-3.11-11-7a12.7 12.7 0 013.44-4.53L2 4.27z"/>'
+          + '<path fill="currentColor" d="M12 5c5 0 9.27 3.11 11 7-.93 2.1-2.55 3.93-4.53 5.15l-1.42-1.42A8.03 8.03 0 0020 12c-1.73-3.89-6-7-8-7-1.18 0-2.3.21-3.33.59L7.7 4.9A10.2 10.2 0 0112 5z"/>'
+          + '</svg>'
+        );
+
+        btn.addEventListener('click', function(){
+          var isHidden = pwd.type === 'password';
+          pwd.type = isHidden ? 'text' : 'password';
+          btn.setAttribute('data-state', isHidden ? 'visible' : 'hidden');
+          btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        });
+
+        // insert toggle inside the wrapper
+        wrapper.appendChild(btn);
+      });
+    })();
+  </script>
 {% endblock %}
 
 {% block branding %}
