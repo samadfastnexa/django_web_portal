@@ -70,6 +70,20 @@ class Territory(models.Model):
     company = models.ForeignKey('Company', on_delete=models.PROTECT)
     zone = models.ForeignKey(Zone, on_delete=models.PROTECT, related_name='territories')
     name = models.CharField(max_length=100)  # ✅ Territory's own name
+    latitude = models.DecimalField(
+        max_digits=9, 
+        decimal_places=6, 
+        blank=True, 
+        null=True,
+        validators=[validate_latitude]
+    )
+    longitude = models.DecimalField(
+        max_digits=9, 
+        decimal_places=6, 
+        blank=True, 
+        null=True,
+        validators=[validate_longitude]
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

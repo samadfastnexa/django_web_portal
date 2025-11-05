@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions, viewsets
 from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission,DjangoModelPermissions
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -46,8 +46,189 @@ class SignupView(generics.CreateAPIView):
     parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(
-        operation_description="Register a new user",
-        request_body=UserSignupSerializer,
+        operation_description="Register a new user account. For sales staff registration, set is_sales_staff=true and provide all required sales profile information including designation, employee details, and geographical assignments.",
+        manual_parameters=[
+            openapi.Parameter(
+                'username',
+                openapi.IN_FORM,
+                description='Unique username for login (3-150 characters, letters, digits, @/./+/-/_ only)',
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'email',
+                openapi.IN_FORM,
+                description='Valid email address for account verification and communication',
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'password',
+                openapi.IN_FORM,
+                description='Strong password (minimum 8 characters recommended)',
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'first_name',
+                openapi.IN_FORM,
+                description='User\'s first name (letters and spaces only)',
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'last_name',
+                openapi.IN_FORM,
+                description='User\'s last name (letters and spaces only)',
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'profile_image',
+                openapi.IN_FORM,
+                description='Optional profile picture (JPEG, PNG formats supported)',
+                type=openapi.TYPE_FILE,
+                required=False
+            ),
+            openapi.Parameter(
+                'role',
+                openapi.IN_FORM,
+                description='Role ID for user permissions (get available roles from /api/roles/)',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'is_sales_staff',
+                openapi.IN_FORM,
+                description='Set to true if registering a sales staff member (requires additional fields below)',
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+            openapi.Parameter(
+                'employee_code',
+                openapi.IN_FORM,
+                description='Unique employee identification code (required if is_sales_staff=true)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'phone_number',
+                openapi.IN_FORM,
+                description='Contact phone number (required if is_sales_staff=true)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'address',
+                openapi.IN_FORM,
+                description='Full address (required if is_sales_staff=true)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'designation',
+                openapi.IN_FORM,
+                description='Job designation (required if is_sales_staff=true). Valid choices: CEO, NSM, RSL, DRSL, ZM, DPL, SR_PL, PL, SR_FSM, FSM, SR_MTO, MTO',
+                type=openapi.TYPE_STRING,
+                required=False,
+                enum=['CEO', 'NSM', 'RSL', 'DRSL', 'ZM', 'DPL', 'SR_PL', 'PL', 'SR_FSM', 'FSM', 'SR_MTO', 'MTO']
+            ),
+            openapi.Parameter(
+                'companies',
+                openapi.IN_FORM,
+                description='List of company IDs assigned to this sales staff (comma-separated)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'regions',
+                openapi.IN_FORM,
+                description='List of region IDs assigned to this sales staff (comma-separated)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'zones',
+                openapi.IN_FORM,
+                description='List of zone IDs assigned to this sales staff (comma-separated)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'territories',
+                openapi.IN_FORM,
+                description='List of territory IDs assigned to this sales staff (comma-separated)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'hod',
+                openapi.IN_FORM,
+                description='Head of Department - ID of supervising sales staff member',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'master_hod',
+                openapi.IN_FORM,
+                description='Master Head of Department - ID of senior supervising sales staff member',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'sick_leave_quota',
+                openapi.IN_FORM,
+                description='Annual sick leave quota in days (default: 10)',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'casual_leave_quota',
+                openapi.IN_FORM,
+                description='Annual casual leave quota in days (default: 15)',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'others_leave_quota',
+                openapi.IN_FORM,
+                description='Annual other leave quota in days (default: 5)',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            )
+        ],
+        responses={
+            201: openapi.Response(
+                description='User registered successfully',
+                examples={
+                    'application/json': {
+                        'id': 123,
+                        'username': 'john_doe123',
+                        'email': 'john.doe@company.com',
+                        'first_name': 'John',
+                        'last_name': 'Doe',
+                        'is_sales_staff': True,
+                        'is_active': True,
+                        'date_joined': '2024-01-15T10:30:00Z',
+                        'sales_profile': {
+                            'employee_code': 'EMP001',
+                            'designation': 'MTO',
+                            'phone_number': '+1234567890'
+                        }
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Bad Request - Validation errors',
+                examples={
+                    'application/json': {
+                        'username': ['A user with that username already exists.'],
+                        'email': ['User with this email already exists.'],
+                        'designation': ['Value "invalid_choice" is not a valid choice.']
+                    }
+                }
+            )
+        },
         tags=["01. Authentication"]
     )
     def post(self, request, *args, **kwargs):
@@ -286,81 +467,7 @@ class AdminUserStatusUpdateView(generics.UpdateAPIView):
 #     #     request_body=UserSignupSerializer,
 #     #     tags=["User CRUD"]
 #     # )
-#     # def post(self, request, *args, **kwargs):
-#     #     return self.create(request, *args, **kwargs)
-#     @swagger_auto_schema(operation_description="Create a new user (optionally sales staff)", request_body=UserSignupSerializer, tags=["User CRUD"])
-#     def post(self, request, *args, **kwargs):
-#         return self.create(request, *args, **kwargs)
 
-
-
-# # class SalesStaffViewSet(viewsets.ModelViewSet):
-# #     # queryset = SalesStaffProfile.objects.select_related('user').all()
-# #     queryset = User.objects.select_related('sales_profile__company', 
-# #                                            'sales_profile__region', 
-# #                                            'sales_profile__zone', 
-# #                                            'sales_profile__territory').all()
-# #     # serializer_class = UserSerializer
-# #     serializer_class = SalesStaffSerializer
-# #     permission_classes = [IsAuthenticated, HasRolePermission]
-
-# # # ✅ Add filter backend and filter class
-# #     filter_backends = [DjangoFilterBackend,OrderingFilter]
-# #     filterset_class = UserFilter
-# #     ordering_fields = ['id', 'email', 'username', 'first_name', 'last_name', 'is_active', 'role']
-# #     ordering = ['id']  # Optional: default ordering
-# #     def get_queryset(self):
-# #         user = self.request.user
-# #         if user.is_superuser or user.is_staff:
-# #             return User.objects.all()
-# #         return User.objects.filter(id=user.id)
-
-# #     def get_serializer_class(self):
-# #         if self.action in ['update', 'partial_update']:
-# #             return UserUpdateSerializer
-# #         return UserSerializer
-
-# #     def perform_destroy(self, instance):
-# #         if instance != self.request.user and not self.request.user.is_superuser:
-# #             raise PermissionDenied("You can only delete your own account.")
-# #         instance.delete()
-
-# #     @swagger_auto_schema(tags=["User CRUD"])
-# #     def retrieve(self, request, *args, **kwargs):
-# #         return super().retrieve(request, *args, **kwargs)
-
-# #     @swagger_auto_schema(tags=["User CRUD"])
-# #     def list(self, request, *args, **kwargs):
-# #         return super().list(request, *args, **kwargs)
-
-# #     @swagger_auto_schema(tags=["User CRUD"])
-# #     def update(self, request, *args, **kwargs):
-# #         return super().update(request, *args, **kwargs)
-
-#     # @swagger_auto_schema(
-#     #     tags=["User CRUD"],
-#     #     operation_description="Partially update user profile. Admins can change role/status. Use multipart/form-data for image upload.",
-#     #     manual_parameters=[
-#     #         openapi.Parameter('first_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False),
-#     #         openapi.Parameter('last_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False),
-#     #         openapi.Parameter('role', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False),
-#     #         openapi.Parameter('is_active', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, required=False),
-#     #         openapi.Parameter('profile_image', openapi.IN_FORM, type=openapi.TYPE_FILE, required=False),
-#     #     ]
-#     # )
-#     # def partial_update(self, request, *args, **kwargs):
-#     #     return super().partial_update(request, *args, **kwargs)
-#     @swagger_auto_schema(
-#     request_body=UserUpdateSerializer,  # your update serializer
-#     tags=["User CRUD"],
-#     operation_description="Update user profile",
-# )
-#     def partial_update(self, request, *args, **kwargs):
-#         return super().partial_update(request, *args, **kwargs)
-
-#     @swagger_auto_schema(tags=["User CRUD"])
-#     def destroy(self, request, *args, **kwargs):
-#         return super().destroy(request, *args, **kwargs)
 
 class PermissionListAPIView(generics.ListAPIView):
     queryset = Permission.objects.all()

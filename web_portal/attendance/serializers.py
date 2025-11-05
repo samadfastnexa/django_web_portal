@@ -15,22 +15,35 @@ class AttendanceSerializer(serializers.ModelSerializer):
         model = Attendance
         fields = [
             'id', 'attendee', 'check_in_time', 'check_out_time',
-            'check_in_gap', 'check_out_gap', 'latitude', 'longitude',
-            'attachment', 'source', 'created_at', 'user'
+            'check_in_gap', 'check_out_gap', 'check_in_latitude', 'check_in_longitude',
+            'check_out_latitude', 'check_out_longitude',
+            'check_in_image', 'check_out_image', 'source', 'created_at', 'user'
         ]
         read_only_fields = ['user', 'check_in_gap', 'check_out_gap', 'created_at', 'source']
 
     # -------------------
     # Field-level validation
     # -------------------
-    def validate_latitude(self, value):
+
+
+    def validate_check_in_latitude(self, value):
         if value is not None and (value < -90 or value > 90):
-            raise serializers.ValidationError("Latitude must be between -90 and 90.")
+            raise serializers.ValidationError("Check-in latitude must be between -90 and 90.")
         return value
 
-    def validate_longitude(self, value):
+    def validate_check_in_longitude(self, value):
         if value is not None and (value < -180 or value > 180):
-            raise serializers.ValidationError("Longitude must be between -180 and 180.")
+            raise serializers.ValidationError("Check-in longitude must be between -180 and 180.")
+        return value
+
+    def validate_check_out_latitude(self, value):
+        if value is not None and (value < -90 or value > 90):
+            raise serializers.ValidationError("Check-out latitude must be between -90 and 90.")
+        return value
+
+    def validate_check_out_longitude(self, value):
+        if value is not None and (value < -180 or value > 180):
+            raise serializers.ValidationError("Check-out longitude must be between -180 and 180.")
         return value
 
     # -------------------
@@ -128,6 +141,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user = self.context['request'].user
         attendee = validated_data.get("attendee", user)
+        validated_data["attendee"] = attendee  # Ensure attendee is in validated_data
         record_date = None
         if validated_data.get("check_in_time"):
             record_date = localdate(validated_data["check_in_time"])
@@ -153,115 +167,67 @@ class AttendanceSerializer(serializers.ModelSerializer):
             validated_data["user"] = user
         return super().update(instance, validated_data)
     
-class AttendanceSerializer(serializers.ModelSerializer):
+
+# -----------------------------
+# Check-in Only Serializer
+# -----------------------------
+class AttendanceCheckInSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attendance
         fields = [
-            "id",
-            "user",
-            "check_in_time",
-            "check_out_time",
-            "latitude",
-            "longitude",
-            "attachment",
-            "source",
+            'id', 'attendee', 'check_in_time',
+            'check_in_latitude', 'check_in_longitude', 'check_in_image', 'created_at', 'user'
         ]
+        read_only_fields = ['user', 'created_at']
 
+    def validate_check_in_latitude(self, value):
+        if value is not None and (value < -90 or value > 90):
+            raise serializers.ValidationError("Check-in latitude must be between -90 and 90.")
+        return value
 
-# class AttendanceRequestSerializer(serializers.ModelSerializer):
-#     user = serializers.ReadOnlyField(source='user.username')
-#     attendance = AttendanceSerializer(read_only=True)  # Nested serializer, read-only
+    def validate_check_in_longitude(self, value):
+        if value is not None and (value < -180 or value > 180):
+            raise serializers.ValidationError("Check-in longitude must be between -180 and 180.")
+        return value
 
-#     class Meta:
-#         model = AttendanceRequest
-#         fields = '__all__'
-#         read_only_fields = ['user', 'attendance', 'created_at', 'updated_at']
+    def validate(self, data):
+        if not data.get('check_in_time'):
+            raise serializers.ValidationError("Check-in time is required.")
+        return data
 
-#     def validate(self, data):
-#         user = self.context['request'].user
-#         check_type = data.get('check_type') or getattr(self.instance, "check_type", None)
-#         check_in = data.get('check_in_time') or getattr(self.instance, "check_in_time", None)
-#         check_out = data.get('check_out_time') or getattr(self.instance, "check_out_time", None)
+class AttendanceCheckOutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Attendance
+        fields = [
+            'id', 'check_out_time', 'check_out_latitude', 'check_out_longitude', 'check_out_image'
+        ]
+        read_only_fields = ['id']
 
-#         # 1️⃣ Require corresponding time
-#         if check_type == AttendanceRequest.CHECK_IN and not check_in:
-#             raise serializers.ValidationError("check_in_time must be provided for check_in type.")
-#         if check_type == AttendanceRequest.CHECK_OUT and not check_out:
-#             raise serializers.ValidationError("check_out_time must be provided for check_out type.")
+    def validate_check_out_latitude(self, value):
+        if value is not None and (value < -90 or value > 90):
+            raise serializers.ValidationError("Check-out latitude must be between -90 and 90.")
+        return value
 
-#         # 2️⃣ Status change restrictions
-#         if self.instance and 'status' in data:
-#             new_status = data['status']
-#             old_status = self.instance.status
+    def validate_check_out_longitude(self, value):
+        if value is not None and (value < -180 or value > 180):
+            raise serializers.ValidationError("Check-out longitude must be between -180 and 180.")
+        return value
 
-#             if not user.is_staff and new_status != old_status:
-#                 raise serializers.ValidationError("Only admin/staff users can change the status.")
+    def validate(self, data):
+        if not data.get('check_out_time'):
+            raise serializers.ValidationError("Check-out time is required.")
+        
+        # Ensure the attendance record has a check-in time
+        if self.instance and not self.instance.check_in_time:
+            raise serializers.ValidationError("Cannot check-out without a check-in time.")
+        
+        # Ensure check-out time is after check-in time
+        if self.instance and self.instance.check_in_time and data.get('check_out_time'):
+            if data['check_out_time'] <= self.instance.check_in_time:
+                raise serializers.ValidationError("Check-out time must be after check-in time.")
+        
+        return data
 
-#             if not self.instance.can_transition_to(new_status):
-#                 raise serializers.ValidationError(f"Invalid status transition: {old_status} → {new_status}")
-
-#         # 3️⃣ Weekend/Holiday restriction
-#         record_date = check_in.date() if check_in else (check_out.date() if check_out else None)
-#         if record_date and not (user.is_staff or user.is_superuser):
-#             if record_date.weekday() in [5, 6]:
-#                 raise serializers.ValidationError("Cannot mark attendance on weekends.")
-#             if Holiday.objects.filter(date=record_date).exists():
-#                 raise serializers.ValidationError("Cannot mark attendance on holiday.")
-
-#         # 4️⃣ Leave check
-#         if record_date and not (user.is_staff or user.is_superuser):
-#             leave_exists = LeaveRequest.objects.filter(
-#                 user=user,
-#                 status='approved',
-#                 start_date__lte=record_date,
-#                 end_date__gte=record_date
-#             ).exists()
-#             if leave_exists:
-#                 raise serializers.ValidationError("Cannot mark attendance on approved leave day.")
-
-#         return data
-
-#     def create(self, validated_data):
-#         instance = super().create(validated_data)
-#         # Sync attendance if approved
-#         if instance.status == AttendanceRequest.STATUS_APPROVED:
-#             self._sync_attendance(instance)
-#         return instance
-
-#     def update(self, instance, validated_data):
-#         new_status = validated_data.get("status", instance.status)
-#         instance = super().update(instance, validated_data)
-#         # Sync attendance if approved
-#         if new_status == AttendanceRequest.STATUS_APPROVED:
-#             self._sync_attendance(instance)
-#         return instance
-
-#     def _sync_attendance(self, request_instance):
-#         """
-#         Syncs AttendanceRequest with the actual Attendance record using mark_attendance.
-#         """
-#         # Determine timestamp and type
-#         if request_instance.check_type == AttendanceRequest.CHECK_IN:
-#             check_type = AttendanceRequest.CHECK_IN
-#             timestamp = request_instance.check_in_time
-#         else:
-#             check_type = AttendanceRequest.CHECK_OUT
-#             timestamp = request_instance.check_out_time
-
-#         attendance = mark_attendance(
-#             user=request_instance.user,
-#             attendee=request_instance.user,
-#             check_type=check_type,
-#             timestamp=timestamp,
-#             latitude=getattr(request_instance, "latitude", None),
-#             longitude=getattr(request_instance, "longitude", None),
-#             attachment=getattr(request_instance, "attachment", None),
-#         )
-
-#         # Link the attendance to the request
-#         request_instance.attendance = attendance
-#         request_instance.save(update_fields=["attendance"])
-#         return attendance
 class AttendanceRequestSerializer(serializers.ModelSerializer):
     user = serializers.ReadOnlyField(source='user.username')
     attendance = AttendanceSerializer(read_only=True)  # Nested serializer, read-only
@@ -374,7 +340,8 @@ class AttendanceRequestSerializer(serializers.ModelSerializer):
             timestamp=timestamp,
             latitude=getattr(request_instance, "latitude", None),
             longitude=getattr(request_instance, "longitude", None),
-            attachment=getattr(request_instance, "attachment", None),
+            check_in_image=getattr(request_instance, "attachment", None) if check_type == AttendanceRequest.CHECK_IN else None,
+            check_out_image=getattr(request_instance, "attachment", None) if check_type == AttendanceRequest.CHECK_OUT else None,
         )
 
         # Link the attendance to the request

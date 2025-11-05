@@ -1,15 +1,23 @@
-from django.urls import path,include
-from .views import AttendanceListCreateView, AttendanceDetailView
-from .views import AttendanceRequestViewSet,AttendanceReportView
-from .views import LeaveRequestListCreateView, LeaveRequestDetailView
+from django.urls import path,include,re_path
+from .views import (
+    AttendanceIndividualView, AttendanceCheckInView, AttendanceUpdateView, AttendanceUpdateView,
+    AttendanceRequestViewSet, AttendanceReportView, 
+    LeaveRequestListCreateView, LeaveRequestDetailView, AttendanceByAttendeeView,
+    AttendanceStatusView
+)
 from rest_framework.routers import DefaultRouter
 # from .views import AttendanceReportView
 
 router = DefaultRouter()
 router.register(r'attendance-requests', AttendanceRequestViewSet, basename='attendance-request')
 urlpatterns = [
-    path('attendances/', AttendanceListCreateView.as_view(), name='attendance-list-create'),
-    path('attendances/<int:pk>/', AttendanceDetailView.as_view(), name='attendance-detail'),
+
+    path('attendances/<int:pk>/', AttendanceIndividualView.as_view(), name='attendance-individual'),
+    path('attendance/check-in/', AttendanceCheckInView.as_view(), name='attendance-check-in'),
+    path('attendances/by-attendee/', AttendanceByAttendeeView.as_view(), name='attendance-by-attendee'),
+    path('attendances/attendee/<int:attendee_id>/', AttendanceUpdateView.as_view(), name='attendance-update'),
+    # path('attendances/status/today/', AttendanceStatusView.as_view(), name='attendance-status-today'),
+
     path("attendance/report/", AttendanceReportView.as_view(), name="attendance-report"),
     
     # ✅ List + Create (with filtering, ordering, searching in Swagger)

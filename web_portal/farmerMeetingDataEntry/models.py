@@ -8,7 +8,7 @@ import uuid
 import os
 from django.core.validators import FileExtensionValidator
 from django.core.exceptions import ValidationError
-from FieldAdvisoryService.serializers import Region,Zone,Territory
+from FieldAdvisoryService.models import Region,Zone,Territory,Company
 class Meeting(models.Model):
     id = models.CharField(
         max_length=20,
@@ -17,20 +17,19 @@ class Meeting(models.Model):
         editable=False
     )
     fsm_name = models.CharField(max_length=100, default="Unknown FSM")
-    territory = models.CharField(max_length=100, default="Unknown Territory")
-    zone = models.CharField(max_length=100, default="Unknown Zone")
-    region = models.CharField(max_length=100, default="Unknown Region")
-       # NEW – real FKs
-    # company   = models.ForeignKey(Company,   on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Foreign Key relationships
+    company_fk = models.ForeignKey(Company, on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_company')
     region_fk = models.ForeignKey(Region,on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_region')
     zone_fk   = models.ForeignKey(Zone,on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_zone')
     territory_fk = models.ForeignKey(Territory, on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_territory')
     
-    date = models.DateField()
+    date = models.DateTimeField()
     location = models.CharField(max_length=200, default="Not specified")
     total_attendees = models.PositiveIntegerField(default=0)
     key_topics_discussed = models.TextField(default="Not specified")
-    presence_of_zm_rsm = models.BooleanField(default=False)
+    presence_of_zm = models.BooleanField(default=False)
+    presence_of_rsm = models.BooleanField(default=False)
     feedback_from_attendees = models.TextField(blank=True, null=True)
     suggestions_for_future = models.TextField(blank=True, null=True)
   
@@ -57,8 +56,16 @@ class Meeting(models.Model):
 
 class FarmerAttendance(models.Model):
     meeting = models.ForeignKey(Meeting, related_name='attendees', on_delete=models.CASCADE)
-    farmer_name = models.CharField(max_length=100)
-    contact_number = models.CharField(max_length=15)
+    
+    # Link to farmer record (optional)
+    farmer = models.ForeignKey('farmers.Farmer', on_delete=models.CASCADE, null=True, blank=True, 
+                              related_name='meeting_attendances', 
+                              help_text="Link to farmer record")
+    
+    farmer_name = models.CharField(max_length=100, blank=True,
+                                  help_text="Farmer name (auto-filled from farmer record if linked)")
+    contact_number = models.CharField(max_length=15, blank=True,
+                                     help_text="Contact number (auto-filled from farmer record if linked)")
     acreage = models.FloatField(default=0.0)
     crop = models.CharField(max_length=100)
 
@@ -108,13 +115,16 @@ class MeetingAttachment(models.Model):
 # field day 
 class FieldDay(models.Model):
     id = models.CharField(max_length=20, primary_key=True, editable=False)
-    title = models.CharField(max_length=200)
-   
-    territory = models.CharField(max_length=100)
-    zone = models.CharField(max_length=100)
-    region = models.CharField(max_length=100)
+    title = models.CharField(max_length=200, verbose_name="Name of FSM", help_text="Enter the name of the Field Service Manager (FSM)")
     
-    # ✅ Proper ForeignKey relationships (like Meeting)
+    # Foreign Key relationships
+    company_fk = models.ForeignKey(
+        Company,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='field_days_company'
+    )
     region_fk = models.ForeignKey(
         Region,
         on_delete=models.SET_NULL,
@@ -137,11 +147,11 @@ class FieldDay(models.Model):
         related_name='field_days_territory'
     )
     
-    date = models.DateField()
+    date = models.DateTimeField()
     location = models.CharField(max_length=200)
-    objectives = models.TextField(default="Not specified")
-    remarks = models.TextField(blank=True, null=True)
-    status = models.CharField(max_length=20, default="draft", choices=[("draft","Draft"),("scheduled","Scheduled"),("completed","Completed")])
+    total_participants = models.PositiveIntegerField(default=0, help_text="Total number of participants in the field day")
+    demonstrations_conducted = models.PositiveIntegerField(default=0, help_text="Number of demonstrations conducted")
+    feedback = models.TextField(blank=True, null=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="field_days")
     is_active = models.BooleanField(default=True)
 
@@ -152,7 +162,53 @@ class FieldDay(models.Model):
 
 class FieldDayAttendance(models.Model):
     field_day = models.ForeignKey(FieldDay, related_name="attendees", on_delete=models.CASCADE)
-    farmer_name = models.CharField(max_length=100)
-    contact_number = models.CharField(max_length=15)
-    acreage = models.FloatField(default=0.0)
-    crop = models.CharField(max_length=100)
+    
+    # ✅ Link to farmer record (optional)
+    farmer = models.ForeignKey('farmers.Farmer', on_delete=models.CASCADE, null=True, blank=True, 
+                              related_name='field_day_attendances', 
+                              help_text="Link to farmer record")
+    
+    # ✅ Attendee information (auto-filled from farmer if linked)
+    farmer_name = models.CharField(max_length=100, blank=True, 
+                                  help_text="Farmer name (auto-filled from farmer record if linked)")
+    contact_number = models.CharField(max_length=15, blank=True,
+                                     help_text="Contact number (auto-filled from farmer record if linked)")
+    acreage = models.FloatField(default=0.0, help_text="Acreage for this specific field day")
+    crop = models.CharField(max_length=100, blank=True, help_text="Crop discussed/demonstrated (deprecated - use crops relationship)")
+
+
+class FieldDayAttendanceCrop(models.Model):
+    """Model to handle multiple crops per field day attendance"""
+    attendance = models.ForeignKey(FieldDayAttendance, related_name="crops", on_delete=models.CASCADE)
+    crop_name = models.CharField(max_length=100, help_text="Name of the crop")
+    acreage = models.FloatField(default=0.0, help_text="Acreage for this specific crop")
+    
+    class Meta:
+        unique_together = ['attendance', 'crop_name']  # Prevent duplicate crops for same attendance
+        db_table = 'field_day_attendance_crops'
+    
+    def __str__(self):
+        return f"{self.attendance.farmer_name} - {self.crop_name} ({self.acreage} acres)"
+    
+    def save(self, *args, **kwargs):
+        # No special logic needed for FieldDayAttendanceCrop
+        super().save(*args, **kwargs)
+
+def upload_to_field_day(instance, filename):
+    return f"field_day_uploads/{filename}"
+
+class FieldDayAttachment(models.Model):
+    field_day = models.ForeignKey(FieldDay, related_name='attachments', on_delete=models.CASCADE)
+    file = models.FileField(
+        upload_to=upload_to_field_day,
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=['png', 'jpg', 'jpeg', 'pdf', 'doc', 'docx', 'xls', 'xlsx']
+            ),
+            validate_file_size,
+        ]
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True) 
+
+    def __str__(self):
+        return os.path.basename(self.file.name)

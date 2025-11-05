@@ -25,7 +25,7 @@ class SalesStaffSerializer(serializers.ModelSerializer):
         model = SalesStaffProfile
         fields = [
             'id', 'user', 'employee_code', 'phone_number',
-            'address', 'designation', 'company', 'region', 'zone', 'territory',
+            'address', 'designation', 'companies', 'regions', 'zones', 'territories',
             'hod', 'master_hod',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
@@ -41,7 +41,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
         required=True,
         validators=[RegexValidator(r'^[A-Za-z\s]+$', 'Only letters and spaces are allowed.')]
     )
-    profile_image = serializers.ImageField(required=True)
+    profile_image = serializers.ImageField(required=False)
     is_sales_staff = serializers.BooleanField(required=False)
 
     # Sales staff fields (optional, allow blank/null)
@@ -113,33 +113,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(errors)
         return data
 
-#     def create(self, validated_data):
-#         is_sales = validated_data.pop('is_sales_staff', False)
 
-#         sales_staff_data = {}
-#         if is_sales:
-#             sales_staff_fields = [
-#     'employee_code', 'phone_number', 'address', 'designation',
-#     'company', 'region', 'zone', 'territory',
-#     'hod', 'master_hod',
-#     'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
-# ]
-            
-#             # for field in sales_staff_fields:
-#             #     sales_staff_data[field] = validated_data.pop(field)
-#             for field in sales_staff_fields:
-#                  sales_staff_data[field] = validated_data.pop(field, None)
-
-#         password = validated_data.pop('password')
-#         user = User(**validated_data)
-#         user.set_password(password)
-#         user.is_sales_staff = is_sales
-#         user.save()
-
-#         if is_sales:
-#             SalesStaffProfile.objects.create(user=user, **sales_staff_data)
-
-#         return user
     def create(self, validated_data):
         is_sales = validated_data.pop('is_sales_staff', False)
 
@@ -159,7 +133,24 @@ class UserSignupSerializer(serializers.ModelSerializer):
         user.save()
 
         if is_sales:
-            SalesStaffProfile.objects.create(user=user, **sales_staff_data)
+            # Extract ManyToMany field data
+            company = sales_staff_data.pop('company', None)
+            region = sales_staff_data.pop('region', None)
+            zone = sales_staff_data.pop('zone', None)
+            territory = sales_staff_data.pop('territory', None)
+            
+            # Create the profile without ManyToMany fields
+            profile = SalesStaffProfile.objects.create(user=user, **sales_staff_data)
+            
+            # Set ManyToMany relationships
+            if company:
+                profile.companies.set([company])
+            if region:
+                profile.regions.set([region])
+            if zone:
+                profile.zones.set([zone])
+            if territory:
+                profile.territories.set([territory])
 
         return user
 # ----------------------

@@ -6,7 +6,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.decorators import action
 from .models import Attendance, AttendanceRequest
-from .serializers import AttendanceSerializer, AttendanceRequestSerializer,AttendanceReportSerializer,EmptySerializer
+from .serializers import AttendanceSerializer, AttendanceRequestSerializer,AttendanceReportSerializer,EmptySerializer, AttendanceCheckInSerializer, AttendanceCheckOutSerializer
 from rest_framework.permissions import IsAuthenticated
 from accounts.permissions import HasRolePermission
 from rest_framework.exceptions import ValidationError
@@ -27,138 +27,81 @@ from drf_yasg.utils import swagger_auto_schema
 from .models import AttendanceRequest, Attendance
 from .serializers import AttendanceRequestSerializer
 from rest_framework import serializers
+from django.utils import timezone
+from django.contrib.auth import get_user_model
 import logging
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger(__name__)
+User = get_user_model() 
 
 
-# ✅ List & Create Attendance (Only for logged-in user)
-class AttendanceListCreateView(generics.ListCreateAPIView):
+
+# ✅ Individual Attendance Record with Filters
+class AttendanceIndividualView(generics.RetrieveAPIView):
     serializer_class = AttendanceSerializer
-    # permission_classes = [permissions.IsAuthenticated]
     permission_classes = [IsAuthenticated, HasRolePermission]
-    parser_classes = [MultiPartParser, FormParser]
-
-    @swagger_auto_schema(
-        operation_description="Retrieve a paginated list of your attendance records with check-in/check-out times, locations, and attachments.",
-        responses={
-            200: openapi.Response(
-                description='List of attendance records',
-                examples={
-                    'application/json': [
-                        {
-                            'id': 1,
-                            'user': 1,
-                            'attendee': 1,
-                            'check_in_time': '2024-01-15T09:00:00Z',
-                            'check_out_time': '2024-01-15T17:30:00Z',
-                            'latitude': '31.5204',
-                            'longitude': '74.3587',
-                            'attachment': '/media/attendance/photo_123.jpg',
-                            'created_at': '2024-01-15T09:00:00Z'
-                        }
-                    ]
-                }
-            )
-        },
-        tags=["08. Attendance"]
-    )
-    def get(self, request, *args, **kwargs):
-        return super().get(request, *args, **kwargs)
-
-    @swagger_auto_schema(
-        operation_description="Submit a new attendance record with location data and optional photo attachment. At least one of check_in_time or check_out_time must be provided.",
-        request_body=AttendanceSerializer,
-        responses={
-            201: openapi.Response(
-                description='Attendance record created successfully',
-                schema=AttendanceSerializer,
-                examples={
-                    'application/json': {
-                        'id': 1,
-                        'user': 1,
-                        'attendee': 1,
-                        'check_in_time': '2024-01-15T09:00:00Z',
-                        'latitude': '31.5204',
-                        'longitude': '74.3587',
-                        'created_at': '2024-01-15T09:00:00Z'
-                    }
-                }
-            ),
-            400: 'Bad Request - At least one of check_in_time or check_out_time must be provided'
-        },
-        tags=["08. Attendance"]
-    )
-    def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
-
+    lookup_field = 'pk'
+    
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Attendance.objects.none()
-        return Attendance.objects.filter(user_id=self.request.user)
-
-    def perform_create(self, serializer):
-        user = self.request.user
-        data = serializer.validated_data
-
-        attendee = data.get("attendee", user)
-        check_in_time = data.get("check_in_time")
-        check_out_time = data.get("check_out_time")
-
-        if not check_in_time and not check_out_time:
-            raise ValidationError("At least one of check_in_time or check_out_time must be provided.")
-
-        # ✅ Save extra fields like lat/lon/attachment
-        attendance = serializer.save(user=user)
-
-        # ✅ Funnel everything to centralized mark_attendance
-        if check_in_time:
-            mark_attendance(
-                user=user,
-                attendee=attendee,
-                check_type="check_in",
-                timestamp=check_in_time,
-                latitude=attendance.latitude,
-                longitude=attendance.longitude,
-                attachment=attendance.attachment,
-            )
-
-        if check_out_time:
-            mark_attendance(
-                user=user,
-                attendee=attendee,
-                check_type="check_out",
-                timestamp=check_out_time,
-                latitude=attendance.latitude,
-                longitude=attendance.longitude,
-                attachment=attendance.attachment,
-            )
-
-        # ✅ Ensure serializer returns this saved instance
-        serializer.instance = attendance
-
-
-# ✅ Retrieve, Update, Delete Attendance (Only for logged-in user)
-class AttendanceDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = AttendanceSerializer
-    # permission_classes = [permissions.IsAuthenticated]
-    permission_classes = [IsAuthenticated, HasRolePermission]
+            
+        attendance_id = self.kwargs.get('pk')
+        filter_type = self.request.query_params.get('filter', 'daily')
+        
+        # Get the base attendance record
+        base_attendance = Attendance.objects.filter(id=attendance_id).first()
+        if not base_attendance:
+            return Attendance.objects.none()
+            
+        attendee = base_attendance.attendee
+        base_date = base_attendance.check_in_time.date() if base_attendance.check_in_time else base_attendance.check_out_time.date()
+        
+        from datetime import timedelta
+        
+        if filter_type == 'weekly':
+            # Get start of week (Monday)
+            start_date = base_date - timedelta(days=base_date.weekday())
+            end_date = start_date + timedelta(days=6)
+        elif filter_type == 'monthly':
+            # Get start and end of month
+            start_date = base_date.replace(day=1)
+            next_month = start_date.replace(month=start_date.month + 1) if start_date.month < 12 else start_date.replace(year=start_date.year + 1, month=1)
+            end_date = next_month - timedelta(days=1)
+        else:  # daily
+            start_date = end_date = base_date
+            
+        return Attendance.objects.filter(
+            attendee=attendee,
+            check_in_time__date__gte=start_date,
+            check_in_time__date__lte=end_date
+        ).order_by('-check_in_time')
+    
     @swagger_auto_schema(
-        operation_description="Retrieve detailed information of a specific attendance record including timestamps, location, and attachments.",
+        operation_description="Get a single attendance record by ID with optional filtering. Use /attendances/by-attendee/{attendee_id}/ for all records of an attendee.",
+        manual_parameters=[
+            openapi.Parameter(
+                'filter',
+                openapi.IN_QUERY,
+                description='Filter type: daily, weekly, or monthly',
+                type=openapi.TYPE_STRING,
+                enum=['daily', 'weekly', 'monthly'],
+                default='daily'
+            )
+        ],
         responses={
             200: openapi.Response(
-                description='Attendance record details',
+                description='Attendance record(s) based on filter',
                 examples={
                     'application/json': {
                         'id': 1,
-                        'user': 1,
                         'attendee': 1,
                         'check_in_time': '2024-01-15T09:00:00Z',
                         'check_out_time': '2024-01-15T17:30:00Z',
                         'latitude': '31.5204',
                         'longitude': '74.3587',
-                        'attachment': '/media/attendance/photo_123.jpg',
-                        'created_at': '2024-01-15T09:00:00Z',
-                        'updated_at': '2024-01-15T17:30:00Z'
+                        'check_in_image': '/media/attendance_checkin/photo_123.jpg',
+                        'check_out_image': '/media/attendance_checkout/photo_124.jpg',
+                        'created_at': '2024-01-15T09:00:00Z'
                     }
                 }
             ),
@@ -167,48 +110,370 @@ class AttendanceDetailView(generics.RetrieveUpdateDestroyAPIView):
         tags=["08. Attendance"]
     )
     def get(self, request, *args, **kwargs):
-        return super().get(request, *args, **kwargs)
+        filter_type = request.query_params.get('filter', 'daily')
+        
+        if filter_type == 'daily':
+            # Return single record for daily filter
+            return super().get(request, *args, **kwargs)
+        else:
+            # Return multiple records for weekly/monthly filters
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
 
+# ✅ Check-in Endpoint (POST)
+class AttendanceCheckInView(generics.CreateAPIView):
+    serializer_class = AttendanceCheckInSerializer
+    permission_classes = [IsAuthenticated, HasRolePermission]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Attendance.objects.none()
+        return Attendance.objects.all()
+    
     @swagger_auto_schema(
-        operation_description="Update all fields of an existing attendance record (full update).",
+        operation_description="Check-in with image upload. Creates a new attendance record with check-in time and image. Expects multipart/form-data with fields: attendee (integer), check_in_time (datetime), check_in_latitude (number), check_in_longitude (number), check_in_image (file).",
+        request_body=AttendanceCheckInSerializer,
         responses={
-            200: 'Attendance record updated successfully',
-            404: 'Attendance record not found',
-            400: 'Bad Request - Invalid data provided'
+            201: openapi.Response(
+                description='Check-in successful',
+                schema=AttendanceCheckInSerializer,
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'attendee': 1,
+                        'check_in_time': '2024-01-15T09:00:00Z',
+                        'check_in_latitude': '31.5204',
+                        'check_in_longitude': '74.3587',
+                        'check_in_image': '/media/attendance_checkin/photo_123.jpg'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid data or check-in time required'
+        },
+        tags=["08. Attendance"]
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+    
+    def perform_create(self, serializer):
+        user = self.request.user
+        attendee = serializer.validated_data.get('attendee', user)
+        
+        serializer.save(user=user, attendee=attendee)
+
+
+# ✅ Attendance Update/Delete View (PUT, PATCH, DELETE)
+class AttendanceUpdateView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AttendanceSerializer
+    permission_classes = [IsAuthenticated, HasRolePermission]
+    parser_classes = [MultiPartParser, FormParser]
+    lookup_field = 'attendee_id'
+    lookup_url_kwarg = 'attendee_id'
+    
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Attendance.objects.none()
+        attendee_id = self.kwargs.get('attendee_id')
+        return Attendance.objects.filter(attendee_id=attendee_id)
+    
+    def get_object(self):
+        """Override to return the latest attendance record for the attendee"""
+        queryset = self.get_queryset()
+        if not queryset.exists():
+            from django.http import Http404
+            raise Http404("No attendance records found for this attendee")
+        # Return the latest attendance record based on created_at
+        return queryset.order_by('-created_at').first()
+    
+    def get_serializer_class(self):
+        if self.request.method == 'PATCH':
+            return AttendanceCheckOutSerializer
+        return AttendanceSerializer
+    
+    @swagger_auto_schema(
+        operation_description="Retrieve attendance record details by attendee ID.",
+        responses={
+            200: openapi.Response(
+                description='Attendance record details for the specified attendee',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'attendee': 1,
+                        'check_in_time': '2024-01-15T09:00:00Z',
+                        'check_out_time': '2024-01-15T17:30:00Z',
+                        'latitude': '31.5204',
+                        'longitude': '74.3587',
+                        'check_in_image': '/media/attendance_checkin/photo_123.jpg',
+                        'check_out_image': '/media/attendance_checkout/photo_124.jpg',
+                        'created_at': '2024-01-15T09:00:00Z'
+                    }
+                }
+            ),
+            404: 'Attendance record not found for this attendee'
+        },
+        tags=["08. Attendance"]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+    
+    @swagger_auto_schema(
+        operation_description="Update all fields of an attendance record for a specific attendee. Requires multipart/form-data for image uploads.",
+        request_body=AttendanceSerializer,
+        responses={
+            200: openapi.Response(
+                description='Attendance record updated successfully',
+                schema=AttendanceSerializer,
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'attendee': 1,
+                        'check_in_time': '2024-01-15T09:00:00Z',
+                        'check_out_time': '2024-01-15T17:30:00Z',
+                        'latitude': '31.5204',
+                        'longitude': '74.3587',
+                        'check_in_image': '/media/attendance_checkin/photo_123.jpg',
+                        'check_out_image': '/media/attendance_checkout/photo_124.jpg'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid data provided',
+            404: 'Attendance record not found for this attendee'
         },
         tags=["08. Attendance"]
     )
     def put(self, request, *args, **kwargs):
         return super().put(request, *args, **kwargs)
-
+    
     @swagger_auto_schema(
-        operation_description="Update specific fields of an attendance record (partial update).",
+        operation_description="Check-out only: Update check-out time, location, and image for an existing attendance record of a specific attendee. Requires multipart/form-data for image upload.",
+        request_body=AttendanceCheckOutSerializer,
         responses={
-            200: 'Attendance record updated successfully',
-            404: 'Attendance record not found',
-            400: 'Bad Request - Invalid data provided'
+            200: openapi.Response(
+                description='Check-out successful',
+                schema=AttendanceCheckOutSerializer,
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'check_out_time': '2024-01-15T17:30:00Z',
+                        'check_out_latitude': '31.5204',
+                        'check_out_longitude': '74.3587',
+                        'check_out_image': '/media/attendance_checkout/photo_124.jpg'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid check-out data or missing check-in',
+            404: 'Attendance record not found for this attendee'
         },
         tags=["08. Attendance"]
     )
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
-
+    
     @swagger_auto_schema(
-        operation_description="Permanently delete an attendance record from the system.",
+        operation_description="Permanently delete an attendance record for a specific attendee from the system.",
         responses={
             204: 'Attendance record deleted successfully',
-            404: 'Attendance record not found'
+            404: 'Attendance record not found for this attendee'
         },
         tags=["08. Attendance"]
     )
     def delete(self, request, *args, **kwargs):
         return super().delete(request, *args, **kwargs)
 
+# ✅ Attendance Records by Attendee with Time Filtering
+class AttendanceByAttendeeView(generics.ListAPIView):
+    serializer_class = AttendanceSerializer
+    permission_classes = [IsAuthenticated, HasRolePermission]
+    lookup_url_kwarg = 'attendee_id'
+    
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Attendance.objects.none()
-        return Attendance.objects.filter(user_id=self.request.user)
+        
+        attendee_id = self.request.query_params.get('attendee_id')
+        filter_type = self.request.query_params.get('filter', 'daily')
+        
+        # If attendee_id is None (not provided), return all records; otherwise filter by attendee_id
+        if attendee_id is None:
+            queryset = Attendance.objects.all()
+        else:
+            queryset = Attendance.objects.filter(attendee_id=attendee_id)
+        
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        today = timezone.now().date()
+        
+        if filter_type == 'daily':
+            # Get today's attendance records
+            queryset = queryset.filter(check_in_time__date=today)
+        elif filter_type == 'weekly':
+            # Get this week's attendance records (Monday to Sunday)
+            start_of_week = today - timedelta(days=today.weekday())
+            end_of_week = start_of_week + timedelta(days=6)
+            queryset = queryset.filter(
+                check_in_time__date__gte=start_of_week,
+                check_in_time__date__lte=end_of_week
+            )
+        elif filter_type == 'monthly':
+            # Get this month's attendance records
+            queryset = queryset.filter(
+                check_in_time__year=today.year,
+                check_in_time__month=today.month
+            )
+        
+        return queryset.order_by('-check_in_time')
+    
+    @swagger_auto_schema(
+        operation_description="Get attendance records with time-based filtering (daily, weekly, monthly). If attendee_id is provided as a query parameter, returns records for that specific user. If attendee_id is not provided, returns all attendance records for all users.",
+        manual_parameters=[
+            openapi.Parameter(
+                'attendee_id',
+                openapi.IN_QUERY,
+                description='Optional: Attendee ID to filter records for a specific user. If not provided, returns all users.',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'filter',
+                openapi.IN_QUERY,
+                description='Filter type: daily (today), weekly (this week), or monthly (this month)',
+                type=openapi.TYPE_STRING,
+                enum=['daily', 'weekly', 'monthly'],
+                default='daily'
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='List of attendance records. Returns all users when attendee_id is not provided, or specific user records when attendee_id is provided as a query parameter.',
+                schema=AttendanceSerializer(many=True),
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'attendee': 1,
+                            'check_in_time': '2024-01-15T09:00:00Z',
+                            'check_out_time': '2024-01-15T17:30:00Z',
+                            'latitude': '31.5204',
+                            'longitude': '74.3587',
+                            'check_in_image': '/media/attendance_checkin/photo_123.jpg',
+                            'check_out_image': '/media/attendance_checkout/photo_124.jpg',
+                            'created_at': '2024-01-15T09:00:00Z'
+                        }
+                    ]
+                }
+            ),
+            404: 'No attendance records found'
+        },
+        tags=["08. Attendance"]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
+# ✅ Attendance Status Check for Today
+class AttendanceStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    @swagger_auto_schema(
+        operation_description="Check attendance status for today. If attendee_id is provided, check for that specific attendee (requires admin permissions). Otherwise, check for the current user.",
+        manual_parameters=[
+            openapi.Parameter(
+                'attendee_id',
+                openapi.IN_QUERY,
+                description='Optional: Check attendance status for specific attendee ID (admin only)',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='Attendance status for today',
+                examples={
+                    'application/json': {
+                        'date': '2024-01-15',
+                        'attendee_id': 1,
+                        'has_checked_in': True,
+                        'has_checked_out': False,
+                        'check_in_time': '2024-01-15T09:00:00Z',
+                        'check_out_time': None,
+                        'attendance_id': 1,
+                        'status': 'checked_in'
+                    }
+                }
+            ),
+            403: 'Forbidden - Admin permissions required to check other users attendance',
+            404: 'Attendee not found'
+        },
+        tags=["08. Attendance"]
+    )
+    def get(self, request):
+        from django.utils import timezone
+        from rest_framework.response import Response
+        
+        # Ensure user is authenticated
+        if not request.user.is_authenticated:
+            return Response({'error': 'Authentication required'}, status=401)
+        
+        attendee_id = request.query_params.get('attendee_id')
+        today = timezone.now().date()
+        
+        # Determine which user to check attendance for
+        if attendee_id:
+            # Check if current user has admin permissions to view other users' attendance
+            if not (request.user.is_staff or request.user.is_superuser):
+                return Response({'error': 'Admin permissions required to check other users attendance'}, status=403)
+            
+            try:
+                target_user = User.objects.get(id=attendee_id)
+            except User.DoesNotExist:
+                return Response({'error': 'Attendee not found'}, status=404)
+        else:
+            target_user = request.user
+            attendee_id = request.user.id
+        
+        # Get today's attendance record for the target user
+        # Check both user and attendee fields to cover all cases
+        attendance = Attendance.objects.filter(
+            attendee=target_user,
+            check_in_time__date=today
+        ).first()
+        
+        if not attendance:
+            # Also check if user is the one who marked attendance
+            attendance = Attendance.objects.filter(
+                user=target_user,
+                check_in_time__date=today
+            ).first()
+        
+        if attendance:
+            has_checked_in = attendance.check_in_time is not None
+            has_checked_out = attendance.check_out_time is not None
+            
+            if has_checked_in and has_checked_out:
+                status = 'completed'
+            elif has_checked_in:
+                status = 'checked_in'
+            else:
+                status = 'partial'
+        else:
+            has_checked_in = False
+            has_checked_out = False
+            status = 'not_marked'
+        
+        response_data = {
+            'date': today.isoformat(),
+            'attendee_id': attendee_id,
+            'has_checked_in': has_checked_in,
+            'has_checked_out': has_checked_out,
+            'check_in_time': attendance.check_in_time.isoformat() if attendance and attendance.check_in_time else None,
+            'check_out_time': attendance.check_out_time.isoformat() if attendance and attendance.check_out_time else None,
+            'attendance_id': attendance.id if attendance else None,
+            'status': status
+        }
+        
+        return Response(response_data)
 
 # views.py (at the top, before your viewset)
 # ----------------------------------
@@ -449,7 +714,8 @@ class AttendanceRequestViewSet(viewsets.ModelViewSet):
                 timestamp=attendance_request.check_in_time or attendance_request.check_out_time,
                 latitude=getattr(attendance_request, "latitude", None),
                 longitude=getattr(attendance_request, "longitude", None),
-                attachment=getattr(attendance_request, "attachment", None),
+                check_in_image=getattr(attendance_request, "attachment", None) if attendance_request.check_type == AttendanceRequest.CHECK_IN else None,
+                check_out_image=getattr(attendance_request, "attachment", None) if attendance_request.check_type == AttendanceRequest.CHECK_OUT else None,
                 source="request"
             )
 

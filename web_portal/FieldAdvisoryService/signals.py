@@ -12,10 +12,18 @@ def create_dealer_from_request(sender, instance, created, **kwargs):
         # Check if this is a new approval
         if created or (hasattr(instance, '_previous_status') and instance._previous_status != "approved"):
             if not Dealer.objects.filter(cnic_number=instance.cnic_number).exists():
+                # Generate a unique card_code
+                import uuid
+                card_code = f"DLR{str(uuid.uuid4())[:8].upper()}"
+                
+                # Ensure card_code is unique
+                while Dealer.objects.filter(card_code=card_code).exists():
+                    card_code = f"DLR{str(uuid.uuid4())[:8].upper()}"
+                
                 Dealer.objects.create(
+                    card_code=card_code,
                     name=instance.owner_name,
                     cnic_number=instance.cnic_number,
-                    email=None,  # You may need to ask in form
                     contact_number=instance.contact_number,
                     company=instance.company,
                     region=instance.region,

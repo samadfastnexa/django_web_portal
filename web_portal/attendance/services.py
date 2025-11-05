@@ -125,7 +125,8 @@ def mark_attendance(
     timestamp=None,
     latitude=None,
     longitude=None,
-    attachment=None,
+    check_in_image=None,
+    check_out_image=None,
     source="request",  # ✅ mark source as request when called from approved AttendanceRequest
 ):
     """
@@ -133,7 +134,7 @@ def mark_attendance(
 
     - Automatically creates or updates Attendance record for the day.
     - Does NOT crash if check-in/check-out already exists.
-    - Updates optional fields (latitude, longitude, attachment) if provided.
+    - Updates optional fields (latitude, longitude, check_in_image, check_out_image) if provided.
     - source='request' by default to indicate it comes from a request approval.
 
     Returns:
@@ -170,7 +171,8 @@ def mark_attendance(
                     "check_out_time": timestamp if check_type == "check_out" else None,
                     "latitude": latitude,
                     "longitude": longitude,
-                    "attachment": attachment,
+                    "check_in_image": check_in_image if check_type == "check_in" else None,
+                    "check_out_image": check_out_image if check_type == "check_out" else None,
                     "source": source,
                 },
             )

@@ -91,17 +91,17 @@ class UserViewSet(viewsets.ModelViewSet):
         required=False
     ),
 ]
-# ----------------------
-#     # Dynamic serializer based on action
-#     # ----------------------
+    # ----------------------
+    # Dynamic serializer based on action
+    # ----------------------
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
             return UserUpdateSerializer
         return UserSerializer
 
-#     # ----------------------
-#     # Restrict queryset based on user permissions
-#     # ----------------------    
+    # ----------------------
+    # Restrict queryset based on user permissions
+    # ----------------------    
     def get_queryset(self):
         # Start with the base queryset
         qs = super().get_queryset()
@@ -115,7 +115,8 @@ class UserViewSet(viewsets.ModelViewSet):
         )
         
         user = self.request.user
-        if not user.is_superuser:
+        # Check if user is authenticated before filtering
+        if user.is_authenticated and not user.is_superuser:
             qs = qs.filter(id=user.id)
         # Get M2M filters from query params
         # Apply filters
@@ -136,17 +137,17 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = qs.filter(sales_profile__territories__id__in=territory_ids)
 
         return qs.distinct()
-   # ----------------------
-   # Override permissions per action
-   # ----------------------
+    # ----------------------
+    # Override permissions per action
+    # ----------------------
     def get_permissions(self):
         if self.action == 'destroy':
             return [permissions.IsAdminUser()]
         return [IsAuthenticated(), IsOwnerOrAdmin()]
     
-#     # ----------------------
-#     # Swagger: list
-#     # ----------------------
+    # ----------------------
+    # Swagger: list
+    # ----------------------
     # Swagger documentation
     @swagger_auto_schema(
         tags=["02. User Management"],
@@ -187,123 +188,13 @@ class UserViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    # @swagger_auto_schema(
-    #     tags=["User CRUD"],
-    #     manual_parameters=[
-    #         openapi.Parameter(
-    #             'profile_image', openapi.IN_FORM,
-    #             type=openapi.TYPE_FILE, description="Profile image"
-    #         ),
-    #         openapi.Parameter(
-    #             'companies', openapi.IN_FORM,
-    #             description="List of company IDs (use multiple values)",
-    #             type=openapi.TYPE_ARRAY,
-    #             items=openapi.Items(type=openapi.TYPE_INTEGER),
-    #             collection_format='multi'  # ✅ lets Swagger show + button
-    #         ),
-    #         openapi.Parameter(
-    #             'regions', openapi.IN_FORM,
-    #             description="List of region IDs (use multiple values)",
-    #             type=openapi.TYPE_ARRAY,
-    #             items=openapi.Items(type=openapi.TYPE_INTEGER),
-    #             collection_format='multi'
-    #         ),
-    #         openapi.Parameter(
-    #             'zones', openapi.IN_FORM,
-    #             description="List of zone IDs (use multiple values)",
-    #             type=openapi.TYPE_ARRAY,
-    #             items=openapi.Items(type=openapi.TYPE_INTEGER),
-    #             collection_format='multi'
-    #         ),
-    #         openapi.Parameter(
-    #             'territories', openapi.IN_FORM,
-    #             description="List of territory IDs (use multiple values)",
-    #             type=openapi.TYPE_ARRAY,
-    #             items=openapi.Items(type=openapi.TYPE_INTEGER),
-    #             collection_format='multi'
-    #         ),
-    #     ],
-    #     responses={201: UserSerializer}
-    # )
-    # @transaction.atomic
-    # def create(self, request, *args, **kwargs):
-    #     serializer = self.get_serializer(data=request.data)
-    #     serializer.is_valid(raise_exception=True)
 
-    #     # Extract is_sales_staff flag
-    #     is_sales_staff = serializer.validated_data.get('is_sales_staff', False)
-
-    #     # Extract M2M fields before creating profile
-    #     m2m_fields = ['companies', 'regions', 'zones', 'territories']
-    #     m2m_data = {field: serializer.validated_data.pop(field, []) for field in m2m_fields}
-
-    #     # Extract profile fields
-    #     profile_fields = [
-    #         'employee_code', 'phone_number', 'address', 'designation',
-    #         'hod', 'master_hod','date_of_joining',
-    #         'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
-    #     ]
-    #     profile_data = {f: serializer.validated_data.pop(f, None) for f in profile_fields}
-
-    #     # Extract password
-    #     password = serializer.validated_data.pop('password', None)
-
-    #     # Create user
-    #     user = User(**serializer.validated_data)
-    #     if password:
-    #         user.set_password(password)
-    #     user.is_sales_staff = is_sales_staff
-    #     user.save()
-
-    #     # Create sales profile if needed
-    #     if is_sales_staff:
-    #         profile = SalesStaffProfile.objects.create(user=user, **profile_data)
-    #         # Assign M2M relationships
-    #         for field, values in m2m_data.items():
-    #             getattr(profile, field).set(values)
-
-    #     return Response(self.get_serializer(user).data, status=status.HTTP_201_CREATED)
     @swagger_auto_schema(
-    tags=["02. User Management"],
-    manual_parameters=m2m_parameters,
-    request_body=None  # ⛔ important: avoid conflicts with serializer
-    # manual_parameters=[
-    #     openapi.Parameter(
-    #         'profile_image', openapi.IN_FORM,
-    #         type=openapi.TYPE_FILE, description="Profile image"
-    #     ),
-    #     openapi.Parameter(
-    #         'companies', openapi.IN_FORM,
-    #         description="List of company IDs (use multiple values)",
-    #         type=openapi.TYPE_ARRAY,
-    #         items=openapi.Items(type=openapi.TYPE_INTEGER),
-    #         collection_format='multi'
-    #     ),
-    #     openapi.Parameter(
-    #         'regions', openapi.IN_FORM,
-    #         description="List of region IDs (use multiple values)",
-    #         type=openapi.TYPE_ARRAY,
-    #         items=openapi.Items(type=openapi.TYPE_INTEGER),
-    #         collection_format='multi'
-    #     ),
-    #     openapi.Parameter(
-    #         'zones', openapi.IN_FORM,
-    #         description="List of zone IDs (use multiple values)",
-    #         type=openapi.TYPE_ARRAY,
-    #         items=openapi.Items(type=openapi.TYPE_INTEGER),
-    #         collection_format='multi'
-    #     ),
-    #     openapi.Parameter(
-    #         'territories', openapi.IN_FORM,
-    #         description="List of territory IDs (use multiple values)",
-    #         type=openapi.TYPE_ARRAY,
-    #         items=openapi.Items(type=openapi.TYPE_INTEGER),
-    #         collection_format='multi'
-    #     ),
-    # ]
-    ,
-    responses={201: UserSerializer}
-)
+        tags=["02. User Management"],
+        manual_parameters=m2m_parameters,
+        request_body=None,  # ⛔ important: avoid conflicts with serializer
+        responses={201: UserSerializer}
+    )
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -415,9 +306,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 profile.save()
 
         return Response(self.get_serializer(instance).data, status=status.HTTP_200_OK)
-#     # ----------------------
-#     # Swagger: partial_update
-#     # ----------------------
+    # ----------------------
+    # Swagger: partial_update
+    # ----------------------
     @swagger_auto_schema(tags=["02. User Management"],
                          operation_description=(
             "Partially update a user.\n\n"

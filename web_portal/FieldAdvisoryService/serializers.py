@@ -141,6 +141,8 @@ class TerritoryNestedSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'name',
+            'latitude',
+            'longitude',
             'company',
             'company_name',
             'zone',
