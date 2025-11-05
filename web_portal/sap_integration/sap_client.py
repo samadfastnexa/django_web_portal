@@ -155,6 +155,49 @@ class SAPClient:
                     # Re-raise the exception if no retries left or different error
                     raise e
 
+    def get_projects(self, select: str = None, filter_: str = None):
+        """
+        Fetch SAP Projects via Service Layer.
+        - select: comma-separated fields to select
+        - filter_: OData filter expression
+        Returns list of project dicts.
+        """
+        # Small jitter to avoid concurrent session conflicts
+        time.sleep(random.uniform(0.05, 0.15))
+        query_parts = []
+        if select:
+            query_parts.append(f"$select={quote(select)}")
+        if filter_:
+            query_parts.append(f"$filter={quote(filter_)}")
+        query = f"?{'&'.join(query_parts)}" if query_parts else ""
+        path = f"{self.base_path}/Projects{query}"
+        result = self._make_request("GET", path)
+        return result.get('value', [])
+
+    def get_all_policies(self):
+        """
+        List all policies from Projects using UDF `U_pol`.
+        Returns a list of policies with basic project context.
+        """
+        projects = self.get_projects(select="Code,Name,ValidFrom,ValidTo,Active,U_pol")
+        policies = []
+        for p in projects:
+            policy_val = p.get('U_pol')
+            if policy_val is None:
+                continue
+            # Exclude empty strings
+            if isinstance(policy_val, str) and not policy_val.strip():
+                continue
+            policies.append({
+                'code': p.get('Code'),
+                'name': p.get('Name'),
+                'valid_from': p.get('ValidFrom'),
+                'valid_to': p.get('ValidTo'),
+                'active': p.get('Active'),
+                'policy': policy_val
+            })
+        return policies
+
     def _logout(self):
         """Invalidate global session."""
         if not self._global_session_id:
