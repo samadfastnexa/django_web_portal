@@ -1,0 +1,165 @@
+/* Orange theme admin CSS — focuses on readable sidebar headings */
+
+:root {
+  --orange: #e76f51;
+  --orange-dark: #c34e33;
+  --orange-soft: #fff1ec;
+  --orange-soft-border: #f3c8bb;
+  --hairline-color: #f0d6cf;
+  --text-default: #333333;
+  /* High-contrast pair for headings (AA compliant) */
+  --orange-contrast: #bf3d2a; /* ~5.05:1 against white text */
+  --orange-contrast-text: #ffffff;
+}
+
+/* Header bar */
+#header {
+  background: var(--orange);
+}
+
+/* Buttons */
+.button, .button.default, input[type="submit"], .submit-row input.default {
+  background-color: var(--orange);
+  border-color: var(--orange);
+  color: #fff;
+}
+.button:hover, .button.default:hover, input[type="submit"]:hover, .submit-row input.default:hover {
+  background-color: var(--orange-dark);
+  border-color: var(--orange-dark);
+}
+
+/* Sidebar container */
+#nav-sidebar {
+  background: var(--orange-soft);
+  border-right: 1px solid var(--orange-soft-border);
+}
+
+/* Sidebar section headings */
+#nav-sidebar h2,
+#nav-sidebar .app-label,
+#nav-sidebar .module caption {
+  background-color: var(--orange-contrast) !important;
+  color: var(--orange-contrast-text) !important;
+  border: 1px solid var(--orange-contrast) !important;
+}
+#nav-sidebar h2 {
+  padding: 8px 12px !important;
+  line-height: 1.2;
+}
+#nav-sidebar h2 a,
+#nav-sidebar h2 a:visited {
+  color: var(--orange-contrast-text) !important;
+  display: block;
+  text-decoration: none;
+}
+
+/* Model links */
+#nav-sidebar .model-list li a {
+  color: var(--orange-dark);
+}
+#nav-sidebar .model-list li a:hover,
+#nav-sidebar .model-list li a:focus {
+  background-color: #fff2ee;
+  color: var(--orange-dark);
+}
+
+/* Sidebar filter input */
+#nav-filter {
+  border-color: var(--orange-soft-border);
+}
+#nav-filter:focus {
+  border-color: var(--orange-dark);
+  box-shadow: 0 0 0 3px rgba(231, 111, 81, 0.25);
+}
+
+/* Right-side filter header */
+#changelist-filter h2,
+#changelist-filter .filter-title {
+  background-color: var(--orange-contrast) !important;
+  color: var(--orange-contrast-text) !important;
+}
+
+/* Table header accents */
+.results thead th {
+  background-color: var(--orange-soft);
+  border-bottom: 1px solid var(--hairline-color);
+}
+
+/* ==========================
+   Site administration (index)
+   ========================== */
+/* App/module captions at admin index */
+#content-main .module caption,
+#content-main .app-list .module caption {
+  display: block;
+  background-color: var(--orange-contrast);
+  color: var(--orange-contrast-text);
+  padding: 8px 12px;
+  border: 1px solid var(--orange-contrast);
+}
+
+/* Caption link (app title) */
+#content-main .module caption a {
+  color: var(--orange-contrast-text);
+  text-decoration: none;
+}
+
+/* App tables */
+#content-main .module table {
+  border: 1px solid var(--hairline-color);
+  border-top: none; /* caption already draws top border */
+}
+
+#content-main .module tbody tr th a {
+  color: var(--orange-dark);
+}
+
+#content-main .module tbody tr td a {
+  color: var(--orange);
+}
+
+#content-main .module tbody tr:hover {
+  background-color: #fff6f3;
+}
+
+/* ---------------------------
+   Login: Show Password Toggle
+   --------------------------- */
+.password-field-wrapper {
+  position: relative;
+  display: block;
+}
+.password-field-wrapper input[type="password"],
+.password-field-wrapper input[type="text"] {
+  padding-right: 40px; /* room for eye icon */
+}
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--orange-dark);
+  cursor: pointer;
+}
+.password-toggle:hover {
+  color: var(--orange);
+}
+.password-toggle:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(231, 111, 81, 0.3);
+  border-radius: 4px;
+}
+.password-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.password-toggle .icon-eye-off { display: none; }
+.password-toggle[data-state="visible"] .icon-eye { display: none; }
+.password-toggle[data-state="visible"] .icon-eye-off { display: inline; }
