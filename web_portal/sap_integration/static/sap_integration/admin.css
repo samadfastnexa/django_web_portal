@@ -1,20 +1,235 @@
 /* Orange theme admin CSS — focuses on readable sidebar headings */
 
+/* =====================
+   Global CSS Variables
+   ===================== */
 :root {
-  --orange: #e76f51;
-  --orange-dark: #c34e33;
-  --orange-soft: #fff1ec;
-  --orange-soft-border: #f3c8bb;
-  --hairline-color: #f0d6cf;
+  /* Brand palette (anchored to provided shade) */
+  --orange: #E26830;              /* primary orange */
+  --orange-dark: #C75A2A;         /* press/active state */
+  --orange-soft: #FFE4D6;         /* soft background tint */
+  --orange-soft-border: #F7BFA8;  /* soft border tint */
+  --hairline-color: #F3C7B4;      /* hairline divider */
   --text-default: #333333;
   /* High-contrast pair for headings (AA compliant) */
-  --orange-contrast: #bf3d2a; /* ~5.05:1 against white text */
+  --orange-contrast: #B64C1E;     /* stronger contrast block */
+  --orange-contrast-text: #ffffff;
+
+  /* Header and user-tools */
+  --header-bg: var(--orange);
+  --header-text: #ffffff;
+  --hover-bg: rgba(0, 0, 0, 0.22); /* darker overlay to keep white text readable */
+  --hover-ring: 0 0 0 2px rgba(0, 0, 0, 0.20);
+
+  /* Icon styling */
+  --theme-icon-color: #ffffff; /* icon white to match header text */
+  /* Accent for theme toggle */
+  --accent-orange: #E26830;
+  --accent-orange-hover: #EE7A47;
+  --accent-orange-active: #C75A2A;
+
+  /* Motion */
+  --transition-med: 240ms;
+  --transition-fast: 200ms;
+}
+
+[data-theme="dark"] {
+  /* Maintain strong contrast in dark mode */
+  --header-bg: var(--orange);
+  --header-text: #ffffff;
+  --hover-bg: rgba(0, 0, 0, 0.26); /* slightly stronger for readability */
+  --theme-icon-color: #ffffff; /* icon color on dark mode (light glyph) */
+}
+
+/* Duplicate root block retained by upstream; reassert provided palette */
+:root {
+  --orange: #E26830;
+  --orange-dark: #C75A2A;
+  --orange-soft: #FFE4D6;
+  --orange-soft-border: #F7BFA8;
+  --hairline-color: #F3C7B4;
+  --text-default: #333333;
+  --orange-contrast: #B64C1E;
   --orange-contrast-text: #ffffff;
 }
 
 /* Header bar */
 #header {
-  background: var(--orange);
+  background: var(--header-bg);
+}
+/* Force header color to match theme even if upstream CSS overrides */
+#header {
+  background-color: var(--accent-orange) !important;
+}
+
+/* Header user tools (e.g., Logout, dark-mode icon) */
+/* Ensure readable header tools and fix white-on-white hover */
+#user-tools a,
+#user-tools button,
+#user-tools .action-link {
+  color: var(--header-text) !important;
+  background: transparent !important;
+  transition: color var(--transition-med) ease,
+              background-color var(--transition-med) ease,
+              box-shadow var(--transition-med) ease,
+              filter var(--transition-med) ease,
+              opacity var(--transition-med) ease;
+  position: relative;
+}
+#user-tools a::after,
+#user-tools button::after,
+#user-tools .action-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--hover-bg);
+  opacity: 0;
+  border-radius: 4px;
+  transition: opacity var(--transition-med) ease;
+  pointer-events: none;
+}
+/* Do not draw hover overlay on theme toggle button itself */
+#user-tools .theme-toggle::after {
+  display: none !important;
+}
+#user-tools a:hover,
+#user-tools a:focus,
+#user-tools button:hover,
+#user-tools button:focus,
+#user-tools .action-link:hover,
+#user-tools .action-link:focus {
+  /* Avoid pure white background; keep text white */
+  background-color: transparent !important; /* overlay handles hover bg */
+  color: var(--header-text) !important;
+  border-radius: 4px !important;
+  text-decoration: none !important;
+}
+#user-tools a:hover::after,
+#user-tools a:focus::after,
+#user-tools button:hover::after,
+#user-tools button:focus::after,
+#user-tools .action-link:hover::after,
+#user-tools .action-link:focus::after {
+  opacity: 1;
+}
+
+/* Theme toggle icon (moon) — ensure visible and on-brand */
+#user-tools .theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 4px;
+  background-color: transparent !important; /* no square */
+  background: none !important;
+  background-image: none !important;
+  cursor: pointer;
+  color: var(--theme-icon-color);
+  transition: color var(--transition-med) ease,
+              background-color var(--transition-med) ease,
+              box-shadow var(--transition-med) ease,
+              transform var(--transition-fast) ease;
+  width: 24px;
+  height: 24px;
+  position: relative;
+  border: 0 !important;
+  outline: none !important;
+  appearance: none;
+  -webkit-appearance: none;
+  line-height: 0;
+  font-size: 0;
+}
+/* Nuclear reset inside the toggle: no backgrounds, borders, or shadows */
+#user-tools .theme-toggle *,
+#user-tools .theme-toggle svg,
+#user-tools .theme-toggle img {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+#user-tools .theme-toggle:hover,
+#user-tools .theme-toggle:focus {
+  background-color: transparent !important;
+  box-shadow: var(--hover-ring);
+}
+#user-tools .theme-toggle:active {
+  transform: translateY(1px);
+  background-color: transparent !important;
+}
+/* Make icon white; works for inline SVG and most PNGs */
+#user-tools .theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+  color: currentColor !important;
+  shape-rendering: geometricPrecision;
+  vector-effect: non-scaling-stroke;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 1;
+  transition: opacity var(--transition-med) ease, filter var(--transition-med) ease;
+}
+#user-tools .theme-toggle img {
+  width: 18px;
+  height: 18px;
+  /* force light-on-dark and tint towards orange */
+  filter: brightness(0) invert(1) sepia(1) saturate(450%) hue-rotate(-10deg) !important;
+}
+
+/* Fallback glyph if SVG fails to render */
+#user-tools .theme-toggle::before {
+  content: "\1F319"; /* moon glyph */
+  display: inline-block;
+  color: var(--theme-icon-color);
+  font-size: 16px;
+  line-height: 1;
+}
+[data-theme="dark"] #user-tools .theme-toggle::before {
+  content: "\2600"; /* sun glyph */
+}
+
+/* When SVGs are present, completely disable pseudo-elements to avoid boxes */
+#user-tools .theme-toggle.has-svg::before,
+#user-tools .theme-toggle.has-svg::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
+/* Cross-fade icons on theme change */
+#user-tools .theme-toggle .icon-sun { opacity: 1; }
+#user-tools .theme-toggle .icon-moon { opacity: 0; }
+[data-theme="dark"] #user-tools .theme-toggle .icon-sun { opacity: 0; }
+[data-theme="dark"] #user-tools .theme-toggle .icon-moon { opacity: 1; }
+
+/* Fallback: make any header tool icons white */
+#user-tools a svg,
+#user-tools button svg,
+#user-tools .action-link svg {
+  fill: var(--header-text) !important;
+  color: var(--header-text) !important;
+}
+#user-tools a img,
+#user-tools button img,
+#user-tools .action-link img {
+  filter: brightness(0) invert(1) sepia(1) saturate(450%) hue-rotate(-10deg) !important;
+}
+
+/* If any icon uses font-based classes, force white */
+#user-tools .fa,
+#user-tools [class*="icon"],
+#user-tools [class*="-icon"],
+#user-tools .material-icons {
+  color: #ffffff !important;
 }
 
 /* Buttons */
@@ -86,6 +301,42 @@
 }
 
 /* ==========================
+   Dark mode hover adjustments
+   ========================== */
+@media (prefers-color-scheme: dark) {
+  /* Keep header tools readable on dark or orange backgrounds */
+  #user-tools a:hover,
+  #user-tools button:hover,
+  #user-tools .action-link:hover {
+    background-color: transparent !important; /* overlay handles hover bg */
+    color: var(--header-text) !important;
+  }
+
+  /* Sidebar links: avoid white hover on dark */
+  #nav-sidebar .model-list li a:hover,
+  #nav-sidebar .model-list li a:focus {
+    background-color: rgba(255, 255, 255, 0.10) !important;
+    color: #ffffff !important;
+  }
+
+  /* List/table row hover: use subtle light overlay */
+  #content-main .module tbody tr:hover,
+  .results tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+  }
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  #user-tools a,
+  #user-tools button,
+  #user-tools .action-link,
+  #user-tools .theme-toggle {
+    transition: none !important;
+  }
+}
+
+/* ==========================
    Site administration (index)
    ========================== */
 /* App/module captions at admin index */
@@ -120,6 +371,59 @@
 
 #content-main .module tbody tr:hover {
   background-color: #fff6f3;
+}
+
+/* =============================
+   Changelist table enhancements
+   ============================= */
+/* Header cells */
+#changelist .results thead th {
+  background-color: var(--orange-soft);
+  color: #2b2b2b;
+  border-bottom: 1px solid var(--orange-soft-border);
+  font-weight: 600;
+}
+[data-theme="dark"] #changelist .results thead th {
+  background-color: #1f1f1f;
+  color: #f0f0f0;
+  border-bottom: 1px solid #333;
+}
+
+/* Row hover */
+#changelist .results tbody tr:hover {
+  background-color: rgba(226, 104, 48, 0.12);
+}
+
+/* Row selection */
+#changelist .results tbody tr.selected,
+#changelist .results tbody tr:has(input[type="checkbox"]:checked) {
+  background-color: rgba(226, 104, 48, 0.18);
+  outline: 1px solid var(--orange-soft-border);
+}
+
+/* Zebra striping */
+#changelist .results tbody tr:nth-child(odd) {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+[data-theme="dark"] #changelist .results tbody tr:nth-child(odd) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Role badge / tags */
+#changelist .results td .badge,
+#changelist .results td .tag {
+  background-color: var(--orange);
+  color: #fff;
+  border-radius: 12px;
+  padding: 2px 8px;
+  display: inline-block;
+  font-weight: 600;
+}
+
+/* Action icons saturation (toned) */
+#changelist .results td a img,
+#changelist .results td a svg {
+  filter: saturate(85%) contrast(105%);
 }
 
 /* ---------------------------
