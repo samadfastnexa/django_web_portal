@@ -1,0 +1,215 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Trials Station - {{ station }}</title>
+    <style>
+        body { font-family: Arial, Helvetica, sans-serif; color: #222; }
+        .sheet { max-width: 1000px; margin: 24px auto; border: 2px solid #809eae; }
+        .row { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+        .cell { padding: 8px 12px; border-top: 1px solid #809eae; border-right: 1px solid #809eae; }
+        .row .cell:first-child { border-left: 1px solid #809eae; }
+        .header { background: #bcd3e0; font-weight: bold; text-align: center; }
+        .sub { background: #dbe8ef; font-weight: bold; }
+        .label { background: #eaf2f7; font-weight: bold; }
+        .muted { color: #555; }
+        .title { font-size: 20px; font-weight: bold; padding: 12px; text-align: center; }
+        .wrap { white-space: pre-line; }
+    </style>
+</head>
+<body>
+    <div class="sheet">
+        <div class="title">Station</div>
+        <div class="row">
+            <div class="cell header"></div>
+            <div class="cell header">{{ station }}</div>
+            <div class="cell header">{{ station }}</div>
+        </div>
+        <div class="row">
+            <div class="cell sub">&nbsp;</div>
+            <div class="cell sub">{{ trials.0.trial_name }}</div>
+            <div class="cell sub">{{ trials.1.trial_name }}</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Location / Area</div>
+            <div class="cell">{{ trials.0.location_area }}</div>
+            <div class="cell">{{ trials.1.location_area }}</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Crop / Variety</div>
+            <div class="cell">{{ trials.0.crop_variety }}</div>
+            <div class="cell">{{ trials.1.crop_variety }}</div>
+        </div>
+        <div class="row">
+            <div class="cell label">D. O. Applications</div>
+            <div class="cell">{{ trials.0.application_date|date:"d-m-Y" }}</div>
+            <div class="cell">{{ trials.1.application_date|date:"d-m-Y" }}</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Design / Replicates</div>
+            <div class="cell">{{ trials.0.design_replicates }}</div>
+            <div class="cell">{{ trials.1.design_replicates }}</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Water Vol. Used</div>
+            <div class="cell">{{ trials.0.water_volume_used }}</div>
+            <div class="cell">{{ trials.1.water_volume_used }}</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Previous Sprays</div>
+            <div class="cell">{{ trials.0.previous_sprays }}</div>
+            <div class="cell">{{ trials.1.previous_sprays }}</div>
+        </div>
+
+        <div class="row">
+            <div class="cell label">Weather Info:</div>
+            <div class="cell muted"></div>
+            <div class="cell muted"></div>
+        </div>
+        <div class="row">
+            <div class="cell label">Temperature (Min.)</div>
+            <div class="cell">{{ trials.0.temp_min_c }} 0C</div>
+            <div class="cell">{{ trials.1.temp_min_c }} 0C</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Temperature (Max.)</div>
+            <div class="cell">{{ trials.0.temp_max_c }} 0C</div>
+            <div class="cell">{{ trials.1.temp_max_c }} 0C</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Humidity (Min.)</div>
+            <div class="cell">{{ trials.0.humidity_min_percent }}%</div>
+            <div class="cell">{{ trials.1.humidity_min_percent }}%</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Humidity (Max.)</div>
+            <div class="cell">{{ trials.0.humidity_max_percent }}%</div>
+            <div class="cell">{{ trials.1.humidity_max_percent }}%</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Wind Velocity (km/h)</div>
+            <div class="cell">{{ trials.0.wind_velocity_kmh }} km/h</div>
+            <div class="cell">{{ trials.1.wind_velocity_kmh }} km/h</div>
+        </div>
+        <div class="row">
+            <div class="cell label">Rainfall</div>
+            <div class="cell">{{ trials.0.rainfall }}</div>
+            <div class="cell">{{ trials.1.rainfall }}</div>
+        </div>
+    </div>
+</body>
+</html>
+{% comment %}
+Below: Trial Remarks tables per trial, rendering all treatments.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <style>
+        .remarks { max-width: 1000px; margin: 24px auto; border: 2px solid #8ecb6b; }
+        .r-title { background: #92cf6f; font-weight: bold; padding: 10px; }
+        .r-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr 1.2fr 1fr 0.8fr 1fr; }
+        .r-cell { padding: 8px 10px; border-top: 1px solid #8ecb6b; border-right: 1px solid #8ecb6b; }
+        .r-row .r-cell:first-child { border-left: 1px solid #8ecb6b; }
+        .r-head { background: #c4e7ae; font-weight: bold; }
+        .muted { color: #555; }
+        .u-form { padding: 10px; background: #eef8e7; border-top: 2px solid #8ecb6b; }
+        .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .thumbs img { width: 120px; height: 90px; object-fit: cover; border: 1px solid #8ecb6b; }
+    </style>
+</head>
+<body>
+{% for tr in trials %}
+    <div class="remarks">
+        <div class="r-title">Trial Remarks — {{ tr.trial_name }} ({{ tr.station }})</div>
+        <div class="r-row r-head">
+            <div class="r-cell">Treatment</div>
+            <div class="r-cell">Crop stage &amp; soil conditions</div>
+            <div class="r-cell">Pest Stage at start of trial</div>
+            <div class="r-cell">Crop Safety/ Stress (1-9)</div>
+            <div class="r-cell">Details (type of insect, weeds, disease and % control)</div>
+            <div class="r-cell">Type of growth improvement</div>
+            <div class="r-cell">Best dose</div>
+            <div class="r-cell">Others</div>
+        </div>
+        {% for t in tr.treatments.all %}
+        <div class="r-row">
+            <div class="r-cell">{{ t.label }}{% if t.product %} — {{ t.product.name }}{% endif %}</div>
+            <div class="r-cell">{{ t.crop_stage_soil }}</div>
+            <div class="r-cell">{{ t.pest_stage_start }}</div>
+            <div class="r-cell">{{ t.crop_safety_stress_rating }}</div>
+            <div class="r-cell">{{ t.details }}</div>
+            <div class="r-cell">{{ t.growth_improvement_type }}</div>
+            <div class="r-cell">{{ t.best_dose }}</div>
+            <div class="r-cell">{{ t.others }}</div>
+        </div>
+        {% endfor %}
+
+        <div class="u-form">
+            <form method="post" action="" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="trial_id" value="{{ tr.id }}" />
+                <label>Pick treatment:</label>
+                <select name="treatment_id">
+                    {% for t in tr.treatments.all %}
+                        <option value="{{ t.id }}">{{ t.label }}</option>
+                    {% endfor %}
+                </select>
+                <label>Type:</label>
+                <select name="image_type">
+                    <option value="before">Before</option>
+                    <option value="after">After</option>
+                </select>
+                <label>Images:</label>
+                <input type="file" name="images" multiple />
+                <button type="submit">Upload</button>
+            </form>
+        </div>
+
+        <div class="r-row r-head">
+            <div class="r-cell">Images (Before)</div>
+            <div class="r-cell" style="grid-column: span 7;">Thumbnails</div>
+        </div>
+        {% for t in tr.treatments.all %}
+        <div class="r-row">
+            <div class="r-cell">{{ t.label }}{% if t.product %} — {{ t.product.name }}{% endif %}</div>
+            <div class="r-cell" style="grid-column: span 7;">
+                <div class="thumbs">
+                {% for img in t.images.all %}
+                    {% if img.image_type == 'before' %}
+                        <img src="{{ img.image.url }}" alt="{{ img.caption|default:'Before' }}" />
+                    {% endif %}
+                {% empty %}
+                    <span class="muted">No images</span>
+                {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="r-row r-head">
+            <div class="r-cell">Images (After)</div>
+            <div class="r-cell" style="grid-column: span 7;">Thumbnails</div>
+        </div>
+        {% for t in tr.treatments.all %}
+        <div class="r-row">
+            <div class="r-cell">{{ t.label }}{% if t.product %} — {{ t.product.name }}{% endif %}</div>
+            <div class="r-cell" style="grid-column: span 7;">
+                <div class="thumbs">
+                {% for img in t.images.all %}
+                    {% if img.image_type == 'after' %}
+                        <img src="{{ img.image.url }}" alt="{{ img.caption|default:'After' }}" />
+                    {% endif %}
+                {% empty %}
+                    <span class="muted">No images</span>
+                {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% endfor %}
+</body>
+</html>

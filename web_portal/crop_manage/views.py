@@ -2,8 +2,13 @@ from rest_framework import viewsets
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .models import Crop, CropStage
+from .models import Crop, CropStage, Trial, TrialTreatment, TrialImage
 from .serializers import CropSerializer, CropStageSerializer
+from django.shortcuts import render, redirect
+from django.urls import reverse
+from django.contrib import messages
+from django.utils.text import slugify
+from datetime import date
 
 
 class CropViewSet(viewsets.ModelViewSet):
@@ -179,6 +184,110 @@ class CropStageViewSet(viewsets.ModelViewSet):
     )
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
+
+
+def station_trials(request, station_slug: str):
+    """Render Trials Station page for a given station (separate feature).
+
+    This does not modify existing crop features. If no trials exist for the
+    station, sample Sahiwal trials are seeded for preview.
+    """
+    station_name = station_slug.replace('-', ' ').title()
+
+    trials = list(Trial.objects.filter(station__iexact=station_name).order_by('trial_name'))
+
+    # Handle image uploads (multiple files) per treatment
+    if request.method == 'POST':
+        try:
+            trial_id = int(request.POST.get('trial_id', '0'))
+        except ValueError:
+            trial_id = 0
+        treatment_id = request.POST.get('treatment_id')
+        image_type = request.POST.get('image_type')
+        files = request.FILES.getlist('images')
+
+        if not files:
+            messages.error(request, 'Please select one or more images to upload.')
+            return redirect(reverse('station_trials', args=[station_slug]))
+
+        if image_type not in ('before', 'after'):
+            messages.error(request, 'Invalid image type. Choose before or after.')
+            return redirect(reverse('station_trials', args=[station_slug]))
+
+        try:
+            trial = Trial.objects.get(id=trial_id, station__iexact=station_name)
+        except Trial.DoesNotExist:
+            messages.error(request, 'Trial not found for this station.')
+            return redirect(reverse('station_trials', args=[station_slug]))
+
+        try:
+            treatment = TrialTreatment.objects.get(id=treatment_id, trial=trial)
+        except TrialTreatment.DoesNotExist:
+            messages.error(request, 'Selected treatment not found for this trial.')
+            return redirect(reverse('station_trials', args=[station_slug]))
+
+        created = 0
+        for f in files:
+            TrialImage.objects.create(treatment=treatment, image=f, image_type=image_type)
+            created += 1
+        messages.success(request, f'Uploaded {created} {image_type} image(s) for {treatment.label}.')
+        return redirect(reverse('station_trials', args=[station_slug]))
+
+    # Seed the provided Sahiwal sample if empty (for immediate preview only)
+    if not trials and station_name == 'Sahiwal':
+        t1 = Trial.objects.create(
+                station='Sahiwal',
+                trial_name='Trial-1',
+                location_area='Chak 78/5R',
+                crop_variety='Wheat/Fakhr.e.bhakkar',
+                application_date=date(2024, 12, 13),
+                design_replicates='Replicated',
+                water_volume_used='120 L/A',
+                previous_sprays='Nil',
+                temp_min_c=11.0,
+                temp_max_c=21.0,
+                humidity_min_percent=57,
+                humidity_max_percent=74,
+                wind_velocity_kmh=4.0,
+                rainfall='Nil'
+            )
+        t2 = Trial.objects.create(
+                station='Sahiwal',
+                trial_name='Trial-2',
+                location_area='Chak 187/9L',
+                crop_variety='Wheat/ FSD 2008',
+                application_date=date(2024, 12, 14),
+                design_replicates='Replicated',
+                water_volume_used='120 L/A',
+                previous_sprays='Nil',
+                temp_min_c=10.0,
+                temp_max_c=22.0,
+                humidity_min_percent=55,
+                humidity_max_percent=87,
+                wind_velocity_kmh=4.0,
+                rainfall='Nil'
+            )
+        # Seed a few treatment rows for each trial
+        for idx, trial in enumerate([t1, t2], start=1):
+            for tnum in range(1, 4):
+                TrialTreatment.objects.create(
+                    trial=trial,
+                    label=f"T{tnum}",
+                    crop_stage_soil="Loamy soil, adequate moisture",
+                    pest_stage_start="Aphids at early infestation",
+                    crop_safety_stress_rating=5,
+                    details="Aphids ~40% control observed after 7 days",
+                    growth_improvement_type="Improved tillering",
+                    best_dose="120 ml/acre",
+                    others="No phytotoxicity noted"
+                )
+        trials = [t1, t2]
+
+    context = {
+        'station': station_name,
+        'trials': trials,
+    }
+    return render(request, 'crop_manage/trials_station.html', context)
 
     @swagger_auto_schema(
         operation_description="Partially update a crop stage using form data format",
