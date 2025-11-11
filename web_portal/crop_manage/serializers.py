@@ -5,7 +5,10 @@ from .models import Crop, CropStage
 class CropStageSerializer(serializers.ModelSerializer):
     class Meta:
         model = CropStage
-        fields = ["id", "stage_name", "days_after_sowing", "brand", "active_ingredient", "dose_per_acre", "purpose"]
+        fields = [
+            "id", "stage_name", "days_after_sowing", "brand",
+            "active_ingredient", "dose_per_acre", "purpose", "remarks"
+        ]
 
 
 class CropSerializer(serializers.ModelSerializer):
