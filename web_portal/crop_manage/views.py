@@ -9,6 +9,23 @@ from django.urls import reverse
 from django.contrib import messages
 from django.utils.text import slugify
 from datetime import date
+from django.http import HttpResponse
+from io import BytesIO
+from .exports import build_trials_workbook, build_trials_pdf
+
+# Optional dependencies for exports
+try:
+    from openpyxl import Workbook
+except Exception:
+    Workbook = None
+
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+except Exception:
+    SimpleDocTemplate = None
 
 
 class CropViewSet(viewsets.ModelViewSet):
@@ -288,6 +305,35 @@ def station_trials(request, station_slug: str):
         'trials': trials,
     }
     return render(request, 'crop_manage/trials_station.html', context)
+
+
+def export_trials_xlsx(request):
+    """Export all Trials and Treatments to a styled, sized XLSX."""
+    try:
+        trials_qs = Trial.objects.all()
+        treatments_qs = TrialTreatment.objects.select_related('trial', 'product').all()
+        output = build_trials_workbook(trials_qs, treatments_qs)
+        resp = HttpResponse(
+            output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        resp['Content-Disposition'] = 'attachment; filename="trials_report.xlsx"'
+        return resp
+    except Exception as e:
+        return HttpResponse(f'Failed to build XLSX: {e}', status=500)
+
+
+def export_trials_pdf(request):
+    """Export all Trials and Treatments to a styled, page-safe PDF."""
+    try:
+        trials_qs = Trial.objects.all()
+        treatments_qs = TrialTreatment.objects.select_related('trial', 'product').all()
+        buffer = build_trials_pdf(trials_qs, treatments_qs)
+        resp = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+        resp['Content-Disposition'] = 'attachment; filename="trials_report.pdf"'
+        return resp
+    except Exception as e:
+        return HttpResponse(f'Failed to build PDF: {e}', status=500)
 
     @swagger_auto_schema(
         operation_description="Partially update a crop stage using form data format",

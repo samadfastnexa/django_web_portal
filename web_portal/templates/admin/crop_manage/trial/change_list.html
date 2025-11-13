@@ -1,0 +1,18 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  <li>
+    <a href="{% url 'admin:trial_export_xlsx' %}" class="addlink">Export All XLSX</a>
+  </li>
+  <li>
+    <a href="{% url 'admin:trial_export_pdf' %}" class="addlink">Export All PDF</a>
+  </li>
+{% endblock %}
+
+{% block content_subtitle %}
+  <p style="margin:8px 0;color:#555;">
+    Use Actions to export selected trials, or click the buttons above to download all trials.
+  </p>
+{% endblock %}

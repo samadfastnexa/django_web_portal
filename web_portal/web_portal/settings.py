@@ -162,6 +162,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+# Serve project-level static files (e.g., custom admin CSS) in development
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
 # STATIC_ROOT = os.path.join(BASE_DIR, 'static')  # collects static files here
 # STATICFILES_DIRS = [
 #     os.path.join(BASE_DIR, '', 'static'),  # if you have app-level static files
