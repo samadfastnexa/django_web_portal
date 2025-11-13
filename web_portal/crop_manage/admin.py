@@ -1,6 +1,11 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
+from django.urls import path
+from django.http import HttpResponse
+from django.contrib import messages
+from io import BytesIO
+from .exports import build_trials_workbook, build_trials_pdf
 from .models import (
     Crop, CropStage, Trial, TrialTreatment, TrialImage,
     Product, CropStageImage, Pest, PestManagementGuideline,
@@ -118,6 +123,72 @@ class TrialAdmin(admin.ModelAdmin):
     list_filter = ['station', 'application_date']
     search_fields = ['station', 'trial_name', 'location_area', 'crop_variety']
     readonly_fields = ['created_at']
+    change_list_template = 'admin/crop_manage/trial/change_list.html'
+
+    # -------- Export helpers --------
+    actions = ['export_selected_xlsx', 'export_selected_pdf']
+
+    def export_selected_xlsx(self, request, queryset):
+        """Export selected trials (and their treatments) to XLSX using builder."""
+        try:
+            treatments = TrialTreatment.objects.select_related('trial', 'product').filter(trial__in=queryset)
+            output = build_trials_workbook(queryset, treatments)
+        except RuntimeError as e:
+            return HttpResponse(str(e), status=500, content_type='text/plain')
+        resp = HttpResponse(output.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp['Content-Disposition'] = 'attachment; filename="trials_selected.xlsx"'
+        return resp
+    export_selected_xlsx.short_description = 'Export selected trials to XLSX'
+
+    def export_selected_pdf(self, request, queryset):
+        """Export selected trials (and their treatments) to PDF using builder."""
+        try:
+            treatments = TrialTreatment.objects.select_related('trial', 'product').filter(trial__in=queryset)
+            buffer = build_trials_pdf(queryset, treatments)
+        except RuntimeError as e:
+            return HttpResponse(str(e), status=500, content_type='text/plain')
+        resp = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+        resp['Content-Disposition'] = 'attachment; filename="trials_selected.pdf"'
+        return resp
+    export_selected_pdf.short_description = 'Export selected trials to PDF'
+
+    # Custom admin URLs for Export All
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path('export/xlsx/', self.admin_site.admin_view(self.export_all_xlsx), name='trial_export_xlsx'),
+            path('export/pdf/', self.admin_site.admin_view(self.export_all_pdf), name='trial_export_pdf'),
+        ]
+        return custom + urls
+
+    def export_all_xlsx(self, request):
+        try:
+            trials = Trial.objects.all()
+            treatments = TrialTreatment.objects.select_related('trial', 'product').all()
+            output = build_trials_workbook(trials, treatments)
+        except RuntimeError as e:
+            return HttpResponse(str(e), status=500, content_type='text/plain')
+        resp = HttpResponse(output.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp['Content-Disposition'] = 'attachment; filename="trials_all.xlsx"'
+        return resp
+
+    def export_all_pdf(self, request):
+        try:
+            trials = Trial.objects.all()
+            treatments = TrialTreatment.objects.select_related('trial', 'product').all()
+            buffer = build_trials_pdf(trials, treatments)
+        except RuntimeError as e:
+            return HttpResponse(str(e), status=500, content_type='text/plain')
+        resp = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+        resp['Content-Disposition'] = 'attachment; filename="trials_all.pdf"'
+        return resp
+
+    # Friendly tip for users on changelist
+    def changelist_view(self, request, extra_context=None):
+        if not request.session.get('trial_export_tip_shown'):
+            messages.info(request, 'Tip: Use Actions to export selected trials, or the Export All buttons at the top to download the full report in XLSX or PDF.')
+            request.session['trial_export_tip_shown'] = True
+        return super().changelist_view(request, extra_context=extra_context)
     
     class TrialTreatmentInline(admin.TabularInline):
         model = TrialTreatment

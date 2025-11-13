@@ -20,7 +20,11 @@
 </head>
 <body>
     <div class="sheet">
-        <div class="title">Station</div>
+        <div class="title">Trials Report — {{ station }}</div>
+        <div style="padding: 0 12px 12px; text-align: right;">
+            <a href="{% url 'export_trials_xlsx' %}" style="margin-right: 8px; text-decoration: none; background:#bcd3e0; color:#000; padding:6px 10px; border:1px solid #809eae;">Export XLSX</a>
+            <a href="{% url 'export_trials_pdf' %}" style="text-decoration: none; background:#c4e7ae; color:#000; padding:6px 10px; border:1px solid #8ecb6b;">Export PDF</a>
+        </div>
         <div class="row">
             <div class="cell header"></div>
             <div class="cell header">{{ station }}</div>
@@ -69,13 +73,13 @@
         </div>
         <div class="row">
             <div class="cell label">Temperature (Min.)</div>
-            <div class="cell">{{ trials.0.temp_min_c }} 0C</div>
-            <div class="cell">{{ trials.1.temp_min_c }} 0C</div>
+            <div class="cell">{{ trials.0.temp_min_c }} °C</div>
+            <div class="cell">{{ trials.1.temp_min_c }} °C</div>
         </div>
         <div class="row">
             <div class="cell label">Temperature (Max.)</div>
-            <div class="cell">{{ trials.0.temp_max_c }} 0C</div>
-            <div class="cell">{{ trials.1.temp_max_c }} 0C</div>
+            <div class="cell">{{ trials.0.temp_max_c }} °C</div>
+            <div class="cell">{{ trials.1.temp_max_c }} °C</div>
         </div>
         <div class="row">
             <div class="cell label">Humidity (Min.)</div>
