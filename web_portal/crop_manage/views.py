@@ -361,3 +361,16 @@ def export_trials_pdf(request):
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
+
+
+# =====================
+# Reports pages (simple templates)
+# =====================
+def reports_index(request):
+    """Landing page for Crop_Manage reports."""
+    return render(request, 'crop_manage/reports/index.html')
+
+
+def weed_efficacy_report(request):
+    """Render weed efficacy charts for Wheat based on provided datasets."""
+    return render(request, 'crop_manage/reports/weed_efficacy.html')

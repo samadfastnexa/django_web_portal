@@ -184,15 +184,17 @@ class PestManagementGuideline(models.Model):
     HERBICIDE = "herbicide"
     INSECTICIDE = "insecticide"
     FUNGICIDE = "fungicide"
+    MICRONUTRIENT = "micronutrient"
     CONTROL_CHOICES = [
         (HERBICIDE, "Herbicide"),
-        (INSECTICIDE, "Insecticide"),
         (FUNGICIDE, "Fungicide"),
+        (INSECTICIDE, "Insecticide"),
+        (MICRONUTRIENT, "Micronutrient"),
     ]
 
     pest = models.ForeignKey(Pest, on_delete=models.CASCADE, related_name="guidelines", help_text="Select the target pest for this guideline")
     crop = models.ForeignKey(Crop, on_delete=models.SET_NULL, null=True, blank=True, related_name="pest_guidelines", help_text="Optional: limit guideline to a specific crop")
-    control_category = models.CharField(max_length=20, choices=CONTROL_CHOICES, help_text="Type of control: Herbicide, Insecticide, or Fungicide")
+    control_category = models.CharField(max_length=20, choices=CONTROL_CHOICES, help_text="Type of control: Herbicide, Fungicide, Insecticide, or Micronutrient")
     type_label = models.CharField(max_length=100, help_text="e.g., Pre-emergence, Chewing, Preventive, Seed Treatment")
     time_of_application = models.CharField(max_length=200, blank=True, null=True, help_text="When to apply relative to crop/pest stage")
     water_volume = models.CharField(max_length=50, blank=True, null=True, help_text="Spray volume (e.g., L/acre or L/ha)")

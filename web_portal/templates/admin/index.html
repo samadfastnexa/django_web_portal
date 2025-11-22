@@ -1,4 +1,120 @@
 {% extends "admin/index.html" %}
-{% block content_title %}
-  <h1>Tarzan Administration</h1>
+{% block coltype %}colM{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+  <div class="dashboard-main-content">
+    <div id="content-main" class="charts-section">
+      <div class="module">
+        <h2>Dashboard Overview</h2>
+        <div class="dashboard-toolbar">
+          <div class="chip"><span>January 2025 — May 2025</span></div>
+          <button class="button-export">Export</button>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <div class="kpi-header"><span class="kpi-title">Kpi Name Here</span><button class="kpi-info">i</button></div>
+            <div class="kpi-body"><div class="kpi-value">$4000</div><div class="kpi-sub">vs last month <span class="badge up">+12%</span></div></div>
+            <div class="kpi-chart"><canvas id="adminChart1"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="kpi-header"><span class="kpi-title">Kpi Name Here</span><button class="kpi-info">i</button></div>
+            <div class="kpi-body"><div class="kpi-value">$4000</div><div class="kpi-sub">vs last month <span class="badge down">−2%</span></div></div>
+            <div class="kpi-chart"><canvas id="adminChart2"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="kpi-header"><span class="kpi-title">Kpi Name Here</span><button class="kpi-info">i</button></div>
+            <div class="kpi-body"><div class="kpi-value">$4000</div><div class="kpi-sub">vs last month <span class="badge up">+9%</span></div></div>
+            <div class="kpi-chart"><canvas id="adminChart3"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent actions below charts -->
+    <div id="content-main" class="recent-actions-below" style="margin-top: 20px;">
+      <div class="module" id="recent-actions-module">
+        <h2>Recent actions</h2>
+        <h3>My actions</h3>
+        {% load log %}
+        {% get_admin_log 10 as admin_log for_user user %}
+        {% if not admin_log %}
+          <p>None available</p>
+        {% else %}
+          <ul class="actionlist">
+          {% for entry in admin_log %}
+            <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+                <span class="visually-hidden">{% if entry.is_addition %}Added:{% elif entry.is_change %}Changed:{% elif entry.is_deletion %}Deleted:{% endif %}</span>
+                {% if entry.is_deletion or not entry.get_admin_url %}
+                    {{ entry.object_repr }}
+                {% else %}
+                    <a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>
+                {% endif %}
+                <br>
+                {% if entry.content_type %}
+                    <span class="mini quiet">{% filter capfirst %}{{ entry.content_type.name }}{% endfilter %}</span>
+                {% else %}
+                    <span class="mini quiet">Unknown content</span>
+                {% endif %}
+            </li>
+          {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    (function(){
+      function ready(fn){ if(document.readyState !== 'loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
+      ready(function(){
+        var c1 = document.getElementById('adminChart1');
+        var c2 = document.getElementById('adminChart2');
+        var c3 = document.getElementById('adminChart3');
+        if (c1) {
+          new Chart(c1.getContext('2d'), {
+            type: 'bar',
+            data: {
+              labels: ['A','B','C','D'],
+              datasets: [
+                { label: 'Main', data: [11, 17, 3, 5], backgroundColor: '#E26830', stack: 's' },
+                { label: 'Top', data: [1, 2, 1, 1], backgroundColor: '#16a34a', stack: 's' }
+              ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }
+          });
+        }
+        if (c2) {
+          new Chart(c2.getContext('2d'), {
+            type: 'bar',
+            data: {
+              labels: ['W1','W2','W3','W4'],
+              datasets: [
+                { label: 'Main', data: [6, 9, 4, 7], backgroundColor: '#E26830', stack: 's' },
+                { label: 'Top', data: [1, 2, 1, 1], backgroundColor: '#16a34a', stack: 's' }
+              ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }
+          });
+        }
+        if (c3) {
+          new Chart(c3.getContext('2d'), {
+            type: 'bar',
+            data: {
+              labels: ['Q1','Q2','Q3','Q4'],
+              datasets: [
+                { label: 'Main', data: [8, 12, 5, 10], backgroundColor: '#E26830', stack: 's' },
+                { label: 'Top', data: [1, 2, 1, 2], backgroundColor: '#16a34a', stack: 's' }
+              ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }
+          });
+        }
+      });
+    })();
+  </script>
 {% endblock %}
+
+{% block nav-sidebar %}{% include "admin/nav_sidebar.html" %}{% endblock %}
+
+{% block sidebar %}{% endblock %}

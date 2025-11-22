@@ -1,0 +1,13 @@
+{% extends "admin/base_site.html" %}
+{% block title %}Crop Manage Reports{% endblock %}
+
+{% block content %}
+<div class="module">
+  <h2>Crop Manage Reports</h2>
+  <p>Choose a report below:</p>
+  <ul>
+    <li><a href="{% url 'crop_manage:weed_efficacy_report' %}">Weed Efficacy in Wheat</a></li>
+  </ul>
+  <p style="margin-top:16px; font-size: 12px; color: #666;">These pages are read-only visual summaries.</p>
+  </div>
+{% endblock %}
