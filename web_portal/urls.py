@@ -19,6 +19,7 @@ urlpatterns = [
     path('api/accounts/', include('accounts.urls')),  # Adjust path as needed
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     # ...existing code...
+    path('crop-manage/', include('crop_manage.urls')),
     path('admin/', admin.site.urls),
 ]
 
