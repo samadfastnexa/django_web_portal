@@ -1,0 +1,276 @@
+{% extends "admin/base_site.html" %}
+{% block title %}HANA Connect{% endblock %}
+{% block content %}
+<div class="module">
+  <h2>HANA Connect</h2>
+  <div class="inline-group">
+    <div class="form-row">
+      <div>
+        <h3>Actions</h3>
+        <a class="button" href="?action=health">Health Check</a>
+        <a class="button" href="?action=select_oitm">Select OITM</a>
+        <a class="button" href="?action=territory_summary">COLLECTION VS ACHIVEMENT</a>
+        <a class="button" href="?action=sales_vs_achievement">Sales Vs Achivement</a>
+        <a class="button" href="?action=products_catalog">Products</a>
+        <a class="button" href="?action=policy_customer_balance">Policy Wise Customer Balance</a>
+        
+      </div>
+    </div>
+    {% if current_action == 'territory_summary' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#0ea5e9;--filter-primary-600:#0284c7;--filter-accent:#22c55e;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(6, minmax(160px,1fr));gap:12px}
+        @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(3, minmax(160px,1fr))}}
+        @media (max-width:720px){.filter-grid{grid-template-columns:repeat(2, minmax(140px,1fr))}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#f8fafc;transition:border-color .2s, box-shadow .2s}
+        .filter-input select:focus,.filter-input input:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(14,165,233,0.15)}
+        .filter-field.active .filter-input select,.filter-field.active .filter-input input{border-color:var(--filter-primary);box-shadow:0 2px 12px rgba(14,165,233,0.18)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(2,132,199,0.25)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#f0f9ff}
+        .chip{font-size:12px;color:#fff;background:var(--filter-accent);border-radius:999px;padding:2px 8px}
+        .icon{width:16px;height:16px;fill:currentColor}
+      </style>
+      <form method="get" class="filter-card" id="ts-filter-form">
+        <input type="hidden" name="action" value="territory_summary" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+          <div class="filter-title">Filters</div>
+          <span class="chip" id="activeCount">0 active</span>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field" data-key="territory">
+            <div class="filter-label" title="Choose Territory">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z"/></svg>
+              Territory
+            </div>
+            <div class="filter-input">
+              <select name="territory">
+                <option value="">All Territories</option>
+                {% for t in territory_options %}
+                  <option value="{{ t }}" {% if t == selected_territory %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="emp_id">
+            <div class="filter-label" title="Employee ID">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+              Emp ID
+            </div>
+            <div class="filter-input">
+              <input type="number" name="emp_id" value="{{ current_emp_id }}" />
+            </div>
+          </div>
+          
+          <div class="filter-field" data-key="start_date">
+            <div class="filter-label" title="Start Date">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M5 4h14v2H5V4zm0 4h14v12H5V8zm2 2v2h2v-2H7zm0 4v2h2v-2H7z"/></svg>
+              From
+            </div>
+            <div class="filter-input">
+              <input type="date" name="start_date" value="{{ current_start_date }}" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="end_date">
+            <div class="filter-label" title="End Date">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M5 4h14v2H5V4zm0 4h14v12H5V8zm10 2v2h2v-2h-2zm0 4v2h2v-2h-2z"/></svg>
+              To
+            </div>
+            <div class="filter-input">
+              <input type="date" name="end_date" value="{{ current_end_date }}" />
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn" id="applyBtn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply Filters
+          </button>
+          <a class="btn btn-secondary" href="?action=territory_summary" id="clearBtn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+      <script>
+        (function(){
+          var form=document.getElementById('ts-filter-form');
+          function active(v){return v!==null&&v!==undefined&&String(v).trim()!==''}
+          function sync(){
+            var count=0;
+            Array.prototype.forEach.call(form.querySelectorAll('.filter-field'),function(f){
+              var el=f.querySelector('input, select');
+              var val=el?el.value:'';
+              if(active(val)){f.classList.add('active');count++}else{f.classList.remove('active')}
+            });
+            var chip=document.getElementById('activeCount');
+            if(chip){chip.textContent=count+' active'}
+          }
+          sync();
+          Array.prototype.forEach.call(form.querySelectorAll('input, select'),function(el){
+            el.addEventListener('change',sync);
+            el.addEventListener('input',sync);
+          });
+        })();
+      </script>
+    {% endif %}
+
+    {% if current_action == 'sales_vs_achievement' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#f59e0b;--filter-primary-600:#d97706;--filter-accent:#6366f1;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(6, minmax(160px,1fr));gap:12px}
+        @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(3, minmax(160px,1fr))}}
+        @media (max-width:720px){.filter-grid{grid-template-columns:repeat(2, minmax(140px,1fr))}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}
+        .filter-input select:focus,.filter-input input:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(245,158,11,0.15)}
+        .filter-field.active .filter-input select,.filter-field.active .filter-input input{border-color:var(--filter-primary);box-shadow:0 2px 12px rgba(245,158,11,0.18)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(217,119,6,0.25)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#fffbeb}
+        .chip{font-size:12px;color:#fff;background:var(--filter-accent);border-radius:999px;padding:2px 8px}
+        .icon{width:16px;height:16px;fill:currentColor}
+      </style>
+      <form method="get" class="filter-card" id="sa-filter-form">
+        <input type="hidden" name="action" value="sales_vs_achievement" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+          <div class="filter-title">Filters</div>
+          <span class="chip" id="activeCountSA">0 active</span>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field" data-key="territory">
+            <div class="filter-label" title="Choose Territory">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z"/></svg>
+              Territory
+            </div>
+            <div class="filter-input">
+              <select name="territory">
+                <option value="">All Territories</option>
+                {% for t in territory_options %}
+                  <option value="{{ t }}" {% if t == selected_territory %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="emp_id">
+            <div class="filter-label" title="Employee ID">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+              Emp ID
+            </div>
+            <div class="filter-input">
+              <input type="number" name="emp_id" value="{{ current_emp_id }}" />
+            </div>
+          </div>
+          
+          <div class="filter-field" data-key="start_date">
+            <div class="filter-label" title="Start Date">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M5 4h14v2H5V4zm0 4h14v12H5V8zm2 2v2h2v-2H7zm0 4v2h2v-2H7z"/></svg>
+              From
+            </div>
+            <div class="filter-input">
+              <input type="date" name="start_date" value="{{ current_start_date }}" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="end_date">
+            <div class="filter-label" title="End Date">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M5 4h14v2H5V4zm0 4h14v12H5V8zm10 2v2h2v-2h-2zm0 4v2h2v-2h-2z"/></svg>
+              To
+            </div>
+            <div class="filter-input">
+              <input type="date" name="end_date" value="{{ current_end_date }}" />
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn" id="applyBtnSA">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply Filters
+          </button>
+          <a class="btn btn-secondary" href="?action=sales_vs_achievement" id="clearBtnSA">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+      <script>
+        (function(){
+          var form=document.getElementById('sa-filter-form');
+          function active(v){return v!==null&&v!==undefined&&String(v).trim()!==''}
+          function sync(){
+            var count=0;
+            Array.prototype.forEach.call(form.querySelectorAll('.filter-field'),function(f){
+              var el=f.querySelector('input, select');
+              var val=el?el.value:'';
+              if(active(val)){f.classList.add('active');count++}else{f.classList.remove('active')}
+            });
+            var chip=document.getElementById('activeCountSA');
+            if(chip){chip.textContent=count+' active'}
+          }
+          sync();
+          Array.prototype.forEach.call(form.querySelectorAll('input, select'),function(el){
+            el.addEventListener('change',sync);
+            el.addEventListener('input',sync);
+          });
+        })();
+      </script>
+    {% endif %}
+    {% if error %}
+      <p style="color:#b91c1c; font-weight:600;">Error: {{ error }}</p>
+    {% endif %}
+    {% if result_rows and is_tabular %}
+      <style>
+        .result-table{width:100%;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}
+        .result-table thead th{background:#f8fafc;color:#0f172a;text-align:left;padding:10px 12px;font-weight:700;border-bottom:1px solid #e5e7eb}
+        .result-table tbody td{padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155}
+        .result-table tbody tr:hover{background:#f9fafb}
+      </style>
+      <h3>Result</h3>
+      <table class="result-table">
+        <thead>
+          <tr>
+            {% for c in result_cols %}
+              <th>{{ c }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for rowvals in table_rows %}
+            <tr>
+              {% for v in rowvals %}
+                <td>{{ v }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% elif result_json %}
+      <h3>Result</h3>
+      <pre style="white-space:pre-wrap; background:#f8fafc; border:1px solid #e5e7eb; padding:12px;">{{ result_json }}</pre>
+    {% else %}
+      <p style="color:#6b7280;">No result yet. Run an action above.</p>
+      <details style="margin-top:10px;">
+        <summary>Diagnostics</summary>
+        <pre style="white-space:pre-wrap; background:#f8fafc; border:1px solid #e5e7eb; padding:12px;">{{ diagnostics_json }}</pre>
+      </details>
+    {% endif %}
+  </div>
+  
+</div>
+{% endblock %}

@@ -89,8 +89,9 @@ class SAPClient:
         return self._global_session_id
 
     def _make_request(self, method, path, body='', retry=True):
-        """Helper for SAP requests with retry on session/cache failure."""
         headers = {'Cookie': f'B1SESSION={self.get_session_id()}'}
+        if method in ('POST', 'PUT', 'PATCH'):
+            headers['Content-Type'] = 'application/json'
         conn = self._get_connection()
         try:
             conn.request(method, path, body, headers)
@@ -106,10 +107,11 @@ class SAPClient:
                 error_msg = result.get('error', {}).get('message', {}).get('value', '')
                 error_code = result.get('error', {}).get('code', '')
 
-                # Retry once if session/cache issue
                 if retry and (
                     'Critical cache refresh failure' in error_msg or
-                    error_code in [-2001, -1101, -1001]
+                    'Invalid session' in error_msg or
+                    'session already timeout' in error_msg or
+                    error_code in [-2001, -1101, -1001, 301]
                 ):
                     with self._lock:
                         self._global_session_id = None  # force relogin
@@ -213,6 +215,29 @@ class SAPClient:
             self._close_connection(conn)
             self._global_session_id = None
             self._global_session_time = None
+
+    def get_territory_id_by_name(self, name: str):
+        try:
+            filt = quote(f"Name eq '{name}'")
+            path = f"{self.base_path}/Territories?$filter={filt}"
+            res = self._make_request("GET", path)
+            if isinstance(res, dict) and 'value' in res and len(res['value']) > 0:
+                row = res['value'][0]
+                return (
+                    row.get('territryID') or
+                    row.get('TerritoryId') or
+                    row.get('TerritoryID') or
+                    row.get('ID') or
+                    row.get('Code')
+                )
+        except Exception:
+            pass
+        return None
+
+    def create_business_partner(self, payload: dict):
+        body = json.dumps(payload)
+        path = f"{self.base_path}/BusinessPartners"
+        return self._make_request("POST", path, body)
 
     def get_dealer_bp_info(self, dealer_id: int):
         try:

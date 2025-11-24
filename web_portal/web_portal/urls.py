@@ -1,4 +1,5 @@
 from django.contrib import admin
+from sap_integration.views import hana_connect_admin
 from django.urls import path, include
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -22,6 +23,7 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('', lambda request: redirect('/admin/', permanent=False)), # Redirect root(http://127.0.0.1:8000) URL to admin
+    path('admin/hana-connect/', admin.site.admin_view(hana_connect_admin), name='hana_connect_admin'),
     path('admin/', admin.site.urls),
     
     # Swagger
