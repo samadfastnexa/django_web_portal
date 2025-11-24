@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 from django.urls import path
 from django.shortcuts import redirect
-from .models import Policy
+from .models import Policy, HanaConnect
 from .sap_client import SAPClient
 import datetime
 
@@ -84,4 +84,16 @@ class PolicyAdmin(admin.ModelAdmin):
         self.sync_policies_from_sap(request, Policy.objects.all())
         return redirect('admin:sap_integration_policy_changelist')
 
-# Register your models here.
+@admin.register(HanaConnect)
+class HanaConnectAdmin(admin.ModelAdmin):
+    def changelist_view(self, request, extra_context=None):
+        return redirect('hana_connect_admin')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
