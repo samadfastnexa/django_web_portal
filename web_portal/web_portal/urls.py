@@ -1,5 +1,15 @@
 from django.contrib import admin
-from sap_integration.views import hana_connect_admin
+from sap_integration.views import (
+    hana_connect_admin,
+    bp_entry_admin,
+    sales_vs_achievement_api,
+    territory_summary_api,
+    products_catalog_api,
+    policy_customer_balance_api,
+    hana_health_api,
+    hana_count_tables_api,
+    select_oitm_api,
+)
 from django.urls import path, include
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -20,10 +30,17 @@ schema_view = get_schema_view(
    public=True,
    permission_classes=(permissions.AllowAny,),
 )
-
 urlpatterns = [
     path('', lambda request: redirect('/admin/', permanent=False)), # Redirect root(http://127.0.0.1:8000) URL to admin
     path('admin/hana-connect/', admin.site.admin_view(hana_connect_admin), name='hana_connect_admin'),
+    path('admin/sap-bp-entry/', admin.site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
+    path('api/sap/sales-vs-achievement/', sales_vs_achievement_api, name='sales_vs_achievement_api'),
+    path('api/sap/territory-summary/', territory_summary_api, name='territory_summary_api'),
+    path('api/sap/products-catalog/', products_catalog_api, name='products_catalog_api'),
+    path('api/sap/policy-customer-balance/', policy_customer_balance_api, name='policy_customer_balance_api'),
+    path('api/sap/health/', hana_health_api, name='hana_health_api'),
+    path('api/sap/count-tables/', hana_count_tables_api, name='hana_count_tables_api'),
+    path('api/sap/select-oitm/', select_oitm_api, name='select_oitm_api'),
     path('admin/', admin.site.urls),
     
     # Swagger

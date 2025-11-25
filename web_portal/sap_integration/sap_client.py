@@ -20,6 +20,7 @@ class SAPClient:
     _global_session_id = None
     _global_session_time = None
     _lock = threading.Lock()
+    _route_id = None
 
     def __init__(self):
         try:
@@ -72,6 +73,17 @@ class SAPClient:
                 raise Exception(f"Login failed with status {response.status}: {response_data.decode('utf-8')}")
 
             login_response = json.loads(response_data.decode('utf-8'))
+            try:
+                hdrs = response.getheaders()
+                for k, v in hdrs:
+                    if str(k).lower() == 'set-cookie':
+                        parts = [x.strip() for x in str(v).split(';')]
+                        for p in parts:
+                            if p.startswith('ROUTEID='):
+                                self._route_id = p.split('=', 1)[1]
+                                break
+            except Exception:
+                pass
             return login_response.get('SessionId')
         finally:
             self._close_connection(conn)
@@ -89,37 +101,63 @@ class SAPClient:
         return self._global_session_id
 
     def _make_request(self, method, path, body='', retry=True):
-        headers = {'Cookie': f'B1SESSION={self.get_session_id()}'}
+        cookie = f"B1SESSION={self.get_session_id()}"
+        if self._route_id:
+            cookie = cookie + f"; ROUTEID={self._route_id}"
+        headers = {'Cookie': cookie}
         if method in ('POST', 'PUT', 'PATCH'):
             headers['Content-Type'] = 'application/json'
         conn = self._get_connection()
         try:
             conn.request(method, path, body, headers)
             response = conn.getresponse()
-            response_data = response.read()
-
+            response_bytes = response.read()
+            response_text = ''
             try:
-                result = json.loads(response_data.decode('utf-8'))
+                response_text = response_bytes.decode('utf-8')
             except Exception:
-                raise Exception(f"SAP response parse error: {response_data}")
+                try:
+                    response_text = response_bytes.decode('latin-1')
+                except Exception:
+                    response_text = ''
 
-            if response.status != 200:
-                error_msg = result.get('error', {}).get('message', {}).get('value', '')
-                error_code = result.get('error', {}).get('code', '')
+            parsed_json = None
+            try:
+                parsed_json = json.loads(response_text) if response_text else None
+            except Exception:
+                parsed_json = None
 
-                if retry and (
-                    'Critical cache refresh failure' in error_msg or
-                    'Invalid session' in error_msg or
-                    'session already timeout' in error_msg or
-                    error_code in [-2001, -1101, -1001, 301]
-                ):
-                    with self._lock:
-                        self._global_session_id = None  # force relogin
-                    return self._make_request(method, path, body, retry=False)
+            if 200 <= response.status < 300:
+                if parsed_json is not None:
+                    return parsed_json
+                else:
+                    try:
+                        hdrs = dict(response.getheaders())
+                    except Exception:
+                        hdrs = {}
+                    return {
+                        'status': response.status,
+                        'headers': hdrs,
+                        'body': response_text,
+                    }
 
-                raise Exception(f"SAP error {response.status}: {error_msg or response_data.decode('utf-8')}")
+            error_msg = ''
+            error_code = ''
+            if isinstance(parsed_json, dict):
+                error_msg = parsed_json.get('error', {}).get('message', {}).get('value', '')
+                error_code = parsed_json.get('error', {}).get('code', '')
 
-            return result
+            if retry and (
+                'Critical cache refresh failure' in error_msg or
+                'Invalid session' in error_msg or
+                'session already timeout' in error_msg or
+                error_code in [-2001, -1101, -1001, 301]
+            ):
+                with self._lock:
+                    self._global_session_id = None
+                return self._make_request(method, path, body, retry=False)
+
+            raise Exception(f"SAP error {response.status}: {error_msg or response_text}")
         finally:
             self._close_connection(conn)
 
@@ -236,8 +274,21 @@ class SAPClient:
 
     def create_business_partner(self, payload: dict):
         body = json.dumps(payload)
-        path = f"{self.base_path}/BusinessPartners"
+        path = "/b1s/v2/BusinessPartners"
         return self._make_request("POST", path, body)
+
+    def add_contact_employee(self, card_code: str, contact: dict):
+        body = json.dumps(contact)
+        cc = quote(card_code)
+        path = f"/b1s/v2/BusinessPartners('{cc}')/ContactEmployees"
+        return self._make_request("POST", path, body)
+
+    def get_business_partner(self, card_code: str, expand_contacts: bool = False):
+        cc = quote(card_code)
+        path = f"/b1s/v2/BusinessPartners('{cc}')"
+        if expand_contacts:
+            path += "?$expand=ContactEmployees"
+        return self._make_request("GET", path)
 
     def get_dealer_bp_info(self, dealer_id: int):
         try:
