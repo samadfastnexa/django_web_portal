@@ -1,6 +1,6 @@
 from django.urls import path, include
 from django.contrib import admin
-from sap_integration.views import hana_connect_admin
+from sap_integration.views import hana_connect_admin, bp_entry_admin
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
@@ -22,6 +22,7 @@ urlpatterns = [
     # ...existing code...
     path('crop-manage/', include('crop_manage.urls')),
     path('admin/hana-connect/', admin.site.admin_view(hana_connect_admin), name='hana_connect_admin'),
+    path('admin/sap-bp-entry/', admin.site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
     path('admin/', admin.site.urls),
 ]
 

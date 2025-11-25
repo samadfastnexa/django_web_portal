@@ -18,6 +18,7 @@ from .hana_connect import _load_env_file as _hana_load_env_file, territory_summa
 from django.conf import settings
 from pathlib import Path
 import sys
+from django.utils.safestring import mark_safe
 
 @staff_member_required
 def hana_connect_admin(request):
@@ -42,6 +43,7 @@ def hana_connect_admin(request):
     action = request.GET.get('action') or 'health'
     result = None
     error = None
+    error_fields = {}
     diagnostics = {
         'python': sys.executable,
         'hdbcli_import': False,
@@ -289,6 +291,153 @@ def hana_connect_admin(request):
             'result_cols': result_cols,
             'table_rows': table_rows,
             'is_tabular': (action in ('territory_summary','sales_vs_achievement')),
+        }
+    )
+
+@staff_member_required
+def bp_entry_admin(request):
+    result = None
+    error = None
+    error_fields = {}
+    fields = {
+        'Series': '70',
+        'CardName': '',
+        'CardType': 'cCustomer',
+        'GroupCode': '100',
+        'Address': '',
+        'Phone1': '',
+        'MobilePhone': '',
+        'ContactPerson': '',
+        'FederalTaxID': '',
+        'AdditionalID': '',
+        'OwnerIDNumber': '',
+        'UnifiedFederalTaxID': '',
+        'Territory': '',
+        'DebitorAccount': 'A020301001',
+        'U_leg': '17-5349',
+        'U_gov': '',
+        'U_fil': '02',
+        'U_lic': '',
+        'U_region': '',
+        'U_zone': '',
+        'U_WhatsappMessages': 'YES',
+        'VatGroup': 'AT1',
+        'VatLiable': 'vLiable',
+    }
+    if request.method == 'POST':
+        try:
+            for k in list(fields.keys()):
+                fields[k] = (request.POST.get(k) or '').strip()
+            payload = {
+                'Series': int(fields['Series']) if fields['Series'] else 70,
+                'CardName': fields['CardName'],
+                'CardType': fields['CardType'] or 'cCustomer',
+                'GroupCode': int(fields['GroupCode']) if fields['GroupCode'] else 100,
+                'Address': fields['Address'],
+                'Phone1': fields['Phone1'],
+                'ContactPerson': fields['ContactPerson'],
+                'FederalTaxID': fields['FederalTaxID'] or None,
+                'AdditionalID': fields['AdditionalID'] or None,
+                'OwnerIDNumber': fields['OwnerIDNumber'] or None,
+                'UnifiedFederalTaxID': fields['UnifiedFederalTaxID'] or None,
+                'Territory': int(fields['Territory']) if fields['Territory'] else None,
+                'DebitorAccount': fields['DebitorAccount'] or None,
+                'U_leg': fields['U_leg'] or None,
+                'U_gov': fields['U_gov'] or None,
+                'U_fil': fields['U_fil'] or None,
+                'U_lic': fields['U_lic'] or None,
+                'U_region': fields['U_region'] or None,
+                'U_zone': fields['U_zone'] or None,
+                'U_WhatsappMessages': fields['U_WhatsappMessages'] or None,
+                'VatGroup': fields['VatGroup'] or None,
+                'VatLiable': fields['VatLiable'] or None,
+            }
+            payload['BPAddresses'] = [
+                {
+                    'AddressName': 'Bill To',
+                    'AddressName2': None,
+                    'AddressName3': None,
+                    'City': None,
+                    'Country': 'PK',
+                    'State': None,
+                    'Street': (fields['Address'] or '')[:50],
+                    'AddressType': 'bo_BillTo',
+                }
+            ]
+            payload['ContactEmployees'] = [
+                {
+                    'Name': fields['ContactPerson'] or '',
+                    'Position': None,
+                    'MobilePhone': (fields['MobilePhone'] or None),
+                    'E_Mail': None,
+                }
+            ]
+            client = SAPClient()
+            created = None
+            try:
+                created = client.create_business_partner(payload)
+            except Exception as e:
+                error = str(e)
+                msg = str(error or '')
+                keys = [
+                    'Series','CardName','CardType','GroupCode','Address','Phone1','ContactPerson',
+                    'MobilePhone',
+                    'FederalTaxID','AdditionalID','OwnerIDNumber','UnifiedFederalTaxID','Territory',
+                    'DebitorAccount','U_leg','U_gov','U_fil','U_lic','U_region','U_zone','U_WhatsappMessages',
+                    'VatGroup','VatLiable','BPAddresses','ContactEmployees','AddressName','Street','Name'
+                ]
+                low = msg.lower()
+                for k in keys:
+                    if k.lower() in low:
+                        mapped = k
+                        if k in ('BPAddresses','AddressName','Street'):
+                            mapped = 'Address'
+                        if k in ('ContactEmployees','Name'):
+                            mapped = 'ContactPerson'
+                        if mapped not in error_fields:
+                            error_fields[mapped] = msg
+            card_code = None
+            if isinstance(created, dict):
+                card_code = created.get('CardCode') or created.get('code')
+                if not card_code:
+                    hdrs = created.get('headers') if isinstance(created.get('headers'), dict) else None
+                    if hdrs:
+                        loc = hdrs.get('Location') or hdrs.get('location')
+                        if isinstance(loc, str):
+                            start = loc.find("BusinessPartners('")
+                            if start != -1:
+                                start += len("BusinessPartners('")
+                                end = loc.find("')", start)
+                                if end != -1:
+                                    card_code = loc[start:end]
+            if card_code and payload.get('ContactEmployees'):
+                for ce in payload['ContactEmployees']:
+                    try:
+                        client.add_contact_employee(card_code, ce)
+                    except Exception:
+                        pass
+                try:
+                    result = client.get_business_partner(card_code, expand_contacts=True)
+                except Exception:
+                    result = created
+            else:
+                result = created
+        except Exception as e:
+            error = str(e)
+    result_json = None
+    if result is not None:
+        try:
+            result_json = json.dumps(result, ensure_ascii=False, indent=2)
+        except Exception:
+            result_json = str(result)
+    return render(
+        request,
+        'admin/sap_integration/bp_entry.html',
+        {
+            'fields': fields,
+            'result_json': result_json,
+            'error': error,
+            'error_fields': error_fields,
         }
     )
 
@@ -600,3 +749,401 @@ def sync_policies(request):
 def policy_list_page(request):
     """Render a responsive page to list DB policies with a Sync button."""
     return render(request, 'sap_integration/policies.html')
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Sales vs Achievement data",
+    manual_parameters=[
+        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
+        openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID", type=openapi.TYPE_INTEGER),
+    ],
+    responses={
+        200: openapi.Response(description="OK"),
+        400: openapi.Response(description="Bad Request"),
+        500: openapi.Response(description="Server Error"),
+    }
+)
+@api_view(['GET'])
+def sales_vs_achievement_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    start_date = (request.query_params.get('start_date') or '').strip()
+    end_date = (request.query_params.get('end_date') or '').strip()
+    territory = (request.query_params.get('territory') or '').strip()
+    emp_id_param = request.query_params.get('emp_id')
+    emp_id = None
+    if emp_id_param:
+        try:
+            emp_id = int(emp_id_param)
+        except Exception:
+            return Response({'success': False, 'error': 'Invalid emp_id'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                cur = conn.cursor()
+                cur.execute('SET SCHEMA ' + sch)
+                cur.close()
+            data = sales_vs_achievement(conn, emp_id, territory or None, None, None, start_date or None, end_date or None)
+            return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Territory summary data",
+    manual_parameters=[
+        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
+        openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID", type=openapi.TYPE_INTEGER),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def territory_summary_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    start_date = (request.query_params.get('start_date') or '').strip()
+    end_date = (request.query_params.get('end_date') or '').strip()
+    territory = (request.query_params.get('territory') or '').strip()
+    emp_id_param = request.query_params.get('emp_id')
+    emp_id = None
+    if emp_id_param:
+        try:
+            emp_id = int(emp_id_param)
+        except Exception:
+            return Response({'success': False, 'error': 'Invalid emp_id'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                cur = conn.cursor()
+                cur.execute('SET SCHEMA ' + sch)
+                cur.close()
+            data = territory_summary(conn, emp_id, territory or None, None, None, start_date or None, end_date or None)
+            return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Products catalog",
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def products_catalog_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                cur = conn.cursor()
+                cur.execute('SET SCHEMA ' + sch)
+                cur.close()
+            data = products_catalog(conn)
+            return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Policy customer balance",
+    manual_parameters=[openapi.Parameter('card_code', openapi.IN_QUERY, description="BP CardCode", type=openapi.TYPE_STRING)],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def policy_customer_balance_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    card_code = (request.query_params.get('card_code') or '').strip()
+    if not card_code:
+        return Response({'success': False, 'error': 'card_code is required'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                cur = conn.cursor()
+                cur.execute('SET SCHEMA ' + sch)
+                cur.close()
+            data = policy_customer_balance(conn, card_code)
+            return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="HANA health",
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def hana_health_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT CURRENT_UTCTIMESTAMP AS TS FROM DUMMY')
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description] if cur.description else []
+            data = []
+            for r in rows:
+                row = {}
+                for i, c in enumerate(cols):
+                    try:
+                        row[c] = r[i]
+                    except Exception:
+                        row[c] = None
+                data.append(row)
+            cur.close()
+            return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Count HANA tables",
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def hana_count_tables_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            cur = conn.cursor()
+            if cfg['schema']:
+                cur.execute('SELECT COUNT(*) AS TABLE_COUNT FROM SYS.TABLES WHERE SCHEMA_NAME = CURRENT_SCHEMA')
+            else:
+                cur.execute('SELECT COUNT(*) AS TABLE_COUNT FROM SYS.TABLES')
+            r = cur.fetchone()
+            val = None
+            if r is not None:
+                try:
+                    val = int(r[0])
+                except Exception:
+                    val = None
+            cur.close()
+            return Response({'success': True, 'data': {'table_count': val}}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Select sample from OITM",
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def select_oitm_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                cur = conn.cursor()
+                cur.execute('SET SCHEMA ' + sch)
+                cur.close()
+            cur = conn.cursor()
+            sql = 'SELECT * FROM ' + ('"OITM"' if not cfg['schema'] else (cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"') + '."OITM"')
+            cur.execute(sql)
+            rows = cur.fetchmany(10)
+            cols = [d[0] for d in cur.description] if cur.description else []
+            data = []
+            for r in rows:
+                row = {}
+                for i, c in enumerate(cols):
+                    try:
+                        row[c] = r[i]
+                    except Exception:
+                        row[c] = None
+                data.append(row)
+            cur.close()
+            return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
