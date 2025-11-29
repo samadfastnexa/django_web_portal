@@ -222,10 +222,19 @@ class DealerRequest(models.Model):
         blank=True,
         related_name='dealer_approvals'
     )
+    sap_card_code = models.CharField(max_length=64, null=True, blank=True)
+    sap_response_json = models.TextField(null=True, blank=True)
+    sap_response_at = models.DateTimeField(null=True, blank=True)
 
     def clean(self):
-        if self.minimum_investment < 500000:
-            raise ValidationError("Minimum investment must be at least 5 lakh (500,000).")
+        min_inv = self.minimum_investment
+        if min_inv is None:
+            raise ValidationError({'minimum_investment': 'Minimum investment is required'})
+        try:
+            if int(min_inv) < 500000:
+                raise ValidationError({'minimum_investment': 'Minimum investment must be at least 5 lakh (500,000).'})
+        except (TypeError, ValueError):
+            raise ValidationError({'minimum_investment': 'Enter a valid number'})
 
     def __str__(self):
         return f"{self.business_name} ({self.status}) by {self.owner_name}"

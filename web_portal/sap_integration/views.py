@@ -14,7 +14,7 @@ from django.http import JsonResponse
 import os
 import json
 import re
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, sales_vs_achievement, territory_names
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -40,7 +40,7 @@ def hana_connect_admin(request):
         'user': os.environ.get('HANA_USER') or '',
         'driver': os.environ.get('HANA_DRIVER') or 'HDBCLI',
     }
-    action = request.GET.get('action') or 'health'
+    action = request.GET.get('action') or 'policy_customer_balance'
     result = None
     error = None
     error_fields = {}
@@ -182,13 +182,69 @@ def hana_connect_admin(request):
                             result = data
                         except Exception as e_pc:
                             error = str(e_pc)
-                    elif action == 'policy_customer_balance':
+                    elif action == 'list_territories':
                         try:
-                            cc = request.GET.get('card_code') or 'BIC00315'
-                            data = policy_customer_balance(conn, cc)
+                            data = territories_all(conn)
                             result = data
                             if isinstance(result, list) and len(result) == 0:
-                                error = 'No rows found for the given CardCode'
+                                error = 'No territories found'
+                            # Diagnostics: show available OTER columns to help mapping
+                            try:
+                                diagnostics['oter_columns'] = table_columns(conn, cfg['schema'] or '4B-ORANG_APP', 'OTER')
+                                diagnostics['schema_used'] = cfg['schema'] or '4B-ORANG_APP'
+                            except Exception:
+                                diagnostics['oter_columns'] = []
+                        except Exception as e_lt:
+                            error = str(e_lt)
+                    elif action == 'list_territories_full':
+                        try:
+                            top_param = request.GET.get('top')
+                            top_val = 500
+                            try:
+                                if top_param:
+                                    top_val = int(top_param)
+                            except Exception:
+                                top_val = 500
+                            status_param = (request.GET.get('status') or '').strip().lower()
+                            if status_param not in ('active','inactive',''):
+                                status_param = ''
+                            data = territories_all_full(conn, top_val, status_param or None)
+                            result = data
+                            if isinstance(result, list) and len(result) == 0:
+                                error = 'No territories found'
+                        except Exception as e_ltf:
+                            error = str(e_ltf)
+                    elif action == 'list_cwl':
+                        try:
+                            top_param = request.GET.get('top')
+                            top_val = 500
+                            try:
+                                if top_param:
+                                    top_val = int(top_param)
+                            except Exception:
+                                top_val = 500
+                            data = cwl_all_full(conn, top_val)
+                            result = data
+                            if isinstance(result, list) and len(result) == 0:
+                                error = 'No CWL rows found'
+                        except Exception as e_cwl:
+                            error = str(e_cwl)
+                    elif action == 'policy_customer_balance':
+                        try:
+                            cc = (request.GET.get('card_code') or '').strip()
+                            top_param = request.GET.get('top')
+                            top_val = None
+                            if cc:
+                                data = policy_customer_balance(conn, cc)
+                            else:
+                                try:
+                                    top_val = int(top_param) if (top_param or '').strip() != '' else 200
+                                except Exception:
+                                    top_val = 200
+                                data = policy_customer_balance_all(conn, top_val)
+                            result = data
+                            if isinstance(result, list) and len(result) == 0:
+                                error = 'No rows found'
                         except Exception as e_pb:
                             error = str(e_pb)
                     elif action == 'sales_vs_achievement':
@@ -290,7 +346,8 @@ def hana_connect_admin(request):
             'result_rows': result_rows,
             'result_cols': result_cols,
             'table_rows': table_rows,
-            'is_tabular': (action in ('territory_summary','sales_vs_achievement')),
+            'is_tabular': (action in ('territory_summary','sales_vs_achievement','policy_customer_balance','list_territories','list_territories_full','list_cwl')),
+            'current_card_code': (request.GET.get('card_code') or '').strip(),
         }
     )
 
@@ -301,127 +358,281 @@ def bp_entry_admin(request):
     error_fields = {}
     fields = {
         'Series': '70',
-        'CardName': '',
+        'CardName': 'TEST API POST',
         'CardType': 'cCustomer',
         'GroupCode': '100',
-        'Address': '',
-        'Phone1': '',
+        'Address': 'Pull Sardarpur Kabirwala',
+        'Phone1': '923224052911',
         'MobilePhone': '',
-        'ContactPerson': '',
-        'FederalTaxID': '',
+        'ContactPerson': 'Abdul Razzaq',
+        'FederalTaxID': '36102-1926109-7',
         'AdditionalID': '',
-        'OwnerIDNumber': '',
-        'UnifiedFederalTaxID': '',
-        'Territory': '',
+        'OwnerIDNumber': '36102-1926109-7',
+        'UnifiedFederalTaxID': '36102-1926109-7',
+        'Territory': '235',
         'DebitorAccount': 'A020301001',
         'U_leg': '17-5349',
-        'U_gov': '',
+        'U_gov': '2023-05-28',
         'U_fil': '02',
-        'U_lic': '',
-        'U_region': '',
-        'U_zone': '',
+        'U_lic': '506/R/2020',
+        'U_region': 'Green',
+        'U_zone': 'Sahiwal',
         'U_WhatsappMessages': 'YES',
         'VatGroup': 'AT1',
         'VatLiable': 'vLiable',
     }
     if request.method == 'POST':
+        created = None
+        result = None
         try:
             for k in list(fields.keys()):
                 fields[k] = (request.POST.get(k) or '').strip()
-            payload = {
-                'Series': int(fields['Series']) if fields['Series'] else 70,
-                'CardName': fields['CardName'],
-                'CardType': fields['CardType'] or 'cCustomer',
-                'GroupCode': int(fields['GroupCode']) if fields['GroupCode'] else 100,
-                'Address': fields['Address'],
-                'Phone1': fields['Phone1'],
-                'ContactPerson': fields['ContactPerson'],
-                'FederalTaxID': fields['FederalTaxID'] or None,
-                'AdditionalID': fields['AdditionalID'] or None,
-                'OwnerIDNumber': fields['OwnerIDNumber'] or None,
-                'UnifiedFederalTaxID': fields['UnifiedFederalTaxID'] or None,
-                'Territory': int(fields['Territory']) if fields['Territory'] else None,
-                'DebitorAccount': fields['DebitorAccount'] or None,
-                'U_leg': fields['U_leg'] or None,
-                'U_gov': fields['U_gov'] or None,
-                'U_fil': fields['U_fil'] or None,
-                'U_lic': fields['U_lic'] or None,
-                'U_region': fields['U_region'] or None,
-                'U_zone': fields['U_zone'] or None,
-                'U_WhatsappMessages': fields['U_WhatsappMessages'] or None,
-                'VatGroup': fields['VatGroup'] or None,
-                'VatLiable': fields['VatLiable'] or None,
-            }
-            payload['BPAddresses'] = [
-                {
-                    'AddressName': 'Bill To',
-                    'AddressName2': None,
-                    'AddressName3': None,
-                    'City': None,
-                    'Country': 'PK',
-                    'State': None,
-                    'Street': (fields['Address'] or '')[:50],
-                    'AddressType': 'bo_BillTo',
-                }
-            ]
-            payload['ContactEmployees'] = [
-                {
-                    'Name': fields['ContactPerson'] or '',
-                    'Position': None,
-                    'MobilePhone': (fields['MobilePhone'] or None),
-                    'E_Mail': None,
-                }
-            ]
-            client = SAPClient()
-            created = None
+            # Comprehensive validation to prevent SAP "Failed to initialize object data" error
+            if not fields['CardName'] or not fields['CardName'].strip():
+                error_fields['CardName'] = 'CardName is required and cannot be empty'
+            
+            # Validate CardName length (SAP typically has limits)
+            if fields['CardName'] and len(fields['CardName'].strip()) > 100:
+                error_fields['CardName'] = 'CardName must be 100 characters or less'
+            
+            # Validate Series
             try:
-                created = client.create_business_partner(payload)
-            except Exception as e:
-                error = str(e)
-                msg = str(error or '')
-                keys = [
-                    'Series','CardName','CardType','GroupCode','Address','Phone1','ContactPerson',
-                    'MobilePhone',
-                    'FederalTaxID','AdditionalID','OwnerIDNumber','UnifiedFederalTaxID','Territory',
-                    'DebitorAccount','U_leg','U_gov','U_fil','U_lic','U_region','U_zone','U_WhatsappMessages',
-                    'VatGroup','VatLiable','BPAddresses','ContactEmployees','AddressName','Street','Name'
+                series_val = int(fields['Series']) if fields['Series'] else 70
+                if series_val <= 0:
+                    error_fields['Series'] = 'Series must be a positive number'
+            except Exception:
+                error_fields['Series'] = 'Series must be a valid number'
+            
+            # Validate GroupCode
+            try:
+                group_val = int(fields['GroupCode']) if fields['GroupCode'] else 100
+                if group_val <= 0:
+                    error_fields['GroupCode'] = 'GroupCode must be a positive number'
+            except Exception:
+                error_fields['GroupCode'] = 'GroupCode must be a valid number'
+                
+            # Validate Territory if provided
+            if fields['Territory']:
+                try:
+                    territory_val = int(fields['Territory'])
+                    if territory_val <= 0:
+                        error_fields['Territory'] = 'Territory must be a positive number'
+                except Exception:
+                    error_fields['Territory'] = 'Territory must be a valid number'
+                    
+            # Return early if validation fails
+            if error_fields:
+                error = 'Please fix the validation errors below'
+            # Only create payload if validation passes
+            if not error_fields:
+                # Build payload exactly like working Postman request with empty strings instead of null
+                # This structure matches SAP Business One Service Layer requirements
+                # IMPORTANT: Field order matters! Must match working Postman request exactly
+                payload = {
+                    'Series': int(fields['Series']) if fields['Series'] else 70,
+                    'CardName': fields['CardName'].strip(),
+                    'CardType': fields['CardType'].strip() if fields['CardType'] else 'cCustomer',
+                    'GroupCode': int(fields['GroupCode']) if fields['GroupCode'] else 100,
+                    'Address': fields['Address'].strip() if fields['Address'] else '',
+                    'Phone1': fields['Phone1'].strip() if fields['Phone1'] else '',
+                    'ContactPerson': fields['ContactPerson'].strip() if fields['ContactPerson'] else '',
+                    'FederalTaxID': fields['FederalTaxID'].strip() if fields['FederalTaxID'] else '',
+                    'AdditionalID': None if not fields['AdditionalID'] or not fields['AdditionalID'].strip() else fields['AdditionalID'].strip(),
+                    'OwnerIDNumber': fields['OwnerIDNumber'].strip() if fields['OwnerIDNumber'] else '',
+                    'UnifiedFederalTaxID': fields['UnifiedFederalTaxID'].strip() if fields['UnifiedFederalTaxID'] else '',
+                }
+                
+                # Add Territory if provided
+                if fields['Territory'] and fields['Territory'].strip():
+                    payload['Territory'] = int(fields['Territory'])
+                
+                # Add standard fields
+                if fields['DebitorAccount'] and fields['DebitorAccount'].strip():
+                    payload['DebitorAccount'] = fields['DebitorAccount'].strip()
+                
+                # Add UDF fields
+                if fields['U_leg'] and fields['U_leg'].strip():
+                    payload['U_leg'] = fields['U_leg'].strip()
+                if fields['U_gov'] and fields['U_gov'].strip():
+                    payload['U_gov'] = fields['U_gov'].strip()
+                if fields['U_fil'] and fields['U_fil'].strip():
+                    payload['U_fil'] = fields['U_fil'].strip()
+                if fields['U_lic'] and fields['U_lic'].strip():
+                    payload['U_lic'] = fields['U_lic'].strip()
+                if fields['U_region'] and fields['U_region'].strip():
+                    payload['U_region'] = fields['U_region'].strip()
+                if fields['U_zone'] and fields['U_zone'].strip():
+                    payload['U_zone'] = fields['U_zone'].strip()
+                if fields['U_WhatsappMessages'] and fields['U_WhatsappMessages'].strip():
+                    payload['U_WhatsappMessages'] = fields['U_WhatsappMessages'].strip()
+                
+                # Add VAT fields
+                if fields['VatGroup'] and fields['VatGroup'].strip():
+                    payload['VatGroup'] = fields['VatGroup'].strip()
+                if fields['VatLiable'] and fields['VatLiable'].strip():
+                    payload['VatLiable'] = fields['VatLiable'].strip()
+                
+                # Add arrays at the end - exact match to Postman structure
+                payload['BPAddresses'] = [
+                    {
+                        'AddressName': 'Bill To',
+                        'AddressName2': '',
+                        'AddressName3': '',
+                        'City': '',
+                        'Country': 'PK',
+                        'State': '',
+                        'Street': fields['Address'].strip() if fields['Address'] else '',
+                        'AddressType': 'bo_BillTo',
+                    }
                 ]
-                low = msg.lower()
-                for k in keys:
-                    if k.lower() in low:
-                        mapped = k
-                        if k in ('BPAddresses','AddressName','Street'):
-                            mapped = 'Address'
-                        if k in ('ContactEmployees','Name'):
-                            mapped = 'ContactPerson'
-                        if mapped not in error_fields:
-                            error_fields[mapped] = msg
-            card_code = None
-            if isinstance(created, dict):
-                card_code = created.get('CardCode') or created.get('code')
-                if not card_code:
-                    hdrs = created.get('headers') if isinstance(created.get('headers'), dict) else None
-                    if hdrs:
-                        loc = hdrs.get('Location') or hdrs.get('location')
-                        if isinstance(loc, str):
-                            start = loc.find("BusinessPartners('")
-                            if start != -1:
-                                start += len("BusinessPartners('")
-                                end = loc.find("')", start)
-                                if end != -1:
-                                    card_code = loc[start:end]
-            if card_code and payload.get('ContactEmployees'):
-                for ce in payload['ContactEmployees']:
+                payload['ContactEmployees'] = [
+                    {
+                        'Name': fields['ContactPerson'].strip() if fields['ContactPerson'] else '',
+                        'Position': '',
+                        'MobilePhone': '',
+                        'E_Mail': '',
+                    }
+                ]
+                
+                client = SAPClient()
+                try:
+                    # Log the payload for debugging
+                    import logging
+                    logger = logging.getLogger('sap')
+                    logger.info(f"SAP BP Payload: {json.dumps(payload, indent=2)}")
+                    logger.info(f"SAP Session: {client.get_session_id()}")
+                    
+                    created = client.create_business_partner(payload)
+                    # Ensure created is in the expected format
+                    if not isinstance(created, (dict, list, type(None))):
+                        # If it's a string or other type, convert to dict
+                        created = {"error": str(created)}
+                except Exception as e:
+                    error = str(e)
+                    msg = str(error or '')
+                    
+                    # Add payload and session info to error message for debugging
                     try:
-                        client.add_contact_employee(card_code, ce)
+                        payload_debug = json.dumps(payload, indent=2, default=str)
+                        session_info = f"\n\nSession ID: {client.get_session_id()}"
+                        user_info = f"\nSAP User: {client.username}"
+                        db_info = f"\nCompany DB: {client.company_db}"
+                        error = f"{msg}\n\nPayload sent to SAP:\n{payload_debug}{session_info}{user_info}{db_info}\n\nNote: This exact payload works in Postman. Check if SAP user has permission to create Business Partners."
                     except Exception:
                         pass
-                try:
-                    result = client.get_business_partner(card_code, expand_contacts=True)
-                except Exception:
+                    
+                    # Provide specific help for common SAP errors
+                    if "Failed to initialize object data" in msg:
+                        # Don't clear error_fields, just show helpful message
+                        if not error_fields:
+                            error_fields['CardName'] = 'SAP rejected this value - check field requirements'
+                    
+                    # Try to extract JSON error payload and map detailed paths to form fields
+                    parsed = None
+                    try:
+                        start = msg.find('{')
+                        if start != -1:
+                            parsed = json.loads(msg[start:])
+                    except Exception:
+                        parsed = None
+                    
+                    def map_path_to_field(path: str):
+                        p = str(path or '')
+                        if p.startswith('BPAddresses'):
+                            return 'Address'
+                        if p.startswith('ContactEmployees'):
+                            return 'ContactPerson'
+                        if p.startswith('Phone1'):
+                            return 'Phone1'
+                        if p.startswith('MobilePhone'):
+                            return 'MobilePhone'
+                        return p.split('/')[0] if '/' in p else p
+                    
+                    # Populate error_fields from Service Layer error structure
+                    if isinstance(parsed, dict):
+                        try:
+                            error_data = parsed.get('error', {})
+                            if isinstance(error_data, dict):
+                                message_data = error_data.get('message', {})
+                                if isinstance(message_data, dict):
+                                    emsg = message_data.get('value')
+                                    if emsg:
+                                        error = emsg
+                        except Exception:
+                            pass
+                        try:
+                            error_data = parsed.get('error', {})
+                            if isinstance(error_data, dict):
+                                details = error_data.get('details')
+                                if isinstance(details, list):
+                                    for d in details:
+                                        if isinstance(d, dict):
+                                            fld = map_path_to_field(d.get('path'))
+                                            msgv = d.get('message') or error
+                                            if fld and msgv:
+                                                error_fields[fld] = msgv
+                                        elif isinstance(d, str):
+                                            fld = map_path_to_field(d)
+                                            if fld and (fld not in error_fields):
+                                                error_fields[fld] = error
+                        except Exception:
+                            pass
+                        # Also show parsed error JSON in response block
+                        if not error_fields and parsed:
+                            result = parsed
+                    # Fallback keyword mapping if JSON not available
+                    if not error_fields:
+                        keys = [
+                            'Series','CardName','CardType','GroupCode','Address','Phone1','ContactPerson',
+                            'MobilePhone','FederalTaxID','AdditionalID','OwnerIDNumber','UnifiedFederalTaxID','Territory',
+                            'DebitorAccount','U_leg','U_gov','U_fil','U_lic','U_region','U_zone','U_WhatsappMessages',
+                            'VatGroup','VatLiable','BPAddresses','ContactEmployees','AddressName','Street','Name'
+                        ]
+                        low = msg.lower()
+                        for k in keys:
+                            if k.lower() in low:
+                                mapped = k
+                                if k in ('BPAddresses','AddressName','Street'):
+                                    mapped = 'Address'
+                                if k in ('ContactEmployees','Name'):
+                                    mapped = 'ContactPerson'
+                                if mapped not in error_fields:
+                                    error_fields[mapped] = msg
+                    # If we have no parsed JSON, still surface raw message
+                    if result is None:
+                        result = msg
+                
+                card_code = None
+                if isinstance(created, dict):
+                    card_code = created.get('CardCode') or created.get('code')
+                    if not card_code:
+                        hdrs = created.get('headers') if isinstance(created.get('headers'), dict) else None
+                        if hdrs:
+                            loc = hdrs.get('Location') or hdrs.get('location')
+                            if isinstance(loc, str):
+                                start = loc.find("BusinessPartners('")
+                                if start != -1:
+                                    start += len("BusinessPartners('")
+                                    end = loc.find("')", start)
+                                    if end != -1:
+                                        card_code = loc[start:end]
+                if card_code and isinstance(payload, dict) and payload.get('ContactEmployees'):
+                    for ce in payload['ContactEmployees']:
+                        try:
+                            client.add_contact_employee(card_code, ce)
+                        except Exception:
+                            pass
+                    try:
+                        bp_result = client.get_business_partner(card_code, expand_contacts=True)
+                        # Ensure result is in expected format
+                        if isinstance(bp_result, (dict, list)):
+                            result = bp_result
+                        else:
+                            result = created
+                    except Exception:
+                        result = created
+                else:
                     result = created
-            else:
-                result = created
         except Exception as e:
             error = str(e)
     result_json = None
@@ -434,10 +645,61 @@ def bp_entry_admin(request):
         request,
         'admin/sap_integration/bp_entry.html',
         {
-            'fields': fields,
+            'fields': fields or {},
             'result_json': result_json,
             'error': error,
-            'error_fields': error_fields,
+            'error_fields': error_fields or {},
+        }
+    )
+
+@staff_member_required
+def bp_lookup_admin(request):
+    error = None
+    result = None
+    card_code = (request.GET.get('card_code') or request.POST.get('card_code') or '').strip()
+    rows = []
+    cols = []
+    table_rows = []
+    if request.method in ('POST',) or (request.method == 'GET'):
+        try:
+            client = SAPClient()
+            if card_code:
+                result = client.get_bp_details(card_code)
+            else:
+                rows = client.list_business_partners(top=100, select='CardCode,CardName,GroupCode,VatGroup') or []
+        except Exception as e:
+            error = str(e)
+    if isinstance(rows, list) and len(rows) > 0 and isinstance(rows[0], dict):
+        try:
+            cols = list(rows[0].keys())
+        except Exception:
+            cols = []
+    if cols and rows:
+        try:
+            for r in rows:
+                if isinstance(r, dict):
+                    vals = []
+                    for c in cols:
+                        vals.append(r.get(c))
+                    table_rows.append(vals)
+        except Exception:
+            table_rows = []
+    result_json = None
+    if result is not None:
+        try:
+            result_json = json.dumps(result, ensure_ascii=False, indent=2)
+        except Exception:
+            result_json = str(result)
+    return render(
+        request,
+        'admin/sap_integration/bp_lookup.html',
+        {
+            'card_code': card_code,
+            'result_json': result_json,
+            'error': error,
+            'rows': rows,
+            'cols': cols,
+            'table_rows': table_rows,
         }
     )
 
@@ -520,7 +782,6 @@ def get_business_partner_data(request, card_code):
             "error": "Invalid card code format",
             "message": "Card code is required"
         }, status=status.HTTP_400_BAD_REQUEST)
-    
     try:
         # Initialize SAP client
         sap_client = SAPClient()
@@ -552,13 +813,52 @@ def get_business_partner_data(request, card_code):
                 "error": "SAP session error",
                 "message": "SAP session expired or invalid. Please try again."
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+    
         else:
             return Response({
                 "success": False,
                 "error": "SAP integration failed",
                 "message": f"Unable to retrieve business partner data: {error_message}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# List endpoint for Business Partners when no CardCode is provided
+@swagger_auto_schema(
+    method='get',
+    operation_description="List Business Partners (omit CardCode)",
+    manual_parameters=[
+        openapi.Parameter(
+            'top',
+            openapi.IN_QUERY,
+            description="Max items to return (default 100)",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        )
+    ]
+)
+@api_view(['GET'])
+def get_business_partners_list(request):
+    try:
+        sap_client = SAPClient()
+        top_param = request.query_params.get('top')
+        top_val = 100
+        if top_param is not None:
+            try:
+                top_val = int(top_param)
+            except Exception:
+                top_val = 100
+        rows = sap_client.list_business_partners(top=top_val, select='CardCode,CardName,GroupCode,VatGroup') or []
+        return Response({
+            "success": True,
+            "count": len(rows),
+            "data": rows,
+            "message": "Business partners retrieved successfully"
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            "success": False,
+            "error": "SAP integration failed",
+            "message": str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @swagger_auto_schema(

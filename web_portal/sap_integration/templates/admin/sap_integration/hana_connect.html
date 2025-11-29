@@ -13,6 +13,8 @@
         <a class="button" href="?action=sales_vs_achievement">Sales Vs Achivement</a>
         <a class="button" href="?action=products_catalog">Products</a>
         <a class="button" href="?action=policy_customer_balance">Policy Wise Customer Balance</a>
+        <a class="button" href="?action=list_territories_full">All Territories</a>
+        <a class="button" href="?action=list_cwl">CWL</a>
         
       </div>
     </div>
@@ -231,6 +233,131 @@
         })();
       </script>
     {% endif %}
+    {% if current_action == 'list_territories_full' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#0ea5e9;--filter-primary-600:#0284c7;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(4, minmax(160px,1fr));gap:12px}
+        @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(2, minmax(160px,1fr))}}
+        @media (max-width:720px){.filter-grid{grid-template-columns:repeat(1, minmax(140px,1fr))}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#f8fafc;transition:border-color .2s, box-shadow .2s}
+        .filter-input select:focus,.filter-input input:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(14,165,233,0.15)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(2,132,199,0.25)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#f0f9ff}
+        .icon{width:16px;height:16px;fill:currentColor}
+      </style>
+      <form method="get" class="filter-card" id="territories-filter-form">
+        <input type="hidden" name="action" value="list_territories_full" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z"/></svg>
+          <div class="filter-title">Filters</div>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field" data-key="status">
+            <div class="filter-label" title="Active / Inactive">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1 14l-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 9l-7 7z"/></svg>
+              Status
+            </div>
+            <div class="filter-input">
+              <select name="status">
+                <option value="">All</option>
+                <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+                <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="top">
+            <div class="filter-label" title="Max rows">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+              Top
+            </div>
+            <div class="filter-input">
+              <input type="number" name="top" min="1" max="5000" value="{{ request.GET.top }}" placeholder="Default 500" />
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply
+          </button>
+          <a class="btn btn-secondary" href="?action=list_territories_full">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+    {% endif %}
+    {% if current_action == 'policy_customer_balance' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#10b981;--filter-primary-600:#059669;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(4, minmax(160px,1fr));gap:12px}
+        @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(2, minmax(160px,1fr))}}
+        @media (max-width:720px){.filter-grid{grid-template-columns:repeat(1, minmax(140px,1fr))}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}
+        .filter-input input:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(16,185,129,0.15)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(5,150,105,0.25)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#ecfdf5}
+        .icon{width:16px;height:16px;fill:currentColor}
+      </style>
+      <form method="get" class="filter-card" id="pb-filter-form">
+        <input type="hidden" name="action" value="policy_customer_balance" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 9.74-8 10-4.5-.26-8-5-8-10V6l8-4zm0 4l-4 2v4c0 3.31 2.69 6 6 6s6-2.69 6-6V8l-4-2h-4z"/></svg>
+          <div class="filter-title">Policy Balance Filters</div>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field" data-key="card_code">
+            <div class="filter-label" title="CardCode">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
+              CardCode
+            </div>
+            <div class="filter-input">
+              <input type="text" name="card_code" value="{{ current_card_code }}" placeholder="e.g. BIC00315" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="top">
+            <div class="filter-label" title="Max rows when CardCode empty">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+              Top
+            </div>
+            <div class="filter-input">
+              <input type="number" name="top" min="1" max="1000" placeholder="Default 200" />
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply
+          </button>
+          <a class="btn btn-secondary" href="?action=policy_customer_balance">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+        {% if not current_card_code %}
+          <p style="color:#64748b; margin-top:8px;">Showing aggregated balances for all customers (limited).</p>
+        {% endif %}
+      </form>
+    {% endif %}
     {% if error %}
       <p style="color:#b91c1c; font-weight:600;">Error: {{ error }}</p>
     {% endif %}
@@ -242,6 +369,7 @@
         .result-table tbody tr:hover{background:#f9fafb}
       </style>
       <h3>Result</h3>
+      <div class="table-responsive">
       <table class="result-table">
         <thead>
           <tr>
@@ -260,6 +388,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     {% elif result_json %}
       <h3>Result</h3>
       <pre style="white-space:pre-wrap; background:#f8fafc; border:1px solid #e5e7eb; padding:12px;">{{ result_json }}</pre>

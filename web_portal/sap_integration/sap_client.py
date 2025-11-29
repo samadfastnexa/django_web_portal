@@ -4,12 +4,30 @@ import json
 import time
 import random
 import threading
+import os
 from urllib.parse import quote
 
 from preferences.models import Setting
 from django.core.exceptions import ImproperlyConfigured
 from FieldAdvisoryService.models import Dealer
 
+def _load_env_file(path: str) -> None:
+    try:
+        if os.path.isfile(path) and os.access(path, os.R_OK):
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    s = line.strip()
+                    if s == '' or s.startswith('#') or '=' not in s:
+                        continue
+                    k, v = s.split('=', 1)
+                    k = k.strip()
+                    v = v.strip()
+                    if v != '' and ((v[0] == '"' and v[-1] == '"') or (v[0] == "'" and v[-1] == "'")):
+                        v = v[1:-1]
+                    if k != '' and not os.environ.get(k):
+                        os.environ[k] = v
+    except Exception:
+        pass
 
 class SAPClient:
     """
@@ -24,23 +42,61 @@ class SAPClient:
 
     def __init__(self):
         try:
-            sap_cred = Setting.objects.get(slug='sap_credential').value
-            if isinstance(sap_cred, str):
-                sap_cred = json.loads(sap_cred)
+            try:
+                _load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+                _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
+                _load_env_file(os.path.join(os.getcwd(), '.env'))
+            except Exception:
+                pass
+            # Priority 1: Try environment variables (for .env configuration)
+            # Priority 2: Fall back to Django settings (for database configuration)
+            
+            # Get username
+            self.username = (os.environ.get('SAP_USERNAME') or '').strip()
+            if not self.username:
+                try:
+                    sap_cred = Setting.objects.get(slug='sap_credential').value
+                    # Handle both JSONField (dict) and TextField (str) formats
+                    if isinstance(sap_cred, str):
+                        sap_cred = json.loads(sap_cred)
+                    elif not isinstance(sap_cred, dict):
+                        raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
+                    self.username = str(sap_cred.get('Username') or '').strip()
+                except Setting.DoesNotExist:
+                    raise ImproperlyConfigured('SAP_USERNAME not found in .env or Django settings')
+            
+            # Get password
+            self.password = (os.environ.get('SAP_PASSWORD') or '').strip()
+            if not self.password:
+                try:
+                    sap_cred = Setting.objects.get(slug='sap_credential').value
+                    # Handle both JSONField (dict) and TextField (str) formats
+                    if isinstance(sap_cred, str):
+                        sap_cred = json.loads(sap_cred)
+                    elif not isinstance(sap_cred, dict):
+                        raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
+                    self.password = str(sap_cred.get('Passwords') or '').strip()
+                except Setting.DoesNotExist:
+                    raise ImproperlyConfigured('SAP_PASSWORD not found in .env or Django settings')
+            
+            # Get company database
+            self.company_db = (os.environ.get('SAP_COMPANY_DB') or '').strip()
+            if not self.company_db:
+                try:
+                    self.company_db = str(Setting.objects.get(slug='SAP_COMPANY_DB').value or '').strip()
+                except Setting.DoesNotExist:
+                    raise ImproperlyConfigured('SAP_COMPANY_DB not found in .env or Django settings')
 
-            self.username = sap_cred['Username']
-            self.password = sap_cred['Passwords']
-            self.company_db = Setting.objects.get(slug='SAP_COMPANY_DB').value
-
-            self.host = "fourbtest.vdc.services"
-            self.port = 50000
-            self.base_path = "/b1s/v1"
+            # Get SAP B1 Service Layer connection details
+            self.host = (os.environ.get('SAP_B1S_HOST') or "fourbtest.vdc.services").strip()
+            self.port = int((os.environ.get('SAP_B1S_PORT') or 50000))
+            self.base_path = (os.environ.get('SAP_B1S_BASE_PATH') or "/b1s/v2").strip()
 
             self.ssl_context = ssl.create_default_context()
             self.ssl_context.check_hostname = False
             self.ssl_context.verify_mode = ssl.CERT_NONE
-        except Setting.DoesNotExist as e:
-            raise ImproperlyConfigured(f'Missing setting: {e}')
+        except Exception as e:
+            raise ImproperlyConfigured(f'SAP configuration error: {e}')
 
     def _get_connection(self):
         return http.client.HTTPSConnection(
@@ -55,24 +111,12 @@ class SAPClient:
         except Exception:
             pass
 
-    def _login(self):
-        """Perform login and return a new session ID."""
-        login_data = {
-            'UserName': self.username,
-            'Password': self.password,
-            'CompanyDB': self.company_db
-        }
-        headers = {'Content-Type': 'application/json'}
+    def _preflight_route(self):
         conn = self._get_connection()
         try:
-            conn.request("POST", f"{self.base_path}/Login", json.dumps(login_data), headers)
+            headers = {'Accept': 'application/json'}
+            conn.request("GET", f"{self.base_path}/ServerVersion", '', headers)
             response = conn.getresponse()
-            response_data = response.read()
-
-            if response.status != 200:
-                raise Exception(f"Login failed with status {response.status}: {response_data.decode('utf-8')}")
-
-            login_response = json.loads(response_data.decode('utf-8'))
             try:
                 hdrs = response.getheaders()
                 for k, v in hdrs:
@@ -84,9 +128,83 @@ class SAPClient:
                                 break
             except Exception:
                 pass
-            return login_response.get('SessionId')
         finally:
             self._close_connection(conn)
+
+    def _login(self):
+        """Perform login and return a new session ID."""
+        self._preflight_route()
+        login_data = {
+            'UserName': self.username,
+            'Password': self.password,
+            'CompanyDB': self.company_db
+        }
+        headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
+
+        def do_login(data, base_path):
+            conn = self._get_connection()
+            try:
+                req_headers = dict(headers)
+                if self._route_id:
+                    req_headers['Cookie'] = f"ROUTEID={self._route_id}"
+                conn.request("POST", f"{base_path}/Login", json.dumps(data), req_headers)
+                response = conn.getresponse()
+                response_data = response.read()
+
+                if response.status != 200:
+                    raise Exception(f"Login failed with status {response.status}: {response_data.decode('utf-8')}")
+
+                login_response = json.loads(response_data.decode('utf-8'))
+                try:
+                    hdrs = response.getheaders()
+                    for k, v in hdrs:
+                        if str(k).lower() == 'set-cookie':
+                            parts = [x.strip() for x in str(v).split(';')]
+                            for p in parts:
+                                if p.startswith('ROUTEID='):
+                                    self._route_id = p.split('=', 1)[1]
+                                    break
+                except Exception:
+                    pass
+                if isinstance(login_response, dict):
+                    sid = login_response.get('SessionId')
+                    if sid:
+                        return sid
+                raise Exception('Invalid SAP login response')
+            finally:
+                self._close_connection(conn)
+
+        try:
+            return do_login(login_data, self.base_path)
+        except Exception as e:
+            msg = str(e)
+            try:
+                from preferences.models import Setting
+                alt_user = None
+                alt_pass = None
+                alt_db = None
+                try:
+                    s = Setting.objects.get(slug='sap_credential').value
+                    if isinstance(s, str):
+                        s = json.loads(s)
+                    alt_user = str(s.get('Username') or '').strip()
+                    alt_pass = str(s.get('Passwords') or '').strip()
+                except Exception:
+                    pass
+                try:
+                    alt_db = str(Setting.objects.get(slug='SAP_COMPANY_DB').value or '').strip()
+                except Exception:
+                    pass
+                data2 = {
+                    'UserName': alt_user or login_data['UserName'],
+                    'Password': alt_pass or login_data['Password'],
+                    'CompanyDB': alt_db or login_data['CompanyDB'],
+                }
+                if data2['UserName'] and data2['Password'] and data2['CompanyDB']:
+                    return do_login(data2, self.base_path)
+            except Exception:
+                pass
+            raise Exception(msg)
 
     def get_session_id(self):
         """Return a global session ID, refreshing if needed."""
@@ -104,7 +222,7 @@ class SAPClient:
         cookie = f"B1SESSION={self.get_session_id()}"
         if self._route_id:
             cookie = cookie + f"; ROUTEID={self._route_id}"
-        headers = {'Cookie': cookie}
+        headers = {'Cookie': cookie, 'Accept': 'application/json'}
         if method in ('POST', 'PUT', 'PATCH'):
             headers['Content-Type'] = 'application/json'
         conn = self._get_connection()
@@ -128,24 +246,28 @@ class SAPClient:
                 parsed_json = None
 
             if 200 <= response.status < 300:
-                if parsed_json is not None:
+                if isinstance(parsed_json, (dict, list)):
                     return parsed_json
-                else:
-                    try:
-                        hdrs = dict(response.getheaders())
-                    except Exception:
-                        hdrs = {}
-                    return {
-                        'status': response.status,
-                        'headers': hdrs,
-                        'body': response_text,
-                    }
+                # For primitive JSON (e.g., a string) or non-JSON responses, return a structured dict
+                try:
+                    hdrs = dict(response.getheaders())
+                except Exception:
+                    hdrs = {}
+                return {
+                    'status': response.status,
+                    'headers': hdrs,
+                    'body': response_text,
+                }
 
             error_msg = ''
             error_code = ''
             if isinstance(parsed_json, dict):
-                error_msg = parsed_json.get('error', {}).get('message', {}).get('value', '')
-                error_code = parsed_json.get('error', {}).get('code', '')
+                error_data = parsed_json.get('error', {})
+                if isinstance(error_data, dict):
+                    message_data = error_data.get('message', {})
+                    if isinstance(message_data, dict):
+                        error_msg = message_data.get('value', '')
+                    error_code = error_data.get('code', '')
 
             if retry and (
                 'Critical cache refresh failure' in error_msg or
@@ -274,21 +396,36 @@ class SAPClient:
 
     def create_business_partner(self, payload: dict):
         body = json.dumps(payload)
-        path = "/b1s/v2/BusinessPartners"
+        path = f"{self.base_path}/BusinessPartners"
         return self._make_request("POST", path, body)
 
     def add_contact_employee(self, card_code: str, contact: dict):
         body = json.dumps(contact)
         cc = quote(card_code)
-        path = f"/b1s/v2/BusinessPartners('{cc}')/ContactEmployees"
+        path = f"{self.base_path}/BusinessPartners('{cc}')/ContactEmployees"
         return self._make_request("POST", path, body)
 
     def get_business_partner(self, card_code: str, expand_contacts: bool = False):
         cc = quote(card_code)
-        path = f"/b1s/v2/BusinessPartners('{cc}')"
+        path = f"{self.base_path}/BusinessPartners('{cc}')"
         if expand_contacts:
             path += "?$expand=ContactEmployees"
         return self._make_request("GET", path)
+
+    def list_business_partners(self, top: int = 100, skip: int = 0, select: str = None):
+        qs = []
+        if select:
+            qs.append(f"$select={quote(select)}")
+        if top is not None:
+            qs.append(f"$top={int(top)}")
+        if skip:
+            qs.append(f"$skip={int(skip)}")
+        q = ("?" + "&".join(qs)) if qs else ""
+        path = f"{self.base_path}/BusinessPartners{q}"
+        res = self._make_request("GET", path)
+        if isinstance(res, dict) and 'value' in res:
+            return res['value']
+        return res
 
     def get_dealer_bp_info(self, dealer_id: int):
         try:

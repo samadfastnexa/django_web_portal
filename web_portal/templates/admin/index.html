@@ -71,14 +71,17 @@
         var c1 = document.getElementById('adminChart1');
         var c2 = document.getElementById('adminChart2');
         var c3 = document.getElementById('adminChart3');
+        var styles = getComputedStyle(document.documentElement);
+        var orange = styles.getPropertyValue('--orange').trim() || '#E26830';
+        var green = styles.getPropertyValue('--green').trim() || '#16a34a';
         if (c1) {
           new Chart(c1.getContext('2d'), {
             type: 'bar',
             data: {
               labels: ['A','B','C','D'],
               datasets: [
-                { label: 'Main', data: [11, 17, 3, 5], backgroundColor: '#E26830', stack: 's' },
-                { label: 'Top', data: [1, 2, 1, 1], backgroundColor: '#16a34a', stack: 's' }
+                { label: 'Main', data: [11, 17, 3, 5], backgroundColor: orange, stack: 's' },
+                { label: 'Top', data: [1, 2, 1, 1], backgroundColor: green, stack: 's' }
               ]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }
@@ -90,8 +93,8 @@
             data: {
               labels: ['W1','W2','W3','W4'],
               datasets: [
-                { label: 'Main', data: [6, 9, 4, 7], backgroundColor: '#E26830', stack: 's' },
-                { label: 'Top', data: [1, 2, 1, 1], backgroundColor: '#16a34a', stack: 's' }
+                { label: 'Main', data: [6, 9, 4, 7], backgroundColor: orange, stack: 's' },
+                { label: 'Top', data: [1, 2, 1, 1], backgroundColor: green, stack: 's' }
               ]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }
@@ -103,8 +106,8 @@
             data: {
               labels: ['Q1','Q2','Q3','Q4'],
               datasets: [
-                { label: 'Main', data: [8, 12, 5, 10], backgroundColor: '#E26830', stack: 's' },
-                { label: 'Top', data: [1, 2, 1, 2], backgroundColor: '#16a34a', stack: 's' }
+                { label: 'Main', data: [8, 12, 5, 10], backgroundColor: orange, stack: 's' },
+                { label: 'Top', data: [1, 2, 1, 2], backgroundColor: green, stack: 's' }
               ]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }

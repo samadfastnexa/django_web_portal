@@ -6,6 +6,64 @@
     <li>
       <a href="/admin/sap-bp-entry/" class="button">SAP BP Entry</a>
     </li>
+    <li>
+      <a href="/admin/sap-bp-lookup/" class="button">SAP BP Lookup</a>
+    </li>
+    <li>
+      <a href="/admin/FieldAdvisoryService/dealerrequest/{{ original.pk }}/approve-add-to-sap/" class="button">Approve & Add to SAP</a>
+    </li>
   </ul>
 {% endblock %}
 
+{% block messages %}
+  {{ block.super }}
+  {% if messages %}
+    {% for m in messages %}
+      {% with txt=m.message %}
+        {% if txt|slice:"0:18" == "SAP_RESPONSE_JSON:" %}
+          <h3 style="margin-top:16px;">Response</h3>
+          <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:500px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
+        {% endif %}
+      {% endwith %}
+    {% endfor %}
+  {% endif %}
+{% endblock %}
+
+{% block after_field_sets %}
+  {{ block.super }}
+  {% if messages %}
+    {% for m in messages %}
+      {% with txt=m.message %}
+        {% if txt|slice:"0:18" == "SAP_RESPONSE_JSON:" %}
+          <h3 style="margin-top:16px;">Response</h3>
+          <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:500px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
+        {% endif %}
+      {% endwith %}
+    {% endfor %}
+  {% endif %}
+{% endblock %}
+
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+  {% if original %}
+    <div class="submit-row">
+      <a href="/admin/FieldAdvisoryService/dealerrequest/{{ original.pk }}/approve-add-to-sap/" class="button default">Add to SAP</a>
+    </div>
+    {% if messages %}
+      {% for m in messages %}
+        {% with txt=m.message %}
+          {% if txt|slice:"0:18" == "SAP_RESPONSE_JSON:" %}
+            <h3 style="margin-top:12px;">Response</h3>
+            <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:420px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
+          {% elif "SAP Business Partner" in txt %}
+            <div style="margin-top:12px;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;padding:10px;border-radius:10px;">{{ txt }}</div>
+          {% endif %}
+        {% endwith %}
+      {% endfor %}
+    {% endif %}
+    {% if original.sap_response_json %}
+      <h3 style="margin-top:12px;">Last SAP Response</h3>
+      <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:480px;overflow:auto;">{{ original.sap_response_json }}</pre>
+    {% endif %}
+  {% endif %}
+{% endblock %}

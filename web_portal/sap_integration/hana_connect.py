@@ -43,6 +43,19 @@ def quote_ident(ident: str) -> str:
     q = ident.replace('"', '""')
     return '"' + q + '"'
 
+def _get_b4_schema() -> str:
+    v = None
+    try:
+        from preferences.models import Setting
+        s = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+        if s:
+            v = s.value
+    except Exception:
+        v = None
+    if not v:
+        v = os.environ.get('SAP_COMPANY_DB') or os.environ.get('HANA_B4_SCHEMA') or '4B-BIO_APP'
+    return str(v)
+
 def _fetch_all(db, sql: str, params=()):
     cur = db.cursor()
     cur.execute(sql, params)
@@ -121,6 +134,10 @@ def get_tables_count(db, schema: str) -> int:
         return 0
 
 def territory_summary(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+    b4_schema = _get_b4_schema()
+    b4_schema_sql = b4_schema if re.match(r'^[A-Za-z0-9_]+$', b4_schema) else quote_ident(b4_schema)
+    coll_tbl = b4_schema_sql + '."B4_COLLECTION_TARGET"'
+    emp_tbl = b4_schema_sql + '."B4_EMP"'
     base = (
         'select '
         ' c.TerritoryId, '
@@ -129,14 +146,14 @@ def territory_summary(db, emp_id: int | None = None, territory_name: str | None 
         ' sum(c.DocTotal) as DocTotal, '
         ' F_REFDATE, '
         ' T_REFDATE '
-        ' from "4B-BIO_APP"."B4_COLLECTION_TARGET" c '
+        ' from ' + coll_tbl + ' c '
         ' INNER JOIN "4B-ORANG_APP"."OTER" O ON O."territryID" = c.TerritoryId '
     )
     where_clauses = []
     params = []
     if emp_id is not None:
         where_clauses.append(
-            ' TerritoryId in (select U_TID from "4B-BIO_APP"."B4_EMP" where empID = ?)' 
+            ' TerritoryId in (select U_TID from ' + emp_tbl + ' where empID = ?)'
         )
         params.append(emp_id)
     if territory_name is not None and territory_name.strip() != '':
@@ -180,6 +197,107 @@ def territory_names(db) -> list:
     )
     return _fetch_all(db, sql)
 
+def territories_all(db) -> list:
+    schema = os.environ.get('HANA_SCHEMA') or '4B-ORANG_APP'
+    schema_sql = schema if re.match(r'^[A-Za-z0-9_]+$', schema) else quote_ident(schema)
+    tbl = '"OTER"'
+    table_ref = schema_sql + '.' + tbl if schema_sql else tbl
+    sql = (
+        'select '
+        ' O."territryID" as TerritoryId, '
+        ' O."descript" as TerritoryName '
+        ' from ' + table_ref + ' O '
+        ' order by O."territryID"'
+    )
+    return _fetch_all(db, sql)
+
+def territories_all_full(db, limit: int = 500, status: str | None = None) -> list:
+    schema = os.environ.get('HANA_SCHEMA') or '4B-ORANG_APP'
+    schema_sql = schema if re.match(r'^[A-Za-z0-9_]+$', schema) else quote_ident(schema)
+    tbl = '"OTER"'
+    table_ref = schema_sql + '.' + tbl if schema_sql else tbl
+    # Build base select of core fields
+    base_select = (
+        'SELECT '
+        ' O."territryID" AS TerritoryId, '
+        ' O."descript" AS TerritoryName, '
+        ' O."parent" AS ParentId, '
+        ' O."lindex" AS LevelIndex, '
+        ' O."inactive" AS Inactive '
+        ' FROM ' + table_ref + ' O '
+    )
+    # Optional status filter
+    where_sql = ''
+    if status and str(status).strip().lower() in ('active','inactive'):
+        cols = _fetch_all(db, 'SELECT COLUMN_NAME FROM SYS.TABLE_COLUMNS WHERE SCHEMA_NAME = ? AND TABLE_NAME = ?', (schema, 'OTER'))
+        names = [ (r.get('COLUMN_NAME') or r.get('Column_Name') or r.get('column_name')) for r in cols ]
+        names = [ n for n in names if isinstance(n, str) ]
+        def pick(cands: list[str]) -> str | None:
+            for c in cands:
+                for n in names:
+                    if n.lower() == c.lower():
+                        return n
+            return None
+        valid_for = pick(['validFor','VALIDFOR','ValidFor'])
+        frozen = pick(['Frozen','FROZEN'])
+        locked = pick(['Locked','LOCKED'])
+        active_col = pick(['Active','ACTIVE','IsActive','ISACTIVE','U_IsActive','U_ISACTIVE'])
+        status_col = pick(['Status','STATUS'])
+        inactive_col = pick(['inactive','Inactive','INACTIVE'])
+        cond = None
+        want_active = (str(status).strip().lower() == 'active')
+        if want_active:
+            if inactive_col:
+                cond = f" UPPER(TRIM(CAST(O.\"{inactive_col}\" AS NVARCHAR(10)))) IN ('Y','YES','TRUE','1')"
+            elif active_col:
+                cond = f" UPPER(TRIM(CAST(O.\"{active_col}\" AS NVARCHAR(10)))) IN ('Y','YES','TRUE','1')"
+            elif valid_for:
+                cond = f" UPPER(TRIM(CAST(O.\"{valid_for}\" AS NVARCHAR(10)))) IN ('Y','YES','TRUE','1')"
+            elif frozen:
+                cond = f" UPPER(TRIM(CAST(O.\"{frozen}\" AS NVARCHAR(10)))) IN ('N','NO','FALSE','0')"
+            elif locked:
+                cond = f" UPPER(TRIM(CAST(O.\"{locked}\" AS NVARCHAR(10)))) IN ('N','NO','FALSE','0')"
+            elif status_col:
+                cond = f" UPPER(TRIM(CAST(O.\"{status_col}\" AS NVARCHAR(10)))) IN ('A','ACTIVE','Y','YES','TRUE','1')"
+        else:
+            if inactive_col:
+                cond = f" UPPER(TRIM(CAST(O.\"{inactive_col}\" AS NVARCHAR(10)))) IN ('N','NO','FALSE','0')"
+            elif active_col:
+                cond = f" UPPER(TRIM(CAST(O.\"{active_col}\" AS NVARCHAR(10)))) IN ('N','NO','FALSE','0')"
+            elif valid_for:
+                cond = f" UPPER(TRIM(CAST(O.\"{valid_for}\" AS NVARCHAR(10)))) IN ('N','NO','FALSE','0')"
+            elif frozen:
+                cond = f" UPPER(TRIM(CAST(O.\"{frozen}\" AS NVARCHAR(10)))) IN ('Y','YES','TRUE','1')"
+            elif locked:
+                cond = f" UPPER(TRIM(CAST(O.\"{locked}\" AS NVARCHAR(10)))) IN ('Y','YES','TRUE','1')"
+            elif status_col:
+                cond = f" UPPER(TRIM(CAST(O.\"{status_col}\" AS NVARCHAR(10)))) IN ('I','INACTIVE','N','NO','FALSE','0')"
+        if cond:
+            where_sql = ' WHERE ' + cond
+    sql = base_select + where_sql + ' ORDER BY O."territryID" LIMIT ' + str(int(limit or 500))
+    return _fetch_all(db, sql)
+
+def cwl_all_full(db, limit: int = 500) -> list:
+    schema = os.environ.get('HANA_SCHEMA') or '4B-ORANG_APP'
+    schema_sql = schema if re.match(r'^[A-Za-z0-9_]+$', schema) else quote_ident(schema)
+    tbl = '"CWL"'
+    table_ref = schema_sql + '.' + tbl if schema_sql else tbl
+    sql = 'SELECT * FROM ' + table_ref + ' LIMIT ' + str(int(limit or 500))
+    return _fetch_all(db, sql)
+
+def table_columns(db, schema: str, table: str) -> list:
+    rows = _fetch_all(
+        db,
+        'SELECT COLUMN_NAME FROM SYS.TABLE_COLUMNS WHERE SCHEMA_NAME = ? AND TABLE_NAME = ?',
+        (schema, table),
+    )
+    out = []
+    for r in rows:
+        v = r.get('COLUMN_NAME') or r.get('Column_Name') or r.get('column_name')
+        if isinstance(v, str):
+            out.append(v)
+    return out
+
 def products_catalog(db) -> list:
     sql = (
         'SELECT '
@@ -217,7 +335,28 @@ def policy_customer_balance(db, card_code: str) -> list:
     )
     return _fetch_all(db, sql, (card_code,))
 
+def policy_customer_balance_all(db, limit: int = 200) -> list:
+    sql = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T0."CardName", '
+        ' CAST(T0."Project" AS NVARCHAR(100)) AS "Project", '
+        ' T0."PrjName", '
+        ' SUM(T0."Sale")+SUM(T0."Tax")-SUM(T0."Return")+SUM(T0."Collection")+SUM(T0."DebitSwitching")-'
+        ' SUM(T0."CreditSwitching")+SUM(T0."SwitchingDebit")-SUM(T0."SwitchingCredit")+SUM(T0."SecuredDebit")-'
+        ' SUM(T0."SecuredCredit")+SUM(T0."BulkDebit")-SUM(T0."BulkCredit")+SUM(T0."Opening") AS "Balance" '
+        ' FROM "CUSTLEDG12" T0 '
+        ' GROUP BY T0."CardCode", T0."CardName", T0."Project", T0."PrjName" '
+        ' ORDER BY T0."CardCode" '
+        ' LIMIT ' + str(int(limit or 200))
+    )
+    return _fetch_all(db, sql)
+
 def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+    b4_schema = _get_b4_schema()
+    b4_schema_sql = b4_schema if re.match(r'^[A-Za-z0-9_]+$', b4_schema) else quote_ident(b4_schema)
+    sales_tbl = b4_schema_sql + '."B4_SALES_TARGET"'
+    emp_tbl = b4_schema_sql + '."B4_EMP"'
     base = (
         'select '
         ' c.TerritoryId, '
@@ -226,14 +365,14 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
         ' sum(c.DocTotal) as Acchivement, '
         ' F_REFDATE, '
         ' T_REFDATE '
-        ' from "4B-BIO_APP"."B4_SALES_TARGET" c '
+        ' from ' + sales_tbl + ' c '
         ' INNER JOIN "4B-ORANG_APP"."OTER" O ON O."territryID" = c.TerritoryId '
     )
     where_clauses = []
     params = []
     if emp_id is not None:
         where_clauses.append(
-            ' TerritoryId in (select U_TID from "4B-BIO_APP"."B4_EMP" where empID = ?)' 
+            ' TerritoryId in (select U_TID from ' + emp_tbl + ' where empID = ?)'
         )
         params.append(emp_id)
     if territory_name is not None and territory_name.strip() != '':
