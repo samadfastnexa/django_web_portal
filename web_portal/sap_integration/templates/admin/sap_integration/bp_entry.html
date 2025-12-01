@@ -3,23 +3,29 @@
   {% if error %}
     <div style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:8px;margin-bottom:12px;">{{ error }}</div>
   {% endif %}
+  
+  <div style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;padding:10px;border-radius:8px;margin-bottom:12px;">
+    <strong>Required Fields:</strong> CardName is required. Other fields marked with * are recommended for successful SAP integration.
+  </div>
+  
   <form method="post" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start;">
     {% csrf_token %}
     <label>Series<input type="number" name="Series" value="{{ fields.Series }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.Series %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
     {% if error_fields.Series %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.Series }}</div>{% endif %}
-    <label>CardName<input type="text" name="CardName" value="{{ fields.CardName }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.CardName %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    
+    <label>CardName *<input type="text" name="CardName" value="{{ fields.CardName }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.CardName %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Enter business partner name"></label>
     {% if error_fields.CardName %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.CardName }}</div>{% endif %}
     <label>CardType<input type="text" name="CardType" value="{{ fields.CardType }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.CardType %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
     {% if error_fields.CardType %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.CardType }}</div>{% endif %}
     <label>GroupCode<input type="number" name="GroupCode" value="{{ fields.GroupCode }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.GroupCode %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
     {% if error_fields.GroupCode %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.GroupCode }}</div>{% endif %}
-    <label>Address<textarea name="Address" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;min-height:60px;{% if error_fields.Address %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}">{{ fields.Address }}</textarea></label>
+    <label>Address *<textarea name="Address" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;min-height:60px;{% if error_fields.Address %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Enter business address">{{ fields.Address }}</textarea></label>
     {% if error_fields.Address %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.Address }}</div>{% endif %}
-    <label>Phone1<input type="text" name="Phone1" value="{{ fields.Phone1 }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.Phone1 %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    <label>Phone1<input type="text" name="Phone1" value="{{ fields.Phone1 }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.Phone1 %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Primary phone number"></label>
     {% if error_fields.Phone1 %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.Phone1 }}</div>{% endif %}
-    <label>MobilePhone<input type="text" name="MobilePhone" value="{{ fields.MobilePhone }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.MobilePhone %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    <label>MobilePhone<input type="text" name="MobilePhone" value="{{ fields.MobilePhone }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.MobilePhone %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Mobile phone number"></label>
     {% if error_fields.MobilePhone %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.MobilePhone }}</div>{% endif %}
-    <label>ContactPerson<input type="text" name="ContactPerson" value="{{ fields.ContactPerson }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.ContactPerson %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    <label>ContactPerson *<input type="text" name="ContactPerson" value="{{ fields.ContactPerson }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.ContactPerson %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Contact person name"></label>
     {% if error_fields.ContactPerson %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.ContactPerson }}</div>{% endif %}
     <label>FederalTaxID<input type="text" name="FederalTaxID" value="{{ fields.FederalTaxID }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.FederalTaxID %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
     {% if error_fields.FederalTaxID %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.FederalTaxID }}</div>{% endif %}

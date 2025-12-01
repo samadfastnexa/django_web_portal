@@ -2,6 +2,7 @@ from django.contrib import admin
 from sap_integration.views import (
     hana_connect_admin,
     bp_entry_admin,
+    bp_lookup_admin,
     sales_vs_achievement_api,
     territory_summary_api,
     products_catalog_api,
@@ -34,6 +35,7 @@ urlpatterns = [
     path('', lambda request: redirect('/admin/', permanent=False)), # Redirect root(http://127.0.0.1:8000) URL to admin
     path('admin/hana-connect/', admin.site.admin_view(hana_connect_admin), name='hana_connect_admin'),
     path('admin/sap-bp-entry/', admin.site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
+    path('admin/sap-bp-lookup/', admin.site.admin_view(bp_lookup_admin), name='sap_bp_lookup_admin'),
     path('api/sap/sales-vs-achievement/', sales_vs_achievement_api, name='sales_vs_achievement_api'),
     path('api/sap/territory-summary/', territory_summary_api, name='territory_summary_api'),
     path('api/sap/products-catalog/', products_catalog_api, name='products_catalog_api'),

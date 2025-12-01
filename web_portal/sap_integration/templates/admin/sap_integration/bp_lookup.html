@@ -1,0 +1,47 @@
+<div style="padding:16px;">
+  <h2>SAP Business Partner Lookup</h2>
+  {% if error %}
+    <div style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:8px;margin-bottom:12px;">{{ error }}</div>
+  {% endif %}
+  <form method="post" style="display:flex;gap:12px;align-items:flex-end;">
+    {% csrf_token %}
+    <label style="flex:1;">CardCode
+      <input type="text" name="card_code" value="{{ card_code }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;">
+    </label>
+    <button type="submit" style="background:#0ea5e9;color:#fff;border:none;padding:10px 14px;border-radius:8px;">Get Business Partner</button>
+    <a href="/admin/" style="background:#f1f5f9;color:#111827;border:1px solid #e5e7eb;padding:10px 14px;border-radius:8px;text-decoration:none;">Back to Admin</a>
+  </form>
+  <div style="margin-top:16px;">
+    <h3>API</h3>
+    <div style="background:#f8fafc;border:1px solid #e5e7eb;padding:10px;border-radius:8px;">
+      <div><strong>GET</strong> <code>/sap/business-partner/{card_code}/</code></div>
+      <div><strong>Path param</strong>: <code>card_code</code> (e.g., <code>BIC00001</code>)</div>
+      <div>This form uses the same underlying integration and shows the JSON response below.</div>
+    </div>
+  </div>
+  {% if result_json %}
+    <h3 style="margin-top:16px;">Response</h3>
+    <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:500px;overflow:auto;">{{ result_json }}</pre>
+  {% endif %}
+  {% if rows %}
+    <h3 style="margin-top:16px;">Business Partners</h3>
+    <table style="width:100%;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+      <thead>
+        <tr>
+          {% for c in cols %}
+            <th style="background:#f8fafc;color:#0f172a;text-align:left;padding:10px 12px;font-weight:700;border-bottom:1px solid #e5e7eb;">{{ c }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for rowvals in table_rows %}
+          <tr>
+            {% for v in rowvals %}
+              <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155;">{{ v }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>

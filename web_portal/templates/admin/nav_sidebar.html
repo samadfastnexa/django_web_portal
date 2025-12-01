@@ -34,50 +34,131 @@
 
     {% if app_list_all %}
       {% for app in app_list_all %}
-        {% for model in app.models %}
-          {% if model.admin_url %}
-            <li class="menu-item">
-              <a class="menu-link" href="{{ model.admin_url }}">
-                <span class="menu-icon" aria-hidden="true">
-                  {% with n=model.name|lower %}
-                    {% if 'complaint' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 3h18v14H8l-5 5V3zm4 4v2h10V7H7zm0 4v2h7v-2H7z"/></svg>
-                    {% elif 'crop stage' in n and 'image' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
-                    {% elif 'crop stage' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/></svg>
-                    {% elif 'trial' in n and 'image' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
-                    {% elif 'image' in n or 'images' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
-                    {% elif 'pest management' in n or 'guideline' in n or 'guidelines' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 3h9l5 5v13H6V3zm9 1v5h5"/></svg>
-                    {% elif 'pest' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 7l2-2 1 1-2 2c.6.6.9 1.3 1 2h3v2h-3c-.1.7-.4 1.4-1 2l2 2-1 1-2-2c-.6.5-1.3.9-2 1v3h-2v-3c-.7-.1-1.4-.4-2-1l-2 2-1-1 2-2c-.6-.6-.9-1.3-1-2H3v-2h3c.1-.7.4-1.4 1-2L5 6l1-1 2 2c.6-.6 1.3-.9 2-1V3h2v3c.7.1 1.4.4 2 1z"/></svg>
-                    {% elif 'product' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 7l9-4 9 4v10l-9 4-9-4V7zm9 12l7-3V9l-7 3v7zm-9-7l7 3v7l-7-3V12zm8-3l7-3-7-3-7 3 7 3z"/></svg>
-                    {% elif 'recommendation' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1 14l-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 9l-7 7z"/></svg>
-                    {% elif 'crop' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c-2 4-6 4-6 4a6 6 0 006 6v8h2v-8a6 6 0 006-6s-4 0-6-4h-2z"/></svg>
-                    {% elif 'attendance' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 20a8 8 0 100-16 8 8 0 000 16zm1-8h4v2h-6V6h2v6z"/></svg>
-                    {% elif 'farmer' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 18h16v2H4v-2zm1-6h14l-2-6H7l-2 6zm3 0l1.2-3h5.6L16 12H8z"/></svg>
-                    {% elif 'user' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
-                    {% elif 'role' in n or 'group' in n %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l8 4v6c0 5-3.5 9.74-8 10-4.5-.26-8-5-8-10V6l8-4zm0 4l-4 2v4c0 3.31 2.69 6 6 6s6-2.69 6-6V8l-4-2h-4z"/></svg>
-                    {% else %}
-                      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
-                    {% endif %}
-                  {% endwith %}
-                </span>
-                <span class="menu-text">{{ model.name }}</span>
-              </a>
-            </li>
-          {% endif %}
-        {% endfor %}
+        {% if app.app_label == 'accounts' %}
+          <li class="menu-item"><span class="menu-text" style="font-weight:700;opacity:.85;">{{ app.name }}</span></li>
+          {% for model in app.models %}
+            {% if model.admin_url %}
+              <li class="menu-item">
+                <a class="menu-link" href="{{ model.admin_url }}">
+                  <span class="menu-icon" aria-hidden="true">
+                    {% with n=model.name|lower %}
+                      {% if 'user' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+                      {% elif 'group' in n or 'role' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l8 4v6c0 5-3.5 9.74-8 10-4.5-.26-8-5-8-10V6l8-4zm0 4l-4 2v4c0 3.31 2.69 6 6 6s6-2.69 6-6V8l-4-2h-4z"/></svg>
+                      {% else %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
+                      {% endif %}
+                    {% endwith %}
+                  </span>
+                  <span class="menu-text">{{ model.name }}</span>
+                </a>
+              </li>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+
+    {% if app_list_all %}
+      {% for app in app_list_all %}
+        {% if app.app_label == 'crop_manage' or app.app_label == 'crop_management' or app.app_label == 'FieldAdvisoryService' %}
+          <li class="menu-item"><span class="menu-text" style="font-weight:700;opacity:.85;">{{ app.name }}</span></li>
+          {% for model in app.models %}
+            {% if model.admin_url %}
+              <li class="menu-item">
+                <a class="menu-link" href="{{ model.admin_url }}">
+                  <span class="menu-icon" aria-hidden="true">
+                    {% with n=model.name|lower %}
+                      {% if 'complaint' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 3h18v14H8l-5 5V3zm4 4v2h10V7H7zm0 4v2h7v-2H7z"/></svg>
+                      {% elif 'crop stage' in n and 'image' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
+                      {% elif 'crop stage' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/></svg>
+                      {% elif 'trial' in n and 'image' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
+                      {% elif 'image' in n or 'images' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
+                      {% elif 'pest management' in n or 'guideline' in n or 'guidelines' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 3h9l5 5v13H6V3zm9 1v5h5"/></svg>
+                      {% elif 'pest' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 7l2-2 1 1-2 2c.6.6.9 1.3 1 2h3v2h-3c-.1.7-.4 1.4-1 2l2 2-1 1-2-2c-.6.5-1.3.9-2 1v3h-2v-3c-.7-.1-1.4-.4-2-1l-2 2-1-1 2-2c-.6-.6-.9-1.3-1-2H3v-2h3c.1-.7.4-1.4 1-2L5 6l1-1 2 2c.6-.6 1.3-.9 2-1V3h2v3c.7.1 1.4.4 2 1z"/></svg>
+                      {% elif 'product' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 7l9-4 9 4v10l-9 4-9-4V7zm9 12l7-3V9l-7 3v7zm-9-7l7 3v7l-7-3V12zm8-3l7-3-7-3-7 3 7 3z"/></svg>
+                      {% elif 'recommendation' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1 14l-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 9l-7 7z"/></svg>
+                      {% elif 'crop' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c-2 4-6 4-6 4a6 6 0 006 6v8h2v-8a6 6 0 006-6s-4 0-6-4h-2z"/></svg>
+                      {% elif 'attendance' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 20a8 8 0 100-16 8 8 0 000 16zm1-8h4v2h-6V6h2v6z"/></svg>
+                      {% elif 'farmer' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 18h16v2H4v-2zm1-6h14l-2-6H7l-2 6zm3 0l1.2-3h5.6L16 12H8z"/></svg>
+                      {% elif 'user' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+                      {% elif 'role' in n or 'group' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l8 4v6c0 5-3.5 9.74-8 10-4.5-.26-8-5-8-10V6l8-4zm0 4l-4 2v4c0 3.31 2.69 6 6 6s6-2.69 6-6V8l-4-2h-4z"/></svg>
+                      {% else %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
+                      {% endif %}
+                    {% endwith %}
+                  </span>
+                  <span class="menu-text">{{ model.name }}</span>
+                </a>
+              </li>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+
+      {% for app in app_list_all %}
+        {% if app.app_label != 'accounts' and app.app_label != 'crop_manage' and app.app_label != 'crop_management' and app.app_label != 'FieldAdvisoryService' %}
+          <li class="menu-item"><span class="menu-text" style="font-weight:700;opacity:.85;">{{ app.name }}</span></li>
+          {% for model in app.models %}
+            {% if model.admin_url %}
+              <li class="menu-item">
+                <a class="menu-link" href="{{ model.admin_url }}">
+                  <span class="menu-icon" aria-hidden="true">
+                    {% with n=model.name|lower %}
+                      {% if 'complaint' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 3h18v14H8l-5 5V3zm4 4v2h10V7H7zm0 4v2h7v-2H7z"/></svg>
+                      {% elif 'crop stage' in n and 'image' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
+                      {% elif 'crop stage' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/></svg>
+                      {% elif 'trial' in n and 'image' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
+                      {% elif 'image' in n or 'images' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v14H4z"/><path fill="currentColor" d="M7 16h10l-4-5-3 3-3-4z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>
+                      {% elif 'pest management' in n or 'guideline' in n or 'guidelines' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 3h9l5 5v13H6V3zm9 1v5h5"/></svg>
+                      {% elif 'pest' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 7l2-2 1 1-2 2c.6.6.9 1.3 1 2h3v2h-3c-.1.7-.4 1.4-1 2l2 2-1 1-2-2c-.6.5-1.3.9-2 1v3h-2v-3c-.7-.1-1.4-.4-2-1l-2 2-1-1 2-2c-.6-.6-.9-1.3-1-2H3v-2h3c.1-.7.4-1.4 1-2L5 6l1-1 2 2c.6-.6 1.3-.9 2-1V3h2v3c.7.1 1.4.4 2 1z"/></svg>
+                      {% elif 'product' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 7l9-4 9 4v10l-9 4-9-4V7zm9 12l7-3V9l-7 3v7zm-9-7l7 3v7l-7-3V12zm8-3l7-3-7-3-7 3 7 3z"/></svg>
+                      {% elif 'recommendation' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1 14l-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 9l-7 7z"/></svg>
+                      {% elif 'crop' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c-2 4-6 4-6 4a6 6 0 006 6v8h2v-8a6 6 0 006-6s-4 0-6-4h-2z"/></svg>
+                      {% elif 'attendance' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 20a8 8 0 100-16 8 8 0 000 16zm1-8h4v2h-6V6h2v6z"/></svg>
+                      {% elif 'farmer' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 18h16v2H4v-2zm1-6h14l-2-6H7l-2 6zm3 0l1.2-3h5.6L16 12H8z"/></svg>
+                      {% elif 'user' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+                      {% elif 'role' in n or 'group' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l8 4v6c0 5-3.5 9.74-8 10-4.5-.26-8-5-8-10V6l8-4zm0 4l-4 2v4c0 3.31 2.69 6 6 6s6-2.69 6-6V8l-4-2h-4z"/></svg>
+                      {% else %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
+                      {% endif %}
+                    {% endwith %}
+                  </span>
+                  <span class="menu-text">{{ model.name }}</span>
+                </a>
+              </li>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
       {% endfor %}
     {% endif %}
   </ul>
