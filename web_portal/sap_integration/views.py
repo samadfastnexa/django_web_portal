@@ -29,11 +29,59 @@ def hana_connect_admin(request):
         _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
     except Exception:
         pass
+    
+    # Get database options from settings
+    db_options = {}
+    selected_db_key = request.GET.get('company_db', '4B-BIO')  # Default to 4B-BIO
+    
+    try:
+        from preferences.models import Setting
+        db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+        if db_setting:
+            # Handle both dict (JSONField) and string (TextField) formats
+            if isinstance(db_setting.value, dict):
+                db_options = db_setting.value
+            elif isinstance(db_setting.value, str):
+                try:
+                    db_options = json.loads(db_setting.value)
+                except:
+                    pass
+    except Exception as e:
+        pass
+    
+    # Fallback to default options if setting not found or invalid
+    if not db_options:
+        db_options = {
+            '4B-ORANG': '4B-ORANG_APP',
+            '4B-BIO': '4B-BIO_APP'
+        }
+    
+    # Clean up keys and values - remove any embedded quotes
+    cleaned_options = {}
+    for k, v in db_options.items():
+        clean_key = k.strip().strip('"').strip("'")
+        clean_value = v.strip().strip('"').strip("'")
+        cleaned_options[clean_key] = clean_value
+    db_options = cleaned_options
+    
+    # Clean the selected key as well
+    selected_db_key = selected_db_key.strip().strip('"').strip("'")
+    
+    # Get the schema based on selected database
+    selected_schema = db_options.get(selected_db_key, os.environ.get('HANA_SCHEMA') or '4B-BIO_APP')
+    
+    # Debug logging
+    print(f"DEBUG hana_connect_admin:")
+    print(f"  selected_db_key: {selected_db_key}")
+    print(f"  db_options: {db_options}")
+    print(f"  selected_schema: {selected_schema}")
+    print(f"  type(selected_schema): {type(selected_schema)}")
+    
     cfg = {
         'dsn': os.environ.get('HANA_DSN') or '',
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': selected_schema,  # Use selected schema
         'database': os.environ.get('HANA_DATABASE') or '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
@@ -54,6 +102,8 @@ def hana_connect_admin(request):
             'has_password': bool(os.environ.get('HANA_PASSWORD')),
         },
         'action': action,
+        'selected_db': selected_db_key,
+        'selected_schema': selected_schema,
     }
     if action:
         def _sanitize_error(msg):
@@ -86,9 +136,10 @@ def hana_connect_admin(request):
             else:
                 try:
                     if cfg['schema']:
-                        sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                        sch = cfg['schema']
                         cur = conn.cursor()
-                        cur.execute('SET SCHEMA ' + sch)
+                        # Quote schema name for HANA (use double quotes for identifiers with hyphens)
+                        cur.execute(f'SET SCHEMA "{sch}"')
                         cur.close()
                     if action == 'health':
                         cur = conn.cursor()
@@ -348,6 +399,8 @@ def hana_connect_admin(request):
             'table_rows': table_rows,
             'is_tabular': (action in ('territory_summary','sales_vs_achievement','policy_customer_balance','list_territories','list_territories_full','list_cwl')),
             'current_card_code': (request.GET.get('card_code') or '').strip(),
+            'db_options': db_options,
+            'selected_db_key': selected_db_key,
         }
     )
 
@@ -1103,9 +1156,9 @@ def sales_vs_achievement_api(request):
         conn = dbapi.connect(**kwargs)
         try:
             if cfg['schema']:
-                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                sch = cfg['schema']
                 cur = conn.cursor()
-                cur.execute('SET SCHEMA ' + sch)
+                cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             data = sales_vs_achievement(conn, emp_id, territory or None, None, None, start_date or None, end_date or None)
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
@@ -1166,9 +1219,9 @@ def territory_summary_api(request):
         conn = dbapi.connect(**kwargs)
         try:
             if cfg['schema']:
-                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                sch = cfg['schema']
                 cur = conn.cursor()
-                cur.execute('SET SCHEMA ' + sch)
+                cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             data = territory_summary(conn, emp_id, territory or None, None, None, start_date or None, end_date or None)
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
@@ -1213,9 +1266,9 @@ def products_catalog_api(request):
         conn = dbapi.connect(**kwargs)
         try:
             if cfg['schema']:
-                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                sch = cfg['schema']
                 cur = conn.cursor()
-                cur.execute('SET SCHEMA ' + sch)
+                cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             data = products_catalog(conn)
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
@@ -1264,9 +1317,9 @@ def policy_customer_balance_api(request):
         conn = dbapi.connect(**kwargs)
         try:
             if cfg['schema']:
-                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                sch = cfg['schema']
                 cur = conn.cursor()
-                cur.execute('SET SCHEMA ' + sch)
+                cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             data = policy_customer_balance(conn, card_code)
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
@@ -1420,12 +1473,12 @@ def select_oitm_api(request):
         conn = dbapi.connect(**kwargs)
         try:
             if cfg['schema']:
-                sch = cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"'
+                sch = cfg['schema']
                 cur = conn.cursor()
-                cur.execute('SET SCHEMA ' + sch)
+                cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             cur = conn.cursor()
-            sql = 'SELECT * FROM ' + ('"OITM"' if not cfg['schema'] else (cfg['schema'] if re.match(r'^[A-Za-z0-9_]+$', cfg['schema']) else '"' + cfg['schema'].replace('"','""') + '"') + '."OITM"')
+            sql = f'SELECT * FROM "{cfg["schema"]}"."OITM"' if cfg['schema'] else 'SELECT * FROM "OITM"'
             cur.execute(sql)
             rows = cur.fetchmany(10)
             cols = [d[0] for d in cur.description] if cur.description else []

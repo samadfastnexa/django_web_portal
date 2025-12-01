@@ -134,10 +134,9 @@ def get_tables_count(db, schema: str) -> int:
         return 0
 
 def territory_summary(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
-    b4_schema = _get_b4_schema()
-    b4_schema_sql = b4_schema if re.match(r'^[A-Za-z0-9_]+$', b4_schema) else quote_ident(b4_schema)
-    coll_tbl = b4_schema_sql + '."B4_COLLECTION_TARGET"'
-    emp_tbl = b4_schema_sql + '."B4_EMP"'
+    # Schema is already set via SET SCHEMA command, so no need for prefix
+    coll_tbl = '"B4_COLLECTION_TARGET"'
+    emp_tbl = '"B4_EMP"'
     base = (
         'select '
         ' c.TerritoryId, '
@@ -147,7 +146,7 @@ def territory_summary(db, emp_id: int | None = None, territory_name: str | None 
         ' F_REFDATE, '
         ' T_REFDATE '
         ' from ' + coll_tbl + ' c '
-        ' INNER JOIN "4B-ORANG_APP"."OTER" O ON O."territryID" = c.TerritoryId '
+        ' INNER JOIN "OTER" O ON O."territryID" = c.TerritoryId '
     )
     where_clauses = []
     params = []
@@ -192,7 +191,7 @@ def territory_summary(db, emp_id: int | None = None, territory_name: str | None 
 def territory_names(db) -> list:
     sql = (
         'select distinct O."descript" as TerritoryName '
-        ' from "4B-ORANG_APP"."OTER" O '
+        ' from "OTER" O '
         ' order by O."descript"'
     )
     return _fetch_all(db, sql)
@@ -353,10 +352,9 @@ def policy_customer_balance_all(db, limit: int = 200) -> list:
     return _fetch_all(db, sql)
 
 def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
-    b4_schema = _get_b4_schema()
-    b4_schema_sql = b4_schema if re.match(r'^[A-Za-z0-9_]+$', b4_schema) else quote_ident(b4_schema)
-    sales_tbl = b4_schema_sql + '."B4_SALES_TARGET"'
-    emp_tbl = b4_schema_sql + '."B4_EMP"'
+    # Schema is already set via SET SCHEMA command, so no need for prefix
+    sales_tbl = '"B4_SALES_TARGET"'
+    emp_tbl = '"B4_EMP"'
     base = (
         'select '
         ' c.TerritoryId, '
@@ -366,7 +364,7 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
         ' F_REFDATE, '
         ' T_REFDATE '
         ' from ' + sales_tbl + ' c '
-        ' INNER JOIN "4B-ORANG_APP"."OTER" O ON O."territryID" = c.TerritoryId '
+        ' INNER JOIN "OTER" O ON O."territryID" = c.TerritoryId '
     )
     where_clauses = []
     params = []
