@@ -126,6 +126,65 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
   }
+  
+  /* Action Buttons Styling */
+  .actions-section {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    margin-bottom: 24px;
+  }
+  .actions-section h3 {
+    color: #1e293b;
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 16px 0;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  .actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .actions-grid .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    color: #475569;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    text-decoration: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    text-align: center;
+    white-space: nowrap;
+  }
+  .actions-grid .button:hover {
+    background: linear-gradient(135deg, #e0e7ff 0%, #dbeafe 100%);
+    border-color: #93c5fd;
+    color: #1e40af;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  }
+  .actions-grid .button.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: #667eea;
+    color: white;
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+    transform: translateY(-2px);
+  }
+  .actions-grid .button.active:hover {
+    background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+    border-color: #5a67d8;
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+  }
+  
   @media (max-width: 768px) {
     .db-selector-form {
       flex-direction: column;
@@ -133,6 +192,9 @@
     }
     .db-select-wrapper {
       max-width: 100%;
+    }
+    .actions-grid {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     }
   }
 </style>
@@ -178,22 +240,83 @@
   </div>
 
   <h2>HANA Connect</h2>
-  <div class="inline-group">
-    <div class="form-row">
-      <div>
-        <h3>Actions</h3>
-        <a class="button" href="?action=health&company_db={{ selected_db_key }}">Health Check</a>
-        <a class="button" href="?action=select_oitm&company_db={{ selected_db_key }}">Select OITM</a>
-        <a class="button" href="?action=territory_summary&company_db={{ selected_db_key }}">COLLECTION VS ACHIVEMENT</a>
-        <a class="button" href="?action=sales_vs_achievement&company_db={{ selected_db_key }}">Sales Vs Achivement</a>
-        <a class="button" href="?action=products_catalog&company_db={{ selected_db_key }}">Products</a>
-        <a class="button" href="?action=policy_customer_balance&company_db={{ selected_db_key }}">Policy Wise Customer Balance</a>
-        <a class="button" href="?action=list_territories_full&company_db={{ selected_db_key }}">All Territories</a>
-        <a class="button" href="?action=list_cwl&company_db={{ selected_db_key }}">CWL</a>
-        
-      </div>
+  
+  <!-- System & Reports Section -->
+  <div class="actions-section">
+    <h3>📊 System & Reports</h3>
+    <div class="actions-grid">
+      <a class="button {% if current_action == 'health' %}active{% endif %}" href="?action=health&company_db={{ selected_db_key }}">Health Check</a>
+      <a class="button {% if current_action == 'select_oitm' %}active{% endif %}" href="?action=select_oitm&company_db={{ selected_db_key }}">Select OITM</a>
+      <a class="button {% if current_action == 'territory_summary' %}active{% endif %}" href="?action=territory_summary&company_db={{ selected_db_key }}">Collection VS Achievement</a>
+      <a class="button {% if current_action == 'sales_vs_achievement' %}active{% endif %}" href="?action=sales_vs_achievement&company_db={{ selected_db_key }}">Sales VS Achievement</a>
+      <a class="button {% if current_action == 'products_catalog' %}active{% endif %}" href="?action=products_catalog&company_db={{ selected_db_key }}">Products Catalog</a>
+      <a class="button {% if current_action == 'policy_customer_balance' %}active{% endif %}" href="?action=policy_customer_balance&company_db={{ selected_db_key }}">Policy Wise Customer Balance</a>
+      <a class="button {% if current_action == 'list_territories_full' %}active{% endif %}" href="?action=list_territories_full&company_db={{ selected_db_key }}">All Territories</a>
+      <a class="button {% if current_action == 'list_cwl' %}active{% endif %}" href="?action=list_cwl&company_db={{ selected_db_key }}">CWL</a>
+      <a class="button {% if current_action == 'sales_orders' %}active{% endif %}" href="?action=sales_orders&company_db={{ selected_db_key }}">Sales Orders</a>
     </div>
-    {% if current_action == 'territory_summary' %}
+  </div>
+  
+  <!-- Master Data (LOV) Section -->
+  <div class="actions-section">
+    <h3>📋 Master Data (List of Values)</h3>
+    <div class="actions-grid">
+      <a class="button {% if current_action == 'customer_lov' %}active{% endif %}" href="?action=customer_lov&company_db={{ selected_db_key }}">Customer List</a>
+      <a class="button {% if current_action == 'item_lov' %}active{% endif %}" href="?action=item_lov&company_db={{ selected_db_key }}">Item Master List</a>
+      <a class="button {% if current_action == 'projects_lov' %}active{% endif %}" href="?action=projects_lov&company_db={{ selected_db_key }}">Project List</a>
+      <a class="button {% if current_action == 'crop_lov' %}active{% endif %}" href="?action=crop_lov&company_db={{ selected_db_key }}">Crop Master List</a>
+      <a class="button {% if current_action == 'sales_tax_codes' %}active{% endif %}" href="?action=sales_tax_codes&company_db={{ selected_db_key }}">Sales Tax Codes</a>
+    </div>
+  </div>
+  
+  <!-- Customer & Contact Details Section -->
+  <div class="actions-section">
+    <h3>👥 Customer & Contact Details</h3>
+    <div class="actions-grid">
+      <a class="button {% if current_action == 'customer_addresses' %}active{% endif %}" href="?action=customer_addresses&card_code=BIC01563&company_db={{ selected_db_key }}">Customer Address (Sample)</a>
+      <a class="button {% if current_action == 'contact_person_name' %}active{% endif %}" href="?action=contact_person_name&card_code=BIC01563&contact_code=4804&company_db={{ selected_db_key }}">Contact Person Name (Sample)</a>
+    </div>
+  </div>
+  
+  <!-- Item & Warehouse Section -->
+  <div class="actions-section">
+    <h3>📦 Item & Warehouse</h3>
+    <div class="actions-grid">
+      <a class="button {% if current_action == 'warehouse_for_item' %}active{% endif %}" href="?action=warehouse_for_item&item_code=FG00581&company_db={{ selected_db_key }}">Warehouse for Item (Sample)</a>
+    </div>
+  </div>
+  
+  <!-- Policy & Discount Section -->
+  <div class="actions-section">
+    <h3>💰 Policy & Discounts</h3>
+    <div class="actions-grid">
+      <a class="button {% if current_action == 'policy_link' %}active{% endif %}" href="?action=policy_link&project_code=0223254&company_db={{ selected_db_key }}">Policy Link (Sample)</a>
+      <a class="button {% if current_action == 'additional_discount' %}active{% endif %}" href="?action=additional_discount&policy=P001&item_code=FG00581&pl_entry=1&company_db={{ selected_db_key }}">Additional Discount (Sample)</a>
+      <a class="button {% if current_action == 'extra_discount' %}active{% endif %}" href="?action=extra_discount&policy=P001&item_code=FG00581&pl_entry=1&company_db={{ selected_db_key }}">Extra Discount (Sample)</a>
+      <a class="button {% if current_action == 'phase_discount' %}active{% endif %}" href="?action=phase_discount&project_code=0223254&company_db={{ selected_db_key }}">Phase Discount (Sample)</a>
+    </div>
+  </div>
+  
+  <!-- Project & Balance Section -->
+  <div class="actions-section">
+    <h3>💵 Project & Balance</h3>
+    <div class="actions-grid">
+      <a class="button {% if current_action == 'project_balance' %}active{% endif %}" href="?action=project_balance&project_code=0223254&company_db={{ selected_db_key }}">Project Balance (Sample)</a>
+      <a class="button {% if current_action == 'policy_balance_by_customer' %}active{% endif %}" href="?action=policy_balance_by_customer&company_db={{ selected_db_key }}">Policy Balance by Customer</a>
+    </div>
+  </div>
+  
+  <!-- Product Catalog Section -->
+  <div class="actions-section">
+    <h3>🛍️ Product Catalog</h3>
+    <div class="actions-grid">
+      <a class="button {% if current_action == 'products_catalog' %}active{% endif %}" href="?action=products_catalog&company_db={{ selected_db_key }}">View Product Catalog</a>
+    </div>
+  </div>
+  
+  <!-- Filters and Results Section -->
+  <div class="module">
+  {% if current_action == 'territory_summary' %}
       <style>
         :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#0ea5e9;--filter-primary-600:#0284c7;--filter-accent:#22c55e;--filter-radius:12px}
         .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
@@ -408,6 +531,234 @@
         })();
       </script>
     {% endif %}
+
+    {% if current_action == 'policy_balance_by_customer' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#8b5cf6;--filter-primary-600:#7c3aed;--filter-accent:#ec4899;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(6, minmax(160px,1fr));gap:12px}
+        @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(3, minmax(160px,1fr))}}
+        @media (max-width:720px){.filter-grid{grid-template-columns:repeat(2, minmax(140px,1fr))}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}
+        .filter-input select:focus,.filter-input input:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(139,92,246,0.15)}
+        .filter-field.active .filter-input select,.filter-field.active .filter-input input{border-color:var(--filter-primary);box-shadow:0 2px 12px rgba(139,92,246,0.18)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,0.25)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#faf5ff}
+        .chip{font-size:12px;color:#fff;background:var(--filter-accent);border-radius:999px;padding:2px 8px}
+        .icon{width:16px;height:16px;fill:currentColor}
+      </style>
+      <form method="get" class="filter-card" id="pb-filter-form">
+        <input type="hidden" name="action" value="policy_balance_by_customer" />
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+          <div class="filter-title">Filters</div>
+          <span class="chip" id="activeCountPB">0 active</span>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field" data-key="card_code">
+            <div class="filter-label" title="Customer Card Code">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+              Card Code (Dropdown)
+            </div>
+            <div class="filter-input">
+              <select name="card_code" id="card_code_select">
+                <option value="">All Customers</option>
+                {% for customer in customer_options %}
+                  <option value="{{ customer.CardCode }}" {% if customer.CardCode == current_card_code %}selected{% endif %}>
+                    {{ customer.CardCode }} - {{ customer.CardName }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="card_code_manual">
+            <div class="filter-label" title="Or enter Card Code manually">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+              Card Code (Manual)
+            </div>
+            <div class="filter-input">
+              <input type="text" name="card_code_manual" id="card_code_manual" value="{{ current_card_code }}" placeholder="Or type card code" />
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn" id="applyBtnPB">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply Filters
+          </button>
+          <a class="btn btn-secondary" href="?action=policy_balance_by_customer&company_db={{ selected_db_key }}" id="clearBtnPB">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+      <script>
+        (function(){
+          var form=document.getElementById('pb-filter-form');
+          var selectField = document.getElementById('card_code_select');
+          var manualField = document.getElementById('card_code_manual');
+          
+          // Sync dropdown to manual input
+          if(selectField && manualField) {
+            selectField.addEventListener('change', function() {
+              if(this.value) {
+                manualField.value = this.value;
+              }
+            });
+            
+            // Sync manual input to dropdown
+            manualField.addEventListener('input', function() {
+              if(this.value) {
+                selectField.value = this.value;
+              } else {
+                selectField.value = '';
+              }
+            });
+          }
+          
+          function active(v){return v!==null&&v!==undefined&&String(v).trim()!==''}
+          function sync(){
+            var count=0;
+            Array.prototype.forEach.call(form.querySelectorAll('.filter-field'),function(f){
+              var el=f.querySelector('input, select');
+              var val=el?el.value:'';
+              if(active(val)){f.classList.add('active');count++}else{f.classList.remove('active')}
+            });
+            var chip=document.getElementById('activeCountPB');
+            if(chip){chip.textContent=count+' active'}
+          }
+          sync();
+          Array.prototype.forEach.call(form.querySelectorAll('input, select'),function(el){
+            el.addEventListener('change',sync);
+            el.addEventListener('input',sync);
+          });
+        })();
+      </script>
+    {% endif %}
+    {% if current_action == 'sales_orders' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#10b981;--filter-primary-600:#059669;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(4, minmax(160px,1fr));gap:12px}
+        @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(2, minmax(160px,1fr))}}
+        @media (max-width:720px){.filter-grid{grid-template-columns:repeat(1, minmax(140px,1fr))}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600;font-size:13px}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#f8fafc;transition:border-color .2s, box-shadow .2s;font-size:14px}
+        .filter-input select:focus,.filter-input input:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(16,185,129,0.15)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s;cursor:pointer}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(5,150,105,0.25)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#ecfdf5}
+        .icon{width:16px;height:16px;fill:currentColor}
+        .active-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:20px;font-size:12px;font-weight:700}
+      </style>
+      <form method="get" class="filter-card" id="so-filter-form">
+        <input type="hidden" name="action" value="sales_orders" />
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/></svg>
+          <div class="filter-title">Sales Order Filters</div>
+          <span class="active-chip" id="activeCountSO">0 active</span>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field">
+            <div class="filter-label">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg>
+              Customer Code
+            </div>
+            <div class="filter-input">
+              <input type="text" name="card_code" value="{{ diagnostics.card_code }}" placeholder="e.g., BIC01563" />
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z"/></svg>
+              Status
+            </div>
+            <div class="filter-input">
+              <select name="doc_status">
+                <option value="">All</option>
+                <option value="O" {% if diagnostics.doc_status == 'O' %}selected{% endif %}>Open</option>
+                <option value="C" {% if diagnostics.doc_status == 'C' %}selected{% endif %}>Closed</option>
+              </select>
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/></svg>
+              From Date
+            </div>
+            <div class="filter-input">
+              <input type="date" name="from_date" value="{{ diagnostics.from_date }}" />
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/></svg>
+              To Date
+            </div>
+            <div class="filter-input">
+              <input type="date" name="to_date" value="{{ diagnostics.to_date }}" />
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+              Limit
+            </div>
+            <div class="filter-input">
+              <input type="number" name="limit" value="{{ diagnostics.limit|default:100 }}" min="1" max="1000" />
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            Apply Filters
+          </button>
+          <a href="?action=sales_orders&company_db={{ selected_db_key }}" class="btn btn-secondary">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+      <script>
+        (function(){
+          var form=document.getElementById('so-filter-form');
+          if(!form)return;
+          function active(v){return v!=null&&String(v).trim()!==''}
+          function sync(){
+            var count=0;
+            Array.prototype.forEach.call(form.querySelectorAll('.filter-field'),function(f){
+              var el=f.querySelector('input, select');
+              var val=el?el.value:'';
+              if(active(val)){f.classList.add('active');count++}else{f.classList.remove('active')}
+            });
+            var chip=document.getElementById('activeCountSO');
+            if(chip){chip.textContent=count+' active'}
+          }
+          sync();
+          Array.prototype.forEach.call(form.querySelectorAll('input, select'),function(el){
+            el.addEventListener('change',sync);
+            el.addEventListener('input',sync);
+          });
+        })();
+      </script>
+    {% endif %}
     {% if current_action == 'list_territories_full' %}
       <style>
         :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#0ea5e9;--filter-primary-600:#0284c7;--filter-radius:12px}
@@ -536,7 +887,145 @@
     {% if error %}
       <p style="color:#b91c1c; font-weight:600;">Error: {{ error }}</p>
     {% endif %}
-    {% if result_rows and is_tabular %}
+    {% if current_action == 'products_catalog' and result_rows %}
+      <!-- Product Catalog Card Display -->
+      <style>
+        .products-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+        .products-header h3{margin:0;font-size:24px;font-weight:700;color:#0f172a}
+        .products-header-actions{display:flex;gap:10px;align-items:center}
+        .products-count{background:#0ea5e9;color:white;padding:6px 14px;border-radius:20px;font-size:14px;font-weight:600}
+        .toggle-json-btn{background:#8b5cf6;color:white;border:none;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:6px}
+        .toggle-json-btn:hover{background:#7c3aed;transform:translateY(-1px);box-shadow:0 4px 12px rgba(139,92,246,0.3)}
+        .json-viewer{display:none;background:#1e293b;border-radius:12px;padding:20px;margin-bottom:20px;overflow:auto;max-height:500px}
+        .json-viewer.active{display:block}
+        .json-viewer pre{margin:0;color:#e2e8f0;font-family:'Courier New', monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-all}
+        .json-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+        .json-title{color:#e2e8f0;font-weight:600;font-size:14px}
+        .copy-json-btn{background:#0ea5e9;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s}
+        .copy-json-btn:hover{background:#0284c7}
+        .copy-json-btn.copied{background:#22c55e}
+        .products-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:20px;margin-top:20px}
+        .product-card{background:white;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;transition:all 0.3s ease;cursor:pointer}
+        .product-card:hover{box-shadow:0 10px 30px rgba(0,0,0,0.1);transform:translateY(-4px);border-color:#0ea5e9}
+        .product-image-container{width:100%;height:200px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+        .product-image{width:100%;height:100%;object-fit:cover}
+        .product-image-placeholder{color:#cbd5e1;font-size:48px}
+        .product-badge{position:absolute;top:10px;right:10px;background:rgba(14,165,233,0.9);color:white;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700}
+        .product-info{padding:16px}
+        .product-code{color:#0ea5e9;font-size:13px;font-weight:700;margin-bottom:4px}
+        .product-name{font-size:16px;font-weight:600;color:#0f172a;margin-bottom:8px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+        .product-generic{font-size:13px;color:#64748b;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+        .product-details{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #f1f5f9}
+        .product-detail{display:flex;flex-direction:column;gap:2px}
+        .product-detail-label{font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase}
+        .product-detail-value{font-size:13px;color:#334155;font-weight:600}
+        .product-brand{background:#f0f9ff;color:#0369a1;padding:4px 8px;border-radius:6px;font-size:12px;font-weight:600;display:inline-block;margin-top:8px}
+        .no-products{text-align:center;padding:60px 20px;color:#64748b}
+        .no-products-icon{font-size:64px;margin-bottom:16px;opacity:0.5}
+      </style>
+      <div class="products-header">
+        <h3>🛍️ Product Catalog</h3>
+        <div class="products-header-actions">
+          <span class="products-count">{{ result_rows|length }} Product{{ result_rows|length|pluralize }}</span>
+          <button class="toggle-json-btn" onclick="toggleJsonViewer()">
+            <span>📋</span>
+            <span id="toggleJsonText">Show JSON</span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- JSON Viewer -->
+      <div class="json-viewer" id="jsonViewer">
+        <div class="json-header">
+          <div class="json-title">📊 Raw JSON Response</div>
+          <button class="copy-json-btn" onclick="copyJsonToClipboard()">Copy JSON</button>
+        </div>
+        <pre id="jsonContent">{{ result_rows|safe }}</pre>
+      </div>
+      
+      <div class="products-grid">
+        {% for row in result_rows %}
+          <div class="product-card" onclick="showProductDetails(this)" data-product='{{ row|safe }}'>
+            <div class="product-image-container">
+              {% if row.product_image_url %}
+                <img src="{{ row.product_image_url }}" alt="{{ row.ItemName }}" class="product-image" 
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div class="product-image-placeholder" style="display:none;">📦</div>
+              {% else %}
+                <div class="product-image-placeholder">📦</div>
+              {% endif %}
+              <div class="product-badge">{{ row.ItmsGrpNam }}</div>
+            </div>
+            <div class="product-info">
+              <div class="product-code">{{ row.ItemCode }}</div>
+              <div class="product-name">{{ row.ItemName }}</div>
+              {% if row.U_GenericName %}
+                <div class="product-generic">{{ row.U_GenericName }}</div>
+              {% endif %}
+              <div class="product-details">
+                <div class="product-detail">
+                  <span class="product-detail-label">Pack Size</span>
+                  <span class="product-detail-value">{{ row.SalPackMsr|default:"N/A" }}</span>
+                </div>
+                <div class="product-detail">
+                  <span class="product-detail-label">Catalog</span>
+                  <span class="product-detail-value">{{ row.Product_Catalog_Name|default:"N/A" }}</span>
+                </div>
+              </div>
+              {% if row.U_BrandName %}
+                <div class="product-brand">{{ row.U_BrandName }}</div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <script>
+        // Store JSON data
+        const jsonData = {{ result_rows|safe }};
+        
+        function toggleJsonViewer() {
+          const viewer = document.getElementById('jsonViewer');
+          const toggleText = document.getElementById('toggleJsonText');
+          
+          if (viewer.classList.contains('active')) {
+            viewer.classList.remove('active');
+            toggleText.textContent = 'Show JSON';
+          } else {
+            viewer.classList.add('active');
+            toggleText.textContent = 'Hide JSON';
+            // Format JSON nicely
+            document.getElementById('jsonContent').textContent = JSON.stringify(jsonData, null, 2);
+          }
+        }
+        
+        function copyJsonToClipboard() {
+          const jsonText = JSON.stringify(jsonData, null, 2);
+          navigator.clipboard.writeText(jsonText).then(() => {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.textContent = originalText;
+              btn.classList.remove('copied');
+            }, 2000);
+          }).catch(err => {
+            alert('Failed to copy: ' + err);
+          });
+        }
+        
+        function showProductDetails(card) {
+          const data = JSON.parse(card.getAttribute('data-product'));
+          let details = 'Product Details:\n\n';
+          for (const [key, value] of Object.entries(data)) {
+            if (value !== null && value !== '') {
+              details += `${key}: ${value}\n`;
+            }
+          }
+          alert(details);
+        }
+      </script>
+    {% elif result_rows and is_tabular %}
       <style>
         .result-table{width:100%;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}
         .result-table thead th{background:#f8fafc;color:#0f172a;text-align:left;padding:10px 12px;font-weight:700;border-bottom:1px solid #e5e7eb}

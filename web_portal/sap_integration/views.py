@@ -14,12 +14,92 @@ from django.http import JsonResponse
 import os
 import json
 import re
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, additional_discount, extra_discount, phase_discount, project_balance, policy_balance_by_customer, crop_lov
 from django.conf import settings
 from pathlib import Path
 import sys
 from django.utils.safestring import mark_safe
 
+@staff_member_required
+def sales_order_admin(request):
+    error = None
+    result = None
+    default_payload = {
+        "Series": 8,
+        "DocType": "dDocument_Items",
+        "DocDate": "2025-11-21",
+        "DocDueDate": "2025-11-21",
+        "TaxDate": "2025-11-21",
+        "CardCode": "BIC01563",
+        "CardName": "Master Agro Traders",
+        "ContactPersonCode": 4804,
+        "FederalTaxID": "32402-7881906-3",
+        "PayToCode": 1,
+        "Address": "Dhandla Road Dajal Tehsil Jampur\r\r\rPAKISTAN",
+        "DocCurrency": "PKR",
+        "DocRate": 1.0,
+        "Comments": "",
+        "SummeryType": "dNoSummary",
+        "DocObjectCode": "oOrders",
+        "U_sotyp": "01",
+        "U_USID": "Dgk01",
+        "U_SWJE": None,
+        "U_SECJE": None,
+        "U_CRJE": None,
+        "U_SCardCode": "BIC01812",
+        "U_SCardName": "Malik Agro Traders",
+        "DocumentLines": [
+            {
+                "LineNum": 0,
+                "ItemCode": "FG00581",
+                "ItemDescription": "Jadogar 25 Od - 360-Mls.",
+                "Quantity": 20.0,
+                "DiscountPercent": 0.0,
+                "WarehouseCode": "WH06",
+                "VatGroup": "SE",
+                "UnitsOfMeasurment": 1.0,
+                "TaxPercentagePerRow": 0.0,
+                "UnitPrice": 1170.0,
+                "UoMEntry": 68,
+                "MeasureUnit": "No",
+                "UoMCode": "No",
+                "ProjectCode": "0223254",
+                "U_SD": 0.0,
+                "U_AD": 0.0,
+                "U_EXD": 0.0,
+                "U_zerop": 0.0,
+                "U_pl": 275,
+                "U_BP": 1322.0,
+                "U_policy": "0223271",
+                "U_focitem": "No",
+                "U_crop": None
+            }
+        ]
+    }
+    payload_text = json.dumps(default_payload, ensure_ascii=False, indent=2)
+    if request.method == 'POST':
+        try:
+            payload_text = request.POST.get('payload') or payload_text
+            data = json.loads(payload_text)
+            client = SAPClient()
+            result = client.create_sales_order(data)
+        except Exception as e:
+            error = str(e)
+    result_json = None
+    if result is not None:
+        try:
+            result_json = json.dumps(result, ensure_ascii=False, indent=2)
+        except Exception:
+            result_json = str(result)
+    return render(
+        request,
+        'admin/sap_integration/sales_order.html',
+        {
+            'payload': payload_text,
+            'result_json': result_json,
+            'error': error,
+        }
+    )
 @staff_member_required
 def hana_connect_admin(request):
     try:
@@ -229,7 +309,7 @@ def hana_connect_admin(request):
                             error = str(e_ts)
                     elif action == 'products_catalog':
                         try:
-                            data = products_catalog(conn)
+                            data = products_catalog(conn, selected_schema)
                             result = data
                         except Exception as e_pc:
                             error = str(e_pc)
@@ -336,6 +416,169 @@ def hana_connect_admin(request):
                                 request._territory_options = territory_options
                         except Exception as e_sa:
                             error = str(e_sa)
+                    elif action == 'sales_orders':
+                        try:
+                            card_code_param = request.GET.get('card_code')
+                            doc_status_param = request.GET.get('doc_status')
+                            from_date_param = request.GET.get('from_date')
+                            to_date_param = request.GET.get('to_date')
+                            limit_param = request.GET.get('limit')
+                            
+                            limit_val = 100
+                            try:
+                                if limit_param:
+                                    limit_val = int(limit_param)
+                            except Exception:
+                                limit_val = 100
+                            
+                            data = sales_orders_all(
+                                conn, 
+                                limit=limit_val,
+                                card_code=(card_code_param or '').strip() or None,
+                                doc_status=(doc_status_param or '').strip() or None,
+                                from_date=(from_date_param or '').strip() or None,
+                                to_date=(to_date_param or '').strip() or None
+                            )
+                            result = data
+                            if isinstance(result, list) and len(result) == 0:
+                                error = 'No sales orders found'
+                            diagnostics['card_code'] = (card_code_param or '').strip()
+                            diagnostics['doc_status'] = (doc_status_param or '').strip()
+                            diagnostics['from_date'] = (from_date_param or '').strip()
+                            diagnostics['to_date'] = (to_date_param or '').strip()
+                            diagnostics['limit'] = limit_val
+                        except Exception as e_so:
+                            error = str(e_so)
+                    elif action == 'customer_lov':
+                        try:
+                            search_param = request.GET.get('search')
+                            data = customer_lov(conn, (search_param or '').strip() or None)
+                            result = data
+                        except Exception as e_cl:
+                            error = str(e_cl)
+                    elif action == 'item_lov':
+                        try:
+                            search_param = request.GET.get('search')
+                            data = item_lov(conn, (search_param or '').strip() or None)
+                            result = data
+                        except Exception as e_il:
+                            error = str(e_il)
+                    elif action == 'projects_lov':
+                        try:
+                            search_param = request.GET.get('search')
+                            data = projects_lov(conn, (search_param or '').strip() or None)
+                            result = data
+                        except Exception as e_pl:
+                            error = str(e_pl)
+                    elif action == 'crop_lov':
+                        try:
+                            data = crop_lov(conn)
+                            result = data
+                        except Exception as e_crop:
+                            error = str(e_crop)
+                    elif action == 'contact_person_name':
+                        try:
+                            card_code = request.GET.get('card_code', '')
+                            contact_code = request.GET.get('contact_code', '')
+                            if not card_code or not contact_code:
+                                error = 'card_code and contact_code are required'
+                            else:
+                                data = contact_person_name(conn, card_code, contact_code)
+                                result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'customer_addresses':
+                        try:
+                            card_code = request.GET.get('card_code', '')
+                            if not card_code:
+                                error = 'card_code is required'
+                            else:
+                                data = customer_addresses(conn, card_code)
+                                result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'warehouse_for_item':
+                        try:
+                            item_code = request.GET.get('item_code', '')
+                            if not item_code:
+                                error = 'item_code is required'
+                            else:
+                                data = warehouse_for_item(conn, item_code)
+                                result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'sales_tax_codes':
+                        try:
+                            data = sales_tax_codes(conn)
+                            result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'policy_link':
+                        try:
+                            project_code = request.GET.get('project_code', '')
+                            if not project_code:
+                                error = 'project_code is required'
+                            else:
+                                data = policy_link(conn, project_code)
+                                result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'additional_discount':
+                        try:
+                            policy = request.GET.get('policy', '')
+                            item_code = request.GET.get('item_code', '')
+                            pl_entry = request.GET.get('pl_entry', '')
+                            if not policy or not item_code or not pl_entry:
+                                error = 'policy, item_code, and pl_entry are required'
+                            else:
+                                data = additional_discount(conn, policy, item_code, pl_entry)
+                                result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'extra_discount':
+                        try:
+                            policy = request.GET.get('policy', '')
+                            item_code = request.GET.get('item_code', '')
+                            pl_entry = request.GET.get('pl_entry', '')
+                            if not policy or not item_code or not pl_entry:
+                                error = 'policy, item_code, and pl_entry are required'
+                            else:
+                                data = extra_discount(conn, policy, item_code, pl_entry)
+                                result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'phase_discount':
+                        try:
+                            project_code = request.GET.get('project_code', '')
+                            if not project_code:
+                                error = 'project_code is required'
+                            else:
+                                data = phase_discount(conn, project_code)
+                                result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'project_balance':
+                        try:
+                            project_code = request.GET.get('project_code', '')
+                            if not project_code:
+                                error = 'project_code is required'
+                            else:
+                                data = project_balance(conn, project_code)
+                                result = data
+                        except Exception as e:
+                            error = str(e)
+                    elif action == 'policy_balance_by_customer':
+                        try:
+                            # Accept card_code from either dropdown or manual input
+                            card_code = request.GET.get('card_code', '').strip()
+                            card_code_manual = request.GET.get('card_code_manual', '').strip()
+                            # Prefer manual input if provided, otherwise use dropdown
+                            final_card_code = card_code_manual if card_code_manual else card_code
+                            # card_code is optional - if not provided, show all
+                            data = policy_balance_by_customer(conn, final_card_code if final_card_code else None)
+                            result = data
+                        except Exception as e:
+                            error = str(e)
                 finally:
                     try:
                         conn.close()
@@ -363,6 +606,30 @@ def hana_connect_admin(request):
     current_month = ''
     current_start_date = (request.GET.get('start_date') or '').strip()
     current_end_date = (request.GET.get('end_date') or '').strip()
+    
+    # Fetch customer list for policy_balance_by_customer filter
+    customer_options = []
+    if action == 'policy_balance_by_customer':
+        try:
+            from hdbcli import dbapi
+            pwd = os.environ.get('HANA_PASSWORD','')
+            if cfg['host']:
+                use_encrypt = str(cfg['encrypt']).strip().lower() in ('true','1','yes')
+                kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+                if use_encrypt:
+                    kwargs['encrypt'] = True
+                    if cfg['ssl_validate']:
+                        kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+                temp_conn = dbapi.connect(**kwargs)
+                if cfg['schema']:
+                    cur = temp_conn.cursor()
+                    cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                    cur.close()
+                customer_options = customer_lov(temp_conn)
+                temp_conn.close()
+        except Exception as e:
+            pass
+    
     result_rows = result if isinstance(result, list) else []
     result_cols = []
     if isinstance(result_rows, list) and len(result_rows) > 0 and isinstance(result_rows[0], dict):
@@ -378,6 +645,19 @@ def hana_connect_admin(request):
                 for c in result_cols:
                     values.append(row.get(c))
                 table_rows.append(values)
+    # Get base URL for full image URLs
+    # Priority: settings.BASE_URL (configurable) -> request-based URL
+    base_url = getattr(settings, 'BASE_URL', None) or request.build_absolute_uri('/').rstrip('/')
+    
+    # Add full URLs to product images if this is products_catalog action
+    if action == 'products_catalog' and result_rows:
+        for row in result_rows:
+            if isinstance(row, dict):
+                if row.get('product_image_url'):
+                    row['product_image_url_full'] = base_url + row['product_image_url']
+                if row.get('product_description_urdu_url'):
+                    row['product_description_urdu_url_full'] = base_url + row['product_description_urdu_url']
+    
     return render(
         request,
         'admin/sap_integration/hana_connect.html',
@@ -397,10 +677,12 @@ def hana_connect_admin(request):
             'result_rows': result_rows,
             'result_cols': result_cols,
             'table_rows': table_rows,
-            'is_tabular': (action in ('territory_summary','sales_vs_achievement','policy_customer_balance','list_territories','list_territories_full','list_cwl')),
-            'current_card_code': (request.GET.get('card_code') or '').strip(),
+            'is_tabular': (action in ('territory_summary','sales_vs_achievement','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','item_lov','projects_lov','crop_lov','policy_balance_by_customer')),
+            'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
+            'customer_options': customer_options,
             'db_options': db_options,
             'selected_db_key': selected_db_key,
+            'base_url': base_url,
         }
     )
 
@@ -757,97 +1039,55 @@ def bp_lookup_admin(request):
     )
 
 
-# Unified API for Frontend
-@swagger_auto_schema(
-    method='get',
-    operation_description="Get Business Partner data by CardCode - Unified API for Frontend",
-    manual_parameters=[
-        openapi.Parameter(
-            'card_code',
-            openapi.IN_PATH,
-            description="Business Partner Card Code (e.g., BIC00001)",
-            type=openapi.TYPE_STRING,
-            required=True
-        )
-    ],
-    responses={
-        200: openapi.Response(
-            description="Business Partner data retrieved successfully",
-            examples={
-                "application/json": {
-                    "success": True,
-                    "data": {
-                        "CardCode": "BIC00001",
-                        "CardName": "Sample Business Partner",
-                        "CardType": "cCustomer",
-                        "CurrentAccountBalance": 15000.50
-                    },
-                    "message": "Business partner data retrieved successfully"
-                }
-            }
-        ),
-        400: openapi.Response(
-            description="Invalid card code",
-            examples={
-                "application/json": {
-                    "success": False,
-                    "error": "Invalid card code format",
-                    "message": "Card code is required"
-                }
-            }
-        ),
-        404: openapi.Response(
-            description="Business partner not found",
-            examples={
-                "application/json": {
-                    "success": False,
-                    "error": "Business partner not found",
-                    "message": "No business partner found with the provided card code"
-                }
-            }
-        ),
-        500: openapi.Response(
-            description="SAP integration error",
-            examples={
-                "application/json": {
-                    "success": False,
-                    "error": "SAP integration failed",
-                    "message": "Unable to connect to SAP system"
-                }
-            }
-        )
-    }
-)
-@api_view(['GET'])
-def get_business_partner_data(request, card_code):
+# Unified API for Frontend - Core function
+def get_business_partner_data(request, card_code=None):
     """
     Unified API endpoint for frontend to get business partner data.
     This endpoint handles all SAP integration internally and returns clean data.
     
-    Usage: GET /api/sap/business-partner/{card_code}/
-    Example: GET /api/sap/business-partner/BIC00001/
+    Usage: 
+        GET /api/sap/business-partner/ - List all business partners
+        GET /api/sap/business-partner/{card_code}/ - Get specific business partner
+    
+    Examples: 
+        GET /api/sap/business-partner/
+        GET /api/sap/business-partner/BIC00001/
+        GET /api/sap/business-partner/?top=50
     """
     
-    # Validate card_code
-    if not card_code or not card_code.strip():
-        return Response({
-            "success": False,
-            "error": "Invalid card code format",
-            "message": "Card code is required"
-        }, status=status.HTTP_400_BAD_REQUEST)
     try:
         # Initialize SAP client
         sap_client = SAPClient()
         
-        # Get business partner details with specific fields
-        bp_data = sap_client.get_bp_details(card_code.strip())
+        # If card_code is provided, get specific business partner
+        if card_code and card_code.strip():
+            # Get business partner details with specific fields
+            bp_data = sap_client.get_bp_details(card_code.strip())
+            
+            # Return formatted response for frontend
+            return Response({
+                "success": True,
+                "data": bp_data,
+                "message": "Business partner data retrieved successfully"
+            }, status=status.HTTP_200_OK)
         
-        # Return formatted response for frontend
-        return Response({
-            "success": True,
-            "data": bp_data,
-            "message": "Business partner data retrieved successfully"
-        }, status=status.HTTP_200_OK)
+        # Otherwise, list all business partners
+        else:
+            top_param = request.query_params.get('top')
+            top_val = 100
+            if top_param is not None:
+                try:
+                    top_val = int(top_param)
+                except Exception:
+                    top_val = 100
+            
+            rows = sap_client.list_business_partners(top=top_val, select='CardCode,CardName,GroupCode,VatGroup') or []
+            return Response({
+                "success": True,
+                "count": len(rows),
+                "data": rows,
+                "message": "Business partners retrieved successfully"
+            }, status=status.HTTP_200_OK)
         
     except Exception as e:
         error_message = str(e)
@@ -874,44 +1114,120 @@ def get_business_partner_data(request, card_code):
                 "message": f"Unable to retrieve business partner data: {error_message}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# List endpoint for Business Partners when no CardCode is provided
+
+# Wrapper for list endpoint with Swagger documentation
 @swagger_auto_schema(
     method='get',
-    operation_description="List Business Partners (omit CardCode)",
+    operation_description="List all Business Partners from SAP (CardCode NOT required - use this endpoint to get all BPs)",
+    operation_summary="List All Business Partners",
     manual_parameters=[
         openapi.Parameter(
             'top',
             openapi.IN_QUERY,
-            description="Max items to return (default 100)",
+            description="Maximum number of items to return (default 100)",
             type=openapi.TYPE_INTEGER,
             required=False
         )
-    ]
+    ],
+    responses={
+        200: openapi.Response(
+            description="Business Partners list retrieved successfully",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "count": 2,
+                    "data": [
+                        {
+                            "CardCode": "BIC00001",
+                            "CardName": "Sample Customer 1",
+                            "GroupCode": 100,
+                            "VatGroup": "SE"
+                        },
+                        {
+                            "CardCode": "BIC00002",
+                            "CardName": "Sample Customer 2",
+                            "GroupCode": 101,
+                            "VatGroup": "SE"
+                        }
+                    ],
+                    "message": "Business partners retrieved successfully"
+                }
+            }
+        ),
+        500: openapi.Response(
+            description="SAP integration error",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "SAP integration failed",
+                    "message": "Unable to connect to SAP system"
+                }
+            }
+        )
+    }
 )
 @api_view(['GET'])
 def get_business_partners_list(request):
-    try:
-        sap_client = SAPClient()
-        top_param = request.query_params.get('top')
-        top_val = 100
-        if top_param is not None:
-            try:
-                top_val = int(top_param)
-            except Exception:
-                top_val = 100
-        rows = sap_client.list_business_partners(top=top_val, select='CardCode,CardName,GroupCode,VatGroup') or []
-        return Response({
-            "success": True,
-            "count": len(rows),
-            "data": rows,
-            "message": "Business partners retrieved successfully"
-        }, status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response({
-            "success": False,
-            "error": "SAP integration failed",
-            "message": str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    """List all business partners (wrapper for Swagger)"""
+    return get_business_partner_data(request, card_code=None)
+
+
+# Wrapper for detail endpoint with Swagger documentation
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get specific Business Partner by CardCode (CardCode IS required in URL path for this endpoint)",
+    operation_summary="Get Business Partner by CardCode",
+    manual_parameters=[
+        openapi.Parameter(
+            'card_code',
+            openapi.IN_PATH,
+            description="Business Partner Card Code (e.g., BIC00001)",
+            type=openapi.TYPE_STRING,
+            required=True
+        )
+    ],
+    responses={
+        200: openapi.Response(
+            description="Business Partner data retrieved successfully",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "data": {
+                        "CardCode": "BIC00001",
+                        "CardName": "Sample Business Partner",
+                        "CardType": "cCustomer",
+                        "CurrentAccountBalance": 15000.50
+                    },
+                    "message": "Business partner data retrieved successfully"
+                }
+            }
+        ),
+        404: openapi.Response(
+            description="Business partner not found",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "Business partner not found",
+                    "message": "No business partner found with card code: BIC00001"
+                }
+            }
+        ),
+        500: openapi.Response(
+            description="SAP integration error",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "SAP integration failed",
+                    "message": "Unable to connect to SAP system"
+                }
+            }
+        )
+    }
+)
+@api_view(['GET'])
+def get_business_partner_detail(request, card_code):
+    """Get specific business partner (wrapper for Swagger)"""
+    return get_business_partner_data(request, card_code=card_code)
 
 
 @swagger_auto_schema(
@@ -1235,7 +1551,10 @@ def territory_summary_api(request):
 
 @swagger_auto_schema(
     method='get',
-    operation_description="Products catalog",
+    operation_description="Products catalog with images based on database",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP). Uses default from env if not provided.", type=openapi.TYPE_STRING, required=False)
+    ],
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
@@ -1247,11 +1566,15 @@ def products_catalog_api(request):
         _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
     except Exception:
         pass
+    
+    # Get database parameter from query string
+    db_name = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
+    
     cfg = {
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': db_name,  # Use database parameter or default from env
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
@@ -1270,8 +1593,9 @@ def products_catalog_api(request):
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
-            data = products_catalog(conn)
-            return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+            # Pass the connection and schema name to products_catalog for image URL generation
+            data = products_catalog(conn, cfg['schema'])
+            return Response({'success': True, 'count': len(data or []), 'database': cfg['schema'], 'data': data}, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()
@@ -1280,14 +1604,13 @@ def products_catalog_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
-    method='get',
-    operation_description="Policy customer balance",
-    manual_parameters=[openapi.Parameter('card_code', openapi.IN_QUERY, description="BP CardCode", type=openapi.TYPE_STRING)],
-    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
-)
-@api_view(['GET'])
-def policy_customer_balance_api(request):
+# Core function that handles both list all and specific card_code
+def get_policy_customer_balance_data(request, card_code=None):
+    """
+    Core function to fetch policy customer balance.
+    If card_code is None, returns all policies.
+    If card_code is provided, returns balance for that specific customer.
+    """
     try:
         _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
         _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
@@ -1303,9 +1626,6 @@ def policy_customer_balance_api(request):
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    card_code = (request.query_params.get('card_code') or '').strip()
-    if not card_code:
-        return Response({'success': False, 'error': 'card_code is required'}, status=status.HTTP_400_BAD_REQUEST)
     try:
         from hdbcli import dbapi
         pwd = os.environ.get('HANA_PASSWORD','')
@@ -1321,7 +1641,21 @@ def policy_customer_balance_api(request):
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
-            data = policy_customer_balance(conn, card_code)
+            
+            # Determine limit from query params
+            limit = 200
+            try:
+                limit_param = request.query_params.get('limit', '200')
+                limit = int(limit_param)
+            except:
+                limit = 200
+            
+            # Call appropriate function based on whether card_code is provided
+            if card_code:
+                data = policy_customer_balance(conn, card_code)
+            else:
+                data = policy_customer_balance_all(conn, limit)
+            
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
         finally:
             try:
@@ -1330,6 +1664,37 @@ def policy_customer_balance_api(request):
                 pass
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# Wrapper for list all policies customer balance (no card_code required)
+@swagger_auto_schema(
+    method='get',
+    operation_summary="List All Policy Customer Balances",
+    operation_description="Get policy-wise customer balance for all customers (CardCode NOT required - use this endpoint to get all policy balances). Returns balance grouped by customer and project/policy.",
+    manual_parameters=[
+        openapi.Parameter('limit', openapi.IN_QUERY, description="Maximum number of records to return (default: 200)", type=openapi.TYPE_INTEGER, required=False)
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def policy_customer_balance_list(request):
+    """
+    List all policy customer balances without requiring card_code.
+    """
+    return get_policy_customer_balance_data(request, card_code=None)
+
+# Wrapper for specific customer balance (card_code required in path)
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Get Policy Customer Balance by CardCode",
+    operation_description="Get policy-wise customer balance for a specific customer by CardCode (CardCode IS required in URL path for this endpoint). Returns balance grouped by project/policy for the specified customer.",
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def policy_customer_balance_detail(request, card_code):
+    """
+    Get policy customer balance for a specific card_code.
+    """
+    return get_policy_customer_balance_data(request, card_code=card_code)
 
 @swagger_auto_schema(
     method='get',

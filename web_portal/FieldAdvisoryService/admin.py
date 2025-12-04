@@ -2,15 +2,567 @@ from django.contrib import admin
 from django.contrib import messages
 import json
 import logging
-from .models import Dealer, MeetingSchedule, SalesOrder, SalesOrderAttachment
+import os
+from .models import Dealer, MeetingSchedule, SalesOrder, SalesOrderLine, SalesOrderAttachment
 from .models import DealerRequest , Company, Region, Zone, Territory
 from sap_integration.sap_client import SAPClient
 from django import forms
 from django.utils import timezone
+from sap_integration import hana_connect
 
 # admin.site.register(Dealer)
 admin.site.register(MeetingSchedule)
-admin.site.register(SalesOrder)
+
+
+def _load_env_file(path: str) -> None:
+    """Load environment variables from .env file"""
+    try:
+        if os.path.isfile(path) and os.access(path, os.R_OK):
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    s = line.strip()
+                    if s == '' or s.startswith('#') or '=' not in s:
+                        continue
+                    k, v = s.split('=', 1)
+                    k = k.strip()
+                    v = v.strip()
+                    if v != '' and ((v[0] == '"' and v[-1] == '"') or (v[0] == "'" and v[-1] == "'")):
+                        v = v[1:-1]
+                    if k != '' and not os.environ.get(k):
+                        os.environ[k] = v
+    except Exception:
+        pass
+
+
+def get_hana_connection():
+    """Get HANA database connection"""
+    try:
+        # Load .env file
+        _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
+        
+        from hdbcli import dbapi
+        from preferences.models import Setting
+        
+        # Get database name from settings
+        try:
+            db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+            if db_setting and hasattr(db_setting, 'value'):
+                # If value is a dict, get the current selected schema
+                if isinstance(db_setting.value, dict):
+                    schema = list(db_setting.value.values())[0] if db_setting.value else '4B-BIO_APP'
+                else:
+                    schema = str(db_setting.value)
+            else:
+                schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+        except Exception as e:
+            print(f"Error getting schema from settings: {e}")
+            schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+        
+        # Strip quotes if present
+        schema = schema.strip('"\'')
+        
+        # Connection parameters
+        host = os.environ.get('HANA_HOST', '').strip()
+        port = int(os.environ.get('HANA_PORT', 30015))
+        user = os.environ.get('HANA_USER', '').strip()
+        password = os.environ.get('HANA_PASSWORD', '').strip()
+        
+        if not host or not user:
+            print(f"Missing HANA credentials: host={bool(host)}, user={bool(user)}")
+            return None
+        
+        # Connect
+        print(f"Connecting to HANA: {host}:{port} as {user}, schema={schema}")
+        conn = dbapi.connect(address=host, port=port, user=user, password=password)
+        
+        # Set schema
+        cursor = conn.cursor()
+        cursor.execute(f'SET SCHEMA "{schema}"')
+        cursor.close()
+        
+        print("HANA connection successful")
+        return conn
+    except Exception as e:
+        print(f"Error connecting to HANA: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+class SalesOrderForm(forms.ModelForm):
+    """Custom form with LOV dropdowns for SAP data"""
+    
+    class Meta:
+        model = SalesOrder
+        fields = '__all__'
+        widgets = {
+            'card_code': forms.Select(attrs={'class': 'sap-customer-lov'}),
+            'address': forms.Textarea(attrs={'rows': 3}),
+            'comments': forms.Textarea(attrs={'rows': 3}),
+            'sap_error': forms.Textarea(attrs={'rows': 3}),
+            'sap_response_json': forms.Textarea(attrs={'rows': 10, 'style': 'font-family: monospace; font-size: 12px;'}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Populate customer dropdown
+        try:
+            db = get_hana_connection()
+            if db:
+                customers = hana_connect.customer_lov(db)
+                customer_choices = [('', '--- Select Customer ---')] + [
+                    (c['CardCode'], f"{c['CardCode']} - {c['CardName']}") 
+                    for c in customers
+                ]
+                self.fields['card_code'].widget = forms.Select(choices=customer_choices, attrs={'class': 'sap-customer-lov', 'style': 'width: 400px;'})
+                db.close()
+            else:
+                print("Failed to get HANA connection for customers")
+        except Exception as e:
+            print(f"Error loading customers: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Add help text
+        self.fields['card_code'].help_text = "Select customer from SAP"
+        self.fields['card_name'].widget.attrs['readonly'] = True
+        self.fields['contact_person_code'].help_text = "Auto-filled from customer"
+        self.fields['federal_tax_id'].help_text = "Auto-filled from customer (NTN)"
+
+
+class SalesOrderLineInlineForm(forms.ModelForm):
+    """Custom form for sales order lines with LOV dropdowns"""
+    
+    class Meta:
+        model = SalesOrderLine
+        fields = '__all__'
+        widgets = {
+            'item_code': forms.Select(attrs={'class': 'sap-item-lov'}),
+            'warehouse_code': forms.Select(attrs={'class': 'sap-warehouse-lov'}),
+            'vat_group': forms.Select(attrs={'class': 'sap-tax-lov'}),
+            'project_code': forms.Select(attrs={'class': 'sap-project-lov'}),
+            'u_crop': forms.Select(attrs={'class': 'sap-crop-lov'}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        try:
+            db = get_hana_connection()
+            if db:
+                # Populate item dropdown
+                items = hana_connect.item_lov(db)
+                item_choices = [('', '--- Select Item ---')] + [
+                    (item['ItemCode'], f"{item['ItemCode']} - {item['ItemName']}") 
+                    for item in items[:500]  # Limit to first 500 items for performance
+                ]
+                self.fields['item_code'].widget = forms.Select(choices=item_choices, attrs={'class': 'sap-item-lov', 'style': 'width: 400px;'})
+                
+                # Populate tax group dropdown
+                tax_codes = hana_connect.sales_tax_codes(db)
+                tax_choices = [('', '--- Select Tax ---')] + [
+                    (tax['Code'], f"{tax['Code']} - {tax['Name']} ({tax['Rate']}%)") 
+                    for tax in tax_codes
+                ]
+                self.fields['vat_group'].widget = forms.Select(choices=tax_choices, attrs={'class': 'sap-tax-lov', 'style': 'width: 300px;'})
+                
+                # Populate project dropdown
+                projects = hana_connect.projects_lov(db)
+                project_choices = [('', '--- Select Project ---')] + [
+                    (proj['PrjCode'], f"{proj['PrjCode']} - {proj['PrjName']}") 
+                    for proj in projects[:200]  # Limit to first 200 projects
+                ]
+                self.fields['project_code'].widget = forms.Select(choices=project_choices, attrs={'class': 'sap-project-lov', 'style': 'width: 350px;'})
+                
+                # Populate crop dropdown
+                crops = hana_connect.crop_lov(db)
+                crop_choices = [('', '--- Select Crop ---')] + [
+                    (crop['Code'], f"{crop['Code']} - {crop['Name']}") 
+                    for crop in crops
+                ]
+                self.fields['u_crop'].widget = forms.Select(choices=crop_choices, attrs={'class': 'sap-crop-lov', 'style': 'width: 250px;'})
+                
+                # Warehouse dropdown - will be populated dynamically based on item
+                self.fields['warehouse_code'].widget = forms.Select(
+                    choices=[('', '--- Select Item First ---')],
+                    attrs={'class': 'sap-warehouse-lov', 'style': 'width: 250px;'}
+                )
+                
+                db.close()
+                print(f"Loaded {len(item_choices)-1} items, {len(tax_choices)-1} tax codes, {len(project_choices)-1} projects, {len(crop_choices)-1} crops")
+            else:
+                print("Failed to get HANA connection for LOVs")
+        except Exception as e:
+            print(f"Error loading LOVs: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Set readonly fields
+        self.fields['item_description'].widget.attrs['readonly'] = True
+        self.fields['measure_unit'].widget.attrs['readonly'] = True
+        self.fields['uom_code'].widget.attrs['readonly'] = True
+
+
+class SalesOrderLineInline(admin.TabularInline):
+    model = SalesOrderLine
+    form = SalesOrderLineInlineForm
+    extra = 1
+    # Reorganized fields for better layout - grouped logically
+    fields = (
+        'line_num', 
+        'item_code', 
+        'item_description', 
+        'quantity', 
+        'measure_unit', 
+        'uom_entry',
+        'uom_code',
+        'unit_price',
+        'discount_percent', 
+        'warehouse_code', 
+        'vat_group', 
+        'tax_percentage_per_row',
+        'project_code',
+        'u_sd', 
+        'u_ad', 
+        'u_exd', 
+        'u_zerop', 
+        'u_pl', 
+        'u_bp', 
+        'u_policy', 
+        'u_focitem', 
+        'u_crop'
+    )
+    # Add CSS classes for styling
+    classes = ['collapse', 'open']
+    
+    def get_formset(self, request, obj=None, **kwargs):
+        """Customize the formset to add better help text"""
+        formset = super().get_formset(request, obj, **kwargs)
+        # Add help text to guide users
+        if hasattr(formset.form, 'base_fields'):
+            formset.form.base_fields['item_code'].help_text = "Select item from catalog"
+            formset.form.base_fields['warehouse_code'].help_text = "Select warehouse (based on item)"
+            formset.form.base_fields['quantity'].help_text = "Enter quantity"
+            formset.form.base_fields['unit_price'].help_text = "Unit price"
+            formset.form.base_fields['discount_percent'].help_text = "Discount %"
+        return formset
+
+
+@admin.register(SalesOrder)
+class SalesOrderAdmin(admin.ModelAdmin):
+    form = SalesOrderForm
+    list_display = ('id', 'card_code', 'card_name', 'doc_date', 'status', 'is_posted_to_sap', 'sap_doc_num', 'created_at')
+    list_filter = ('status', 'is_posted_to_sap', 'doc_date', 'created_at')
+    search_fields = ('card_code', 'card_name', 'federal_tax_id', 'u_s_card_code')
+    readonly_fields = ('created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_json', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button')
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('staff', 'dealer', 'schedule', 'status', 'created_at')
+        }),
+        ('Document Header', {
+            'fields': ('series', 'doc_type', 'doc_date', 'doc_due_date', 'tax_date', 'summery_type', 'doc_object_code')
+        }),
+        ('Customer Information', {
+            'fields': ('card_code', 'card_name', 'contact_person_code', 'federal_tax_id', 'pay_to_code', 'address')
+        }),
+        ('Currency & Rates', {
+            'fields': ('doc_currency', 'doc_rate')
+        }),
+        ('Additional Information', {
+            'fields': ('comments',)
+        }),
+        ('User Defined Fields', {
+            'fields': ('u_sotyp', 'u_usid', 'u_swje', 'u_secje', 'u_crje', 'u_s_card_code', 'u_s_card_name'),
+            'classes': ('collapse',)
+        }),
+        ('SAP Integration', {
+            'fields': ('add_to_sap_button', 'is_posted_to_sap', 'sap_doc_entry', 'sap_doc_num', 'posted_at', 'sap_error', 'sap_response_json'),
+        }),
+    )
+    
+    inlines = [SalesOrderLineInline]
+    
+    actions = ['post_to_sap']
+    
+    def add_to_sap_button(self, obj):
+        """Display a button to post this order to SAP"""
+        from django.utils.html import format_html
+        from django.urls import reverse
+        
+        if obj.pk:
+            if obj.is_posted_to_sap:
+                return format_html(
+                    '<div style="padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; color: #155724;">'
+                    '<strong>✓ Posted to SAP</strong><br>'
+                    'DocEntry: {}<br>DocNum: {}'
+                    '</div>',
+                    obj.sap_doc_entry, obj.sap_doc_num
+                )
+            else:
+                url = reverse('admin:post_order_to_sap', args=[obj.pk])
+                return format_html(
+                    '<a class="button" href="{}" style="padding: 10px 15px; background-color: #417690; color: white; '
+                    'text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">'
+                    'Add to SAP'
+                    '</a>',
+                    url
+                )
+        return "-"
+    add_to_sap_button.short_description = "SAP Action"
+    
+    def post_to_sap(self, request, queryset):
+        """Action to post selected sales orders to SAP"""
+        success_count = 0
+        error_count = 0
+        
+        for order in queryset:
+            if order.is_posted_to_sap:
+                self.message_user(request, f"Order #{order.id} already posted to SAP", messages.WARNING)
+                continue
+            
+            try:
+                # Build SAP payload
+                payload = {
+                    "Series": order.series,
+                    "DocType": order.doc_type,
+                    "DocDate": order.doc_date.strftime('%Y-%m-%d') if order.doc_date else None,
+                    "DocDueDate": order.doc_due_date.strftime('%Y-%m-%d') if order.doc_due_date else None,
+                    "TaxDate": order.tax_date.strftime('%Y-%m-%d') if order.tax_date else None,
+                    "CardCode": order.card_code,
+                    "CardName": order.card_name,
+                    "ContactPersonCode": order.contact_person_code,
+                    "FederalTaxID": order.federal_tax_id,
+                    "PayToCode": order.pay_to_code,
+                    "Address": order.address,
+                    "DocCurrency": order.doc_currency,
+                    "DocRate": float(order.doc_rate),
+                    "Comments": order.comments or "",
+                    "SummeryType": order.summery_type,
+                    "DocObjectCode": order.doc_object_code,
+                    "U_sotyp": order.u_sotyp,
+                    "U_USID": order.u_usid,
+                    "U_SWJE": order.u_swje,
+                    "U_SECJE": order.u_secje,
+                    "U_CRJE": order.u_crje,
+                    "U_SCardCode": order.u_s_card_code,
+                    "U_SCardName": order.u_s_card_name,
+                    "DocumentLines": []
+                }
+                
+                # Add document lines
+                for line in order.document_lines.all().order_by('line_num'):
+                    line_data = {
+                        "LineNum": line.line_num,
+                        "ItemCode": line.item_code,
+                        "ItemDescription": line.item_description,
+                        "Quantity": float(line.quantity),
+                        "DiscountPercent": float(line.discount_percent),
+                        "WarehouseCode": line.warehouse_code,
+                        "VatGroup": line.vat_group,
+                        "UnitsOfMeasurment": float(line.units_of_measurment),
+                        "TaxPercentagePerRow": float(line.tax_percentage_per_row),
+                        "UnitPrice": float(line.unit_price),
+                        "UoMEntry": line.uom_entry,
+                        "MeasureUnit": line.measure_unit,
+                        "UoMCode": line.uom_code,
+                        "ProjectCode": line.project_code,
+                        "U_SD": float(line.u_sd),
+                        "U_AD": float(line.u_ad),
+                        "U_EXD": float(line.u_exd),
+                        "U_zerop": float(line.u_zerop),
+                        "U_pl": line.u_pl,
+                        "U_BP": float(line.u_bp) if line.u_bp else None,
+                        "U_policy": line.u_policy,
+                        "U_focitem": line.u_focitem,
+                        "U_crop": line.u_crop
+                    }
+                    payload["DocumentLines"].append(line_data)
+                
+                # Post to SAP
+                sap_client = SAPClient()
+                response = sap_client.post('Orders', payload)
+                
+                # Store complete response
+                order.sap_response_json = json.dumps(response, indent=2) if response else None
+                
+                if response and 'DocEntry' in response:
+                    order.sap_doc_entry = response.get('DocEntry')
+                    order.sap_doc_num = response.get('DocNum')
+                    order.is_posted_to_sap = True
+                    order.posted_at = timezone.now()
+                    order.sap_error = None
+                    order.save()
+                    success_count += 1
+                    self.message_user(request, f"Order #{order.id} posted successfully. SAP DocNum: {order.sap_doc_num}", messages.SUCCESS)
+                else:
+                    error_count += 1
+                    order.sap_error = "No DocEntry in response"
+                    order.save()
+                    self.message_user(request, f"Order #{order.id} failed: No DocEntry in response", messages.ERROR)
+                    
+            except Exception as e:
+                error_count += 1
+                order.sap_error = str(e)
+                order.save()
+                self.message_user(request, f"Order #{order.id} failed: {str(e)}", messages.ERROR)
+        
+        if success_count > 0:
+            self.message_user(request, f"{success_count} order(s) posted successfully", messages.SUCCESS)
+        if error_count > 0:
+            self.message_user(request, f"{error_count} order(s) failed", messages.ERROR)
+    
+    post_to_sap.short_description = "Post selected orders to SAP"
+    
+    def get_urls(self):
+        """Add custom URL for individual order posting"""
+        from django.urls import path
+        urls = super().get_urls()
+        custom_urls = [
+            path('<int:order_id>/post-to-sap/', 
+                 self.admin_site.admin_view(self.post_single_order_to_sap),
+                 name='post_order_to_sap'),
+        ]
+        return custom_urls + urls
+    
+    def post_single_order_to_sap(self, request, order_id):
+        """Handle posting a single order to SAP with async JSON response"""
+        from django.shortcuts import redirect
+        from django.urls import reverse
+        from django.http import JsonResponse
+        
+        order = SalesOrder.objects.get(pk=order_id)
+        
+        # Check if already posted
+        if order.is_posted_to_sap:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'error': f"Order #{order.id} is already posted to SAP"
+                }, status=400)
+            else:
+                self.message_user(request, f"Order #{order.id} already posted to SAP", messages.WARNING)
+                return redirect(reverse('admin:FieldAdvisoryService_salesorder_change', args=[order_id]))
+        
+        try:
+            # Build SAP payload
+            payload = {
+                "Series": order.series,
+                "DocType": order.doc_type,
+                "DocDate": order.doc_date.strftime('%Y-%m-%d') if order.doc_date else None,
+                "DocDueDate": order.doc_due_date.strftime('%Y-%m-%d') if order.doc_due_date else None,
+                "TaxDate": order.tax_date.strftime('%Y-%m-%d') if order.tax_date else None,
+                "CardCode": order.card_code,
+                "CardName": order.card_name,
+                "ContactPersonCode": order.contact_person_code,
+                "FederalTaxID": order.federal_tax_id,
+                "PayToCode": order.pay_to_code,
+                "Address": order.address,
+                "DocCurrency": order.doc_currency,
+                "DocRate": float(order.doc_rate),
+                "Comments": order.comments or "",
+                "SummeryType": order.summery_type,
+                "DocObjectCode": order.doc_object_code,
+                "U_sotyp": order.u_sotyp,
+                "U_USID": order.u_usid,
+                "U_SWJE": order.u_swje,
+                "U_SECJE": order.u_secje,
+                "U_CRJE": order.u_crje,
+                "U_SCardCode": order.u_s_card_code,
+                "U_SCardName": order.u_s_card_name,
+                "DocumentLines": []
+            }
+            
+            # Add document lines
+            for line in order.document_lines.all().order_by('line_num'):
+                line_data = {
+                    "LineNum": line.line_num,
+                    "ItemCode": line.item_code,
+                    "ItemDescription": line.item_description,
+                    "Quantity": float(line.quantity),
+                    "DiscountPercent": float(line.discount_percent),
+                    "WarehouseCode": line.warehouse_code,
+                    "VatGroup": line.vat_group,
+                    "UnitsOfMeasurment": float(line.units_of_measurment),
+                    "TaxPercentagePerRow": float(line.tax_percentage_per_row),
+                    "UnitPrice": float(line.unit_price),
+                    "UoMEntry": line.uom_entry,
+                    "MeasureUnit": line.measure_unit,
+                    "UoMCode": line.uom_code,
+                    "ProjectCode": line.project_code,
+                    "U_SD": float(line.u_sd),
+                    "U_AD": float(line.u_ad),
+                    "U_EXD": float(line.u_exd),
+                    "U_zerop": float(line.u_zerop),
+                    "U_pl": line.u_pl,
+                    "U_BP": float(line.u_bp) if line.u_bp else None,
+                    "U_policy": line.u_policy,
+                    "U_focitem": line.u_focitem,
+                    "U_crop": line.u_crop
+                }
+                payload["DocumentLines"].append(line_data)
+            
+            # Post to SAP (this is the blocking call that takes 10-20 seconds)
+            sap_client = SAPClient()
+            response = sap_client.post('Orders', payload)
+            
+            # Store complete response
+            order.sap_response_json = json.dumps(response, indent=2) if response else None
+            
+            if response and 'DocEntry' in response:
+                order.sap_doc_entry = response.get('DocEntry')
+                order.sap_doc_num = response.get('DocNum')
+                order.is_posted_to_sap = True
+                order.posted_at = timezone.now()
+                order.sap_error = None
+                order.save()
+                
+                success_message = f"Order #{order.id} posted successfully to SAP"
+                
+                # Return JSON response for AJAX requests
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        'success': True,
+                        'message': success_message,
+                        'doc_entry': order.sap_doc_entry,
+                        'doc_num': order.sap_doc_num
+                    })
+                else:
+                    self.message_user(request, 
+                        f"✓ {success_message}! DocEntry: {order.sap_doc_entry}, DocNum: {order.sap_doc_num}", 
+                        messages.SUCCESS)
+            else:
+                error_msg = "No DocEntry in SAP response"
+                order.sap_error = error_msg
+                order.save()
+                
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        'success': False,
+                        'error': error_msg
+                    }, status=400)
+                else:
+                    self.message_user(request, f"Order #{order.id} failed: {error_msg}", messages.ERROR)
+                
+        except Exception as e:
+            error_msg = str(e)
+            order.sap_error = error_msg
+            order.sap_response_json = json.dumps({"error": error_msg}, indent=2)
+            order.save()
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'error': error_msg
+                }, status=500)
+            else:
+                self.message_user(request, f"Order #{order.id} failed: {error_msg}", messages.ERROR)
+        
+        # For non-AJAX requests, redirect back
+        return redirect(reverse('admin:FieldAdvisoryService_salesorder_change', args=[order_id]))
+
+
 admin.site.register(SalesOrderAttachment)
 
 

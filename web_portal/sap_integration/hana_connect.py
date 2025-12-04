@@ -297,7 +297,15 @@ def table_columns(db, schema: str, table: str) -> list:
             out.append(v)
     return out
 
-def products_catalog(db) -> list:
+def products_catalog(db, schema_name: str = '') -> list:
+    """
+    Fetch products catalog with image URLs based on database name.
+    Images are stored in media/product_images/{DB_NAME}/{ItemCode}.jpg
+    
+    Args:
+        db: Database connection object
+        schema_name: Schema name (e.g., '4B-BIO_APP', '4B-ORANG_APP')
+    """
     sql = (
         'SELECT '
         ' T1."ItmsGrpCod", '
@@ -316,7 +324,37 @@ def products_catalog(db) -> list:
         ' AND T0."validFor" = \'Y\' '
         ' AND T0."U_PCN" = \'Gabru-Df\''
     )
-    return _fetch_all(db, sql)
+    results = _fetch_all(db, sql)
+    
+    # Extract database name from schema name string
+    # Database names are like: 4B-BIO_APP, 4B-ORANG_APP
+    # We need to extract the prefix (4B-BIO or 4B-ORANG) for folder names
+    db_name = schema_name.upper() if schema_name else ''
+    if '4B-BIO' in db_name:
+        folder_name = '4B-BIO'
+    elif '4B-ORANG' in db_name:
+        folder_name = '4B-ORANG'
+    else:
+        folder_name = 'default'
+    
+    # Add image URLs to each product using the actual filenames from SAP
+    # Note: Full URLs with base domain will be added in the view layer
+    for row in results:
+        # Product Image URL (from SAP's Product_Image field)
+        product_image_filename = row.get('Product_Image')
+        if product_image_filename:
+            row['product_image_url'] = f'/media/product_images/{folder_name}/{product_image_filename}'
+        else:
+            row['product_image_url'] = None
+        
+        # Product Description Urdu Image URL (from SAP's Product_Description_Urdu field)
+        urdu_image_filename = row.get('Product_Description_Urdu')
+        if urdu_image_filename:
+            row['product_description_urdu_url'] = f'/media/product_images/{folder_name}/{urdu_image_filename}'
+        else:
+            row['product_description_urdu_url'] = None
+    
+    return results
 
 def policy_customer_balance(db, card_code: str) -> list:
     sql = (
@@ -701,6 +739,260 @@ def main():
         except Exception:
             pass
         err(str(e), 1)
+
+def sales_orders_all(db, limit: int = 100, card_code: str | None = None, doc_status: str | None = None, 
+                     from_date: str | None = None, to_date: str | None = None) -> list:
+    """
+    Fetch sales orders with optional filters
+    """
+    sql = (
+        'SELECT '
+        ' T0."DocEntry", '
+        ' T0."DocNum", '
+        ' T0."DocDate", '
+        ' T0."DocDueDate", '
+        ' T0."CardCode", '
+        ' T0."CardName", '
+        ' T0."DocTotal", '
+        ' T0."DocCur", '
+        ' T0."DocStatus", '
+        ' T0."CANCELED", '
+        ' T0."Project", '
+        ' T0."Comments" '
+        ' FROM "ORDR" T0 '
+    )
+    
+    where_clauses = []
+    params = []
+    
+    if card_code and card_code.strip():
+        where_clauses.append(' T0."CardCode" = ? ')
+        params.append(card_code.strip())
+    
+    if doc_status and doc_status.strip().upper() in ('O', 'C'):
+        where_clauses.append(' T0."DocStatus" = ? ')
+        params.append(doc_status.strip().upper())
+    
+    if from_date and from_date.strip():
+        where_clauses.append(" T0.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') ")
+        params.append(from_date.strip())
+    
+    if to_date and to_date.strip():
+        where_clauses.append(" T0.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
+        params.append(to_date.strip())
+    
+    if where_clauses:
+        sql += ' WHERE ' + ' AND '.join(where_clauses)
+    
+    sql += ' ORDER BY T0."DocEntry" DESC'
+    
+    if limit > 0:
+        sql += f' LIMIT {limit}'
+    
+    return _fetch_all(db, sql, tuple(params))
+
+def customer_lov(db, search: str | None = None) -> list:
+    """Customer List of Values"""
+    sql = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T0."CardName", '
+        ' T0."CntctPrsn", '
+        ' T0."LicTradNum" '
+        'FROM OCRD T0 '
+        'WHERE T0."CardType" = \'C\' '
+        'AND T0."validFor" = \'Y\' '
+    )
+    
+    params = []
+    if search and search.strip():
+        sql += ' AND (T0."CardCode" LIKE ? OR T0."CardName" LIKE ?) '
+        search_param = f'%{search.strip()}%'
+        params.extend([search_param, search_param])
+    
+    sql += ' ORDER BY T0."CardCode" LIMIT 100'
+    
+    return _fetch_all(db, sql, tuple(params))
+
+def customer_addresses(db, card_code: str) -> list:
+    """Get billing address for a customer"""
+    sql = (
+        'SELECT T1."Address", '
+        'T1."Street" '
+        'FROM OCRD T0 '
+        'INNER JOIN CRD1 T1 ON T0."CardCode" = T1."CardCode" '
+        'AND T0."BillToDef" = T1."Address" '
+        'WHERE T0."CardCode" = ? '
+    )
+    return _fetch_all(db, sql, (card_code,))
+
+def contact_person_name(db, card_code: str, contact_code: str) -> dict:
+    """Get contact person name by CardCode and ContactCode"""
+    sql = 'SELECT T0."Name" FROM OCPR T0 WHERE T0."CardCode" = ? AND T0."CntctCode" = ?'
+    return _fetch_one(db, sql, (card_code, contact_code))
+
+def item_lov(db, search: str | None = None) -> list:
+    """Item List of Values"""
+    sql = (
+        'SELECT '
+        'T0."ItemCode", '
+        'T0."ItemName", '
+        'T0."SalUnitMsr", '
+        'T0."IUoMEntry" '
+        'FROM OITM T0 '
+        'WHERE T0."validFor" = \'Y\' '
+        'AND T0."SellItem" = \'Y\' '
+        'AND T0."Series" = \'72\' '
+    )
+    
+    params = []
+    if search and search.strip():
+        sql += ' AND (T0."ItemCode" LIKE ? OR T0."ItemName" LIKE ?) '
+        search_param = f'%{search.strip()}%'
+        params.extend([search_param, search_param])
+    
+    sql += ' ORDER BY T0."ItemCode" LIMIT 100'
+    
+    return _fetch_all(db, sql, tuple(params))
+
+def warehouse_for_item(db, item_code: str) -> list:
+    """Get warehouses for an item"""
+    sql = (
+        'SELECT '
+        ' T0."WhsCode", '
+        ' T1."WhsName" '
+        'FROM OITW T0 '
+        'INNER JOIN OWHS T1 ON T0."WhsCode" = T1."WhsCode" '
+        'WHERE T0."ItemCode" = ? '
+    )
+    return _fetch_all(db, sql, (item_code,))
+
+def sales_tax_codes(db) -> list:
+    """Get sales tax codes"""
+    sql = (
+        'SELECT '
+        ' T0."Code", '
+        ' T0."Name", '
+        ' T0."Rate" '
+        'FROM OVTG T0 '
+        'WHERE T0."Category" = \'O\' '
+        'AND T0."Inactive" = \'N\' '
+    )
+    return _fetch_all(db, sql)
+
+def projects_lov(db, search: str | None = None) -> list:
+    """Project List of Values"""
+    sql = (
+        'SELECT '
+        ' T0."PrjCode", '
+        ' T0."PrjName" '
+        'FROM OPRJ T0 '
+        'WHERE T0."Active" = \'Y\' '
+    )
+    
+    params = []
+    if search and search.strip():
+        sql += ' AND (T0."PrjCode" LIKE ? OR T0."PrjName" LIKE ?) '
+        search_param = f'%{search.strip()}%'
+        params.extend([search_param, search_param])
+    
+    sql += ' ORDER BY T0."PrjCode" LIMIT 100'
+    
+    return _fetch_all(db, sql, tuple(params))
+
+def policy_link(db, project_code: str) -> dict:
+    """Get policy link DocEntry by project code"""
+    sql = 'SELECT a."DocEntry" FROM "@PL1" a WHERE a."U_proj" = ?'
+    return _fetch_one(db, sql, (project_code,))
+
+def additional_discount(db, policy: str, item_code: str, pl_entry: str) -> dict:
+    """Get additional discount (U_AD) for policy, item, and PL entry"""
+    sql = (
+        'SELECT b."U_ad" '
+        'FROM "@PL1" a '
+        'INNER JOIN "@PLR4" b ON a."DocEntry" = b."DocEntry" '
+        'WHERE a."U_proj" = ? '
+        'AND b."U_itc" = ? '
+        'AND a."DocEntry" = ?'
+    )
+    return _fetch_one(db, sql, (policy, item_code, pl_entry))
+
+def extra_discount(db, policy: str, item_code: str, pl_entry: str) -> dict:
+    """Get extra discount (U_ED) for policy, item, and PL entry"""
+    sql = (
+        'SELECT b."U_ed" '
+        'FROM "@PL1" a '
+        'INNER JOIN "@PLR4" b ON a."DocEntry" = b."DocEntry" '
+        'WHERE a."U_proj" = ? '
+        'AND b."U_itc" = ? '
+        'AND a."DocEntry" = ?'
+    )
+    return _fetch_one(db, sql, (policy, item_code, pl_entry))
+
+def phase_discount(db, project_code: str) -> dict:
+    """Get phase discount (U_zerop) based on project code and payment collection"""
+    sql = (
+        'SELECT c."U_zdis" '
+        'FROM OPRJ b '
+        'INNER JOIN "@PLR3" c ON b."U_pc" = c."DocEntry" '
+        'WHERE b."PrjCode" = ? '
+        'AND IFNULL(( '
+        '    SELECT SUM(a."DocTotal") '
+        '    FROM ORCT a '
+        '    WHERE a."PrjCode" = ? '
+        '    AND a."Canceled" = \'N\' '
+        '), 0) BETWEEN c."U_lsb" AND c."U_upslb"'
+    )
+    return _fetch_one(db, sql, (project_code, project_code))
+
+def project_balance(db, project_code: str) -> dict:
+    """Get project balance (U_BP) from journal entries"""
+    sql = (
+        'SELECT IFNULL(SUM(a."Debit" - a."Credit"), 0) AS "Balance" '
+        'FROM JDT1 a '
+        'WHERE a."Project" = ?'
+    )
+    return _fetch_one(db, sql, (project_code,))
+
+def policy_balance_by_customer(db, card_code: str = None) -> list:
+    """Get policy-wise balance for a specific customer (ShortName) or all customers"""
+    if card_code and card_code.strip():
+        # Specific customer
+        sql = (
+            'SELECT a."Project" AS "ProjectCode", '
+            'b."PrjName" AS "ProjectName", '
+            'a."ShortName" AS "CardCode", '
+            'SUM(a."Debit" - a."Credit") AS "Balance" '
+            'FROM JDT1 a '
+            'LEFT JOIN OPRJ b ON a."Project" = b."PrjCode" '
+            'WHERE a."Project" IS NOT NULL '
+            'AND a."ShortName" = ? '
+            'GROUP BY a."Project", b."PrjName", a."ShortName" '
+            'HAVING SUM(a."Debit" - a."Credit") <> 0 '
+            'ORDER BY a."Project"'
+        )
+        return _fetch_all(db, sql, (card_code.strip(),))
+    else:
+        # All customers with policy balances
+        sql = (
+            'SELECT a."Project" AS "ProjectCode", '
+            'b."PrjName" AS "ProjectName", '
+            'a."ShortName" AS "CardCode", '
+            'SUM(a."Debit" - a."Credit") AS "Balance" '
+            'FROM JDT1 a '
+            'LEFT JOIN OPRJ b ON a."Project" = b."PrjCode" '
+            'WHERE a."Project" IS NOT NULL '
+            'GROUP BY a."Project", b."PrjName", a."ShortName" '
+            'HAVING SUM(a."Debit" - a."Credit") <> 0 '
+            'ORDER BY a."Project", a."ShortName" '
+            'LIMIT 500'
+        )
+        return _fetch_all(db, sql)
+
+def crop_lov(db) -> list:
+    """Crop List of Values"""
+    sql = 'SELECT T1."Code", T1."Name" FROM "@CROP1" T1'
+    return _fetch_all(db, sql)
 
 if __name__ == '__main__':
     main()

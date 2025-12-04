@@ -5,7 +5,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     DealerViewSet, MeetingScheduleViewSet, SalesOrderViewSet,
     CompanyViewSet, RegionViewSet, ZoneViewSet, TerritoryViewSet,
-    DealerRequestViewSet, CompanyNestedViewSet ,RegionNestedViewSet, ZoneNestedViewSet,TerritoryNestedViewSet
+    DealerRequestViewSet, CompanyNestedViewSet ,RegionNestedViewSet, ZoneNestedViewSet,TerritoryNestedViewSet,
+    api_warehouse_for_item, api_customer_address, api_policy_link, api_discounts, api_project_balance
 )
 
 # 📦 Core API Router
@@ -30,4 +31,11 @@ dealer_router.register(r'requests',DealerRequestViewSet, basename='dealer-reques
 urlpatterns = [
     path('',include(core_router.urls)),
     path('dealer-requests/',include(dealer_router.urls)),
+    
+    # SAP LOV API endpoints for admin forms
+    path('api/warehouse_for_item/', api_warehouse_for_item, name='api_warehouse_for_item'),
+    path('api/customer_address/', api_customer_address, name='api_customer_address'),
+    path('api/policy_link/', api_policy_link, name='api_policy_link'),
+    path('api/discounts/', api_discounts, name='api_discounts'),
+    path('api/project_balance/', api_project_balance, name='api_project_balance'),
 ]

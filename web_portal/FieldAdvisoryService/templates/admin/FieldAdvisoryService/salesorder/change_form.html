@@ -1,0 +1,583 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+
+<style>
+    /* SAP Loading Screen Overlay */
+    .sap-loading-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        z-index: 99999;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .sap-loading-overlay.active {
+        display: flex;
+    }
+    
+    .sap-loading-content {
+        background: white;
+        padding: 40px 60px;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        max-width: 500px;
+        animation: slideIn 0.3s ease-out;
+    }
+    
+    @keyframes slideIn {
+        from {
+            transform: translateY(-50px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+    
+    /* Spinner Animation */
+    .sap-spinner {
+        width: 60px;
+        height: 60px;
+        margin: 0 auto 20px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #417690;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .sap-loading-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 10px;
+    }
+    
+    .sap-loading-message {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 5px;
+    }
+    
+    .sap-loading-elapsed {
+        font-size: 13px;
+        color: #999;
+        margin-top: 10px;
+        font-family: monospace;
+    }
+    
+    .sap-loading-warning {
+        display: none;
+        margin-top: 15px;
+        padding: 12px;
+        background-color: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 6px;
+        color: #856404;
+        font-size: 13px;
+    }
+    
+    .sap-loading-warning.show {
+        display: block;
+        animation: pulse 1s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+    
+    /* Success/Error Result */
+    .sap-loading-result {
+        display: none;
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+    
+    .sap-loading-result.show {
+        display: block;
+    }
+    
+    .sap-loading-result.success {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+    }
+    
+    .sap-loading-result.error {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+    }
+    
+    .sap-loading-result-icon {
+        font-size: 40px;
+        margin-bottom: 10px;
+    }
+    
+    /* Progress Bar */
+    .sap-progress-container {
+        width: 100%;
+        height: 6px;
+        background-color: #e0e0e0;
+        border-radius: 3px;
+        margin-top: 15px;
+        overflow: hidden;
+    }
+    
+    .sap-progress-bar {
+        height: 100%;
+        background-color: #417690;
+        width: 0%;
+        transition: width 0.5s ease;
+        animation: progress 20s linear;
+    }
+    
+    @keyframes progress {
+        0% { width: 0%; }
+        50% { width: 60%; }
+        100% { width: 90%; }
+    }
+</style>
+
+<script>
+(function($) {
+    // Loading Screen Controller
+    var SAPLoadingScreen = {
+        overlay: null,
+        startTime: null,
+        elapsedTimer: null,
+        timeoutWarningShown: false,
+        
+        init: function() {
+            // Create loading overlay HTML
+            var html = '<div class="sap-loading-overlay" id="sapLoadingOverlay">' +
+                       '  <div class="sap-loading-content">' +
+                       '    <div class="sap-spinner"></div>' +
+                       '    <div class="sap-loading-title">Processing SAP Request</div>' +
+                       '    <div class="sap-loading-message">Please wait while we communicate with SAP Business One...</div>' +
+                       '    <div class="sap-progress-container">' +
+                       '      <div class="sap-progress-bar"></div>' +
+                       '    </div>' +
+                       '    <div class="sap-loading-elapsed">Elapsed: <span id="sapElapsedTime">0s</span></div>' +
+                       '    <div class="sap-loading-warning" id="sapTimeoutWarning">' +
+                       '      ⚠️ This is taking longer than usual. The SAP server may be experiencing delays.' +
+                       '    </div>' +
+                       '    <div class="sap-loading-result" id="sapResult">' +
+                       '      <div class="sap-loading-result-icon"></div>' +
+                       '      <div class="sap-loading-result-message"></div>' +
+                       '    </div>' +
+                       '  </div>' +
+                       '</div>';
+            
+            $('body').append(html);
+            this.overlay = $('#sapLoadingOverlay');
+        },
+        
+        show: function() {
+            if (!this.overlay) {
+                this.init();
+            }
+            
+            // Reset state
+            this.startTime = Date.now();
+            this.timeoutWarningShown = false;
+            $('#sapTimeoutWarning').removeClass('show');
+            $('#sapResult').removeClass('show success error');
+            $('.sap-progress-bar').css('animation', 'progress 20s linear');
+            
+            // Show overlay
+            this.overlay.addClass('active');
+            
+            // Start elapsed time counter
+            this.startElapsedTimer();
+            
+            // Disable scrolling
+            $('body').css('overflow', 'hidden');
+        },
+        
+        hide: function() {
+            if (this.overlay) {
+                this.overlay.removeClass('active');
+            }
+            this.stopElapsedTimer();
+            
+            // Re-enable scrolling
+            $('body').css('overflow', '');
+        },
+        
+        startElapsedTimer: function() {
+            var self = this;
+            this.elapsedTimer = setInterval(function() {
+                var elapsed = Math.floor((Date.now() - self.startTime) / 1000);
+                $('#sapElapsedTime').text(elapsed + 's');
+                
+                // Show warning after 15 seconds
+                if (elapsed >= 15 && !self.timeoutWarningShown) {
+                    $('#sapTimeoutWarning').addClass('show');
+                    self.timeoutWarningShown = true;
+                }
+            }, 100);
+        },
+        
+        stopElapsedTimer: function() {
+            if (this.elapsedTimer) {
+                clearInterval(this.elapsedTimer);
+                this.elapsedTimer = null;
+            }
+        },
+        
+        showResult: function(success, message, docNum) {
+            // Stop progress animation
+            $('.sap-progress-bar').css('animation', 'none');
+            $('.sap-progress-bar').css('width', '100%');
+            
+            // Hide spinner and message
+            $('.sap-spinner').hide();
+            $('.sap-loading-message').hide();
+            $('.sap-progress-container').hide();
+            $('#sapTimeoutWarning').removeClass('show');
+            
+            // Show result
+            var result = $('#sapResult');
+            var icon = result.find('.sap-loading-result-icon');
+            var msg = result.find('.sap-loading-result-message');
+            
+            if (success) {
+                result.addClass('show success');
+                icon.html('✓');
+                msg.html('<strong>Success!</strong><br>' + message);
+                if (docNum) {
+                    msg.append('<br><small>SAP DocNum: ' + docNum + '</small>');
+                }
+                
+                // Auto-reload after 2 seconds
+                setTimeout(function() {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                result.addClass('show error');
+                icon.html('✗');
+                msg.html('<strong>Error</strong><br>' + message);
+                
+                // Auto-hide after 5 seconds
+                setTimeout(function() {
+                    SAPLoadingScreen.hide();
+                }, 5000);
+            }
+        }
+    };
+    
+    $(document).ready(function() {
+        console.log('Sales Order LOV script loaded');
+        
+        // Initialize loading screen
+        SAPLoadingScreen.init();
+        
+        // Intercept "Add to SAP" button clicks
+        $(document).on('click', 'a[href*="post-to-sap"]', function(e) {
+            e.preventDefault();
+            var url = $(this).attr('href');
+            
+            // Show loading screen
+            SAPLoadingScreen.show();
+            
+            // Make async AJAX call
+            $.ajax({
+                url: url,
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
+                },
+                success: function(response) {
+                    if (response.success) {
+                        SAPLoadingScreen.showResult(
+                            true, 
+                            response.message || 'Order posted to SAP successfully',
+                            response.doc_num
+                        );
+                    } else {
+                        SAPLoadingScreen.showResult(
+                            false,
+                            response.error || 'Failed to post order to SAP'
+                        );
+                    }
+                },
+                error: function(xhr, status, error) {
+                    var errorMessage = 'Network error occurred';
+                    try {
+                        var response = JSON.parse(xhr.responseText);
+                        errorMessage = response.error || errorMessage;
+                    } catch(e) {
+                        if (xhr.status === 0) {
+                            errorMessage = 'Unable to connect to server';
+                        } else if (xhr.status === 500) {
+                            errorMessage = 'Internal server error';
+                        } else {
+                            errorMessage = 'Error: ' + xhr.status;
+                        }
+                    }
+                    SAPLoadingScreen.showResult(false, errorMessage);
+                }
+            });
+        });
+
+        
+        // Handle customer selection
+        var cardCodeField = $('#id_card_code');
+        if (cardCodeField.length) {
+            cardCodeField.on('change', function() {
+                var cardCode = $(this).val();
+                if (cardCode) {
+                    // Auto-fill customer name from the selected option text
+                    var selectedText = $(this).find('option:selected').text();
+                    if (selectedText && selectedText.includes(' - ')) {
+                        var cardName = selectedText.split(' - ')[1];
+                        $('#id_card_name').val(cardName);
+                    }
+                    
+                    // Load address for this customer
+                    loadCustomerAddress(cardCode);
+                }
+            });
+        }
+        
+        // Handle item code selection in inline forms
+        $(document).on('change', '[id^="id_document_lines-"][id$="-item_code"]', function() {
+            var itemCode = $(this).val();
+            var row = $(this).closest('tr');
+            
+            if (itemCode) {
+                // Auto-fill item description from selected option
+                var selectedText = $(this).find('option:selected').text();
+                if (selectedText && selectedText.includes(' - ')) {
+                    var itemName = selectedText.split(' - ').slice(1).join(' - ');
+                    row.find('[id$="-item_description"]').val(itemName);
+                }
+                
+                // Load warehouses for this item
+                var warehouseSelect = row.find('[id$="-warehouse_code"]');
+                loadWarehousesForItem(itemCode, warehouseSelect);
+            }
+        });
+        
+        // Handle project selection
+        $(document).on('change', '[id^="id_document_lines-"][id$="-project_code"]', function() {
+            var projectCode = $(this).val();
+            var row = $(this).closest('tr');
+            
+            if (projectCode) {
+                // Load policy link for this project
+                loadPolicyLink(projectCode, row);
+            }
+        });
+        
+        // Handle policy selection
+        $(document).on('change', '[id^="id_document_lines-"][id$="-u_policy"]', function() {
+            var policy = $(this).val();
+            var row = $(this).closest('tr');
+            var itemCode = row.find('[id$="-item_code"]').val();
+            var pl = row.find('[id$="-u_pl"]').val();
+            
+            if (policy && itemCode && pl) {
+                // Load discounts
+                loadDiscounts(policy, itemCode, pl, row);
+            }
+        });
+        
+        function loadCustomerAddress(cardCode) {
+            // This would need an API endpoint to fetch address
+            console.log('Loading address for customer:', cardCode);
+            // TODO: Implement AJAX call to get address
+        }
+        
+        function loadWarehousesForItem(itemCode, warehouseSelect) {
+            console.log('Loading warehouses for item:', itemCode);
+            
+            $.ajax({
+                url: '/api/field/api/warehouse_for_item/',
+                method: 'GET',
+                data: { item_code: itemCode },
+                success: function(response) {
+                    if (response.warehouses) {
+                        var options = '<option value="">--- Select Warehouse ---</option>';
+                        response.warehouses.forEach(function(wh) {
+                            options += '<option value="' + wh.WhsCode + '">' + 
+                                      wh.WhsCode + ' - ' + wh.WhsName + '</option>';
+                        });
+                        warehouseSelect.html(options);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.error('Error loading warehouses:', error);
+                }
+            });
+        }
+        
+        function loadPolicyLink(projectCode, row) {
+            console.log('Loading policy link for project:', projectCode);
+            // TODO: Implement policy link loading
+        }
+        
+        function loadDiscounts(policy, itemCode, pl, row) {
+            console.log('Loading discounts for:', policy, itemCode, pl);
+            // TODO: Implement discount loading
+        }
+    });
+})(django.jQuery);
+</script>
+
+<style>
+    /* Make SAP response JSON more readable */
+    #id_sap_response_json {
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        background-color: #f5f5f5;
+        border: 1px solid #ddd;
+        padding: 10px;
+    }
+    
+    /* Style for LOV select fields */
+    .sap-customer-lov, .sap-item-lov, .sap-warehouse-lov, 
+    .sap-tax-lov, .sap-project-lov, .sap-crop-lov {
+        min-width: 300px;
+    }
+    
+    /* Highlight readonly fields */
+    input[readonly], textarea[readonly] {
+        background-color: #f0f0f0;
+        cursor: not-allowed;
+    }
+    
+    /* Sales Order Lines - Fix overlapping fields */
+    .inline-group .tabular tbody tr td {
+        padding: 8px 5px;
+        vertical-align: top;
+    }
+    
+    /* Make inline table cells wrap properly */
+    .inline-group .tabular tbody tr td.field-line_num,
+    .inline-group .tabular tbody tr td.field-quantity,
+    .inline-group .tabular tbody tr td.field-unit_price,
+    .inline-group .tabular tbody tr td.field-discount_percent,
+    .inline-group .tabular tbody tr td.field-tax_percentage_per_row,
+    .inline-group .tabular tbody tr td.field-uom_entry {
+        min-width: 80px;
+    }
+    
+    .inline-group .tabular tbody tr td.field-item_code,
+    .inline-group .tabular tbody tr td.field-warehouse_code,
+    .inline-group .tabular tbody tr td.field-vat_group,
+    .inline-group .tabular tbody tr td.field-project_code {
+        min-width: 200px;
+    }
+    
+    .inline-group .tabular tbody tr td.field-item_description {
+        min-width: 250px;
+        max-width: 300px;
+    }
+    
+    .inline-group .tabular tbody tr td.field-measure_unit,
+    .inline-group .tabular tbody tr td.field-uom_code {
+        min-width: 100px;
+    }
+    
+    /* User defined fields */
+    .inline-group .tabular tbody tr td.field-u_sd,
+    .inline-group .tabular tbody tr td.field-u_ad,
+    .inline-group .tabular tbody tr td.field-u_exd,
+    .inline-group .tabular tbody tr td.field-u_zerop,
+    .inline-group .tabular tbody tr td.field-u_pl,
+    .inline-group .tabular tbody tr td.field-u_bp,
+    .inline-group .tabular tbody tr td.field-u_policy,
+    .inline-group .tabular tbody tr td.field-u_focitem {
+        min-width: 100px;
+    }
+    
+    .inline-group .tabular tbody tr td.field-u_crop {
+        min-width: 150px;
+    }
+    
+    /* Make inline table responsive and scrollable */
+    .inline-group .tabular {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        border: 1px solid #ddd;
+        margin-bottom: 20px;
+    }
+    
+    .inline-group .tabular table {
+        width: 100%;
+        min-width: 2000px; /* Ensure table is wide enough for all fields */
+    }
+    
+    /* Improve input field sizing in inlines */
+    .inline-group .tabular input[type="text"],
+    .inline-group .tabular input[type="number"],
+    .inline-group .tabular select {
+        width: 100%;
+        box-sizing: border-box;
+        min-width: 60px;
+    }
+    
+    /* Specific field widths for better layout */
+    .inline-group .tabular select[id$="-item_code"],
+    .inline-group .tabular select[id$="-project_code"] {
+        min-width: 300px;
+    }
+    
+    .inline-group .tabular select[id$="-warehouse_code"],
+    .inline-group .tabular select[id$="-vat_group"],
+    .inline-group .tabular select[id$="-u_crop"] {
+        min-width: 200px;
+    }
+    
+    .inline-group .tabular input[id$="-item_description"] {
+        min-width: 250px;
+    }
+    
+    .inline-group .tabular input[id$="-quantity"],
+    .inline-group .tabular input[id$="-unit_price"],
+    .inline-group .tabular input[id$="-discount_percent"],
+    .inline-group .tabular input[id$="-tax_percentage_per_row"] {
+        min-width: 80px;
+        max-width: 120px;
+    }
+    
+    /* Make table header sticky */
+    .inline-group .tabular thead th {
+        position: sticky;
+        top: 0;
+        background-color: #f8f8f8;
+        z-index: 10;
+        padding: 8px 5px;
+        border-bottom: 2px solid #ddd;
+    }
+    
+    /* Add visual separation for better readability */
+    .inline-group .tabular tbody tr {
+        border-bottom: 1px solid #eee;
+    }
+    
+    .inline-group .tabular tbody tr:hover {
+        background-color: #f9f9f9;
+    }
+</style>
+{% endblock %}

@@ -20,6 +20,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Base URL for generating full image URLs
+# Change this to your production domain when deploying
+# Examples:
+#   Development: 'http://localhost:8000'
+#   Production: 'https://yourdomain.com'
+#   Environment variable: config('BASE_URL', default='http://localhost:8000')
+BASE_URL = config('BASE_URL', default='http://localhost:8000')
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 

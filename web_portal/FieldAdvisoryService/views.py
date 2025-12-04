@@ -614,3 +614,238 @@ class TerritoryNestedViewSet(viewsets.ReadOnlyModelViewSet):
     @swagger_auto_schema(tags=["25. Territories (Nested View)"])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+
+# SAP LOV API endpoints for admin form dropdowns
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from sap_integration import hana_connect
+import os
+
+def _load_env_file(path: str) -> None:
+    """Load environment variables from .env file"""
+    try:
+        if os.path.isfile(path) and os.access(path, os.R_OK):
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    s = line.strip()
+                    if s == '' or s.startswith('#') or '=' not in s:
+                        continue
+                    k, v = s.split('=', 1)
+                    k = k.strip()
+                    v = v.strip()
+                    if v != '' and ((v[0] == '"' and v[-1] == '"') or (v[0] == "'" and v[-1] == "'")):
+                        v = v[1:-1]
+                    if k != '' and not os.environ.get(k):
+                        os.environ[k] = v
+    except Exception:
+        pass
+
+def get_hana_connection():
+    """Get HANA database connection"""
+    try:
+        # Load .env file
+        _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
+        
+        from hdbcli import dbapi
+        from preferences.models import Setting
+        
+        # Get database name from settings
+        try:
+            db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+            if db_setting and hasattr(db_setting, 'value'):
+                # If value is a dict, get the current selected schema
+                if isinstance(db_setting.value, dict):
+                    schema = list(db_setting.value.values())[0] if db_setting.value else '4B-BIO_APP'
+                else:
+                    schema = str(db_setting.value)
+            else:
+                schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+        except Exception as e:
+            print(f"Error getting schema from settings: {e}")
+            schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+        
+        # Strip quotes if present
+        schema = schema.strip('"\'')
+        
+        # Connection parameters
+        host = os.environ.get('HANA_HOST', '').strip()
+        port = int(os.environ.get('HANA_PORT', 30015))
+        user = os.environ.get('HANA_USER', '').strip()
+        password = os.environ.get('HANA_PASSWORD', '').strip()
+        
+        if not host or not user:
+            return None
+        
+        # Connect
+        conn = dbapi.connect(address=host, port=port, user=user, password=password)
+        
+        # Set schema
+        cursor = conn.cursor()
+        cursor.execute(f'SET SCHEMA "{schema}"')
+        cursor.close()
+        
+        return conn
+    except Exception as e:
+        print(f"Error connecting to HANA: {e}")
+        return None
+
+@require_http_methods(["GET"])
+def api_warehouse_for_item(request):
+    """Get warehouses for a specific item"""
+    item_code = request.GET.get('item_code')
+    if not item_code:
+        return JsonResponse({'error': 'item_code parameter required'}, status=400)
+    
+    try:
+        db = get_hana_connection()
+        if not db:
+            return JsonResponse({'error': 'Database connection failed'}, status=500)
+        
+        warehouses = hana_connect.warehouse_for_item(db, item_code)
+        db.close()
+        return JsonResponse({'warehouses': warehouses})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def api_customer_address(request):
+    """Get address for a specific customer"""
+    card_code = request.GET.get('card_code')
+    if not card_code:
+        return JsonResponse({'error': 'card_code parameter required'}, status=400)
+    
+    try:
+        db = get_hana_connection()
+        if not db:
+            return JsonResponse({'error': 'Database connection failed'}, status=500)
+        
+        # Query for address
+        query = f"""
+        SELECT T0."Address", T0."Street" 
+        FROM CRD1 T0 
+        WHERE T0."CardCode" = '{card_code}'
+        """
+        cursor = db.cursor()
+        cursor.execute(query)
+        result = cursor.fetchone()
+        
+        db.close()
+        
+        if result:
+            return JsonResponse({
+                'address': result[0],
+                'street': result[1]
+            })
+        else:
+            return JsonResponse({'address': '', 'street': ''})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def api_policy_link(request):
+    """Get policy link for a project"""
+    project_code = request.GET.get('project_code')
+    if not project_code:
+        return JsonResponse({'error': 'project_code parameter required'}, status=400)
+    
+    try:
+        db = get_hana_connection()
+        if not db:
+            return JsonResponse({'error': 'Database connection failed'}, status=500)
+        
+        query = f"""
+        SELECT a."DocEntry" 
+        FROM "@PL1" a 
+        WHERE a."U_proj" = '{project_code}'
+        """
+        cursor = db.cursor()
+        cursor.execute(query)
+        result = cursor.fetchone()
+        
+        db.close()
+        return JsonResponse({'policy_link': result[0] if result else None})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def api_discounts(request):
+    """Get discounts (U_AD, U_EXD) for policy, item, and policy link"""
+    policy = request.GET.get('policy')
+    item_code = request.GET.get('item_code')
+    pl = request.GET.get('pl')
+    
+    if not all([policy, item_code, pl]):
+        return JsonResponse({'error': 'policy, item_code, and pl parameters required'}, status=400)
+    
+    try:
+        db = get_hana_connection()
+        if not db:
+            return JsonResponse({'error': 'Database connection failed'}, status=500)
+        
+        # Get U_AD
+        query_ad = f"""
+        SELECT b."U_ad" 
+        FROM "@PL1" a 
+        INNER JOIN "@PLR4" b ON a."DocEntry" = b."DocEntry" 
+        WHERE a."U_proj" = '{policy}' 
+        AND b."U_itc" = '{item_code}' 
+        AND a."DocEntry" = {pl}
+        """
+        
+        # Get U_EXD
+        query_exd = f"""
+        SELECT b."U_ed" 
+        FROM "@PL1" a 
+        INNER JOIN "@PLR4" b ON a."DocEntry" = b."DocEntry" 
+        WHERE a."U_proj" = '{policy}' 
+        AND b."U_itc" = '{item_code}' 
+        AND a."DocEntry" = {pl}
+        """
+        
+        cursor = db.cursor()
+        cursor.execute(query_ad)
+        result_ad = cursor.fetchone()
+        
+        cursor.execute(query_exd)
+        result_exd = cursor.fetchone()
+        
+        db.close()
+        
+        return JsonResponse({
+            'u_ad': float(result_ad[0]) if result_ad and result_ad[0] else 0.0,
+            'u_exd': float(result_exd[0]) if result_exd and result_exd[0] else 0.0
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def api_project_balance(request):
+    """Get project balance (U_BP)"""
+    project_code = request.GET.get('project_code')
+    if not project_code:
+        return JsonResponse({'error': 'project_code parameter required'}, status=400)
+    
+    try:
+        db = get_hana_connection()
+        if not db:
+            return JsonResponse({'error': 'Database connection failed'}, status=500)
+        
+        query = f"""
+        SELECT IFNULL(SUM(a."Debit" - a."Credit"), 0) 
+        FROM jdt1 a 
+        WHERE a."Project" = '{project_code}'
+        """
+        cursor = db.cursor()
+        cursor.execute(query)
+        result = cursor.fetchone()
+        
+        db.close()
+        
+        return JsonResponse({'u_bp': float(result[0]) if result else 0.0})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

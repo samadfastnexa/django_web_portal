@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAP Loading Screen Demo</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .demo-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .demo-buttons {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 30px;
+        }
+        
+        .demo-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .demo-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-error {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-timeout {
+            background-color: #ffc107;
+            color: #333;
+        }
+        
+        .btn-cancel {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #417690;
+            margin-bottom: 20px;
+        }
+        
+        .info-box h3 {
+            margin-top: 0;
+            color: #417690;
+        }
+        
+        .info-box ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .info-box li {
+            margin: 5px 0;
+        }
+        
+        .code-example {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin-top: 15px;
+        }
+        
+        /* SAP Loading Screen Styles */
+        .sap-loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 99999;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .sap-loading-overlay.active {
+            display: flex;
+        }
+        
+        .sap-loading-content {
+            background: white;
+            padding: 40px 60px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 500px;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .sap-spinner {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 20px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #417690;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .sap-loading-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .sap-loading-message {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .sap-loading-elapsed {
+            font-size: 13px;
+            color: #999;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+        
+        .sap-loading-warning {
+            display: none;
+            margin-top: 15px;
+            padding: 12px;
+            background-color: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            color: #856404;
+            font-size: 13px;
+        }
+        
+        .sap-loading-warning.show {
+            display: block;
+            animation: pulse 1s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .sap-loading-result {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .sap-loading-result.show {
+            display: block;
+        }
+        
+        .sap-loading-result.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .sap-loading-result.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .sap-loading-result-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+        
+        .sap-progress-container {
+            width: 100%;
+            height: 6px;
+            background-color: #e0e0e0;
+            border-radius: 3px;
+            margin-top: 15px;
+            overflow: hidden;
+        }
+        
+        .sap-progress-bar {
+            height: 100%;
+            background-color: #417690;
+            width: 0%;
+            transition: width 0.5s ease;
+            animation: progress 20s linear;
+        }
+        
+        @keyframes progress {
+            0% { width: 0%; }
+            50% { width: 60%; }
+            100% { width: 90%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <h1>🚀 SAP Loading Screen Demo</h1>
+        <p class="subtitle">Interactive demonstration of the loading screen implementation for SAP API calls</p>
+        
+        <div class="info-box">
+            <h3>Features Demonstrated</h3>
+            <ul>
+                <li>✅ Full-screen blocking overlay (prevents user interaction)</li>
+                <li>✅ Animated spinner with progress bar</li>
+                <li>✅ Real-time elapsed time counter</li>
+                <li>✅ Timeout warning after 15 seconds</li>
+                <li>✅ Success/error result display</li>
+                <li>✅ Smooth animations and transitions</li>
+                <li>✅ Auto-hide on completion</li>
+            </ul>
+        </div>
+        
+        <h3>Test Scenarios</h3>
+        <p style="color: #666; margin-bottom: 15px;">Click any button below to simulate different SAP API responses:</p>
+        
+        <div class="demo-buttons">
+            <button class="demo-btn btn-success" onclick="testSuccess()">
+                ✓ Simulate Success (3s)
+            </button>
+            <button class="demo-btn btn-error" onclick="testError()">
+                ✗ Simulate Error (2s)
+            </button>
+            <button class="demo-btn btn-timeout" onclick="testTimeout()">
+                ⏱️ Simulate Timeout (16s)
+            </button>
+            <button class="demo-btn btn-cancel" onclick="testManual()">
+                🔄 Manual Control
+            </button>
+        </div>
+        
+        <div class="info-box" style="border-left-color: #28a745;">
+            <h3>Quick Test</h3>
+            <p>Try the manual control option to interact with the loading screen:</p>
+            <div class="code-example">
+// Show loading screen
+SAPLoadingScreen.show();
+
+// Simulate 5-second delay, then show success
+setTimeout(() => {
+    SAPLoadingScreen.showResult(true, "Order posted successfully!", "SO-12345");
+}, 5000);
+
+// Or show error
+SAPLoadingScreen.showResult(false, "Connection timeout");
+
+// Or hide manually
+SAPLoadingScreen.hide();
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // SAP Loading Screen Controller
+        var SAPLoadingScreen = {
+            overlay: null,
+            startTime: null,
+            elapsedTimer: null,
+            timeoutWarningShown: false,
+            
+            init: function() {
+                var html = '<div class="sap-loading-overlay" id="sapLoadingOverlay">' +
+                           '  <div class="sap-loading-content">' +
+                           '    <div class="sap-spinner"></div>' +
+                           '    <div class="sap-loading-title">Processing SAP Request</div>' +
+                           '    <div class="sap-loading-message">Please wait while we communicate with SAP Business One...</div>' +
+                           '    <div class="sap-progress-container">' +
+                           '      <div class="sap-progress-bar"></div>' +
+                           '    </div>' +
+                           '    <div class="sap-loading-elapsed">Elapsed: <span id="sapElapsedTime">0s</span></div>' +
+                           '    <div class="sap-loading-warning" id="sapTimeoutWarning">' +
+                           '      ⚠️ This is taking longer than usual. The SAP server may be experiencing delays.' +
+                           '    </div>' +
+                           '    <div class="sap-loading-result" id="sapResult">' +
+                           '      <div class="sap-loading-result-icon"></div>' +
+                           '      <div class="sap-loading-result-message"></div>' +
+                           '    </div>' +
+                           '  </div>' +
+                           '</div>';
+                
+                $('body').append(html);
+                this.overlay = $('#sapLoadingOverlay');
+            },
+            
+            show: function() {
+                if (!this.overlay) {
+                    this.init();
+                }
+                
+                this.startTime = Date.now();
+                this.timeoutWarningShown = false;
+                $('#sapTimeoutWarning').removeClass('show');
+                $('#sapResult').removeClass('show success error');
+                $('.sap-spinner').show();
+                $('.sap-loading-message').show();
+                $('.sap-progress-container').show();
+                $('.sap-progress-bar').css('animation', 'progress 20s linear');
+                $('.sap-progress-bar').css('width', '0%');
+                
+                this.overlay.addClass('active');
+                this.startElapsedTimer();
+                $('body').css('overflow', 'hidden');
+            },
+            
+            hide: function() {
+                if (this.overlay) {
+                    this.overlay.removeClass('active');
+                }
+                this.stopElapsedTimer();
+                $('body').css('overflow', '');
+            },
+            
+            startElapsedTimer: function() {
+                var self = this;
+                this.elapsedTimer = setInterval(function() {
+                    var elapsed = Math.floor((Date.now() - self.startTime) / 1000);
+                    $('#sapElapsedTime').text(elapsed + 's');
+                    
+                    if (elapsed >= 15 && !self.timeoutWarningShown) {
+                        $('#sapTimeoutWarning').addClass('show');
+                        self.timeoutWarningShown = true;
+                    }
+                }, 100);
+            },
+            
+            stopElapsedTimer: function() {
+                if (this.elapsedTimer) {
+                    clearInterval(this.elapsedTimer);
+                    this.elapsedTimer = null;
+                }
+            },
+            
+            showResult: function(success, message, docNum) {
+                $('.sap-progress-bar').css('animation', 'none');
+                $('.sap-progress-bar').css('width', '100%');
+                
+                $('.sap-spinner').hide();
+                $('.sap-loading-message').hide();
+                $('.sap-progress-container').hide();
+                $('#sapTimeoutWarning').removeClass('show');
+                
+                var result = $('#sapResult');
+                var icon = result.find('.sap-loading-result-icon');
+                var msg = result.find('.sap-loading-result-message');
+                
+                if (success) {
+                    result.addClass('show success');
+                    icon.html('✓');
+                    msg.html('<strong>Success!</strong><br>' + message);
+                    if (docNum) {
+                        msg.append('<br><small>SAP DocNum: ' + docNum + '</small>');
+                    }
+                    
+                    setTimeout(function() {
+                        SAPLoadingScreen.hide();
+                        alert('Demo: Page would reload now');
+                    }, 2000);
+                } else {
+                    result.addClass('show error');
+                    icon.html('✗');
+                    msg.html('<strong>Error</strong><br>' + message);
+                    
+                    setTimeout(function() {
+                        SAPLoadingScreen.hide();
+                    }, 5000);
+                }
+            }
+        };
+        
+        // Demo Functions
+        function testSuccess() {
+            SAPLoadingScreen.show();
+            setTimeout(function() {
+                SAPLoadingScreen.showResult(true, 'Order #32 posted successfully to SAP', 'SO-12345');
+            }, 3000);
+        }
+        
+        function testError() {
+            SAPLoadingScreen.show();
+            setTimeout(function() {
+                SAPLoadingScreen.showResult(false, 'Connection timeout: Unable to reach SAP server');
+            }, 2000);
+        }
+        
+        function testTimeout() {
+            SAPLoadingScreen.show();
+            setTimeout(function() {
+                SAPLoadingScreen.showResult(true, 'Request completed after extended delay', 'SO-12346');
+            }, 16000);
+        }
+        
+        function testManual() {
+            SAPLoadingScreen.show();
+            alert('Loading screen is now active. Open console and run:\n\nSAPLoadingScreen.showResult(true, "Test message", "SO-123");\n\nor\n\nSAPLoadingScreen.hide();');
+        }
+        
+        // Initialize on page load
+        $(document).ready(function() {
+            console.log('SAP Loading Screen Demo Ready');
+            console.log('Available commands:');
+            console.log('  SAPLoadingScreen.show()');
+            console.log('  SAPLoadingScreen.hide()');
+            console.log('  SAPLoadingScreen.showResult(success, message, docNum)');
+        });
+    </script>
+</body>
+</html>
