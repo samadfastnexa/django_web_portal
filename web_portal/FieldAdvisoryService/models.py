@@ -173,45 +173,53 @@ class DealerRequest(models.Model):
         related_name='dealer_requests'
     )
 
-    owner_name = models.CharField(max_length=100)
-    business_name = models.CharField(max_length=150)
+    owner_name = models.CharField(max_length=100, blank=True, null=True)
+    business_name = models.CharField(max_length=150, blank=True, null=True)
     contact_number  = models.CharField(
         max_length=20,
         unique=True,
-        validators=[phone_number_validator]
+        validators=[phone_number_validator],
+        blank=True,
+        null=True
     )
-    address = models.TextField(blank=True)
+    address = models.TextField(blank=True, null=True)
 
     cnic_number = models.CharField(
         max_length=15,  # Must be 15, NOT 13
         unique=True,
-        validators=[cnic_validator]
+        validators=[cnic_validator],
+        blank=True,
+        null=True
     )
  
     cnic_front = models.ImageField(
         upload_to='dealer_requests/cnic_front/',
-        validators=[validate_image]
+        validators=[validate_image],
+        blank=True,
+        null=True
     )
     cnic_back = models.ImageField(
         upload_to='dealer_requests/cnic_back/',
-        validators=[validate_image]
+        validators=[validate_image],
+        blank=True,
+        null=True
     )
-    govt_license_number = models.CharField(max_length=50)
-    license_expiry = models.DateField()
+    govt_license_number = models.CharField(max_length=50, blank=True, null=True)
+    license_expiry = models.DateField(blank=True, null=True)
 
-    reason = models.TextField(help_text="Reason for requesting new dealer")
+    reason = models.TextField(help_text="Reason for requesting new dealer", blank=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    filer_status = models.CharField(max_length=10, choices=FILER_CHOICES)
-    company = models.ForeignKey(Company, on_delete=models.PROTECT)
-    region = models.ForeignKey(Region, on_delete=models.PROTECT)
-    zone = models.ForeignKey(Zone, on_delete=models.PROTECT)
-    territory = models.ForeignKey(Territory, on_delete=models.PROTECT)
+    filer_status = models.CharField(max_length=10, choices=FILER_CHOICES, blank=True, null=True)
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, blank=True, null=True)
+    region = models.ForeignKey(Region, on_delete=models.PROTECT, blank=True, null=True)
+    zone = models.ForeignKey(Zone, on_delete=models.PROTECT, blank=True, null=True)
+    territory = models.ForeignKey(Territory, on_delete=models.PROTECT, blank=True, null=True)
     
 
     def __str__(self):
         return f"{self.company} - {self.zone} - {self.id}"
     
-    minimum_investment = models.PositiveIntegerField(help_text="Minimum should be 5 lakh")
+    minimum_investment = models.PositiveIntegerField(help_text="Minimum should be 5 lakh", blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
@@ -228,13 +236,12 @@ class DealerRequest(models.Model):
 
     def clean(self):
         min_inv = self.minimum_investment
-        if min_inv is None:
-            raise ValidationError({'minimum_investment': 'Minimum investment is required'})
-        try:
-            if int(min_inv) < 500000:
-                raise ValidationError({'minimum_investment': 'Minimum investment must be at least 5 lakh (500,000).'})
-        except (TypeError, ValueError):
-            raise ValidationError({'minimum_investment': 'Enter a valid number'})
+        if min_inv is not None:  # Only validate if provided
+            try:
+                if int(min_inv) < 500000:
+                    raise ValidationError({'minimum_investment': 'Minimum investment must be at least 5 lakh (500,000).'})
+            except (TypeError, ValueError):
+                raise ValidationError({'minimum_investment': 'Enter a valid number'})
 
     def __str__(self):
         return f"{self.business_name} ({self.status}) by {self.owner_name}"
