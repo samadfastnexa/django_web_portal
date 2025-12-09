@@ -802,6 +802,7 @@ def customer_lov(db, search: str | None = None) -> list:
         'FROM OCRD T0 '
         'WHERE T0."CardType" = \'C\' '
         'AND T0."validFor" = \'Y\' '
+        'AND T0."GroupCode" IN (100,102) '
     )
     
     params = []
@@ -817,12 +818,13 @@ def customer_lov(db, search: str | None = None) -> list:
 def customer_addresses(db, card_code: str) -> list:
     """Get billing address for a customer"""
     sql = (
-        'SELECT T1."Address", '
-        'T1."Street" '
-        'FROM OCRD T0 '
-        'INNER JOIN CRD1 T1 ON T0."CardCode" = T1."CardCode" '
-        'AND T0."BillToDef" = T1."Address" '
-        'WHERE T0."CardCode" = ? '
+        'SELECT '
+        ' T0."Address", '
+        ' T0."Street"||\', \'||T2."Name" AS "Street" '
+        'FROM CRD1 T0 '
+        'INNER JOIN OCRD T1 ON T0."CardCode" = T1."CardCode" AND T0."Address" = T1."BillToDef" '
+        'INNER JOIN OCRY T2 ON T1."Country" = T2."Code" '
+        'WHERE T1."CardCode" = ? '
     )
     return _fetch_all(db, sql, (card_code,))
 
@@ -900,10 +902,70 @@ def projects_lov(db, search: str | None = None) -> list:
     
     return _fetch_all(db, sql, tuple(params))
 
-def policy_link(db, project_code: str) -> dict:
-    """Get policy link DocEntry by project code"""
-    sql = 'SELECT a."DocEntry" FROM "@PL1" a WHERE a."U_proj" = ?'
-    return _fetch_one(db, sql, (project_code,))
+def policy_link(db, bp_code: str = None, show_all: bool = False) -> list:
+    """
+    Get policy link data.
+    Purpose: Used for sales orders to link policies to business partners.
+    Returns active policies with valid dates.
+    
+    Args:
+        bp_code: Business partner code (optional). If None and show_all=False, returns empty list.
+        show_all: If True, returns all policies regardless of bp_code.
+    """
+    sql_parts = [
+        'SELECT T1."DocEntry", T1."U_proj", T2."PrjName", T0."U_bp" ',
+        'FROM "@PLR8" T0 ',
+        'INNER JOIN "@PL1" T1 ON T0."DocEntry" = T1."DocEntry" ',
+        'INNER JOIN OPRJ T2 ON T2."PrjCode" = T1."U_proj" ',
+        'WHERE T2."Active" = \'Y\' ',
+        'AND T2."ValidTo" >= CURRENT_DATE'
+    ]
+    
+    params = []
+    if bp_code and not show_all:
+        sql_parts.insert(5, 'AND T0."U_bp" = ? ')  # Insert after WHERE clause
+        params.append(bp_code)
+    
+    sql = ''.join(sql_parts)
+    return _fetch_all(db, sql, tuple(params) if params else None)
+
+def child_card_code(db, father_card: str) -> list:
+    """Get child CardCode and CardName by FatherCard"""
+    sql = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T0."CardName" '
+        'FROM OCRD T0 '
+        'WHERE T0."FatherCard" = ? '
+    )
+    return _fetch_all(db, sql, (father_card,))
+
+def item_lov_by_policy(db, doc_entry: str) -> list:
+    """Get items by policy DocEntry"""
+    sql = (
+        'SELECT T2."ItemCode", '
+        ' T2."ItemName", '
+        ' T2."SalUnitMsr", '
+        ' T2."IUoMEntry", '
+        ' T2."U_GenericName" '
+        'FROM "@PL1" T0 '
+        'INNER JOIN "@PLR4" T1 ON T0."DocEntry" = T1."DocEntry" '
+        'INNER JOIN OITM T2 ON T2."ItemCode" = T1."U_itc" '
+        'WHERE T0."DocEntry" = ? '
+        'AND T2."validFor" = \'Y\' '
+    )
+    return _fetch_all(db, sql, (doc_entry,))
+
+def unit_price_by_policy(db, doc_entry: str, item_code: str) -> dict:
+    """Get unit price (U_frp) by policy DocEntry and ItemCode"""
+    sql = (
+        'SELECT T1."U_frp" '
+        'FROM "@PL1" T0 '
+        'INNER JOIN "@PLR4" T1 ON T0."DocEntry" = T1."DocEntry" '
+        'WHERE T0."DocEntry" = ? '
+        'AND T1."U_itc" = ? '
+    )
+    return _fetch_one(db, sql, (doc_entry, item_code))
 
 def additional_discount(db, policy: str, item_code: str, pl_entry: str) -> dict:
     """Get additional discount (U_AD) for policy, item, and PL entry"""

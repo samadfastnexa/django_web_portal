@@ -285,7 +285,108 @@
     };
     
     $(document).ready(function() {
-        console.log('Sales Order LOV script loaded');
+        console.log('=== SALES ORDER PAGE LOADED ===');
+        console.log('jQuery version:', $.fn.jquery);
+        console.log('Document ready fired');
+        
+        // Debug: Check what form fields exist
+        console.log('\n=== FORM FIELDS DEBUG ===');
+        console.log('Card Code field (#id_card_code):', $('#id_card_code').length > 0);
+        if ($('#id_card_code').length > 0) {
+            var $cardCode = $('#id_card_code');
+            console.log('Card Code Details:', {
+                id: $cardCode.attr('id'),
+                name: $cardCode.attr('name'),
+                class: $cardCode.attr('class'),
+                style: $cardCode.attr('style'),
+                visible: $cardCode.is(':visible'),
+                display: $cardCode.css('display'),
+                visibility: $cardCode.css('visibility'),
+                opacity: $cardCode.css('opacity'),
+                parent: $cardCode.parent().attr('class'),
+                optionCount: $cardCode.find('option').length,
+                width: $cardCode.width(),
+                height: $cardCode.height(),
+                offset: $cardCode.offset()
+            });
+        }
+        
+        console.log('Child Customer field (#id_u_s_card_code):', $('#id_u_s_card_code').length > 0);
+        if ($('#id_u_s_card_code').length > 0) {
+            var $childCode = $('#id_u_s_card_code');
+            console.log('Child Customer Details:', {
+                visible: $childCode.is(':visible'),
+                display: $childCode.css('display'),
+                optionCount: $childCode.find('option').length
+            });
+        }
+        
+        console.log('Child Customer Name field (#id_u_s_card_name):', $('#id_u_s_card_name').length > 0);
+        
+        // Debug: Check inline formsets
+        var cropFields = $('[id$="-u_crop"]');
+        console.log('\n=== INLINE CROP FIELDS DEBUG ===');
+        console.log('Total crop dropdown fields found:', cropFields.length);
+        cropFields.each(function(index) {
+            var $this = $(this);
+            var optionCount = $this.find('option').length;
+            var row = $this.closest('tr');
+            console.log('Crop field', index + 1, ':', {
+                id: $this.attr('id'),
+                name: $this.attr('name'),
+                class: $this.attr('class'),
+                visible: $this.is(':visible'),
+                display: $this.css('display'),
+                optionCount: optionCount,
+                value: $this.val(),
+                rowVisible: row.is(':visible'),
+                firstOptions: $this.find('option').slice(0, 3).map(function() { 
+                    return $(this).val() + ' - ' + $(this).text().substring(0, 30); 
+                }).get()
+            });
+        });
+        
+        // Debug: Check all inline rows
+        var allInlineRows = $('.inline-group tbody tr');
+        console.log('\n=== ALL INLINE ROWS DEBUG ===');
+        console.log('Total inline rows:', allInlineRows.length);
+        allInlineRows.each(function(index) {
+            if (index < 5) {  // Only first 5 rows
+                var $row = $(this);
+                var rowClasses = $row.attr('class');
+                var hasDeleteCheckbox = $row.find('input[id$="-DELETE"]').length > 0;
+                var isEmptyRow = $row.hasClass('empty-form') || $row.hasClass('add-row');
+                console.log('Row', index + 1, ':', {
+                    classes: rowClasses,
+                    visible: $row.is(':visible'),
+                    display: $row.css('display'),
+                    hasDeleteCheckbox: hasDeleteCheckbox,
+                    isEmptyRow: isEmptyRow,
+                    selectFields: $row.find('select').map(function() { 
+                        return $(this).attr('id'); 
+                    }).get()
+                });
+            }
+        });
+        
+        // Debug: Check all select fields
+        console.log('\n=== ALL SELECT FIELDS ===');
+        var allSelects = $('select');
+        console.log('Total select fields:', allSelects.length);
+        allSelects.each(function(index) {
+            var $this = $(this);
+            if (index < 15) {  // First 15 selects
+                console.log('Select', index + 1, ':', {
+                    id: $this.attr('id'),
+                    name: $this.attr('name'),
+                    class: $this.attr('class'),
+                    visible: $this.is(':visible'),
+                    optionCount: $this.find('option').length
+                });
+            }
+        });
+        
+        console.log('\n=== INITIALIZATION COMPLETE ===');
         
         // Initialize loading screen
         SAPLoadingScreen.init();
@@ -341,41 +442,277 @@
         
         // Handle customer selection
         var cardCodeField = $('#id_card_code');
+        console.log('=== INITIALIZING CUSTOMER FIELD ===');
+        console.log('Customer field found:', cardCodeField.length > 0);
+        console.log('Customer field:', cardCodeField);
+        
         if (cardCodeField.length) {
             cardCodeField.on('change', function() {
+                console.log('\n=== CUSTOMER SELECTION CHANGED ===');
                 var cardCode = $(this).val();
+                console.log('Selected Card Code:', cardCode);
+                console.log('Card Code type:', typeof cardCode);
+                console.log('Card Code length:', cardCode ? cardCode.length : 0);
+                
                 if (cardCode) {
-                    // Auto-fill customer name from the selected option text
-                    var selectedText = $(this).find('option:selected').text();
-                    if (selectedText && selectedText.includes(' - ')) {
-                        var cardName = selectedText.split(' - ')[1];
-                        $('#id_card_name').val(cardName);
-                    }
+                    console.log('Making API request to: /api/field/api/customer_details/');
+                    console.log('Request data:', { card_code: cardCode });
                     
-                    // Load address for this customer
-                    loadCustomerAddress(cardCode);
+                    // Show loading indicator for readonly fields
+                    updateFieldValue('card_name', 'Loading...');
+                    updateFieldValue('address', 'Loading...');
+                    
+                    // Load full customer details from API
+                    $.ajax({
+                        url: '/api/field/api/customer_details/',
+                        method: 'GET',
+                        data: { card_code: cardCode },
+                        success: function(response) {
+                            console.log('✓ CUSTOMER DETAILS API SUCCESS');
+                            console.log('Full response:', response);
+                            
+                            // Populate all customer fields (handles both input and readonly)
+                            console.log('Updating card_name to:', response.card_name);
+                            updateFieldValue('card_name', response.card_name || '');
+                            
+                            console.log('Updating contact_person_code to:', response.contact_person_code);
+                            updateFieldValue('contact_person_code', response.contact_person_code || '');
+                            
+                            console.log('Updating federal_tax_id to:', response.federal_tax_id);
+                            updateFieldValue('federal_tax_id', response.federal_tax_id || '');
+                            
+                            console.log('Updating pay_to_code to:', response.pay_to_code);
+                            updateFieldValue('pay_to_code', response.pay_to_code || '');
+                            
+                            console.log('Updating address to:', response.address ? response.address.substring(0, 50) : 'null');
+                            updateFieldValue('address', response.address || '');
+                            
+                            console.log('✓ All customer fields updated');
+                            
+                            // Load child customers for this parent
+                            console.log('Now calling loadChildCustomers with:', cardCode);
+                            loadChildCustomers(cardCode);
+                        },
+                        error: function(xhr, status, error) {
+                            console.error('❌ CUSTOMER DETAILS API ERROR');
+                            console.error('AJAX Error Details:', {
+                                status: xhr.status,
+                                statusText: xhr.statusText,
+                                responseText: xhr.responseText,
+                                error: error
+                            });
+                            
+                            // Clear loading indicators
+                            updateFieldValue('card_name', '');
+                            updateFieldValue('address', '');
+                            
+                            // Parse error message
+                            var errorMsg = 'Failed to load customer details.';
+                            try {
+                                var errorData = JSON.parse(xhr.responseText);
+                                if (errorData.error) {
+                                    errorMsg = errorData.error;
+                                }
+                                if (errorData.trace) {
+                                    console.error('Server trace:', errorData.trace);
+                                }
+                            } catch (e) {
+                                errorMsg += ' Status: ' + xhr.status;
+                            }
+                            
+                            alert(errorMsg + '\n\nPlease check the browser console for details.');
+                        }
+                    });
+                } else {
+                    // Clear all fields if no customer selected
+                    updateFieldValue('card_name', '');
+                    updateFieldValue('contact_person_code', '');
+                    updateFieldValue('federal_tax_id', '');
+                    updateFieldValue('pay_to_code', '');
+                    updateFieldValue('address', '');
                 }
             });
         }
         
+        // Helper function to update both input fields and readonly divs
+        function updateFieldValue(fieldName, value) {
+            var fieldId = '#id_' + fieldName;
+            var $field = $(fieldId);
+            
+            if ($field.length) {
+                // If it's an input/textarea, update the value
+                if ($field.is('input') || $field.is('textarea')) {
+                    $field.val(value);
+                } else {
+                    // If it's a readonly div, update the text content
+                    $field.text(value);
+                }
+            } else {
+                // Try to find the readonly div (Django renders readonly fields differently)
+                var $readonlyDiv = $('.form-row.field-' + fieldName + ' .readonly');
+                if ($readonlyDiv.length) {
+                    $readonlyDiv.text(value);
+                }
+            }
+        }
+        
+        // Load child customers when parent customer is selected
+        function loadChildCustomers(fatherCard) {
+            console.log('=== LOADING CHILD CUSTOMERS ===');
+            console.log('Father Card:', fatherCard);
+            
+            var $childSelect = $('#id_u_s_card_code');
+            console.log('Child select field found:', $childSelect.length > 0);
+            console.log('Child select field:', $childSelect);
+            
+            if (!$childSelect.length) {
+                console.error('❌ Child customer select field (#id_u_s_card_code) not found in DOM!');
+                console.log('Available select fields:', $('select').map(function() { return this.id; }).get());
+                return;
+            }
+            
+            console.log('Current child select value:', $childSelect.val());
+            console.log('Current child select HTML:', $childSelect.html().substring(0, 100));
+            
+            // Show loading
+            $childSelect.html('<option value="">Loading child customers...</option>');
+            console.log('Set loading message');
+            
+            var apiUrl = '/api/field/api/child_customers/';
+            console.log('Making AJAX request to:', apiUrl);
+            console.log('Request data:', { father_card: fatherCard });
+            
+            $.ajax({
+                url: apiUrl,
+                method: 'GET',
+                data: { father_card: fatherCard },
+                success: function(response) {
+                    console.log('✓ Child customers API SUCCESS');
+                    console.log('Response:', response);
+                    console.log('Children count:', response.children ? response.children.length : 0);
+                    
+                    // Build options
+                    var options = '<option value="">--- Select Child Customer ---</option>';
+                    if (response.children && response.children.length > 0) {
+                        console.log('Building options for', response.children.length, 'children');
+                        response.children.forEach(function(child, index) {
+                            var option = '<option value="' + child.CardCode + '">' + 
+                                      child.CardCode + ' - ' + child.CardName + '</option>';
+                            options += option;
+                            if (index < 3) {
+                                console.log('  Option', index + 1, ':', option.substring(0, 80));
+                            }
+                        });
+                    } else {
+                        console.warn('No children in response or empty array');
+                        options = '<option value="">--- No Child Customers Found ---</option>';
+                    }
+                    
+                    console.log('Setting child select HTML (first 200 chars):', options.substring(0, 200));
+                    $childSelect.html(options);
+                    console.log('✓ Child customers dropdown populated');
+                    console.log('Final options count:', $childSelect.find('option').length);
+                },
+                error: function(xhr, status, error) {
+                    console.error('❌ CHILD CUSTOMERS API ERROR');
+                    console.error('Status:', xhr.status);
+                    console.error('Status Text:', xhr.statusText);
+                    console.error('Response:', xhr.responseText);
+                    console.error('Error:', error);
+                    $childSelect.html('<option value="">--- Error Loading Children ---</option>');
+                }
+            });
+        }
+        
+        // Handle child customer selection to auto-fill child name
+        $(document).on('change', '#id_u_s_card_code', function() {
+            var selectedText = $(this).find('option:selected').text();
+            if (selectedText && selectedText.includes(' - ')) {
+                var childName = selectedText.split(' - ').slice(1).join(' - ');
+                updateFieldValue('u_s_card_name', childName);
+            } else {
+                updateFieldValue('u_s_card_name', '');
+            }
+        });
+        
         // Handle item code selection in inline forms
         $(document).on('change', '[id^="id_document_lines-"][id$="-item_code"]', function() {
+            console.log('=== ITEM CODE CHANGED ===');
             var itemCode = $(this).val();
             var row = $(this).closest('tr');
+            var itemId = $(this).attr('id');
+            console.log('Item code:', itemCode);
+            console.log('Item field ID:', itemId);
+            console.log('Row index:', row.index());
             
             if (itemCode) {
                 // Auto-fill item description from selected option
                 var selectedText = $(this).find('option:selected').text();
+                console.log('Selected item text:', selectedText);
                 if (selectedText && selectedText.includes(' - ')) {
                     var itemName = selectedText.split(' - ').slice(1).join(' - ');
                     row.find('[id$="-item_description"]').val(itemName);
+                    console.log('Set item description to:', itemName);
                 }
                 
                 // Load warehouses for this item
                 var warehouseSelect = row.find('[id$="-warehouse_code"]');
+                console.log('Warehouse select found:', warehouseSelect.length > 0);
                 loadWarehousesForItem(itemCode, warehouseSelect);
             }
         });
+        
+        // DEBUG: Monitor crop field changes
+        $(document).on('change', '[id^="id_document_lines-"][id$="-u_crop"]', function() {
+            console.log('=== CROP FIELD CHANGED ===');
+            var cropValue = $(this).val();
+            var cropText = $(this).find('option:selected').text();
+            var cropId = $(this).attr('id');
+            var row = $(this).closest('tr');
+            console.log('Crop Details:', {
+                id: cropId,
+                value: cropValue,
+                text: cropText,
+                rowIndex: row.index(),
+                totalOptions: $(this).find('option').length
+            });
+        });
+        
+        // DEBUG: Monitor when new inline rows are added
+        if ($('.inline-group').length > 0) {
+            console.log('=== SETTING UP MUTATION OBSERVER FOR INLINE ROWS ===');
+            var inlineObserver = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.addedNodes.length > 0) {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (node.nodeType === 1 && $(node).is('tr')) {
+                                console.log('=== NEW INLINE ROW ADDED ===');
+                                var $row = $(node);
+                                var cropField = $row.find('[id$="-u_crop"]');
+                                if (cropField.length > 0) {
+                                    console.log('New row crop field:', {
+                                        id: cropField.attr('id'),
+                                        optionCount: cropField.find('option').length,
+                                        visible: cropField.is(':visible'),
+                                        firstOptions: cropField.find('option').slice(0, 3).map(function() {
+                                            return $(this).val() + ' - ' + $(this).text().substring(0, 30);
+                                        }).get()
+                                    });
+                                }
+                            }
+                        });
+                    }
+                });
+            });
+            
+            $('.inline-group tbody').each(function() {
+                inlineObserver.observe(this, {
+                    childList: true,
+                    subtree: true
+                });
+                console.log('Observer attached to inline tbody');
+            });
+        }
         
         // Handle project selection
         $(document).on('change', '[id^="id_document_lines-"][id$="-project_code"]', function() {
@@ -400,12 +737,6 @@
                 loadDiscounts(policy, itemCode, pl, row);
             }
         });
-        
-        function loadCustomerAddress(cardCode) {
-            // This would need an API endpoint to fetch address
-            console.log('Loading address for customer:', cardCode);
-            // TODO: Implement AJAX call to get address
-        }
         
         function loadWarehousesForItem(itemCode, warehouseSelect) {
             console.log('Loading warehouses for item:', itemCode);

@@ -6,7 +6,7 @@ from .views import (
     DealerViewSet, MeetingScheduleViewSet, SalesOrderViewSet,
     CompanyViewSet, RegionViewSet, ZoneViewSet, TerritoryViewSet,
     DealerRequestViewSet, CompanyNestedViewSet ,RegionNestedViewSet, ZoneNestedViewSet,TerritoryNestedViewSet,
-    api_warehouse_for_item, api_customer_address, api_policy_link, api_discounts, api_project_balance
+    api_warehouse_for_item, api_customer_address, api_policy_link, api_discounts, api_project_balance, api_customer_details, api_child_customers
 )
 
 # 📦 Core API Router
@@ -35,6 +35,8 @@ urlpatterns = [
     # SAP LOV API endpoints for admin forms
     path('api/warehouse_for_item/', api_warehouse_for_item, name='api_warehouse_for_item'),
     path('api/customer_address/', api_customer_address, name='api_customer_address'),
+    path('api/customer_details/', api_customer_details, name='api_customer_details'),
+    path('api/child_customers/', api_child_customers, name='api_child_customers'),
     path('api/policy_link/', api_policy_link, name='api_policy_link'),
     path('api/discounts/', api_discounts, name='api_discounts'),
     path('api/project_balance/', api_project_balance, name='api_project_balance'),

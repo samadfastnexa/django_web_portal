@@ -239,12 +239,31 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return Response(self.get_serializer(user).data, status=status.HTTP_201_CREATED)
 
-    @swagger_auto_schema(tags=["02. User Management"],
-                         operation_description=(
-            "Update a user.\n\n"
-            "**Note:** Only admin/superuser can update `role` and `is_active`.\n"
-            "Regular users can only update their own profile fields (`first_name`, `last_name`, `profile_image`)."
-        ),request_body=UserSerializer)
+    @swagger_auto_schema(
+        tags=["02. User Management"],
+        operation_description=(
+            "Update a user (PUT /users/{id}/).\n\n"
+            "**Note:** PUT requires all fields. Use PATCH for partial updates.\n\n"
+            "**Profile Image Upload:**\n"
+            "- Supported formats: JPG, JPEG, PNG\n"
+            "- Maximum size: 5MB\n"
+            "- Send as multipart/form-data\n\n"
+            "**Admin/Superuser Restrictions:**\n"
+            "- Only admin/superuser can update `role`, `is_active`, `is_staff`\n"
+            "- Regular users can only update: `first_name`, `last_name`, `profile_image`, `password`\n\n"
+            "**Authorization:** Regular users can only update their own profile."
+        ),
+        request_body=UserSerializer,
+        manual_parameters=[
+            openapi.Parameter(
+                'profile_image',
+                openapi.IN_FORM,
+                description='Profile image file (JPG/PNG, max 5MB)',
+                type=openapi.TYPE_FILE,
+                required=False
+            )
+        ]
+    )
     @transaction.atomic
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop('partial', False)
@@ -307,15 +326,51 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return Response(self.get_serializer(instance).data, status=status.HTTP_200_OK)
     # ----------------------
-    # Swagger: partial_update
+    # Swagger: partial_update (PATCH)
     # ----------------------
-    @swagger_auto_schema(tags=["02. User Management"],
-                         operation_description=(
-            "Partially update a user.\n\n"
-            "**Note:** Only admin/superuser can update `role` and `is_active`.\n"
-            "Regular users can only update their own profile fields (`first_name`, `last_name`, `profile_image`)."
-        ),request_body=UserSerializer)
+    @swagger_auto_schema(
+        tags=["02. User Management"],
+        operation_description=(
+            "Partially update a user profile (PATCH /users/{id}/).\n\n"
+            "**All fields are optional** - only send the fields you want to update.\n\n"
+            "**Profile Image Upload:**\n"
+            "- Supported formats: JPG, JPEG, PNG\n"
+            "- Maximum size: 5MB\n"
+            "- Send as multipart/form-data\n\n"
+            "**Updatable Fields:**\n"
+            "- `first_name`: User's first name\n"
+            "- `last_name`: User's last name\n"
+            "- `profile_image`: Profile picture (image file)\n"
+            "- `password`: New password (will be hashed)\n\n"
+            "**Admin/Superuser Only Fields:**\n"
+            "- `role`: User's role ID\n"
+            "- `is_active`: Account active status\n"
+            "- `is_staff`: Staff status\n"
+            "- `email`: Email address\n"
+            "- `username`: Username\n\n"
+            "**Sales Staff Fields** (if `is_sales_staff=true`):\n"
+            "- `employee_code`, `phone_number`, `address`, `designation`\n"
+            "- `hod`, `master_hod`, `date_of_joining`\n"
+            "- `companies`, `regions`, `zones`, `territories` (M2M relations)\n\n"
+            "**Authorization:** Regular users can only update their own profile. "
+            "Admins can update any user."
+        ),
+        request_body=UserSerializer,
+        manual_parameters=[
+            openapi.Parameter(
+                'profile_image',
+                openapi.IN_FORM,
+                description='Profile image file (JPG/PNG, max 5MB)',
+                type=openapi.TYPE_FILE,
+                required=False
+            )
+        ]
+    )
     def partial_update(self, request, *args, **kwargs):
+        """
+        PATCH endpoint for updating user profile.
+        No fields are required - send only what needs to be updated.
+        """
         kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
 

@@ -298,10 +298,36 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
         return DealerRequest.objects.filter(requested_by=user)
 
     @swagger_auto_schema(
-        operation_description="Submit a new dealer registration request with all required documentation and business details.",
+        operation_description="Submit a new dealer registration request with comprehensive business partner information including contact details, address, tax information, and SAP configuration. All fields are optional except requested_by (auto-filled).",
         request_body=DealerRequestSerializer,
         responses={
-            201: 'Dealer request submitted successfully',
+            201: openapi.Response(
+                description='Dealer request submitted successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'business_name': 'Khan Agro Store',
+                        'owner_name': 'Ahmed Ali Khan',
+                        'contact_number': '+92-300-1234567',
+                        'mobile_phone': '+92-300-1234567',
+                        'email': 'ahmed@example.com',
+                        'address': 'Main Bazaar, Village ABC',
+                        'city': 'Lahore',
+                        'state': 'Punjab',
+                        'country': 'PK',
+                        'cnic_number': '12345-6789012-3',
+                        'federal_tax_id': 'NTN123456',
+                        'filer_status': '01',
+                        'status': 'draft',
+                        'card_type': 'cCustomer',
+                        'group_code': 100,
+                        'sap_series': 70,
+                        'minimum_investment': 500000,
+                        'is_posted_to_sap': False,
+                        'created_at': '2024-01-15T10:30:00Z'
+                    }
+                }
+            ),
             400: 'Bad Request - Invalid data or missing required fields'
         },
         tags=["17. Dealer Requests"]
@@ -310,7 +336,7 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Retrieve a list of dealer requests. Admins can see all requests, while users can only see their own submissions.",
+        operation_description="Retrieve a list of dealer requests with comprehensive business partner information. Admins can see all requests, while users can only see their own submissions. Filter by status, filer_status, card_type, or SAP posting status.",
         responses={
             200: openapi.Response(
                 description='List of dealer requests',
@@ -318,13 +344,32 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
                     'application/json': [
                         {
                             'id': 1,
-                            'owner_name': 'Ahmed Ali Khan',
                             'business_name': 'Khan Agro Store',
+                            'owner_name': 'Ahmed Ali Khan',
                             'contact_number': '+92-300-1234567',
+                            'mobile_phone': '+92-300-1234567',
+                            'email': 'ahmed@example.com',
+                            'city': 'Lahore',
+                            'state': 'Punjab',
                             'status': 'pending',
-                            'filer_status': 'filer',
+                            'filer_status': '01',
+                            'card_type': 'cCustomer',
+                            'is_posted_to_sap': False,
+                            'sap_card_code': None,
                             'minimum_investment': 500000,
                             'created_at': '2024-01-15T10:30:00Z'
+                        },
+                        {
+                            'id': 2,
+                            'business_name': 'Modern Seeds Shop',
+                            'owner_name': 'Bilal Hassan',
+                            'contact_number': '+92-321-9876543',
+                            'status': 'posted_to_sap',
+                            'filer_status': '02',
+                            'is_posted_to_sap': True,
+                            'sap_card_code': 'C000123',
+                            'posted_at': '2024-01-20T15:45:00Z',
+                            'created_at': '2024-01-18T09:15:00Z'
                         }
                     ]
                 }
@@ -336,23 +381,56 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Retrieve detailed information of a specific dealer request including all submitted documents and status.",
+        operation_description="Retrieve detailed information of a specific dealer request including all business partner fields, SAP configuration, integration status, and submitted documents.",
         responses={
             200: openapi.Response(
-                description='Dealer request details',
+                description='Dealer request details with comprehensive SAP Business Partner information',
                 examples={
                     'application/json': {
                         'id': 1,
-                        'owner_name': 'Ahmed Ali Khan',
+                        'requested_by': 5,
+                        'status': 'posted_to_sap',
+                        'reason': 'New dealer in territory 45',
                         'business_name': 'Khan Agro Store',
+                        'owner_name': 'Ahmed Ali Khan',
                         'contact_number': '+92-300-1234567',
-                        'address': 'Main Bazaar, Village ABC',
+                        'mobile_phone': '+92-300-1234567',
+                        'email': 'ahmed@khanagrostore.com',
+                        'address': 'Main Bazaar, Village ABC, District XYZ',
+                        'city': 'Lahore',
+                        'state': 'Punjab',
+                        'country': 'PK',
                         'cnic_number': '12345-6789012-3',
-                        'status': 'approved',
-                        'filer_status': 'filer',
+                        'federal_tax_id': 'NTN1234567',
+                        'additional_id': 'STRN9876543',
+                        'unified_federal_tax_id': 'UFTN1234567',
+                        'filer_status': '01',
+                        'govt_license_number': 'LIC-2024-001',
+                        'license_expiry': '2025-12-31',
+                        'u_leg': '17-5349',
+                        'cnic_front': '/media/dealer_requests/cnic_front/image1.jpg',
+                        'cnic_back': '/media/dealer_requests/cnic_back/image2.jpg',
+                        'company': 1,
+                        'region': 5,
+                        'zone': 12,
+                        'territory': 45,
+                        'sap_series': 70,
+                        'card_type': 'cCustomer',
+                        'group_code': 100,
+                        'debitor_account': 'A020301001',
+                        'vat_group': 'AT1',
+                        'vat_liable': 'vLiable',
+                        'whatsapp_messages': 'YES',
                         'minimum_investment': 500000,
+                        'is_posted_to_sap': True,
+                        'sap_card_code': 'C000123',
+                        'sap_doc_entry': 456789,
+                        'sap_error': None,
+                        'posted_at': '2024-01-20T15:45:00Z',
                         'created_at': '2024-01-15T10:30:00Z',
-                        'reviewed_at': '2024-01-20T14:30:00Z'
+                        'updated_at': '2024-01-20T15:45:00Z',
+                        'reviewed_at': '2024-01-20T14:30:00Z',
+                        'reviewed_by': 2
                     }
                 }
             ),
@@ -365,10 +443,25 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Update a dealer request (typically used by admins to approve/reject requests).",
+        operation_description="Update a dealer request with complete business partner information. Typically used by admins to approve/reject requests or modify SAP configuration. When status changes to 'approved' or 'posted_to_sap', the system automatically creates the Business Partner in SAP.",
         request_body=DealerRequestSerializer,
         responses={
-            200: 'Dealer request updated successfully',
+            200: openapi.Response(
+                description='Dealer request updated successfully. If approved, SAP Business Partner is created automatically.',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'status': 'posted_to_sap',
+                        'business_name': 'Khan Agro Store',
+                        'is_posted_to_sap': True,
+                        'sap_card_code': 'C000123',
+                        'sap_doc_entry': 456789,
+                        'posted_at': '2024-01-20T15:45:00Z',
+                        'message': 'Dealer request approved and Business Partner created in SAP'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid data',
             404: 'Dealer request not found',
             403: 'Forbidden - Insufficient permissions'
         },
@@ -378,9 +471,23 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
         return super().update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Partially update specific fields of a dealer request.",
+        operation_description="Partially update specific fields of a dealer request. All fields are optional. Useful for updating contact info, address, tax details, or SAP configuration without sending the entire object. Status change to 'approved' or 'posted_to_sap' triggers SAP Business Partner creation.",
+        request_body=DealerRequestSerializer,
         responses={
-            200: 'Dealer request updated successfully',
+            200: openapi.Response(
+                description='Dealer request fields updated successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'status': 'pending',
+                        'email': 'newemail@example.com',
+                        'mobile_phone': '+92-321-9999999',
+                        'city': 'Karachi',
+                        'updated_at': '2024-01-21T10:15:00Z'
+                    }
+                }
+            ),
+            400: 'Bad Request - Invalid field values',
             404: 'Dealer request not found',
             403: 'Forbidden - Insufficient permissions'
         },
@@ -619,6 +726,8 @@ class TerritoryNestedViewSet(viewsets.ReadOnlyModelViewSet):
 # SAP LOV API endpoints for admin form dropdowns
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.contrib.admin.views.decorators import staff_member_required
+from django.views.decorators.csrf import csrf_exempt
 from sap_integration import hana_connect
 import os
 
@@ -849,3 +958,150 @@ def api_project_balance(request):
         return JsonResponse({'u_bp': float(result[0]) if result else 0.0})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@staff_member_required
+@require_http_methods(["GET"])
+def api_child_customers(request):
+    """Get child customers for a parent customer (FatherCard)"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    father_card = request.GET.get('father_card')
+    logger.info(f"API called for child customers: father_card={father_card}")
+    
+    if not father_card:
+        logger.error("No father_card provided")
+        return JsonResponse({'error': 'father_card parameter required'}, status=400)
+    
+    try:
+        db = get_hana_connection()
+        if not db:
+            logger.error("Database connection failed")
+            return JsonResponse({'error': 'Database connection failed'}, status=500)
+        
+        logger.info(f"Database connected, fetching child customers for {father_card}")
+        
+        # Get child customers
+        child_customers = hana_connect.child_card_code(db, father_card)
+        db.close()
+        
+        logger.info(f"Found {len(child_customers)} child customers")
+        return JsonResponse({'children': child_customers})
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Error in api_child_customers: {str(e)}\n{error_trace}")
+        return JsonResponse({'error': str(e), 'trace': error_trace}, status=500)
+
+
+@staff_member_required
+@require_http_methods(["GET"])
+def api_customer_details(request):
+    """Get full customer details (CardName, ContactPersonCode, FederalTaxID, PayToCode, Address)"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    card_code = request.GET.get('card_code')
+    logger.info(f"API called for customer details: card_code={card_code}")
+    
+    if not card_code:
+        logger.error("No card_code provided")
+        return JsonResponse({'error': 'card_code parameter required'}, status=400)
+    
+    try:
+        db = get_hana_connection()
+        if not db:
+            logger.error("Database connection failed")
+            return JsonResponse({'error': 'Database connection failed'}, status=500)
+        
+        logger.info(f"Database connected, fetching details for {card_code}")
+        
+        # Get customer basic info
+        cursor = db.cursor()
+        customer_query = """
+        SELECT 
+            T0."CardName", 
+            T0."CntctPrsn",
+            T0."LicTradNum",
+            T0."BillToDef",
+            T0."Address"
+        FROM OCRD T0 
+        WHERE T0."CardCode" = ?
+        """
+        cursor.execute(customer_query, (card_code,))
+        customer_result = cursor.fetchone()
+        
+        logger.info(f"Customer query result: {customer_result}")
+        
+        if not customer_result:
+            cursor.close()
+            db.close()
+            logger.warning(f"Customer not found: {card_code}")
+            return JsonResponse({'error': f'Customer not found: {card_code}'}, status=404)
+        
+        # Get contact person code from OCPR table
+        contact_code = None
+        if customer_result[1]:  # If CntctPrsn (contact name) exists
+            contact_query = """
+            SELECT T0."CntctCode"
+            FROM OCPR T0
+            WHERE T0."CardCode" = ? AND T0."Name" = ?
+            """
+            cursor.execute(contact_query, (card_code, customer_result[1]))
+            contact_result = cursor.fetchone()
+            if contact_result:
+                contact_code = int(contact_result[0])
+        
+        # Get billing address from CRD1
+        address = customer_result[4]  # Use Address from OCRD first
+        if not address or address.strip() == '':
+            # Try to get formatted address from CRD1
+            address_query = """
+            SELECT 
+                T0."Street"||', '||T2."Name" AS "Address"
+            FROM CRD1 T0 
+            INNER JOIN OCRD T1 ON T0."CardCode" = T1."CardCode" AND T0."Address" = T1."BillToDef"
+            INNER JOIN OCRY T2 ON T1."Country" = T2."Code"
+            WHERE T1."CardCode" = ?
+            """
+            cursor.execute(address_query, (card_code,))
+            address_result = cursor.fetchone()
+            if address_result:
+                address = address_result[0]
+        
+        logger.info(f"Address query result: {address}")
+        
+        cursor.close()
+        db.close()
+        
+        # Parse the results safely
+        card_name = customer_result[0] if customer_result[0] else ''
+        federal_tax_id = customer_result[2] if customer_result[2] else ''
+        
+        # Handle pay_to_code (BillToDef) - might be string or int
+        pay_to_code = None
+        if customer_result[3]:
+            try:
+                pay_to_code = int(customer_result[3]) if customer_result[3] else None
+            except (ValueError, TypeError):
+                # If it's already a string address code, keep it
+                pay_to_code = customer_result[3]
+        
+        response_data = {
+            'card_name': card_name,
+            'contact_person_code': contact_code if contact_code else '',
+            'federal_tax_id': federal_tax_id,
+            'pay_to_code': pay_to_code if pay_to_code else '',
+            'address': address if address else ''
+        }
+        
+        logger.info(f"Returning response: {response_data}")
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Error in api_customer_details: {str(e)}\n{error_trace}")
+        return JsonResponse({'error': str(e), 'trace': error_trace}, status=500)

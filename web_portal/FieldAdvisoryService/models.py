@@ -157,41 +157,74 @@ class Dealer(models.Model):
 
 class DealerRequest(models.Model):
     STATUS_CHOICES = [
-        ('pending', 'Pending'),
+        ('draft', 'Draft'),
+        ('pending', 'Pending Review'),
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
+        ('posted_to_sap', 'Posted to SAP'),
     ]
 
     FILER_CHOICES = [
-        ('filer', 'Filer'),
-        ('non_filer', 'Non-Filer'),
+        ('01', 'Filer'),
+        ('02', 'Non-Filer'),
+    ]
+    
+    CARD_TYPE_CHOICES = [
+        ('cCustomer', 'Customer'),
+        ('cSupplier', 'Supplier'),
+        ('cLid', 'Lead'),
+    ]
+    
+    VAT_LIABLE_CHOICES = [
+        ('vLiable', 'Liable'),
+        ('vExempted', 'Exempted'),
     ]
 
+    # ==================== Request Information ====================
     requested_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='dealer_requests'
     )
-
-    owner_name = models.CharField(max_length=100, blank=True, null=True)
-    business_name = models.CharField(max_length=150, blank=True, null=True)
-    contact_number  = models.CharField(
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    reason = models.TextField(help_text="Reason for requesting new dealer", blank=True, null=True)
+    
+    # ==================== Business Partner Basic Info ====================
+    owner_name = models.CharField(max_length=100, blank=True, null=True, help_text="Contact Person Name")
+    business_name = models.CharField(max_length=150, blank=True, null=True, help_text="SAP CardName")
+    contact_number = models.CharField(
         max_length=20,
-        unique=True,
         validators=[phone_number_validator],
         blank=True,
-        null=True
+        null=True,
+        help_text="Primary Phone Number"
     )
-    address = models.TextField(blank=True, null=True)
+    mobile_phone = models.CharField(max_length=20, blank=True, null=True, help_text="Mobile/WhatsApp Number")
+    email = models.EmailField(max_length=100, blank=True, null=True, help_text="Contact Email")
+    address = models.TextField(blank=True, null=True, help_text="Business Address")
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    country = models.CharField(max_length=2, default='PK', blank=True, null=True, help_text="Country Code (PK)")
 
+    # ==================== Tax & Legal Information ====================
     cnic_number = models.CharField(
-        max_length=15,  # Must be 15, NOT 13
-        unique=True,
+        max_length=15,
         validators=[cnic_validator],
         blank=True,
-        null=True
+        null=True,
+        help_text="Owner CNIC (13 digits)"
     )
+    federal_tax_id = models.CharField(max_length=50, blank=True, null=True, help_text="NTN Number")
+    additional_id = models.CharField(max_length=50, blank=True, null=True, help_text="Additional Tax ID")
+    unified_federal_tax_id = models.CharField(max_length=50, blank=True, null=True, help_text="Unified Tax ID")
+    filer_status = models.CharField(max_length=2, choices=FILER_CHOICES, blank=True, null=True)
+    
+    # ==================== License Information ====================
+    govt_license_number = models.CharField(max_length=50, blank=True, null=True, help_text="U_lic")
+    license_expiry = models.DateField(blank=True, null=True, help_text="U_gov")
+    u_leg = models.CharField(max_length=50, default='17-5349', blank=True, null=True, help_text="Legal Reference")
  
+    # ==================== Documents ====================
     cnic_front = models.ImageField(
         upload_to='dealer_requests/cnic_front/',
         validators=[validate_image],
@@ -204,24 +237,28 @@ class DealerRequest(models.Model):
         blank=True,
         null=True
     )
-    govt_license_number = models.CharField(max_length=50, blank=True, null=True)
-    license_expiry = models.DateField(blank=True, null=True)
-
-    reason = models.TextField(help_text="Reason for requesting new dealer", blank=True, null=True)
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    filer_status = models.CharField(max_length=10, choices=FILER_CHOICES, blank=True, null=True)
+    
+    # ==================== Territory & Organization ====================
     company = models.ForeignKey(Company, on_delete=models.PROTECT, blank=True, null=True)
     region = models.ForeignKey(Region, on_delete=models.PROTECT, blank=True, null=True)
     zone = models.ForeignKey(Zone, on_delete=models.PROTECT, blank=True, null=True)
     territory = models.ForeignKey(Territory, on_delete=models.PROTECT, blank=True, null=True)
     
-
-    def __str__(self):
-        return f"{self.company} - {self.zone} - {self.id}"
+    # ==================== SAP Configuration ====================
+    sap_series = models.IntegerField(default=70, blank=True, null=True, help_text="BP Series Number")
+    card_type = models.CharField(max_length=10, choices=CARD_TYPE_CHOICES, default='cCustomer', blank=True, null=True)
+    group_code = models.IntegerField(default=100, blank=True, null=True, help_text="Customer Group")
+    debitor_account = models.CharField(max_length=50, default='A020301001', blank=True, null=True)
+    vat_group = models.CharField(max_length=10, default='AT1', blank=True, null=True)
+    vat_liable = models.CharField(max_length=10, choices=VAT_LIABLE_CHOICES, default='vLiable', blank=True, null=True)
+    whatsapp_messages = models.CharField(max_length=3, default='YES', blank=True, null=True)
     
+    # ==================== Financial ====================
     minimum_investment = models.PositiveIntegerField(help_text="Minimum should be 5 lakh", blank=True, null=True)
 
+    # ==================== Timestamps & Review ====================
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -230,9 +267,14 @@ class DealerRequest(models.Model):
         blank=True,
         related_name='dealer_approvals'
     )
-    sap_card_code = models.CharField(max_length=64, null=True, blank=True)
-    sap_response_json = models.TextField(null=True, blank=True)
-    sap_response_at = models.DateTimeField(null=True, blank=True)
+    
+    # ==================== SAP Integration ====================
+    is_posted_to_sap = models.BooleanField(default=False)
+    sap_card_code = models.CharField(max_length=64, null=True, blank=True, help_text="Generated BP Code from SAP")
+    sap_doc_entry = models.IntegerField(null=True, blank=True, help_text="SAP Document Entry")
+    sap_error = models.TextField(null=True, blank=True, help_text="Last SAP Error Message")
+    sap_response_json = models.TextField(null=True, blank=True, help_text="Full SAP Response")
+    posted_at = models.DateTimeField(null=True, blank=True, help_text="Posted to SAP Timestamp")
 
     def clean(self):
         min_inv = self.minimum_investment

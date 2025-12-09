@@ -117,22 +117,59 @@ class DealerRequestSerializer(serializers.ModelSerializer):
         model = DealerRequest
         fields = '__all__'
         extra_kwargs = {
+            # Basic Info
             'owner_name': {'required': False},
             'business_name': {'required': False},
             'contact_number': {'required': False},
+            'mobile_phone': {'required': False},
+            'email': {'required': False},
             'address': {'required': False},
+            'city': {'required': False},
+            'state': {'required': False},
+            'country': {'required': False},
+            
+            # Tax & Legal
             'cnic_number': {'required': False},
-            'cnic_front': {'required': False},
-            'cnic_back': {'required': False},
+            'federal_tax_id': {'required': False},
+            'additional_id': {'required': False},
+            'unified_federal_tax_id': {'required': False},
+            'filer_status': {'required': False},
+            
+            # License
             'govt_license_number': {'required': False},
             'license_expiry': {'required': False},
-            'reason': {'required': False},
-            'filer_status': {'required': False},
+            'u_leg': {'required': False},
+            
+            # Documents
+            'cnic_front': {'required': False},
+            'cnic_back': {'required': False},
+            
+            # Territory
             'company': {'required': False},
             'region': {'required': False},
             'zone': {'required': False},
             'territory': {'required': False},
+            
+            # SAP Configuration
+            'sap_series': {'required': False},
+            'card_type': {'required': False},
+            'group_code': {'required': False},
+            'debitor_account': {'required': False},
+            'vat_group': {'required': False},
+            'vat_liable': {'required': False},
+            'whatsapp_messages': {'required': False},
+            
+            # Financial
             'minimum_investment': {'required': False},
+            'reason': {'required': False},
+            
+            # SAP Integration (read-only)
+            'is_posted_to_sap': {'read_only': True},
+            'sap_card_code': {'read_only': True},
+            'sap_doc_entry': {'read_only': True},
+            'sap_error': {'read_only': True},
+            'sap_response_json': {'read_only': True},
+            'posted_at': {'read_only': True},
         }
 
 

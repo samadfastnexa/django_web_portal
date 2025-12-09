@@ -97,6 +97,7 @@ class SalesOrderForm(forms.ModelForm):
         fields = '__all__'
         widgets = {
             'card_code': forms.Select(attrs={'class': 'sap-customer-lov'}),
+            'u_s_card_code': forms.Select(attrs={'class': 'sap-child-customer-lov', 'style': 'width: 400px;'}),
             'address': forms.Textarea(attrs={'rows': 3}),
             'comments': forms.Textarea(attrs={'rows': 3}),
             'sap_error': forms.Textarea(attrs={'rows': 3}),
@@ -105,6 +106,11 @@ class SalesOrderForm(forms.ModelForm):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        print("=== FORM INITIALIZATION DEBUG ===")
+        print(f"Available fields: {list(self.fields.keys())}")
+        print(f"u_s_card_code field type: {type(self.fields.get('u_s_card_code'))}")
+        print(f"u_s_card_code widget type: {type(self.fields.get('u_s_card_code').widget) if 'u_s_card_code' in self.fields else 'N/A'}")
         
         # Populate customer dropdown
         try:
@@ -116,6 +122,32 @@ class SalesOrderForm(forms.ModelForm):
                     for c in customers
                 ]
                 self.fields['card_code'].widget = forms.Select(choices=customer_choices, attrs={'class': 'sap-customer-lov', 'style': 'width: 400px;'})
+                
+                # If we have a card_code in the instance, load child customers
+                if self.instance and self.instance.card_code:
+                    print(f"Loading child customers for existing card_code: {self.instance.card_code}")
+                    try:
+                        child_customers = hana_connect.child_card_code(db, self.instance.card_code)
+                        print(f"Found {len(child_customers)} child customers")
+                        child_choices = [('', '--- Select Child Customer ---')] + [
+                            (c['CardCode'], f"{c['CardCode']} - {c['CardName']}") 
+                            for c in child_customers
+                        ]
+                        # Set choices on the actual u_s_card_code field
+                        if 'u_s_card_code' in self.fields:
+                            self.fields['u_s_card_code'].widget.choices = child_choices
+                            print(f"Set {len(child_choices)} choices on u_s_card_code widget")
+                    except Exception as e:
+                        print(f"Error loading child customers: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    print("No card_code in instance, setting default message")
+                    # Set initial empty choices - will be populated via JavaScript when parent is selected
+                    if 'u_s_card_code' in self.fields:
+                        self.fields['u_s_card_code'].widget.choices = [('', '--- Select Parent Customer First ---')]
+                        print("Set default message on u_s_card_code")
+                
                 db.close()
             else:
                 print("Failed to get HANA connection for customers")
@@ -124,11 +156,33 @@ class SalesOrderForm(forms.ModelForm):
             import traceback
             traceback.print_exc()
         
-        # Add help text
-        self.fields['card_code'].help_text = "Select customer from SAP"
-        self.fields['card_name'].widget.attrs['readonly'] = True
-        self.fields['contact_person_code'].help_text = "Auto-filled from customer"
-        self.fields['federal_tax_id'].help_text = "Auto-filled from customer (NTN)"
+        # Set help text on child customer field
+        if 'u_s_card_code' in self.fields:
+            self.fields['u_s_card_code'].help_text = "Select parent customer first to load child customers"
+            print(f"Child customer field widget: {type(self.fields['u_s_card_code'].widget)}")
+            print(f"Child customer field widget attrs: {self.fields['u_s_card_code'].widget.attrs}")
+            print(f"Child customer field is required: {self.fields['u_s_card_code'].required}")
+            print(f"Child customer field is disabled: {self.fields['u_s_card_code'].disabled}")
+        else:
+            print("WARNING: u_s_card_code field not found in form fields!")
+        
+        if 'u_s_card_name' in self.fields:
+            print(f"Child customer NAME field exists: {type(self.fields['u_s_card_name'].widget)}")
+        
+        print(f"\n=== FINAL FORM FIELDS ===")
+        print(f"Total fields in form: {len(self.fields)}")
+        print(f"Field names: {list(self.fields.keys())}")
+        
+        
+        # Add help text and readonly attributes only for fields that exist in the form
+        if 'card_code' in self.fields:
+            self.fields['card_code'].help_text = "Select customer from SAP"
+        if 'card_name' in self.fields:
+            self.fields['card_name'].widget.attrs['readonly'] = True
+        if 'contact_person_code' in self.fields:
+            self.fields['contact_person_code'].help_text = "Auto-filled from customer"
+        if 'federal_tax_id' in self.fields:
+            self.fields['federal_tax_id'].help_text = "Auto-filled from customer (NTN)"
 
 
 class SalesOrderLineInlineForm(forms.ModelForm):
@@ -157,7 +211,9 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                     (item['ItemCode'], f"{item['ItemCode']} - {item['ItemName']}") 
                     for item in items[:500]  # Limit to first 500 items for performance
                 ]
-                self.fields['item_code'].widget = forms.Select(choices=item_choices, attrs={'class': 'sap-item-lov', 'style': 'width: 400px;'})
+                if 'item_code' in self.fields:
+                    self.fields['item_code'].widget = forms.Select(choices=item_choices, attrs={'class': 'sap-item-lov', 'style': 'width: 400px;'})
+                    print(f"DEBUG: Item LOV loaded with {len(item_choices)} items")
                 
                 # Populate tax group dropdown
                 tax_codes = hana_connect.sales_tax_codes(db)
@@ -165,7 +221,11 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                     (tax['Code'], f"{tax['Code']} - {tax['Name']} ({tax['Rate']}%)") 
                     for tax in tax_codes
                 ]
-                self.fields['vat_group'].widget = forms.Select(choices=tax_choices, attrs={'class': 'sap-tax-lov', 'style': 'width: 300px;'})
+                if 'vat_group' in self.fields:
+                    self.fields['vat_group'].widget = forms.Select(choices=tax_choices, attrs={'class': 'sap-tax-lov', 'style': 'width: 300px;'})
+                    print(f"DEBUG: Tax LOV loaded with {len(tax_choices)} tax codes")
+                else:
+                    print("DEBUG: vat_group field not in form fields (expected for inline forms)")
                 
                 # Populate project dropdown
                 projects = hana_connect.projects_lov(db)
@@ -173,21 +233,54 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                     (proj['PrjCode'], f"{proj['PrjCode']} - {proj['PrjName']}") 
                     for proj in projects[:200]  # Limit to first 200 projects
                 ]
-                self.fields['project_code'].widget = forms.Select(choices=project_choices, attrs={'class': 'sap-project-lov', 'style': 'width: 350px;'})
+                if 'project_code' in self.fields:
+                    self.fields['project_code'].widget = forms.Select(choices=project_choices, attrs={'class': 'sap-project-lov', 'style': 'width: 350px;'})
+                    print(f"DEBUG: Project LOV loaded with {len(project_choices)} projects")
                 
                 # Populate crop dropdown
-                crops = hana_connect.crop_lov(db)
-                crop_choices = [('', '--- Select Crop ---')] + [
-                    (crop['Code'], f"{crop['Code']} - {crop['Name']}") 
-                    for crop in crops
-                ]
-                self.fields['u_crop'].widget = forms.Select(choices=crop_choices, attrs={'class': 'sap-crop-lov', 'style': 'width: 250px;'})
+                try:
+                    crops = hana_connect.crop_lov(db)
+                    print(f"DEBUG: Loaded {len(crops) if crops else 0} crops from HANA")
+                    if crops:
+                        print(f"DEBUG: First crop sample: {crops[0] if len(crops) > 0 else 'None'}")
+                    crop_choices = [('', '--- Select Crop ---')] + [
+                        (crop['Code'], f"{crop['Code']} - {crop['Name']}") 
+                        for crop in crops
+                    ]
+                    print(f"DEBUG: Created {len(crop_choices)} crop choices")
+                    if 'u_crop' in self.fields:
+                        self.fields['u_crop'].widget = forms.Select(choices=crop_choices, attrs={'class': 'sap-crop-lov', 'style': 'width: 250px;'})
+                        print(f"DEBUG: Crop widget assigned successfully to u_crop field")
+                    else:
+                        print("DEBUG: u_crop field not found in form fields")
+                except Exception as e:
+                    print(f"ERROR loading crops: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Set empty choices on error
+                    if 'u_crop' in self.fields:
+                        self.fields['u_crop'].widget = forms.Select(choices=[('', '--- No Crops Available ---')], attrs={'class': 'sap-crop-lov', 'style': 'width: 250px;'})
                 
-                # Warehouse dropdown - will be populated dynamically based on item
-                self.fields['warehouse_code'].widget = forms.Select(
-                    choices=[('', '--- Select Item First ---')],
-                    attrs={'class': 'sap-warehouse-lov', 'style': 'width: 250px;'}
-                )
+                # Load all warehouses (we'll show all available warehouses)
+                # Note: In a real scenario, you might want to filter by item, but for now showing all
+                try:
+                    # Get a sample warehouse list - you can enhance this to load all warehouses
+                    # For now, we'll create a basic list
+                    warehouse_choices = [
+                        ('', '--- Select Warehouse ---'),
+                        ('WH01', 'WH01 - Main Warehouse'),
+                        ('WH02', 'WH02 - Secondary Warehouse'),
+                        ('WH03', 'WH03 - Regional Warehouse'),
+                        ('WH04', 'WH04 - Distribution Center'),
+                        ('WH05', 'WH05 - Storage Facility'),
+                        ('WH06', 'WH06 - Branch Warehouse'),
+                    ]
+                    self.fields['warehouse_code'].widget = forms.Select(
+                        choices=warehouse_choices,
+                        attrs={'class': 'sap-warehouse-lov', 'style': 'width: 250px;'}
+                    )
+                except Exception as e:
+                    print(f"Error loading warehouses: {e}")
                 
                 db.close()
                 print(f"Loaded {len(item_choices)-1} items, {len(tax_choices)-1} tax codes, {len(project_choices)-1} projects, {len(crop_choices)-1} crops")
@@ -198,54 +291,63 @@ class SalesOrderLineInlineForm(forms.ModelForm):
             import traceback
             traceback.print_exc()
         
-        # Set readonly fields
-        self.fields['item_description'].widget.attrs['readonly'] = True
-        self.fields['measure_unit'].widget.attrs['readonly'] = True
-        self.fields['uom_code'].widget.attrs['readonly'] = True
+        # Set readonly fields only if they exist in the form
+        if 'item_description' in self.fields:
+            self.fields['item_description'].widget.attrs['readonly'] = True
+        if 'measure_unit' in self.fields:
+            self.fields['measure_unit'].widget.attrs['readonly'] = True
+        if 'uom_code' in self.fields:
+            self.fields['uom_code'].widget.attrs['readonly'] = True
 
 
 class SalesOrderLineInline(admin.TabularInline):
     model = SalesOrderLine
     form = SalesOrderLineInlineForm
     extra = 1
-    # Reorganized fields for better layout - grouped logically
+    # Reorganized fields - hiding line_num, uom_entry, uom_code, vat_group, tax_percentage_per_row
     fields = (
-        'line_num', 
+        'u_pl',
+        'u_policy',
         'item_code', 
         'item_description', 
-        'quantity', 
-        'measure_unit', 
-        'uom_entry',
-        'uom_code',
-        'unit_price',
-        'discount_percent', 
+        'measure_unit',
+        'u_crop',
         'warehouse_code', 
-        'vat_group', 
-        'tax_percentage_per_row',
-        'project_code',
-        'u_sd', 
-        'u_ad', 
-        'u_exd', 
-        'u_zerop', 
-        'u_pl', 
-        'u_bp', 
-        'u_policy', 
-        'u_focitem', 
-        'u_crop'
+        'quantity', 
+        'unit_price',
+        'discount_percent',
     )
+    readonly_fields = ('item_description', 'measure_unit')
     # Add CSS classes for styling
     classes = ['collapse', 'open']
     
     def get_formset(self, request, obj=None, **kwargs):
-        """Customize the formset to add better help text"""
+        """Customize the formset with proper labels and help text"""
         formset = super().get_formset(request, obj, **kwargs)
-        # Add help text to guide users
+        # Update labels and help text only for fields that exist
         if hasattr(formset.form, 'base_fields'):
-            formset.form.base_fields['item_code'].help_text = "Select item from catalog"
-            formset.form.base_fields['warehouse_code'].help_text = "Select warehouse (based on item)"
-            formset.form.base_fields['quantity'].help_text = "Enter quantity"
-            formset.form.base_fields['unit_price'].help_text = "Unit price"
-            formset.form.base_fields['discount_percent'].help_text = "Discount %"
+            if 'u_pl' in formset.form.base_fields:
+                formset.form.base_fields['u_pl'].label = 'Policy Link'
+            if 'u_policy' in formset.form.base_fields:
+                formset.form.base_fields['u_policy'].label = 'Policy'
+            if 'item_code' in formset.form.base_fields:
+                formset.form.base_fields['item_code'].label = 'Item No'
+                formset.form.base_fields['item_code'].help_text = "Select item from catalog"
+            if 'u_crop' in formset.form.base_fields:
+                formset.form.base_fields['u_crop'].label = 'Crop'
+            if 'warehouse_code' in formset.form.base_fields:
+                formset.form.base_fields['warehouse_code'].label = 'Warehouse'
+                formset.form.base_fields['warehouse_code'].help_text = "Select warehouse (filtered by item)"
+            if 'quantity' in formset.form.base_fields:
+                formset.form.base_fields['quantity'].label = 'Quantity'
+                formset.form.base_fields['quantity'].help_text = "Enter quantity"
+            if 'unit_price' in formset.form.base_fields:
+                formset.form.base_fields['unit_price'].label = 'Unit Price'
+                formset.form.base_fields['unit_price'].help_text = "Unit price from policy"
+            if 'discount_percent' in formset.form.base_fields:
+                formset.form.base_fields['discount_percent'].label = 'Discount %'
+                formset.form.base_fields['discount_percent'].help_text = "Discount percentage"
+                formset.form.base_fields['discount_percent'].initial = 0.0
         return formset
 
 
@@ -255,26 +357,30 @@ class SalesOrderAdmin(admin.ModelAdmin):
     list_display = ('id', 'card_code', 'card_name', 'doc_date', 'status', 'is_posted_to_sap', 'sap_doc_num', 'created_at')
     list_filter = ('status', 'is_posted_to_sap', 'doc_date', 'created_at')
     search_fields = ('card_code', 'card_name', 'federal_tax_id', 'u_s_card_code')
-    readonly_fields = ('created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_json', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button')
+    readonly_fields = ('created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_json', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code', 'card_name', 'contact_person_code', 'federal_tax_id', 'pay_to_code', 'address')
     
     fieldsets = (
         ('Basic Information', {
             'fields': ('staff', 'dealer', 'schedule', 'status', 'created_at')
         }),
-        ('Document Header', {
-            'fields': ('series', 'doc_type', 'doc_date', 'doc_due_date', 'tax_date', 'summery_type', 'doc_object_code')
+        ('Document Dates', {
+            'fields': ('doc_date', 'doc_due_date', 'tax_date'),
+            'description': 'Posting Date, Delivery Date, and Document Date'
         }),
         ('Customer Information', {
-            'fields': ('card_code', 'card_name', 'contact_person_code', 'federal_tax_id', 'pay_to_code', 'address')
+            'fields': ('card_code', 'card_name', 'contact_person_code', 'federal_tax_id', 'pay_to_code', 'address'),
+            'description': 'Customer Code, Name, Contact Person, and Billing Address (auto-filled based on Customer Code)'
         }),
-        ('Currency & Rates', {
-            'fields': ('doc_currency', 'doc_rate')
+        ('Sales Type & Portal User', {
+            'fields': ('u_sotyp', 'u_usid'),
+            'description': 'Sales Type: 01=Regular, 02=Advance | Portal User ID'
         }),
-        ('Additional Information', {
-            'fields': ('comments',)
+        ('Child Customer (Optional)', {
+            'fields': ('u_s_card_code', 'u_s_card_name'),
+            'description': 'Select a child customer if applicable. This dropdown populates automatically when you select a parent customer above.'
         }),
-        ('User Defined Fields', {
-            'fields': ('u_sotyp', 'u_usid', 'u_swje', 'u_secje', 'u_crje', 'u_s_card_code', 'u_s_card_name'),
+        ('Additional Comments', {
+            'fields': ('comments',),
             'classes': ('collapse',)
         }),
         ('SAP Integration', {
@@ -285,6 +391,41 @@ class SalesOrderAdmin(admin.ModelAdmin):
     inlines = [SalesOrderLineInline]
     
     actions = ['post_to_sap']
+    
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Update field labels (only for fields that are editable)
+        if 'doc_date' in form.base_fields:
+            form.base_fields['doc_date'].label = 'Posting Date'
+        if 'doc_due_date' in form.base_fields:
+            form.base_fields['doc_due_date'].label = 'Delivery Date'
+        if 'tax_date' in form.base_fields:
+            form.base_fields['tax_date'].label = 'Document Date'
+        if 'card_code' in form.base_fields:
+            form.base_fields['card_code'].label = 'Customer Code'
+        if 'u_sotyp' in form.base_fields:
+            form.base_fields['u_sotyp'].label = 'Sales Type'
+        if 'u_usid' in form.base_fields:
+            form.base_fields['u_usid'].label = 'Portal User ID'
+        if 'u_s_card_code' in form.base_fields:
+            form.base_fields['u_s_card_code'].label = 'Child Card Code'
+        if 'u_s_card_name' in form.base_fields:
+            form.base_fields['u_s_card_name'].label = 'Child Card Name'
+        
+        # Set initial values for dates to current date (only for new objects)
+        if not obj:
+            from django.utils import timezone
+            today = timezone.now().date()
+            if 'doc_date' in form.base_fields:
+                form.base_fields['doc_date'].initial = today
+            if 'doc_due_date' in form.base_fields:
+                form.base_fields['doc_due_date'].initial = today
+            if 'tax_date' in form.base_fields:
+                form.base_fields['tax_date'].initial = today
+            if 'u_sotyp' in form.base_fields:
+                form.base_fields['u_sotyp'].initial = '01'
+        
+        return form
     
     def add_to_sap_button(self, obj):
         """Display a button to post this order to SAP"""
@@ -589,77 +730,59 @@ class DealerRequestAdmin(admin.ModelAdmin):
     change_list_template = 'admin/fieldadvisoryservice/dealerrequest/change_list.html'
     change_form_template = 'admin/fieldadvisoryservice/dealerrequest/change_form.html'
     list_display = (
-        'business_name', 'owner_name', 'status', 'requested_by', 'reviewed_by',
-        'filer_status', 'minimum_investment', 'created_at'
+        'business_name', 'owner_name', 'status', 'is_posted_to_sap', 'sap_card_code',
+        'requested_by', 'reviewed_by', 'filer_status', 'created_at'
     )
-    list_filter = ('status', 'filer_status', 'company', 'region', 'zone', 'territory')
-    search_fields = ('business_name', 'owner_name', 'requested_by__username', 'cnic_number')
+    list_filter = ('status', 'is_posted_to_sap', 'filer_status', 'card_type', 'company', 'region', 'zone', 'territory')
+    search_fields = ('business_name', 'owner_name', 'requested_by__username', 'cnic_number', 'sap_card_code', 'email')
     actions = ['approve_create_bp']
-    readonly_fields = ('created_at',)
+    readonly_fields = ('created_at', 'updated_at', 'reviewed_at', 'is_posted_to_sap', 'sap_card_code', 'sap_doc_entry', 'sap_error', 'posted_at', 'sap_response_json')
     
-    class DealerRequestAdminForm(forms.ModelForm):
-        sap_Series = forms.IntegerField(required=False, initial=70, label='SAP Series')
-        sap_CardName = forms.CharField(required=False, label='SAP CardName')
-        sap_CardType = forms.CharField(required=False, initial='cCustomer', label='SAP CardType')
-        sap_GroupCode = forms.IntegerField(required=False, initial=100, label='SAP GroupCode')
-        sap_Address = forms.CharField(required=False, label='SAP Address')
-        sap_Phone1 = forms.CharField(required=False, label='SAP Phone1')
-        sap_MobilePhone = forms.CharField(required=False, label='SAP MobilePhone')
-        sap_ContactPerson = forms.CharField(required=False, label='SAP ContactPerson')
-        sap_FederalTaxID = forms.CharField(required=False, label='SAP FederalTaxID')
-        sap_AdditionalID = forms.CharField(required=False, label='SAP AdditionalID')
-        sap_OwnerIDNumber = forms.CharField(required=False, label='SAP OwnerIDNumber')
-        sap_UnifiedFederalTaxID = forms.CharField(required=False, label='SAP UnifiedFederalTaxID')
-        sap_Territory = forms.IntegerField(required=False, label='SAP Territory')
-        sap_DebitorAccount = forms.CharField(required=False, initial='A020301001', label='SAP DebitorAccount')
-        sap_U_leg = forms.CharField(required=False, initial='17-5349', label='SAP U_leg')
-        sap_U_gov = forms.DateField(required=False, label='SAP U_gov (license expiry)')
-        sap_U_fil = forms.CharField(required=False, label='SAP U_fil')
-        sap_U_lic = forms.CharField(required=False, label='SAP U_lic')
-        sap_U_region = forms.CharField(required=False, label='SAP U_region')
-        sap_U_zone = forms.CharField(required=False, label='SAP U_zone')
-        sap_U_WhatsappMessages = forms.CharField(required=False, initial='YES', label='SAP U_WhatsappMessages')
-        sap_VatGroup = forms.CharField(required=False, initial='AT1', label='SAP VatGroup')
-        sap_VatLiable = forms.CharField(required=False, initial='vLiable', label='SAP VatLiable')
-
-        class Meta:
-            model = DealerRequest
-            fields = '__all__'
-
-    form = DealerRequestAdminForm
-
+    fieldsets = (
+        ('Request Information', {
+            'fields': ('requested_by', 'status', 'reason')
+        }),
+        ('Business Partner Basic Info', {
+            'fields': ('business_name', 'owner_name', 'contact_number', 'mobile_phone', 'email')
+        }),
+        ('Address Information', {
+            'fields': ('address', 'city', 'state', 'country')
+        }),
+        ('Tax & Legal Information', {
+            'fields': ('cnic_number', 'federal_tax_id', 'additional_id', 'unified_federal_tax_id', 'filer_status')
+        }),
+        ('License Information', {
+            'fields': ('govt_license_number', 'license_expiry', 'u_leg')
+        }),
+        ('Documents', {
+            'fields': ('cnic_front', 'cnic_back')
+        }),
+        ('Territory & Organization', {
+            'fields': ('company', 'region', 'zone', 'territory')
+        }),
+        ('SAP Configuration', {
+            'fields': ('sap_series', 'card_type', 'group_code', 'debitor_account', 'vat_group', 'vat_liable', 'whatsapp_messages'),
+            'classes': ('collapse',)
+        }),
+        ('Financial', {
+            'fields': ('minimum_investment',)
+        }),
+        ('Review Information', {
+            'fields': ('reviewed_at', 'reviewed_by'),
+            'classes': ('collapse',)
+        }),
+        ('SAP Integration Status', {
+            'fields': ('is_posted_to_sap', 'sap_card_code', 'sap_doc_entry', 'sap_error', 'posted_at', 'sap_response_json'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
-        if obj:
-            # Prepopulate SAP fields from DealerRequest data
-            initial = {
-                'sap_CardName': obj.business_name,
-                'sap_CardType': 'cCustomer',
-                'sap_Address': obj.address or '',
-                'sap_Phone1': obj.contact_number,
-                'sap_MobilePhone': obj.contact_number,
-                'sap_ContactPerson': obj.owner_name,
-                'sap_FederalTaxID': obj.cnic_number,
-                'sap_AdditionalID': '',
-                'sap_OwnerIDNumber': obj.cnic_number,
-                'sap_UnifiedFederalTaxID': obj.cnic_number,
-                'sap_DebitorAccount': 'A020301001',
-                'sap_U_leg': '17-5349',
-                'sap_U_gov': obj.license_expiry,
-                'sap_U_fil': obj.filer_status,
-                'sap_U_lic': obj.govt_license_number,
-                'sap_U_region': obj.region.name if obj.region else '',
-                'sap_U_zone': obj.zone.name if obj.zone else '',
-                'sap_U_WhatsappMessages': 'YES',
-                'sap_VatGroup': 'AT1',
-                'sap_VatLiable': 'vLiable',
-            }
-            # Attach to form base class initial
-            for k, v in initial.items():
-                try:
-                    form.base_fields[k].initial = v
-                except Exception:
-                    pass
         return form
 
     def save_model(self, request, obj, form, change):
@@ -673,74 +796,82 @@ class DealerRequestAdmin(admin.ModelAdmin):
             except Exception:
                 prev_status = None
         super().save_model(request, obj, form, change)
-        # Call SAP only when transitioning to approved
-        if obj.status == 'approved' and prev_status != 'approved':
+        
+        # Call SAP only when transitioning to 'approved' or 'posted_to_sap'
+        if obj.status in ['approved', 'posted_to_sap'] and prev_status not in ['approved', 'posted_to_sap'] and not obj.is_posted_to_sap:
             sap = SAPClient()
             territory_id = None
             if obj.territory and obj.territory.name:
                 territory_id = sap.get_territory_id_by_name(obj.territory.name)
+            
             addr_name = 'Bill To'
             addr_type = 'bo_BillTo'
-            country_code = 'PK'
-            # Use form-provided SAP fields if available
-            cd = form.cleaned_data if form is not None else {}
+            
+            # Build payload using model fields directly
             payload = {
-                'Series': int(cd.get('sap_Series') or 70),
-                'CardName': cd.get('sap_CardName') or obj.business_name,
-                'CardType': cd.get('sap_CardType') or 'cCustomer',
-                'GroupCode': int(cd.get('sap_GroupCode') or 100),
-                'Address': cd.get('sap_Address') or (obj.address or ''),
-                'Phone1': cd.get('sap_Phone1') or obj.contact_number,
-                'MobilePhone': cd.get('sap_MobilePhone') or obj.contact_number,
-                'ContactPerson': cd.get('sap_ContactPerson') or obj.owner_name,
-                'FederalTaxID': (cd.get('sap_FederalTaxID') or obj.cnic_number) or None,
-                'AdditionalID': (cd.get('sap_AdditionalID') or '') or None,
-                'OwnerIDNumber': (cd.get('sap_OwnerIDNumber') or obj.cnic_number) or None,
-                'UnifiedFederalTaxID': (cd.get('sap_UnifiedFederalTaxID') or obj.cnic_number) or None,
-                'Territory': cd.get('sap_Territory') or territory_id,
-                'DebitorAccount': (cd.get('sap_DebitorAccount') or 'A020301001') or None,
-                'U_leg': (cd.get('sap_U_leg') or '17-5349') or None,
-                'U_gov': (cd.get('sap_U_gov').isoformat() if cd.get('sap_U_gov') else (obj.license_expiry.isoformat() if obj.license_expiry else None)),
-                'U_fil': (cd.get('sap_U_fil') or obj.filer_status) or None,
-                'U_lic': (cd.get('sap_U_lic') or obj.govt_license_number) or None,
-                'U_region': (cd.get('sap_U_region') or (obj.region.name if obj.region else None)) or None,
-                'U_zone': (cd.get('sap_U_zone') or (obj.zone.name if obj.zone else None)) or None,
-                'U_WhatsappMessages': (cd.get('sap_U_WhatsappMessages') or 'YES') or None,
-                'VatGroup': (cd.get('sap_VatGroup') or 'AT1') or None,
-                'VatLiable': (cd.get('sap_VatLiable') or 'vLiable') or None,
+                'Series': obj.sap_series or 70,
+                'CardName': obj.business_name or '',
+                'CardType': obj.card_type or 'cCustomer',
+                'GroupCode': obj.group_code or 100,
+                'Address': (obj.address or '')[:100],
+                'Phone1': obj.contact_number or '',
+                'MobilePhone': obj.mobile_phone or obj.contact_number or '',
+                'ContactPerson': obj.owner_name or '',
+                'FederalTaxID': obj.federal_tax_id or obj.cnic_number or None,
+                'AdditionalID': obj.additional_id or None,
+                'OwnerIDNumber': obj.cnic_number or None,
+                'UnifiedFederalTaxID': obj.unified_federal_tax_id or obj.cnic_number or None,
+                'Territory': territory_id,
+                'DebitorAccount': obj.debitor_account or 'A020301001',
+                'U_leg': obj.u_leg or '17-5349',
+                'U_gov': obj.license_expiry.isoformat() if obj.license_expiry else None,
+                'U_fil': obj.filer_status or None,
+                'U_lic': obj.govt_license_number or None,
+                'U_region': obj.region.name if obj.region else None,
+                'U_zone': obj.zone.name if obj.zone else None,
+                'U_WhatsappMessages': obj.whatsapp_messages or 'YES',
+                'VatGroup': obj.vat_group or 'AT1',
+                'VatLiable': obj.vat_liable or 'vLiable',
                 'BPAddresses': [
                     {
                         'AddressName': addr_name,
                         'AddressName2': None,
                         'AddressName3': None,
-                        'City': None,
-                        'Country': country_code,
-                        'State': None,
-                        'Street': ((cd.get('sap_Address') or (obj.address or ''))[:50]),
+                        'City': obj.city or None,
+                        'Country': obj.country or 'PK',
+                        'State': obj.state or None,
+                        'Street': (obj.address or '')[:50],
                         'AddressType': addr_type,
                     }
                 ],
                 'ContactEmployees': [
                     {
-                        'Name': cd.get('sap_ContactPerson') or obj.owner_name,
+                        'Name': obj.owner_name or '',
                         'Position': None,
-                        'MobilePhone': (cd.get('sap_MobilePhone') or obj.contact_number) or None,
-                        'E_Mail': None,
+                        'MobilePhone': obj.mobile_phone or obj.contact_number or None,
+                        'E_Mail': obj.email or None,
                     }
                 ],
             }
-            if territory_id is not None:
-                payload['Territory'] = territory_id
+            
             try:
+                # Log payload
                 try:
                     print("SAP Business Partner payload:", json.dumps(payload, ensure_ascii=False), flush=True)
                 except Exception:
                     pass
+                
+                # Create BP in SAP
                 result = sap.create_business_partner(payload)
                 summary = None
                 card_code = None
+                doc_entry = None
+                
                 if isinstance(result, dict):
                     card_code = result.get('CardCode') or result.get('code')
+                    doc_entry = result.get('DocEntry')
+                    
+                    # Try to extract CardCode from Location header if not in body
                     if not card_code:
                         hdrs = result.get('headers') if isinstance(result.get('headers'), dict) else None
                         if hdrs:
@@ -755,9 +886,11 @@ class DealerRequestAdmin(admin.ModelAdmin):
                                             card_code = loc[start:end]
                                 except Exception:
                                     pass
+                    
                     if card_code:
                         summary = f"CardCode={card_code}"
-                # Prefer full BP details when CardCode is available
+                
+                # Get full BP details if CardCode available
                 try:
                     details = None
                     if card_code:
@@ -774,44 +907,58 @@ class DealerRequestAdmin(admin.ModelAdmin):
                         msg_json = json.dumps(result, ensure_ascii=False, indent=2)
                     except Exception:
                         msg_json = str(result)
+                
+                # Log response
                 try:
                     logging.getLogger('sap').info(msg_json)
                 except Exception:
                     pass
+                
                 try:
                     print("SAP Business Partner response:", msg_json, flush=True)
-                    if isinstance(result, dict):
-                        b = result.get('body')
-                        if b:
-                            print("SAP Business Partner raw body:", b, flush=True)
-                        h = result.get('headers')
-                        if h:
-                            try:
-                                print("SAP Business Partner headers:", json.dumps(h, ensure_ascii=False), flush=True)
-                            except Exception:
-                                print("SAP Business Partner headers:", str(h), flush=True)
                 except Exception:
                     pass
+                
+                # Show success message
                 messages.success(request, f"SAP_RESPONSE_JSON:{msg_json}")
                 if summary:
                     messages.success(request, f"SAP Business Partner created ({summary}).")
                 else:
-                    messages.success(request, f"SAP Business Partner created.")
+                    messages.success(request, "SAP Business Partner created.")
+                
+                # Update dealer request with SAP response
                 try:
                     obj.sap_response_json = msg_json
-                    obj.sap_response_at = timezone.now()
+                    obj.posted_at = timezone.now()
+                    obj.is_posted_to_sap = True
+                    obj.status = 'posted_to_sap'
                     if card_code:
                         obj.sap_card_code = card_code
-                    obj.save(update_fields=['sap_response_json','sap_response_at','sap_card_code'])
-                except Exception:
-                    pass
+                    if doc_entry:
+                        obj.sap_doc_entry = doc_entry
+                    obj.sap_error = None  # Clear previous errors
+                    obj.save(update_fields=['sap_response_json', 'posted_at', 'is_posted_to_sap', 'status', 'sap_card_code', 'sap_doc_entry', 'sap_error'])
+                except Exception as save_err:
+                    print(f"Error saving SAP response: {save_err}", flush=True)
+                    
             except Exception as e:
+                # Log error
+                error_msg = str(e)
                 try:
-                    logging.getLogger('sap').error(str(e))
+                    logging.getLogger('sap').error(error_msg)
                 except Exception:
                     pass
+                
                 try:
-                    print("SAP Business Partner error:", str(e), flush=True)
+                    print("SAP Business Partner error:", error_msg, flush=True)
+                except Exception:
+                    pass
+                
+                # Show error message and save to model
+                messages.error(request, f"SAP Business Partner creation failed: {error_msg}")
+                try:
+                    obj.sap_error = error_msg[:500]  # Store first 500 chars
+                    obj.save(update_fields=['sap_error'])
                 except Exception:
                     pass
                 messages.error(request, f"SAP_RESPONSE_JSON:{str(e)}")

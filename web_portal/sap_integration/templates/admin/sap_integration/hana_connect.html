@@ -286,16 +286,75 @@
     </div>
   </div>
   
-  <!-- Policy & Discount Section -->
+  <!-- Policy Section -->
   <div class="actions-section">
-    <h3>💰 Policy & Discounts</h3>
+    <h3>💰 Policy Link</h3>
     <div class="actions-grid">
-      <a class="button {% if current_action == 'policy_link' %}active{% endif %}" href="?action=policy_link&project_code=0223254&company_db={{ selected_db_key }}">Policy Link (Sample)</a>
-      <a class="button {% if current_action == 'additional_discount' %}active{% endif %}" href="?action=additional_discount&policy=P001&item_code=FG00581&pl_entry=1&company_db={{ selected_db_key }}">Additional Discount (Sample)</a>
-      <a class="button {% if current_action == 'extra_discount' %}active{% endif %}" href="?action=extra_discount&policy=P001&item_code=FG00581&pl_entry=1&company_db={{ selected_db_key }}">Extra Discount (Sample)</a>
-      <a class="button {% if current_action == 'phase_discount' %}active{% endif %}" href="?action=phase_discount&project_code=0223254&company_db={{ selected_db_key }}">Phase Discount (Sample)</a>
+      <button type="button" class="button" onclick="togglePolicyFilters()" style="cursor: pointer; border: none;">
+        🔍 Show Filters
+      </button>
+    </div>
+    
+    <div id="policyFilters" style="display: none; margin-top: 15px; padding: 20px; background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 10px;">
+      <form method="get" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+        <input type="hidden" name="action" value="policy_link">
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}">
+        <div style="display: flex; flex-direction: column; flex: 1; min-width: 250px;">
+          <label for="bp_code" style="font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 5px;">
+            Business Partner (optional) 
+            {% if customer_list %}
+              <span style="color: #10b981;">({{ customer_list|length }} loaded)</span>
+            {% else %}
+              <span style="color: #ef4444;">(No customers loaded)</span>
+            {% endif %}
+          </label>
+          <select id="bp_code" name="bp_code" 
+                  style="padding: 10px 12px; border: 2px solid #e2e8f0; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;">
+            <option value="">-- All Business Partners --</option>
+            {% for customer in customer_list %}
+              <option value="{{ customer.CardCode }}" {% if request.GET.bp_code == customer.CardCode %}selected{% endif %}>
+                {{ customer.CardCode }} - {{ customer.CardName }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 20px;">
+          <input type="checkbox" id="show_all" name="show_all" value="true" {% if request.GET.show_all %}checked{% endif %}
+                 style="width: 18px; height: 18px; cursor: pointer;">
+          <label for="show_all" style="font-size: 14px; font-weight: 600; color: #475569; cursor: pointer; user-select: none;">Show All Policies</label>
+        </div>
+        <button type="submit" class="button" style="margin: 0; cursor: pointer; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 10px 24px;">
+          🔍 Search Policies
+        </button>
+      </form>
     </div>
   </div>
+  
+  <script>
+  function togglePolicyFilters() {
+    const filtersDiv = document.getElementById('policyFilters');
+    const button = event.target;
+    if (filtersDiv.style.display === 'none') {
+      filtersDiv.style.display = 'block';
+      button.textContent = '🔼 Hide Filters';
+    } else {
+      filtersDiv.style.display = 'none';
+      button.textContent = '🔍 Show Filters';
+    }
+  }
+  
+  // Auto-show filters if action is policy_link
+  {% if current_action == 'policy_link' %}
+  document.addEventListener('DOMContentLoaded', function() {
+    const filtersDiv = document.getElementById('policyFilters');
+    const button = document.querySelector('button[onclick="togglePolicyFilters()"]');
+    if (filtersDiv && button) {
+      filtersDiv.style.display = 'block';
+      button.textContent = '🔼 Hide Filters';
+    }
+  });
+  {% endif %}
+  </script>
   
   <!-- Project & Balance Section -->
   <div class="actions-section">

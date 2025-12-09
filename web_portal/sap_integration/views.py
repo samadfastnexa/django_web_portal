@@ -14,11 +14,14 @@ from django.http import JsonResponse
 import os
 import json
 import re
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, additional_discount, extra_discount, phase_discount, project_balance, policy_balance_by_customer, crop_lov
+import logging
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov
 from django.conf import settings
 from pathlib import Path
 import sys
 from django.utils.safestring import mark_safe
+
+logger = logging.getLogger(__name__)
 
 @staff_member_required
 def sales_order_admin(request):
@@ -515,45 +518,13 @@ def hana_connect_admin(request):
                             error = str(e)
                     elif action == 'policy_link':
                         try:
-                            project_code = request.GET.get('project_code', '')
-                            if not project_code:
-                                error = 'project_code is required'
+                            bp_code = request.GET.get('bp_code', '')
+                            show_all = request.GET.get('show_all', '').lower() in ('true', '1', 'yes')
+                            
+                            if not bp_code and not show_all:
+                                error = 'bp_code is required, or set show_all=true to see all policies'
                             else:
-                                data = policy_link(conn, project_code)
-                                result = data
-                        except Exception as e:
-                            error = str(e)
-                    elif action == 'additional_discount':
-                        try:
-                            policy = request.GET.get('policy', '')
-                            item_code = request.GET.get('item_code', '')
-                            pl_entry = request.GET.get('pl_entry', '')
-                            if not policy or not item_code or not pl_entry:
-                                error = 'policy, item_code, and pl_entry are required'
-                            else:
-                                data = additional_discount(conn, policy, item_code, pl_entry)
-                                result = data
-                        except Exception as e:
-                            error = str(e)
-                    elif action == 'extra_discount':
-                        try:
-                            policy = request.GET.get('policy', '')
-                            item_code = request.GET.get('item_code', '')
-                            pl_entry = request.GET.get('pl_entry', '')
-                            if not policy or not item_code or not pl_entry:
-                                error = 'policy, item_code, and pl_entry are required'
-                            else:
-                                data = extra_discount(conn, policy, item_code, pl_entry)
-                                result = data
-                        except Exception as e:
-                            error = str(e)
-                    elif action == 'phase_discount':
-                        try:
-                            project_code = request.GET.get('project_code', '')
-                            if not project_code:
-                                error = 'project_code is required'
-                            else:
-                                data = phase_discount(conn, project_code)
+                                data = policy_link(conn, bp_code=bp_code if bp_code else None, show_all=show_all)
                                 result = data
                         except Exception as e:
                             error = str(e)
@@ -579,6 +550,17 @@ def hana_connect_admin(request):
                             result = data
                         except Exception as e:
                             error = str(e)
+                    
+                    # Load customer list for policy_link dropdown BEFORE closing connection
+                    customer_list = []
+                    try:
+                        customer_data = customer_lov(conn, search=None)
+                        if customer_data and isinstance(customer_data, list):
+                            customer_list = customer_data
+                    except Exception as e:
+                        logger.error(f"Failed to load customer list: {e}")
+                        customer_list = []
+                    
                 finally:
                     try:
                         conn.close()
@@ -586,6 +568,11 @@ def hana_connect_admin(request):
                         pass
         except Exception as e:
             error = _sanitize_error(e)
+    
+    # Set customer_list if not already set
+    if 'customer_list' not in locals():
+        customer_list = []
+    
     if request.headers.get('Accept') == 'application/json' and (action or request.GET.get('json')):
         return JsonResponse({'result': result, 'error': error, 'diagnostics': diagnostics})
     result_json = None
@@ -680,6 +667,7 @@ def hana_connect_admin(request):
             'is_tabular': (action in ('territory_summary','sales_vs_achievement','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','item_lov','projects_lov','crop_lov','policy_balance_by_customer')),
             'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
             'customer_options': customer_options,
+            'customer_list': customer_list,
             'db_options': db_options,
             'selected_db_key': selected_db_key,
             'base_url': base_url,
