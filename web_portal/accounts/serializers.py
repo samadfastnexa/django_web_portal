@@ -279,7 +279,7 @@ class SalesStaffProfileSerializer(serializers.ModelSerializer):
 # ----------------------
 class UserSerializer(serializers.ModelSerializer):
     sales_profile = serializers.SerializerMethodField()
-    profile_image_url = serializers.SerializerMethodField(source='get_profile_image')
+    profile_image_url = serializers.SerializerMethodField()
     profile_image = serializers.ImageField(write_only=True, required=False, allow_null=True)
     role = RoleDetailSerializer(read_only=True)
     role_id = serializers.PrimaryKeyRelatedField(
@@ -349,7 +349,7 @@ class UserSerializer(serializers.ModelSerializer):
             return None
         return SalesStaffProfileSerializer(profile).data
     
-    def get_profile_image(self, obj):
+    def get_profile_image_url(self, obj):
         try:
             if obj.profile_image and hasattr(obj.profile_image, 'url'):
                 return obj.profile_image.url
