@@ -51,6 +51,10 @@ class DealerRequestSerializer(serializers.ModelSerializer):
     requested_by = serializers.PrimaryKeyRelatedField(read_only=True)
 
     def validate_cnic_number(self, value):
+        # Skip validation if value is None or empty
+        if not value:
+            return value
+            
         # Remove non-digit characters
         digits_only = re.sub(r'\D', '', value)
 
@@ -64,17 +68,29 @@ class DealerRequestSerializer(serializers.ModelSerializer):
 
 
     def validate_minimum_investment(self, value):
+        # Skip validation if value is None
+        if value is None:
+            return value
+            
         if value < 500000:
             raise serializers.ValidationError("Minimum investment must be at least 5 lakh (500,000).")
         return value
 
     def validate_cnic_front(self, image):
+        if not image:
+            return image
         return self.validate_image(image, field="CNIC front")
 
     def validate_cnic_back(self, image):
+        if not image:
+            return image
         return self.validate_image(image, field="CNIC back")
 
     def validate_image(self, image, field="Image"):
+        # Skip validation if no image provided
+        if not image:
+            return image
+            
         max_size_mb = 2  # Max 2 MB
         valid_mime_types = ['image/jpeg', 'image/png']
         
@@ -100,6 +116,61 @@ class DealerRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = DealerRequest
         fields = '__all__'
+        extra_kwargs = {
+            # Basic Info
+            'owner_name': {'required': False},
+            'business_name': {'required': False},
+            'contact_number': {'required': False},
+            'mobile_phone': {'required': False},
+            'email': {'required': False},
+            'address': {'required': False},
+            'city': {'required': False},
+            'state': {'required': False},
+            'country': {'required': False},
+            
+            # Tax & Legal
+            'cnic_number': {'required': False},
+            'federal_tax_id': {'required': False},
+            'additional_id': {'required': False},
+            'unified_federal_tax_id': {'required': False},
+            'filer_status': {'required': False},
+            
+            # License
+            'govt_license_number': {'required': False},
+            'license_expiry': {'required': False},
+            'u_leg': {'required': False},
+            
+            # Documents
+            'cnic_front': {'required': False},
+            'cnic_back': {'required': False},
+            
+            # Territory
+            'company': {'required': False},
+            'region': {'required': False},
+            'zone': {'required': False},
+            'territory': {'required': False},
+            
+            # SAP Configuration
+            'sap_series': {'required': False},
+            'card_type': {'required': False},
+            'group_code': {'required': False},
+            'debitor_account': {'required': False},
+            'vat_group': {'required': False},
+            'vat_liable': {'required': False},
+            'whatsapp_messages': {'required': False},
+            
+            # Financial
+            'minimum_investment': {'required': False},
+            'reason': {'required': False},
+            
+            # SAP Integration (read-only)
+            'is_posted_to_sap': {'read_only': True},
+            'sap_card_code': {'read_only': True},
+            'sap_doc_entry': {'read_only': True},
+            'sap_error': {'read_only': True},
+            'sap_response_json': {'read_only': True},
+            'posted_at': {'read_only': True},
+        }
 
 
 class CompanySerializer(serializers.ModelSerializer):

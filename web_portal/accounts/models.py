@@ -9,8 +9,14 @@ from FieldAdvisoryService.models import Region, Zone, Territory
 # ✅ Image size validator
 def validate_image_size(image):
     max_size_mb = 2
-    if image.size > max_size_mb * 1024 * 1024:
-        raise ValidationError(f"Image file too large ( > {max_size_mb}MB )") # ✅ size check
+    # Handle cases where file might not exist yet or is being updated
+    try:
+        if hasattr(image, 'size') and image.size:
+            if image.size > max_size_mb * 1024 * 1024:
+                raise ValidationError(f"Image file too large ( > {max_size_mb}MB )")
+    except (OSError, FileNotFoundError):
+        # File doesn't exist yet or path issue - skip validation
+        pass
 
 # ✅ Role Model
 class Role(models.Model):

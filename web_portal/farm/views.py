@@ -81,11 +81,15 @@ class FarmViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filter queryset based on user permissions and query parameters"""
+        # Short-circuit for Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Farm.objects.none()
+        
         user = self.request.user
         queryset = Farm.objects.filter(deleted_at__isnull=True)
         
         # Admin users can see all farms, regular users only see their own
-        if not user.is_staff:
+        if user.is_authenticated and not user.is_staff:
             queryset = queryset.filter(owner=user)
         
         # Filter by active status

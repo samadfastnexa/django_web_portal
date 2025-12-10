@@ -13,9 +13,19 @@ User = get_user_model()
 # User Listing (Read-Only)
 # ----------------------
 class UserListSerializer(serializers.ModelSerializer):
+    profile_image = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile_image']
+    
+    def get_profile_image(self, obj):
+        try:
+            if obj.profile_image and hasattr(obj.profile_image, 'url'):
+                return obj.profile_image.url
+        except (ValueError, FileNotFoundError, OSError):
+            pass
+        return None
 
 # ----------------------
 # User Signup (Public Registration)
@@ -186,11 +196,78 @@ class AdminUserStatusSerializer(serializers.ModelSerializer):
         fields = ['is_active']
 
 
+# Nested serializers for detailed information
+class RoleDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Role
+        fields = ['id', 'name']
+
+
+class HODDetailSerializer(serializers.ModelSerializer):
+    """Simplified serializer for HOD to avoid circular references"""
+    name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SalesStaffProfile
+        fields = ['id', 'name']
+    
+    def get_name(self, obj):
+        if obj.user:
+            full_name = f"{obj.user.first_name} {obj.user.last_name}".strip()
+            return full_name if full_name else obj.user.username
+        return None
+
+
+class CompanyDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Company
+        fields = ['id', 'Company_name']
+
+
+class RegionDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Region
+        fields = ['id', 'name']
+
+
+class ZoneDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Zone
+        fields = ['id', 'name']
+
+
+class TerritoryDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Territory
+        fields = ['id', 'name']
+
+
 class SalesStaffProfileSerializer(serializers.ModelSerializer):
-    companies = serializers.PrimaryKeyRelatedField(many=True, queryset=Company.objects.all(), required=False)
-    regions = serializers.PrimaryKeyRelatedField(many=True, queryset=Region.objects.all(), required=False)
-    zones = serializers.PrimaryKeyRelatedField(many=True, queryset=Zone.objects.all(), required=False)
-    territories = serializers.PrimaryKeyRelatedField(many=True, queryset=Territory.objects.all(), required=False)
+    # For write operations (create/update), accept IDs
+    companies_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Company.objects.all(), required=False, 
+        source='companies', write_only=True
+    )
+    regions_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Region.objects.all(), required=False,
+        source='regions', write_only=True
+    )
+    zones_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Zone.objects.all(), required=False,
+        source='zones', write_only=True
+    )
+    territories_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Territory.objects.all(), required=False,
+        source='territories', write_only=True
+    )
+    
+    # For read operations (GET), return detailed objects with id and name
+    companies = CompanyDetailSerializer(many=True, read_only=True)
+    regions = RegionDetailSerializer(many=True, read_only=True)
+    zones = ZoneDetailSerializer(many=True, read_only=True)
+    territories = TerritoryDetailSerializer(many=True, read_only=True)
+    hod = HODDetailSerializer(read_only=True)
+    master_hod = HODDetailSerializer(read_only=True)
 
     class Meta:
         model = SalesStaffProfile
@@ -202,6 +279,12 @@ class SalesStaffProfileSerializer(serializers.ModelSerializer):
 # ----------------------
 class UserSerializer(serializers.ModelSerializer):
     sales_profile = serializers.SerializerMethodField()
+    profile_image_url = serializers.SerializerMethodField()
+    profile_image = serializers.ImageField(write_only=True, required=False, allow_null=True)
+    role = RoleDetailSerializer(read_only=True)
+    role_id = serializers.PrimaryKeyRelatedField(
+        queryset=Role.objects.all(), source='role', write_only=True, required=False
+    )
     password = serializers.CharField(write_only=True, min_length=6, required=False)
     is_sales_staff = serializers.BooleanField(write_only=True, default=False, required=False)
 
@@ -210,6 +293,7 @@ class UserSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(write_only=True, required=False)
     address = serializers.CharField(write_only=True, required=False)
     designation = serializers.CharField(write_only=True, required=False)
+    date_of_joining = serializers.DateField(write_only=True, required=False, allow_null=True)
     
     # Use plural field names to match the model's ManyToMany fields
     companies = serializers.PrimaryKeyRelatedField(
@@ -242,21 +326,36 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'password', 'first_name', 'last_name',
-            'role', 'is_active', 'is_staff', 'is_sales_staff',
+            'profile_image', 'profile_image_url',  # Separate read/write fields
+            'role', 'role_id', 'is_active', 'is_staff', 'is_sales_staff',
             'sales_profile',
             # Extra sales staff input fields (using plural names for M2M)
-            'employee_code', 'phone_number', 'address', 'designation',
-            'companies', 'regions', 'zones', 'territories',
+            'employee_code', 'phone_number', 'address', 'designation', 'date_of_joining',
+            'companies', 'regions', 'zones', 'territories',  # For backward compatibility in write operations
             'hod', 'master_hod',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
-        read_only_fields = ['id', 'is_staff', 'is_active']
+        read_only_fields = ['id', 'is_staff', 'is_active', 'profile_image_url']
+        extra_kwargs = {
+            'username': {'required': False},
+            'email': {'required': False},
+            'first_name': {'required': False},
+            'last_name': {'required': False},
+        }
         
     def get_sales_profile(self, obj):
         profile = getattr(obj, 'sales_profile', None)
         if not profile:
             return None
         return SalesStaffProfileSerializer(profile).data
+    
+    def get_profile_image_url(self, obj):
+        try:
+            if obj.profile_image and hasattr(obj.profile_image, 'url'):
+                return obj.profile_image.url
+        except (ValueError, FileNotFoundError, OSError):
+            pass
+        return None
     
     def validate(self, attrs):
         if attrs.get('is_sales_staff'):

@@ -29,6 +29,23 @@ def _load_env_file(path: str) -> None:
     except Exception:
         pass
 
+def _normalize_mapping(obj):
+    try:
+        if isinstance(obj, dict):
+            cleaned = {}
+            for k, v in obj.items():
+                k2 = str(k).strip()
+                v2 = str(v).strip()
+                if len(k2) >= 2 and ((k2[0] == '"' and k2[-1] == '"') or (k2[0] == "'" and k2[-1] == "'")):
+                    k2 = k2[1:-1]
+                if len(v2) >= 2 and ((v2[0] == '"' and v2[-1] == '"') or (v2[0] == "'" and v2[-1] == "'")):
+                    v2 = v2[1:-1]
+                cleaned[k2] = v2
+            return cleaned
+    except Exception:
+        pass
+    return obj
+
 class SAPClient:
     """
     SAP Client with global session storage across all requests.
@@ -51,41 +68,47 @@ class SAPClient:
             # Priority 1: Try environment variables (for .env configuration)
             # Priority 2: Fall back to Django settings (for database configuration)
             
-            # Get username
-            self.username = (os.environ.get('SAP_USERNAME') or '').strip()
-            if not self.username:
-                try:
-                    sap_cred = Setting.objects.get(slug='sap_credential').value
-                    # Handle both JSONField (dict) and TextField (str) formats
-                    if isinstance(sap_cred, str):
-                        sap_cred = json.loads(sap_cred)
-                    elif not isinstance(sap_cred, dict):
-                        raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
-                    self.username = str(sap_cred.get('Username') or '').strip()
-                except Setting.DoesNotExist:
-                    raise ImproperlyConfigured('SAP_USERNAME not found in .env or Django settings')
+            # Get username from settings
+            try:
+                sap_cred = Setting.objects.get(slug='sap_credential').value
+                if isinstance(sap_cred, str):
+                    sap_cred = json.loads(sap_cred)
+                elif not isinstance(sap_cred, dict):
+                    raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
+                self.username = str(sap_cred.get('Username') or '').strip()
+            except Setting.DoesNotExist:
+                raise ImproperlyConfigured('SAP_USERNAME not found in settings')
             
-            # Get password
-            self.password = (os.environ.get('SAP_PASSWORD') or '').strip()
-            if not self.password:
-                try:
-                    sap_cred = Setting.objects.get(slug='sap_credential').value
-                    # Handle both JSONField (dict) and TextField (str) formats
-                    if isinstance(sap_cred, str):
-                        sap_cred = json.loads(sap_cred)
-                    elif not isinstance(sap_cred, dict):
-                        raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
-                    self.password = str(sap_cred.get('Passwords') or '').strip()
-                except Setting.DoesNotExist:
-                    raise ImproperlyConfigured('SAP_PASSWORD not found in .env or Django settings')
+            # Get password from settings
+            try:
+                sap_cred = Setting.objects.get(slug='sap_credential').value
+                if isinstance(sap_cred, str):
+                    sap_cred = json.loads(sap_cred)
+                elif not isinstance(sap_cred, dict):
+                    raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
+                self.password = str(sap_cred.get('Passwords') or '').strip()
+            except Setting.DoesNotExist:
+                raise ImproperlyConfigured('SAP_PASSWORD not found in settings')
             
-            # Get company database
-            self.company_db = (os.environ.get('SAP_COMPANY_DB') or '').strip()
-            if not self.company_db:
-                try:
-                    self.company_db = str(Setting.objects.get(slug='SAP_COMPANY_DB').value or '').strip()
-                except Setting.DoesNotExist:
-                    raise ImproperlyConfigured('SAP_COMPANY_DB not found in .env or Django settings')
+            # Get company database from settings
+            try:
+                raw_db = Setting.objects.get(slug='SAP_COMPANY_DB').value
+                if isinstance(raw_db, str):
+                    try:
+                        parsed = json.loads(raw_db)
+                    except Exception:
+                        parsed = raw_db
+                else:
+                    parsed = raw_db
+                parsed = _normalize_mapping(parsed)
+                if isinstance(parsed, dict):
+                    key = '4B-ORANG'
+                    picked = parsed.get(key) or parsed.get('4B-ORANG') or parsed.get('4B-BIO')
+                    self.company_db = str(picked or '').strip()
+                else:
+                    self.company_db = str(parsed or '').strip()
+            except Setting.DoesNotExist:
+                raise ImproperlyConfigured('SAP_COMPANY_DB not found in settings')
 
             # Get SAP B1 Service Layer connection details
             self.host = (os.environ.get('SAP_B1S_HOST') or "fourbtest.vdc.services").strip()
@@ -192,7 +215,21 @@ class SAPClient:
                 except Exception:
                     pass
                 try:
-                    alt_db = str(Setting.objects.get(slug='SAP_COMPANY_DB').value or '').strip()
+                    raw_db = Setting.objects.get(slug='SAP_COMPANY_DB').value
+                    if isinstance(raw_db, str):
+                        try:
+                            parsed = json.loads(raw_db)
+                        except Exception:
+                            parsed = raw_db
+                    else:
+                        parsed = raw_db
+                    parsed = _normalize_mapping(parsed)
+                    if isinstance(parsed, dict):
+                        key = '4B-ORANG'
+                        picked = parsed.get(key) or parsed.get('4B-ORANG') or parsed.get('4B-BIO')
+                        alt_db = str(picked or '').strip()
+                    else:
+                        alt_db = str(parsed or '').strip()
                 except Exception:
                     pass
                 data2 = {
@@ -397,6 +434,11 @@ class SAPClient:
     def create_business_partner(self, payload: dict):
         body = json.dumps(payload)
         path = f"{self.base_path}/BusinessPartners"
+        return self._make_request("POST", path, body)
+
+    def create_sales_order(self, payload: dict):
+        body = json.dumps(payload)
+        path = f"{self.base_path}/Orders"
         return self._make_request("POST", path, body)
 
     def add_contact_employee(self, card_code: str, contact: dict):

@@ -1,0 +1,21 @@
+<div style="padding:16px;">
+  <h2>SAP Sales Order</h2>
+  {% if error %}
+    <div style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:8px;margin-bottom:12px;">{{ error }}</div>
+  {% endif %}
+  <form method="post" style="display:flex;flex-direction:column;gap:12px;">
+    {% csrf_token %}
+    <label>Payload (JSON)
+      <textarea name="payload" rows="24" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;">{{ payload }}</textarea>
+    </label>
+    <div style="display:flex;gap:12px;">
+      <button type="submit" style="background:#22c55e;color:#fff;border:none;padding:10px 14px;border-radius:8px;">Create Sales Order</button>
+      <a href="/admin/" style="background:#f1f5f9;color:#111827;border:1px solid #e5e7eb;padding:10px 14px;border-radius:8px;text-decoration:none;">Back to Admin</a>
+    </div>
+  </form>
+  {% if result_json %}
+    <h3 style="margin-top:16px;">Response</h3>
+    <pre style="background:#f8fafc;border:1px solid #e5e7eb;padding:10px;border-radius:8px;white-space:pre-wrap;">{{ result_json }}</pre>
+  {% endif %}
+</div>
+

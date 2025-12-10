@@ -3,13 +3,79 @@
 
 {% block extrahead %}
   {{ block.super }}
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <link rel="stylesheet" href="{% static 'sap_integration/admin.css' %}">
+  <style>
+    :root {
+      --font-base: 16px;
+      --font-small: 14px;
+      --tap-height: 44px;
+      --pad: 12px;
+    }
+    html { font-size: var(--font-base); }
+    body { line-height: 1.5; }
+    /* Layout adjustments */
+    #container { padding: var(--pad); }
+    .content { padding: var(--pad); }
+    .breadcrumbs { padding: 8px var(--pad); }
+    /* Forms */
+    input[type="text"], input[type="email"], input[type="number"], input[type="date"],
+    select, textarea { width: 100%; max-width: 100%; padding: 10px; }
+    .submit-row input[type="submit"], .submit-row button[type="submit"] {
+      min-height: 36px;
+      padding: 8px 12px;
+    }
+    /* Tables */
+    .results, .module table { width: 100%; }
+    .module table th, .module table td { padding: 8px; }
+    /* avoid overriding default admin button styles */
+    .mobile-nav-toggle { display: none; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; color: #111827; cursor: pointer; }
+    .mobile-nav-toggle:focus { outline: 2px solid #0ea5e9; }
+    /* Breakpoints */
+    @media (max-width: 480px) {
+      html { font-size: var(--font-small); }
+      #header { padding: 8px var(--pad); }
+      .branding h1 { font-size: 1rem; }
+      .mobile-nav-toggle { display: inline-flex; }
+      #nav-sidebar { display: block !important; position: fixed; top: 0; left: 0; height: 100vh; width: 85vw; max-width: 340px; transform: translateX(-100%) !important; transition: transform .2s ease; z-index: 3000; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.15); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 0 !important; margin-right: 0 !important; border-right: 0 !important; box-sizing: border-box; }
+      body.nav-open #nav-sidebar { transform: translateX(0) !important; }
+      body.nav-open { overflow: hidden; }
+      #mobileOverlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(17,24,39,.4); z-index: 2000; }
+      body.nav-open #mobileOverlay { display: block; }
+      body, .content { overflow-x: hidden; }
+      .content { padding: 8px; }
+      .submit-row { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    }
+    @media (min-width: 481px) and (max-width: 768px) {
+      .mobile-nav-toggle { display: inline-flex; }
+      #nav-sidebar { display: block !important; position: fixed; top: 0; left: 0; height: 100vh; width: 85vw; max-width: 340px; transform: translateX(-100%) !important; transition: transform .2s ease; z-index: 3000; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.15); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 0 !important; margin-right: 0 !important; border-right: 0 !important; box-sizing: border-box; }
+      body.nav-open #nav-sidebar { transform: translateX(0) !important; }
+      body.nav-open { overflow: hidden; }
+      #mobileOverlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(17,24,39,.4); z-index: 2000; }
+      body.nav-open #mobileOverlay { display: block; }
+      body, .content { overflow-x: hidden; }
+    }
+    @media (min-width: 769px) and (max-width: 1024px) {
+      #container { padding: 16px; }
+      .mobile-nav-toggle { display: inline-flex; }
+      #nav-sidebar { display: block !important; position: fixed; top: 0; left: 0; height: 100vh; width: 70vw; max-width: 360px; transform: translateX(-100%) !important; transition: transform .2s ease; z-index: 3000; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.15); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 0 !important; margin-right: 0 !important; border-right: 0 !important; box-sizing: border-box; }
+      body.nav-open #nav-sidebar { transform: translateX(0) !important; }
+      body.nav-open { overflow: hidden; }
+      #mobileOverlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(17,24,39,.4); z-index: 2000; }
+      body.nav-open #mobileOverlay { display: block; }
+      body, .content { overflow-x: hidden; }
+    }
+    @media (min-width: 1025px) {
+      #container { padding: 20px; }
+    }
+    /* Images/media */
+    img, video { max-width: 100%; height: auto; }
+  </style>
   <script>
-    (function() {
-      function ready(fn){ if(document.readyState !== 'loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
+    (function(){
+      function ready(fn){ if(document.readyState!=='loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
       ready(function(){
+        // Keep sidebar open by default
         try {
           var main = document.getElementById('main');
           var nav = document.getElementById('nav-sidebar');
@@ -21,52 +87,128 @@
             }
           }
         } catch(e) {}
-        // Use Django's built-in theme toggle (admin/js/theme.js)
 
-        // Login: show/hide password eye icon
-        var pwd = document.getElementById('id_password');
-        if(!pwd) return; // only on login page
-
-        var wrapper = document.createElement('span');
-        wrapper.className = 'password-field-wrapper';
-        pwd.parentNode.insertBefore(wrapper, pwd);
-        wrapper.appendChild(pwd);
-        try { pwd.style.paddingRight = '40px'; } catch(e) {}
-
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'password-toggle';
-        btn.setAttribute('aria-label', 'Show password');
-        btn.setAttribute('aria-controls', 'id_password');
-        btn.setAttribute('data-state', 'hidden');
-        btn.innerHTML = (
-          '<svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
-          + '<path fill="currentColor" d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/>'
-          + '</svg>'
-          + '<svg class="icon-eye-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
-          + '<path fill="currentColor" d="M2 4.27L3.28 3 21 20.72 19.73 22l-3.88-3.88A11.86 11.86 0 0112 19c-5 0-9.27-3.11-11-7a12.7 12.7 0 013.44-4.53L2 4.27z"/>'
-          + '<path fill="currentColor" d="M12 5c5 0 9.27 3.11 11 7-.93 2.1-2.55 3.93-4.53 5.15l-1.42-1.42A8.03 8.03 0 0020 12c-1.73-3.89-6-7-8-7-1.18 0-2.3.21-3.33.59L7.7 4.9A10.2 10.2 0 0112 5z"/>'
-          + '</svg>'
-        );
-        btn.addEventListener('click', function(){
-          var isHidden = pwd.type === 'password';
-          pwd.type = isHidden ? 'text' : 'password';
-          btn.setAttribute('data-state', isHidden ? 'visible' : 'hidden');
-          btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        // Mobile nav toggle
+        var btn = document.getElementById('mobileNavToggle');
+        var nav = document.getElementById('nav-sidebar');
+        var overlay = document.getElementById('mobileOverlay');
+        if(!overlay){ overlay = document.createElement('div'); overlay.id = 'mobileOverlay'; document.body.appendChild(overlay); }
+        var mainEl = document.getElementById('main');
+        function setNavOpen(open){
+          if(open){
+            document.body.classList.add('nav-open');
+            if(nav){ nav.setAttribute('aria-expanded','true'); }
+            if(mainEl && !mainEl.classList.contains('shifted')){ mainEl.classList.add('shifted'); }
+            try {
+              var navWidth = 0;
+              if (nav) {
+                navWidth = nav.offsetWidth || 0;
+              }
+              if (!navWidth) {
+                var bp = window.innerWidth;
+                if (bp <= 480 || (bp >= 481 && bp <= 768)) {
+                  navWidth = Math.min(window.innerWidth * 0.85, 340);
+                } else if (bp >= 769 && bp <= 1024) {
+                  navWidth = Math.min(window.innerWidth * 0.70, 360);
+                } else {
+                  navWidth = 0;
+                }
+              }
+              overlay.style.left = navWidth + 'px';
+            } catch(e) {}
+            try { localStorage.setItem('django.admin.navSidebarIsOpen', 'true'); } catch(e) {}
+          } else {
+            document.body.classList.remove('nav-open');
+            if(nav){ nav.setAttribute('aria-expanded','false'); }
+            if(mainEl && mainEl.classList.contains('shifted')){ mainEl.classList.remove('shifted'); }
+            try { overlay.style.left = '0px'; } catch(e) {}
+            try { localStorage.setItem('django.admin.navSidebarIsOpen', 'false'); } catch(e) {}
+          }
+        }
+        function toggleNav(){
+          try {
+            var def = document.getElementById('toggle-nav-sidebar');
+            if (def) { def.click(); return; }
+          } catch(e) {}
+          var open = !document.body.classList.contains('nav-open');
+          setNavOpen(open);
+        }
+        if(btn){ btn.addEventListener('click', toggleNav, true); }
+        document.addEventListener('click', function(e){
+          var t = e.target;
+          if (!t) return;
+          if (t.id === 'mobileNavToggle' || (t.closest && t.closest('#mobileNavToggle'))){
+            e.preventDefault();
+            toggleNav();
+          }
+        }, true);
+        if(overlay){ overlay.addEventListener('click', function(){ setNavOpen(false); }); }
+        if(nav){ nav.addEventListener('click', function(ev){ ev.stopPropagation(); }); }
+        window.addEventListener('resize', function(){
+          try {
+            if (window.innerWidth > 768) {
+              setNavOpen(false);
+            } else if (document.body.classList.contains('nav-open') && overlay) {
+              var w = nav ? nav.offsetWidth : 0;
+              if (!w) {
+                var bp = window.innerWidth;
+                if (bp <= 480 || (bp >= 481 && bp <= 768)) {
+                  w = Math.min(window.innerWidth * 0.85, 340);
+                } else if (bp >= 769 && bp <= 1024) {
+                  w = Math.min(window.innerWidth * 0.70, 360);
+                }
+              }
+              overlay.style.left = (w || 0) + 'px';
+            }
+          } catch(e) {}
         });
-        wrapper.appendChild(btn);
+
+        // Login password eye toggle (login page only)
+        try {
+          var pwd = document.getElementById('id_password');
+          if(pwd){
+            var wrapper = document.createElement('span');
+            wrapper.className = 'password-field-wrapper';
+            pwd.parentNode.insertBefore(wrapper, pwd);
+            wrapper.appendChild(pwd);
+            pwd.style.paddingRight = '40px';
+            var toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'password-toggle';
+            toggle.setAttribute('aria-label', 'Show password');
+            toggle.setAttribute('aria-controls', 'id_password');
+            toggle.setAttribute('data-state', 'hidden');
+            toggle.innerHTML = (
+              '<svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
+              + '<path fill="currentColor" d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/>'
+              + '</svg>'
+              + '<svg class="icon-eye-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
+              + '<path fill="currentColor" d="M2 4.27L3.28 3 21 20.72 19.73 22l-3.88-3.88A11.86 11.86 0 0112 19c-5 0-9.27-3.11-11-7a12.7 12.7 0 013.44-4.53L2 4.27z"/>'
+              + '<path fill="currentColor" d="M12 5c5 0 9.27 3.11 11 7-.93 2.1-2.55 3.93-4.53 5.15l-1.42-1.42A8.03 8.03 0 0020 12c-1.73-3.89-6-7-8-7-1.18 0-2.3.21-3.33.59L7.7 4.9A10.2 10.2 0 0112 5z"/>'
+              + '</svg>'
+            );
+            toggle.addEventListener('click', function(){
+              var isHidden = pwd.type === 'password';
+              pwd.type = isHidden ? 'text' : 'password';
+              toggle.setAttribute('data-state', isHidden ? 'visible' : 'hidden');
+              toggle.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+            });
+            wrapper.appendChild(toggle);
+          }
+        } catch(e) {}
       });
     })();
   </script>
 {% endblock %}
 
 {% block branding %}
-  <h1 id="site-name">
-    <a href="{% url 'admin:index' %}">
-      <span class="brand-icon" aria-hidden="true">
-        <img src="{% static 'sap_integration/icons/tarzan_logo.svg' %}" alt="Tarzan" />
-      </span>
-      Tarzan Administration
-    </a>
-  </h1>
+  <div class="branding" style="display:flex;align-items:center;gap:12px;position:relative;z-index:4000;">
+    <button id="mobileNavToggle" class="mobile-nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="nav-sidebar" role="button" tabindex="0" onclick="(function(){var nav=document.getElementById('nav-sidebar');var main=document.getElementById('main');var body=document.body;var open=!body.classList.contains('nav-open');if(open){body.classList.add('nav-open'); if(nav){nav.setAttribute('aria-expanded','true');} if(main && !main.classList.contains('shifted')){main.classList.add('shifted');}} else {body.classList.remove('nav-open'); if(nav){nav.setAttribute('aria-expanded','false');} if(main && main.classList.contains('shifted')){main.classList.remove('shifted');}}})();">☰ Menu</button>
+    <h1 id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a></h1>
+  </div>
 {% endblock %}
+
+{% block footer %}
+  {{ block.super }}
+{% endblock %}
+
