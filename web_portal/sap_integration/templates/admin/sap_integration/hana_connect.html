@@ -273,8 +273,9 @@
   <div class="actions-section">
     <h3>👥 Customer & Contact Details</h3>
     <div class="actions-grid">
-      <a class="button {% if current_action == 'customer_addresses' %}active{% endif %}" href="?action=customer_addresses&card_code=BIC01563&company_db={{ selected_db_key }}">Customer Address (Sample)</a>
-      <a class="button {% if current_action == 'contact_person_name' %}active{% endif %}" href="?action=contact_person_name&card_code=BIC01563&contact_code=4804&company_db={{ selected_db_key }}">Contact Person Name (Sample)</a>
+      <a class="button {% if current_action == 'customer_addresses' %}active{% endif %}" href="?action=customer_addresses&company_db={{ selected_db_key }}">Customer Address</a>
+      <a class="button {% if current_action == 'contact_person_name' %}active{% endif %}" href="?action=contact_person_name&company_db={{ selected_db_key }}">Contact Person Name</a>
+      <a class="button {% if current_action == 'child_customers' %}active{% endif %}" href="?action=child_customers&company_db={{ selected_db_key }}">Child Customers</a>
     </div>
   </div>
   
@@ -282,7 +283,7 @@
   <div class="actions-section">
     <h3>📦 Item & Warehouse</h3>
     <div class="actions-grid">
-      <a class="button {% if current_action == 'warehouse_for_item' %}active{% endif %}" href="?action=warehouse_for_item&item_code=FG00581&company_db={{ selected_db_key }}">Warehouse for Item (Sample)</a>
+      <a class="button {% if current_action == 'warehouse_for_item' %}active{% endif %}" href="?action=warehouse_for_item&company_db={{ selected_db_key }}">Warehouse for Item</a>
     </div>
   </div>
   
@@ -356,11 +357,91 @@
   {% endif %}
   </script>
   
+  {% if current_action == 'customer_addresses' %}
+    <style>
+      :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#ef4444;--filter-primary-600:#dc2626;--filter-radius:12px}
+      .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+      .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+      .filter-title{font-size:16px;font-weight:600}
+      .filter-grid{display:grid;grid-template-columns:repeat(3, minmax(220px,1fr));gap:12px}
+      @media (max-width:900px){.filter-grid{grid-template-columns:repeat(2, minmax(200px,1fr))}}
+      @media (max-width:640px){.filter-grid{grid-template-columns:1fr}}
+      .filter-field{display:flex;flex-direction:column;gap:6px}
+      .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+      .filter-input{display:flex;align-items:center;gap:8px}
+      .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff}
+      .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+      .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600}
+      .btn:hover{background:var(--filter-primary-600)}
+      .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+      .btn-secondary:hover{background:#fee2e2}
+      .icon{width:16px;height:16px;fill:currentColor}
+    </style>
+    <form method="get" class="filter-card" id="ca-filter-form">
+      <input type="hidden" name="action" value="customer_addresses" />
+      <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+      <div class="filter-header">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z"/></svg>
+        <div class="filter-title">Customer Address Filters</div>
+      </div>
+      <div class="filter-grid">
+        <div class="filter-field" data-key="card_code">
+          <div class="filter-label" title="CardCode">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
+            Business Partner
+          </div>
+          <div class="filter-input">
+            <select name="card_code" id="ca_card_code">
+              <option value="">All Business Partners</option>
+              {% for customer in customer_list %}
+                <option value="{{ customer.CardCode }}" {% if request.GET.card_code == customer.CardCode %}selected{% endif %}>{{ customer.CardCode }} - {{ customer.CardName }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="filter-field" data-key="show_all" style="align-self:end">
+          <div class="filter-input">
+            <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="show_all" value="true" {% if request.GET.show_all %}checked{% endif %}/> Show All</label>
+          </div>
+        </div>
+        <div class="filter-field" data-key="page">
+          <div class="filter-label" title="Page">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page" min="1" value="{{ request.GET.page|default:'1' }}" />
+          </div>
+        </div>
+        <div class="filter-field" data-key="page_size">
+          <div class="filter-label" title="Page Size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page Size
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page_size" min="1" max="200" value="{{ request.GET.page_size|default:pagination.page_size }}" />
+          </div>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          Apply
+        </button>
+        <a class="btn btn-secondary" href="?action=customer_addresses&company_db={{ selected_db_key }}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+          Clear
+        </a>
+      </div>
+    </form>
+  {% endif %}
+  
+  
   <!-- Project & Balance Section -->
   <div class="actions-section">
     <h3>💵 Project & Balance</h3>
     <div class="actions-grid">
-      <a class="button {% if current_action == 'project_balance' %}active{% endif %}" href="?action=project_balance&project_code=0223254&company_db={{ selected_db_key }}">Project Balance (Sample)</a>
+      <a class="button {% if current_action == 'project_balance' %}active{% endif %}" href="?action=project_balance&company_db={{ selected_db_key }}">Project Balance</a>
       <a class="button {% if current_action == 'policy_balance_by_customer' %}active{% endif %}" href="?action=policy_balance_by_customer&company_db={{ selected_db_key }}">Policy Balance by Customer</a>
     </div>
   </div>
@@ -375,6 +456,276 @@
   
   <!-- Filters and Results Section -->
   <div class="module">
+  {% if current_action == 'warehouse_for_item' %}
+    <style>
+      :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#10b981;--filter-primary-600:#0ea371;--filter-radius:12px}
+      .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+      .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+      .filter-title{font-size:16px;font-weight:600}
+      .filter-grid{display:grid;grid-template-columns:repeat(3, minmax(220px,1fr));gap:12px}
+      @media (max-width:900px){.filter-grid{grid-template-columns:repeat(2, minmax(200px,1fr))}}
+      @media (max-width:640px){.filter-grid{grid-template-columns:1fr}}
+      .filter-field{display:flex;flex-direction:column;gap:6px}
+      .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+      .filter-input{display:flex;align-items:center;gap:8px}
+      .filter-input select{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}
+      .filter-input select:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(16,185,129,0.15)}
+      .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+      .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+      .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(16,185,129,0.25)}
+      .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+      .btn-secondary:hover{background:#ecfdf5}
+      .icon{width:16px;height:16px;fill:currentColor}
+    </style>
+    <form method="get" class="filter-card" id="wh-filter-form">
+      <input type="hidden" name="action" value="warehouse_for_item" />
+      <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+      <div class="filter-header">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z"/></svg>
+        <div class="filter-title">Item Filter</div>
+      </div>
+      <div class="filter-grid">
+        <div class="filter-field" data-key="item_code">
+          <div class="filter-label" title="Item Code">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
+            Item Code
+          </div>
+          <div class="filter-input">
+            <select name="item_code" id="item_code">
+              <option value="">Select Item</option>
+              {% for item in item_options %}
+                <option value="{{ item.ItemCode }}" {% if request.GET.item_code == item.ItemCode %}selected{% endif %}>{{ item.ItemCode }} - {{ item.ItemName }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="filter-field" data-key="page">
+          <div class="filter-label" title="Page">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page" min="1" value="{{ request.GET.page|default:'1' }}" />
+          </div>
+        </div>
+        <div class="filter-field" data-key="page_size">
+          <div class="filter-label" title="Page Size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page Size
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page_size" min="1" max="200" value="{{ request.GET.page_size|default:pagination.page_size }}" />
+          </div>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          Apply
+        </button>
+        <a class="btn btn-secondary" href="?action=warehouse_for_item&company_db={{ selected_db_key }}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+          Clear
+        </a>
+      </div>
+    </form>
+  {% endif %}
+  {% if current_action == 'contact_person_name' %}
+    <style>
+      :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#6366f1;--filter-primary-600:#4f46e5;--filter-radius:12px}
+      .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+      .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+      .filter-title{font-size:16px;font-weight:600}
+      .filter-grid{display:grid;grid-template-columns:repeat(3, minmax(220px,1fr));gap:12px}
+      @media (max-width:900px){.filter-grid{grid-template-columns:repeat(2, minmax(200px,1fr))}}
+      @media (max-width:640px){.filter-grid{grid-template-columns:1fr}}
+      .filter-field{display:flex;flex-direction:column;gap:6px}
+      .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+      .filter-input{display:flex;align-items:center;gap:8px}
+      .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff}
+      .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+      .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600}
+      .btn:hover{background:var(--filter-primary-600)}
+      .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+      .btn-secondary:hover{background:#eef2ff}
+      .icon{width:16px;height:16px;fill:currentColor}
+    </style>
+    <form method="get" class="filter-card" id="cp-filter-form">
+      <input type="hidden" name="action" value="contact_person_name" />
+      <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+      <div class="filter-header">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+        <div class="filter-title">Contact Filters</div>
+      </div>
+      <div class="filter-grid">
+        <div class="filter-field" data-key="card_code">
+          <div class="filter-label" title="CardCode">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
+            Business Partner
+          </div>
+          <div class="filter-input">
+            <select name="card_code" id="cp_card_code">
+              <option value="">All Business Partners</option>
+              {% for customer in customer_list %}
+                <option value="{{ customer.CardCode }}" {% if request.GET.card_code == customer.CardCode %}selected{% endif %}>{{ customer.CardCode }} - {{ customer.CardName }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="filter-field" data-key="contact_code">
+          <div class="filter-label" title="ContactCode">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Contact Code (optional)
+          </div>
+          <div class="filter-input">
+            <input type="number" name="contact_code" value="{{ request.GET.contact_code }}" />
+          </div>
+        </div>
+        <div class="filter-field" data-key="show_all" style="align-self:end">
+          <div class="filter-input">
+            <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="show_all" value="true" {% if request.GET.show_all %}checked{% endif %}/> Show All</label>
+          </div>
+        </div>
+        <div class="filter-field" data-key="page">
+          <div class="filter-label" title="Page">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page" min="1" value="{{ request.GET.page|default:'1' }}" />
+          </div>
+        </div>
+        <div class="filter-field" data-key="page_size">
+          <div class="filter-label" title="Page Size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page Size
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page_size" min="1" max="200" value="{{ request.GET.page_size|default:pagination.page_size }}" />
+          </div>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          Apply
+        </button>
+        <a class="btn btn-secondary" href="?action=contact_person_name&company_db={{ selected_db_key }}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+          Clear
+        </a>
+      </div>
+    </form>
+  {% endif %}
+  {% if current_action == 'child_customers' %}
+    <style>
+      :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#10b981;--filter-primary-600:#0ea36f;--filter-radius:12px}
+      .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+      .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+      .filter-title{font-size:16px;font-weight:600}
+      .filter-grid{display:grid;grid-template-columns:repeat(3, minmax(220px,1fr));gap:12px}
+      @media (max-width:900px){.filter-grid{grid-template-columns:repeat(2, minmax(200px,1fr))}}
+      @media (max-width:640px){.filter-grid{grid-template-columns:1fr}}
+      .filter-field{display:flex;flex-direction:column;gap:6px}
+      .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+      .filter-input{display:flex;align-items:center;gap:8px}
+      .filter-input input,.filter-input select{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff}
+      .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+      .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600}
+      .btn:hover{background:var(--filter-primary-600)}
+      .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+      .btn-secondary:hover{background:#ecfdf3}
+      .icon{width:16px;height:16px;fill:currentColor}
+    </style>
+    <form method="get" class="filter-card" id="cc-filter-form">
+      <input type="hidden" name="action" value="child_customers" />
+      <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+      <div class="filter-header">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+        <div class="filter-title">Child Customers Filters</div>
+      </div>
+      <div class="filter-grid">
+        <div class="filter-field" data-key="father_card">
+          <div class="filter-label" title="FatherCard (required)">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 4h12l-3 8h-6l-3-8zM5 20h14v-2H5v2z"/></svg>
+            Parent CardCode (FatherCard)
+          </div>
+          <div class="filter-input">
+            <select name="father_card" id="father_card" required onchange="document.getElementById('cc-filter-form').submit()">
+              <option value="">--- Select Parent Customer ---</option>
+              {% for customer in customer_list %}
+                <option value="{{ customer.CardCode }}" data-name="{{ customer.CardName }}" {% if request.GET.father_card == customer.CardCode %}selected{% endif %}>{{ customer.CardCode }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="filter-field" data-key="father_name">
+          <div class="filter-label" title="Parent CardName">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+            Parent Name
+          </div>
+          <div class="filter-input">
+            <input type="text" name="father_name" value="{{ selected_father_name }}" readonly />
+          </div>
+        </div>
+        <div class="filter-field" data-key="only_parents">
+          <div class="filter-label" title="Show only parents that have children">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14H6v-2h4v2zm8-4H6v-2h12v2zm0-4H6V7h12v2z"/></svg>
+            Only show parents with children
+          </div>
+          <div class="filter-input">
+            <input type="checkbox" name="only_parents" value="1" {% if request.GET.only_parents == '1' or request.GET.only_parents == 'true' or request.GET.only_parents == 'yes' %}checked{% endif %} onchange="document.getElementById('cc-filter-form').submit()" />
+          </div>
+        </div>
+        <div class="filter-field" data-key="page">
+          <div class="filter-label" title="Page">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page" min="1" value="{{ request.GET.page|default:'1' }}" />
+          </div>
+        </div>
+        <div class="filter-field" data-key="page_size">
+          <div class="filter-label" title="Page Size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page Size
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page_size" min="1" max="200" value="{{ request.GET.page_size|default:pagination.page_size }}" />
+          </div>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          Apply
+        </button>
+        <a class="btn btn-secondary" href="?action=child_customers&company_db={{ selected_db_key }}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+          Clear
+        </a>
+        <script>
+        (function(){
+          var f=document.querySelector('#cc-filter-form');
+          var sel=f?f.querySelector('select[name="father_card"]'):null;
+          var nameInput=f?f.querySelector('input[name="father_name"]'):null;
+          function u(){
+            if(!sel||!nameInput) return;
+            var opt=sel.options[sel.selectedIndex];
+            var nm=opt&&opt.getAttribute('data-name')?opt.getAttribute('data-name'):'';
+            nameInput.value=nm||nameInput.value||'';
+          }
+          u();
+          if(sel) sel.addEventListener('change', function(){
+            u();
+            if(f) f.submit();
+          });
+        })();
+        </script>
+      </div>
+    </form>
+  {% endif %}
   {% if current_action == 'territory_summary' %}
       <style>
         :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#0ea5e9;--filter-primary-600:#0284c7;--filter-accent:#22c55e;--filter-radius:12px}
@@ -1084,12 +1435,16 @@
           alert(details);
         }
       </script>
-    {% elif result_rows and is_tabular %}
+    {% elif is_tabular and result_rows or is_tabular and current_action == 'child_customers' %}
       <style>
         .result-table{width:100%;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}
         .result-table thead th{background:#f8fafc;color:#0f172a;text-align:left;padding:10px 12px;font-weight:700;border-bottom:1px solid #e5e7eb}
         .result-table tbody td{padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155}
         .result-table tbody tr:hover{background:#f9fafb}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid #0ea5e9;background:#0ea5e9;color:#fff;font-weight:600}
+        .btn:hover{background:#0284c7}
+        .btn-secondary{background:#fff;color:#0ea5e9;border-color:#0ea5e9}
+        .btn-secondary:hover{background:#e0f2fe}
       </style>
       <h3>Result</h3>
       <div class="table-responsive">
@@ -1102,15 +1457,44 @@
           </tr>
         </thead>
         <tbody>
-          {% for rowvals in table_rows %}
+          {% if table_rows %}
+            {% for rowvals in table_rows %}
+              <tr>
+                {% for v in rowvals %}
+                  <td>{{ v }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          {% elif current_action == 'child_customers' %}
             <tr>
-              {% for v in rowvals %}
-                <td>{{ v }}</td>
-              {% endfor %}
+              <td colspan="{{ result_cols|length }}" style="color:#64748b">No child customers found</td>
             </tr>
-          {% endfor %}
+          {% endif %}
         </tbody>
       </table>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <div>Page {{ pagination.page }} of {{ pagination.num_pages }} ({{ pagination.count }} items)</div>
+        {% if pagination.has_prev %}
+          <a class="btn btn-secondary" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.prev_page }}">Prev</a>
+        {% else %}
+          <span class="btn btn-secondary" style="opacity:.5;pointer-events:none">Prev</span>
+        {% endif %}
+        {% if pagination.has_next %}
+          <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.next_page }}">Next</a>
+        {% else %}
+          <span class="btn" style="opacity:.5;pointer-events:none">Next</span>
+        {% endif %}
+        <form method="get" style="display:flex;align-items:center;gap:8px">
+          {% for k,v in request.GET.items %}
+            {% if k != 'page_size' and k != 'page' %}
+              <input type="hidden" name="{{ k }}" value="{{ v }}" />
+            {% endif %}
+          {% endfor %}
+          <label>Page Size</label>
+          <input type="number" name="page_size" min="1" max="200" value="{{ pagination.page_size }}" style="width:80px" />
+          <button type="submit" class="btn btn-secondary">Apply</button>
+        </form>
       </div>
     {% elif result_json %}
       <h3>Result</h3>
@@ -1126,3 +1510,81 @@
   
 </div>
 {% endblock %}
+  {% if current_action == 'project_balance' %}
+    <style>
+      :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#22c55e;--filter-primary-600:#16a34a;--filter-radius:12px}
+      .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+      .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+      .filter-title{font-size:16px;font-weight:600}
+      .filter-grid{display:grid;grid-template-columns:repeat(3, minmax(220px,1fr));gap:12px}
+      @media (max-width:900px){.filter-grid{grid-template-columns:repeat(2, minmax(200px,1fr))}}
+      @media (max-width:640px){.filter-grid{grid-template-columns:1fr}}
+      .filter-field{display:flex;flex-direction:column;gap:6px}
+      .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+      .filter-input{display:flex;align-items:center;gap:8px}
+      .filter-input select{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff}
+      .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+      .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600}
+      .btn:hover{background:var(--filter-primary-600)}
+      .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+      .btn-secondary:hover{background:#dcfce7}
+      .icon{width:16px;height:16px;fill:currentColor}
+    </style>
+    <form method="get" class="filter-card" id="prj-filter-form">
+      <input type="hidden" name="action" value="project_balance" />
+      <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+      <div class="filter-header">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 9.74-8 10-4.5-.26-8-5-8-10V6l8-4zm0 4l-4 2v4c0 3.31 2.69 6 6 6s6-2.69 6-6V8l-4-2h-4z"/></svg>
+        <div class="filter-title">Project Balance Filters</div>
+      </div>
+      <div class="filter-grid">
+        <div class="filter-field" data-key="project_code">
+          <div class="filter-label" title="Project Code">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 4h8l5 5v11H6V4zm8 1v4h4"/></svg>
+            Project
+          </div>
+          <div class="filter-input">
+            <select name="project_code" id="project_code">
+              <option value="">All Projects</option>
+              {% for prj in project_options %}
+                <option value="{{ prj.PrjCode }}" {% if request.GET.project_code == prj.PrjCode %}selected{% endif %}>{{ prj.PrjCode }} - {{ prj.PrjName }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="filter-field" data-key="show_all" style="align-self:end">
+          <div class="filter-input">
+            <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="show_all" value="true" {% if request.GET.show_all %}checked{% endif %}/> Show All</label>
+          </div>
+        </div>
+        <div class="filter-field" data-key="page">
+          <div class="filter-label" title="Page">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page" min="1" value="{{ request.GET.page|default:'1' }}" />
+          </div>
+        </div>
+        <div class="filter-field" data-key="page_size">
+          <div class="filter-label" title="Page Size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+            Page Size
+          </div>
+          <div class="filter-input">
+            <input type="number" name="page_size" min="1" max="200" value="{{ request.GET.page_size|default:pagination.page_size }}" />
+          </div>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          Apply
+        </button>
+        <a class="btn btn-secondary" href="?action=project_balance&company_db={{ selected_db_key }}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+          Clear
+        </a>
+      </div>
+    </form>
+  {% endif %}

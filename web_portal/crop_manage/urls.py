@@ -8,6 +8,9 @@ app_name = "crop_manage"
 router = DefaultRouter()
 router.register(r'crops', views.CropViewSet, basename='crop')
 router.register(r'crop-stages', views.CropStageViewSet, basename='crop-stage')
+router.register(r'trials', views.TrialViewSet, basename='trial')
+router.register(r'trial-treatments', views.TrialTreatmentViewSet, basename='trial-treatment')
+router.register(r'products', views.ProductViewSet, basename='product')
 
 urlpatterns = [
     # API endpoints (registered with router)

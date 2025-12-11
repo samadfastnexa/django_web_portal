@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <link rel="stylesheet" href="{% static 'sap_integration/admin.css' %}">
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
     :root {
       --font-base: 16px;
       --font-small: 14px;
@@ -55,7 +56,7 @@
       body.nav-open #mobileOverlay { display: block; }
       body, .content { overflow-x: hidden; }
     }
-    @media (min-width: 769px) and (max-width: 1024px) {
+    @media (min-width: 481px) and (max-width: 768px) {
       #container { padding: 16px; }
       .mobile-nav-toggle { display: inline-flex; }
       #nav-sidebar { display: block !important; position: fixed; top: 0; left: 0; height: 100vh; width: 70vw; max-width: 360px; transform: translateX(-100%) !important; transition: transform .2s ease; z-index: 3000; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.15); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 0 !important; margin-right: 0 !important; border-right: 0 !important; box-sizing: border-box; }

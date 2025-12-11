@@ -116,7 +116,10 @@ class SalesOrderForm(forms.ModelForm):
         try:
             db = get_hana_connection()
             if db:
-                customers = hana_connect.customer_lov(db)
+                try:
+                    customers = hana_connect.customer_codes_all(db, limit=2000)
+                except Exception:
+                    customers = hana_connect.customer_lov(db)
                 customer_choices = [('', '--- Select Customer ---')] + [
                     (c['CardCode'], f"{c['CardCode']} - {c['CardName']}") 
                     for c in customers

@@ -13,6 +13,10 @@ class Crop(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        verbose_name = "Crop"
+        verbose_name_plural = "Crops"
+
     def __str__(self):
         return f"{self.name} ({self.variety})" if self.variety else self.name
 
@@ -26,6 +30,10 @@ class CropStage(models.Model):
     dose_per_acre = models.CharField(max_length=100, blank=True, null=True, help_text="Dose per acre (units included, e.g., 2.5 gm/kg seed)")
     purpose = models.TextField(blank=True, null=True, help_text="Purpose or objective of this stage/treatment")
     remarks = models.TextField(blank=True, null=True, help_text="Additional notes or instructions")
+
+    class Meta:
+        verbose_name = "Crop Stage"
+        verbose_name_plural = "Crop Stages"
 
     def __str__(self):
         return f"{self.crop.name} - {self.stage_name}"
@@ -131,6 +139,8 @@ class TrialTreatment(models.Model):
 
     class Meta:
         ordering = ["trial", "label"]
+        verbose_name = "Trial Treatment"
+        verbose_name_plural = "Trial Treatments"
 
     def __str__(self):
         return f"{self.trial} - {self.label}"
@@ -151,6 +161,8 @@ class TrialImage(models.Model):
 
     class Meta:
         ordering = ["treatment", "image_type", "uploaded_at"]
+        verbose_name = "Trial Image"
+        verbose_name_plural = "Trial Images"
 
     def __str__(self):
         return f"{self.treatment} - {self.image_type}"
@@ -174,6 +186,8 @@ class Pest(models.Model):
 
     class Meta:
         ordering = ["category", "name"]
+        verbose_name = "Pest"
+        verbose_name_plural = "Pests"
 
     def __str__(self):
         return f"{self.name} ({self.get_category_display()})"
@@ -227,6 +241,10 @@ class TrialInitCondition(models.Model):
     meets_requirements = models.BooleanField(default=False, help_text="Whether baseline meets initiation criteria")
     notes = models.TextField(blank=True, null=True, help_text="Any remarks about baseline setup and observations")
 
+    class Meta:
+        verbose_name = "Trial Initial Condition"
+        verbose_name_plural = "Trial Initial Conditions"
+
     def __str__(self):
         return f"InitConditions for Trial {self.trial_id}"
 
@@ -244,6 +262,8 @@ class EnvironmentalCondition(models.Model):
 
     class Meta:
         ordering = ['-recorded_at']
+        verbose_name = "Environmental Condition"
+        verbose_name_plural = "Environmental Conditions"
 
     def __str__(self):
         return f"Env @TT {self.trial_treatment_id} ({self.recorded_at:%Y-%m-%d})"
@@ -261,6 +281,8 @@ class SpeciesPerformanceObservation(models.Model):
 
     class Meta:
         ordering = ['trial_treatment', 'pest', 'observation_day']
+        verbose_name = "Species Performance Observation"
+        verbose_name_plural = "Species Performance Observations"
 
     def __str__(self):
         return f"{self.pest.name} DAA-{self.observation_day}: {self.control_efficacy_pct}%"
@@ -276,6 +298,8 @@ class DoseResponseObservation(models.Model):
 
     class Meta:
         ordering = ['trial_treatment', 'dose_ml_per_acre', 'observation_day']
+        verbose_name = "Dose Response Observation"
+        verbose_name_plural = "Dose Response Observations"
 
     def __str__(self):
         return f"Dose {self.dose_ml_per_acre} ml/A DAA-{self.observation_day}: {self.efficacy_pct}%"
@@ -291,6 +315,8 @@ class ComparativePerformance(models.Model):
 
     class Meta:
         ordering = ['trial_treatment', 'reference_product', 'observation_day']
+        verbose_name = "Comparative Performance"
+        verbose_name_plural = "Comparative Performance Records"
 
     def __str__(self):
         return f"Ref {self.reference_product.name} DAA-{self.observation_day}: {self.efficacy_pct}%"
@@ -309,6 +335,8 @@ class Recommendation(models.Model):
 
     class Meta:
         ordering = ['crop', 'pest', 'product']
+        verbose_name = "Recommendation"
+        verbose_name_plural = "Recommendations"
 
     def __str__(self):
         return f"{self.product.name} {self.recommended_dose_ml_per_acre} ml/A for {self.crop.name} vs {self.pest.name}"
@@ -329,6 +357,8 @@ class TrialRepetitionPlan(models.Model):
 
     class Meta:
         ordering = ['crop', 'pest', 'product']
+        verbose_name = "Trial Repetition Plan"
+        verbose_name_plural = "Trial Repetition Plans"
 
     def __str__(self):
         return f"Repetition Plan: {self.product.name} on {self.crop.name} vs {self.pest.name}"

@@ -798,8 +798,10 @@ def customer_lov(db, search: str | None = None) -> list:
         ' T0."CardCode", '
         ' T0."CardName", '
         ' T0."CntctPrsn", '
+        ' T1."CntctCode", '
         ' T0."LicTradNum" '
         'FROM OCRD T0 '
+        'INNER JOIN OCPR T1 ON T0."CardCode" = T1."CardCode" AND T0."CntctPrsn" = T1."Name" '
         'WHERE T0."CardType" = \'C\' '
         'AND T0."validFor" = \'Y\' '
         'AND T0."GroupCode" IN (100,102) '
@@ -815,12 +817,43 @@ def customer_lov(db, search: str | None = None) -> list:
     
     return _fetch_all(db, sql, tuple(params))
 
+def customer_codes_all(db, limit: int = 1000) -> list:
+    sql = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T0."CardName" '
+        'FROM OCRD T0 '
+        'WHERE T0."CardType" = \'C\' '
+        'AND T0."validFor" = \'Y\' '
+        'ORDER BY T0."CardCode" '
+        'LIMIT ' + str(int(limit or 1000))
+    )
+    return _fetch_all(db, sql)
+
+def parents_with_children(db, limit: int = 1000) -> list:
+    sql = (
+        'SELECT '
+        ' p."CardCode" AS "CardCode", '
+        ' p."CardName" AS "CardName", '
+        ' COUNT(c."CardCode") AS "ChildCount" '
+        'FROM OCRD p '
+        'INNER JOIN OCRD c ON TRIM(c."FatherCard") = TRIM(p."CardCode") '
+        "WHERE p.""CardType"" = 'C' AND p.""validFor"" = 'Y' "
+        'GROUP BY p."CardCode", p."CardName" '
+        'HAVING COUNT(c."CardCode") > 0 '
+        'ORDER BY COUNT(c."CardCode") DESC '
+        'LIMIT ' + str(int(limit or 1000))
+    )
+    return _fetch_all(db, sql)
+
 def customer_addresses(db, card_code: str) -> list:
     """Get billing address for a customer"""
     sql = (
         'SELECT '
+        ' T1."CardCode", '
+        ' T1."CardName", '
         ' T0."Address", '
-        ' T0."Street"||\', \'||T2."Name" AS "Street" '
+        " T0.\"Street\"||', '||T2.\"Name\" AS \"Street\" "
         'FROM CRD1 T0 '
         'INNER JOIN OCRD T1 ON T0."CardCode" = T1."CardCode" AND T0."Address" = T1."BillToDef" '
         'INNER JOIN OCRY T2 ON T1."Country" = T2."Code" '
@@ -828,10 +861,54 @@ def customer_addresses(db, card_code: str) -> list:
     )
     return _fetch_all(db, sql, (card_code,))
 
+def customer_addresses_all(db, limit: int = 500) -> list:
+    sql = (
+        'SELECT '
+        ' T1."CardCode", '
+        ' T1."CardName", '
+        ' T0."Address", '
+        " T0.\"Street\"||', '||T2.\"Name\" AS \"Street\" "
+        'FROM CRD1 T0 '
+        'INNER JOIN OCRD T1 ON T0."CardCode" = T1."CardCode" AND T0."Address" = T1."BillToDef" '
+        'INNER JOIN OCRY T2 ON T1."Country" = T2."Code" '
+        'ORDER BY T1."CardCode" '
+        'LIMIT ' + str(int(limit or 500))
+    )
+    return _fetch_all(db, sql)
+
 def contact_person_name(db, card_code: str, contact_code: str) -> dict:
     """Get contact person name by CardCode and ContactCode"""
     sql = 'SELECT T0."Name" FROM OCPR T0 WHERE T0."CardCode" = ? AND T0."CntctCode" = ?'
     return _fetch_one(db, sql, (card_code, contact_code))
+
+def contacts_by_card(db, card_code: str, limit: int = 200) -> list:
+    sql = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T1."CardName", '
+        ' T0."CntctCode" AS "ContactCode", '
+        ' T0."Name" '
+        'FROM OCPR T0 '
+        'INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode" '
+        'WHERE T0."CardCode" = ? '
+        'ORDER BY T0."CntctCode" '
+        'LIMIT ' + str(int(limit or 200))
+    )
+    return _fetch_all(db, sql, (card_code,))
+
+def contacts_all(db, limit: int = 200) -> list:
+    sql = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T1."CardName", '
+        ' T0."CntctCode" AS "ContactCode", '
+        ' T0."Name" '
+        'FROM OCPR T0 '
+        'INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode" '
+        'ORDER BY T0."CardCode", T0."CntctCode" '
+        'LIMIT ' + str(int(limit or 200))
+    )
+    return _fetch_all(db, sql)
 
 def item_lov(db, search: str | None = None) -> list:
     """Item List of Values"""
@@ -868,6 +945,17 @@ def warehouse_for_item(db, item_code: str) -> list:
         'WHERE T0."ItemCode" = ? '
     )
     return _fetch_all(db, sql, (item_code,))
+
+def warehouses_all(db, limit: int = 500) -> list:
+    sql = (
+        'SELECT '
+        ' T0."WhsCode", '
+        ' T0."WhsName" '
+        'FROM OWHS T0 '
+        'ORDER BY T0."WhsCode" '
+        'LIMIT ' + str(int(limit or 500))
+    )
+    return _fetch_all(db, sql)
 
 def sales_tax_codes(db) -> list:
     """Get sales tax codes"""
@@ -929,16 +1017,67 @@ def policy_link(db, bp_code: str = None, show_all: bool = False) -> list:
     sql = ''.join(sql_parts)
     return _fetch_all(db, sql, tuple(params) if params else None)
 
-def child_card_code(db, father_card: str) -> list:
-    """Get child CardCode and CardName by FatherCard"""
-    sql = (
+def child_card_code(db, father_card: str, search: str | None = None) -> list:
+    """Get child CardCode and CardName by FatherCard with optional search"""
+    # Primary query with robust TRIM/UPPER matching
+    sql_primary = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T0."CardName" '
+        'FROM OCRD T0 '
+        'WHERE UPPER(TRIM(T0."FatherCard")) = UPPER(TRIM(?)) '
+        'ORDER BY T0."CardCode" '
+    )
+    rows = _fetch_all(db, sql_primary, (father_card,))
+    if rows and isinstance(rows, list) and len(rows) > 0:
+        # Optional search filter applied in Python to avoid changing SQL
+        if search and search.strip():
+            s = search.strip().lower()
+            rows = [r for r in rows if (
+                isinstance(r, dict) and (
+                    (str(r.get('CardCode') or '').lower().find(s) != -1) or
+                    (str(r.get('CardName') or '').lower().find(s) != -1)
+                )
+            )]
+        return rows
+
+    # Fallback: join to resolve mismatches
+    sql_join = (
+        'SELECT '
+        ' c."CardCode", '
+        ' c."CardName" '
+        'FROM OCRD c '
+        'INNER JOIN OCRD p ON TRIM(c."FatherCard") = TRIM(p."CardCode") '
+        'WHERE p."CardCode" = ? '
+        'ORDER BY c."CardCode" '
+    )
+    rows = _fetch_all(db, sql_join, (father_card,))
+    if rows and isinstance(rows, list) and len(rows) > 0:
+        return rows
+
+    # Fallback: exact equality without TRIM/UPPER
+    sql_eq = (
         'SELECT '
         ' T0."CardCode", '
         ' T0."CardName" '
         'FROM OCRD T0 '
         'WHERE T0."FatherCard" = ? '
+        'ORDER BY T0."CardCode" '
     )
-    return _fetch_all(db, sql, (father_card,))
+    rows = _fetch_all(db, sql_eq, (father_card,))
+    if rows and isinstance(rows, list) and len(rows) > 0:
+        return rows
+
+    # Fallback: LIKE to catch padded values
+    sql_like = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T0."CardName" '
+        'FROM OCRD T0 '
+        'WHERE TRIM(T0."FatherCard") LIKE TRIM(?) || %s '
+        'ORDER BY T0."CardCode" '
+    ) % ("'%'")
+    return _fetch_all(db, sql_like, (father_card,))
 
 def item_lov_by_policy(db, doc_entry: str) -> list:
     """Get items by policy DocEntry"""
@@ -1008,13 +1147,35 @@ def phase_discount(db, project_code: str) -> dict:
     return _fetch_one(db, sql, (project_code, project_code))
 
 def project_balance(db, project_code: str) -> dict:
-    """Get project balance (U_BP) from journal entries"""
+    """Get project balance with project name"""
     sql = (
-        'SELECT IFNULL(SUM(a."Debit" - a."Credit"), 0) AS "Balance" '
+        'SELECT '
+        ' a."Project" AS "ProjectCode", '
+        ' b."PrjName" AS "ProjectName", '
+        ' IFNULL(SUM(a."Debit" - a."Credit"), 0) AS "Balance" '
         'FROM JDT1 a '
-        'WHERE a."Project" = ?'
+        'LEFT JOIN OPRJ b ON a."Project" = b."PrjCode" '
+        'WHERE a."Project" = ? '
+        'GROUP BY a."Project", b."PrjName"'
     )
     return _fetch_one(db, sql, (project_code,))
+
+def project_balances_all(db, limit: int = 500) -> list:
+    """Get balances for all projects"""
+    sql = (
+        'SELECT '
+        ' a."Project" AS "ProjectCode", '
+        ' b."PrjName" AS "ProjectName", '
+        ' SUM(a."Debit" - a."Credit") AS "Balance" '
+        'FROM JDT1 a '
+        'LEFT JOIN OPRJ b ON a."Project" = b."PrjCode" '
+        'WHERE a."Project" IS NOT NULL '
+        'GROUP BY a."Project", b."PrjName" '
+        'HAVING SUM(a."Debit" - a."Credit") <> 0 '
+        'ORDER BY a."Project" '
+        'LIMIT ' + str(int(limit or 500))
+    )
+    return _fetch_all(db, sql)
 
 def policy_balance_by_customer(db, card_code: str = None) -> list:
     """Get policy-wise balance for a specific customer (ShortName) or all customers"""

@@ -2,8 +2,8 @@ from rest_framework import viewsets
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .models import Crop, CropStage, Trial, TrialTreatment, TrialImage
-from .serializers import CropSerializer, CropStageSerializer
+from .models import Crop, CropStage, Trial, TrialTreatment, TrialImage, Product
+from .serializers import CropSerializer, CropStageSerializer, TrialSerializer, TrialTreatmentSerializer, ProductSerializer
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.contrib import messages
@@ -201,6 +201,276 @@ class CropStageViewSet(viewsets.ModelViewSet):
     )
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
+
+
+class TrialViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing field trials.
+    """
+    queryset = Trial.objects.all()
+    serializer_class = TrialSerializer
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a list of all trials with their treatments",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="List of trials retrieved successfully",
+                schema=TrialSerializer(many=True)
+            )
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Create a new trial",
+        tags=['crop_manage'],
+        responses={
+            201: openapi.Response(
+                description="Trial created successfully",
+                schema=TrialSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors")
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a specific trial by ID with all treatments",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Trial retrieved successfully",
+                schema=TrialSerializer
+            ),
+            404: openapi.Response(description="Trial not found")
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Update a trial",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Trial updated successfully",
+                schema=TrialSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Trial not found")
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Partially update a trial",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Trial partially updated successfully",
+                schema=TrialSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Trial not found")
+        }
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Delete a trial and all its treatments",
+        tags=['crop_manage'],
+        responses={
+            204: openapi.Response(description="Trial deleted successfully"),
+            404: openapi.Response(description="Trial not found")
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+
+class TrialTreatmentViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing trial treatments.
+    """
+    queryset = TrialTreatment.objects.all()
+    serializer_class = TrialTreatmentSerializer
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a list of all trial treatments",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="List of treatments retrieved successfully",
+                schema=TrialTreatmentSerializer(many=True)
+            )
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Create a new trial treatment",
+        tags=['crop_manage'],
+        responses={
+            201: openapi.Response(
+                description="Treatment created successfully",
+                schema=TrialTreatmentSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors")
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a specific trial treatment by ID",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Treatment retrieved successfully",
+                schema=TrialTreatmentSerializer
+            ),
+            404: openapi.Response(description="Treatment not found")
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Update a trial treatment",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Treatment updated successfully",
+                schema=TrialTreatmentSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Treatment not found")
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Partially update a trial treatment",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Treatment partially updated successfully",
+                schema=TrialTreatmentSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Treatment not found")
+        }
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Delete a trial treatment",
+        tags=['crop_manage'],
+        responses={
+            204: openapi.Response(description="Treatment deleted successfully"),
+            404: openapi.Response(description="Treatment not found")
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+
+class ProductViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing products used in trials.
+    """
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a list of all products",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="List of products retrieved successfully",
+                schema=ProductSerializer(many=True)
+            )
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Create a new product",
+        tags=['crop_manage'],
+        responses={
+            201: openapi.Response(
+                description="Product created successfully",
+                schema=ProductSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors")
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a specific product by ID",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Product retrieved successfully",
+                schema=ProductSerializer
+            ),
+            404: openapi.Response(description="Product not found")
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Update a product",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Product updated successfully",
+                schema=ProductSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Product not found")
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Partially update a product",
+        tags=['crop_manage'],
+        responses={
+            200: openapi.Response(
+                description="Product partially updated successfully",
+                schema=ProductSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Product not found")
+        }
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Delete a product",
+        tags=['crop_manage'],
+        responses={
+            204: openapi.Response(description="Product deleted successfully"),
+            404: openapi.Response(description="Product not found")
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
 
 
 def station_trials(request, station_slug: str):

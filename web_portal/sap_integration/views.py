@@ -15,11 +15,12 @@ import os
 import json
 import re
 import logging
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code
 from django.conf import settings
 from pathlib import Path
 import sys
 from django.utils.safestring import mark_safe
+from django.core.paginator import Paginator
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +460,17 @@ def hana_connect_admin(request):
                             result = data
                         except Exception as e_cl:
                             error = str(e_cl)
+                    elif action == 'child_customers':
+                        try:
+                            father_card = (request.GET.get('father_card', '') or '').strip()
+                            if not father_card:
+                                error = 'father_card parameter required'
+                            else:
+                                data = child_card_code(conn, father_card, None)
+                                result = data
+                                diagnostics['father_card'] = father_card
+                        except Exception as e_cc:
+                            error = str(e_cc)
                     elif action == 'item_lov':
                         try:
                             search_param = request.GET.get('search')
@@ -481,33 +493,49 @@ def hana_connect_admin(request):
                             error = str(e_crop)
                     elif action == 'contact_person_name':
                         try:
-                            card_code = request.GET.get('card_code', '')
-                            contact_code = request.GET.get('contact_code', '')
-                            if not card_code or not contact_code:
-                                error = 'card_code and contact_code are required'
+                            card_code = (request.GET.get('card_code', '') or '').strip()
+                            contact_code = (request.GET.get('contact_code', '') or '').strip()
+                            show_all = (request.GET.get('show_all', '') or '').strip().lower() in ('true','1','yes')
+                            from .hana_connect import contacts_all, contacts_by_card
+                            if show_all or (not card_code and not contact_code):
+                                data = contacts_all(conn)
+                            elif card_code and not contact_code:
+                                data = contacts_by_card(conn, card_code)
+                            elif card_code and contact_code:
+                                one = contact_person_name(conn, card_code, contact_code)
+                                data = []
+                                if one:
+                                    data = [{
+                                        'CardCode': card_code,
+                                        'ContactCode': contact_code,
+                                        'Name': one.get('Name') if isinstance(one, dict) else one
+                                    }]
                             else:
-                                data = contact_person_name(conn, card_code, contact_code)
-                                result = data
+                                data = []
+                            result = data
                         except Exception as e:
                             error = str(e)
                     elif action == 'customer_addresses':
                         try:
-                            card_code = request.GET.get('card_code', '')
-                            if not card_code:
-                                error = 'card_code is required'
+                            card_code = (request.GET.get('card_code', '') or '').strip()
+                            show_all = (request.GET.get('show_all', '') or '').strip().lower() in ('true','1','yes')
+                            if show_all or not card_code:
+                                from .hana_connect import customer_addresses_all
+                                data = customer_addresses_all(conn)
                             else:
                                 data = customer_addresses(conn, card_code)
-                                result = data
+                            result = data
                         except Exception as e:
                             error = str(e)
                     elif action == 'warehouse_for_item':
                         try:
-                            item_code = request.GET.get('item_code', '')
+                            item_code = request.GET.get('item_code', '').strip()
                             if not item_code:
-                                error = 'item_code is required'
+                                from .hana_connect import warehouses_all
+                                data = warehouses_all(conn)
                             else:
                                 data = warehouse_for_item(conn, item_code)
-                                result = data
+                            result = data
                         except Exception as e:
                             error = str(e)
                     elif action == 'sales_tax_codes':
@@ -530,12 +558,17 @@ def hana_connect_admin(request):
                             error = str(e)
                     elif action == 'project_balance':
                         try:
-                            project_code = request.GET.get('project_code', '')
-                            if not project_code:
-                                error = 'project_code is required'
-                            else:
-                                data = project_balance(conn, project_code)
+                            project_code = (request.GET.get('project_code', '') or '').strip()
+                            show_all = (request.GET.get('show_all', '') or '').strip().lower() in ('true','1','yes')
+                            from .hana_connect import project_balances_all
+                            if show_all or not project_code:
+                                data = project_balances_all(conn)
                                 result = data
+                            else:
+                                one = project_balance(conn, project_code)
+                                result = []
+                                if one:
+                                    result = [one]
                         except Exception as e:
                             error = str(e)
                     elif action == 'policy_balance_by_customer':
@@ -551,10 +584,19 @@ def hana_connect_admin(request):
                         except Exception as e:
                             error = str(e)
                     
-                    # Load customer list for policy_link dropdown BEFORE closing connection
                     customer_list = []
                     try:
-                        customer_data = customer_lov(conn, search=None)
+                        if action == 'child_customers':
+                            from .hana_connect import customer_codes_all, parents_with_children
+                            only_parents = (request.GET.get('only_parents', '') or '').strip().lower() in ('1','true','yes')
+                            if only_parents:
+                                customer_data = parents_with_children(conn, limit=1000)
+                            else:
+                                customer_data = customer_codes_all(conn, limit=5000)
+                                if not customer_data:
+                                    customer_data = parents_with_children(conn, limit=1000)
+                        else:
+                            customer_data = customer_lov(conn, search=None)
                         if customer_data and isinstance(customer_data, list):
                             customer_list = customer_data
                     except Exception as e:
@@ -572,6 +614,18 @@ def hana_connect_admin(request):
     # Set customer_list if not already set
     if 'customer_list' not in locals():
         customer_list = []
+    selected_father_name = ''
+    try:
+        if action == 'child_customers':
+            fc = (request.GET.get('father_card') or '').strip()
+            if fc and isinstance(customer_list, list):
+                for c in customer_list:
+                    cc = c.get('CardCode')
+                    if isinstance(cc, str) and cc == fc:
+                        selected_father_name = (c.get('CardName') or '')
+                        break
+    except Exception:
+        selected_father_name = ''
     
     if request.headers.get('Accept') == 'application/json' and (action or request.GET.get('json')):
         return JsonResponse({'result': result, 'error': error, 'diagnostics': diagnostics})
@@ -617,16 +671,89 @@ def hana_connect_admin(request):
         except Exception as e:
             pass
     
+    # Item dropdown options for warehouse_for_item
+    item_options = []
+    if action == 'warehouse_for_item':
+        try:
+            from hdbcli import dbapi
+            pwd = os.environ.get('HANA_PASSWORD','')
+            if cfg['host']:
+                use_encrypt = str(cfg['encrypt']).strip().lower() in ('true','1','yes')
+                kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+                if use_encrypt:
+                    kwargs['encrypt'] = True
+                    if cfg['ssl_validate']:
+                        kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+                temp_conn = dbapi.connect(**kwargs)
+                if cfg['schema']:
+                    cur = temp_conn.cursor()
+                    cur.execute(f'SET SCHEMA "{cfg['schema']}"')
+                    cur.close()
+                item_options = item_lov(temp_conn, search=None)
+                temp_conn.close()
+        except Exception:
+            item_options = []
+
+    # Project options for project_balance filter
+    project_options = []
+    try:
+        if action == 'project_balance':
+            from hdbcli import dbapi
+            pwd = os.environ.get('HANA_PASSWORD','')
+            if cfg['host']:
+                use_encrypt = str(cfg['encrypt']).strip().lower() in ('true','1','yes')
+                kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+                if use_encrypt:
+                    kwargs['encrypt'] = True
+                    if cfg['ssl_validate']:
+                        kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+                temp_conn = dbapi.connect(**kwargs)
+                if cfg['schema']:
+                    cur = temp_conn.cursor()
+                    cur.execute(f'SET SCHEMA "{cfg['schema']}"')
+                    cur.close()
+                project_options = projects_lov(temp_conn, search=None)
+                temp_conn.close()
+    except Exception:
+        project_options = []
+
     result_rows = result if isinstance(result, list) else []
     result_cols = []
-    if isinstance(result_rows, list) and len(result_rows) > 0 and isinstance(result_rows[0], dict):
+    if action == 'child_customers':
+        result_cols = ['CardCode', 'CardName']
+    elif isinstance(result_rows, list) and len(result_rows) > 0 and isinstance(result_rows[0], dict):
         try:
             result_cols = list(result_rows[0].keys())
         except Exception:
             result_cols = []
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    paginator = None
+    page_obj = None
+    paged_rows = result_rows
+    try:
+        if isinstance(result_rows, list) and result_rows:
+            paginator = Paginator(result_rows, page_size)
+            page_obj = paginator.get_page(page_num)
+            paged_rows = list(page_obj.object_list)
+    except Exception:
+        paged_rows = result_rows
     table_rows = []
     if result_cols:
-        for row in result_rows:
+        for row in paged_rows:
             if isinstance(row, dict):
                 values = []
                 for c in result_cols:
@@ -661,16 +788,29 @@ def hana_connect_admin(request):
             'current_start_date': current_start_date,
             'current_end_date': current_end_date,
             'months': [],
-            'result_rows': result_rows,
+            'result_rows': paged_rows,
             'result_cols': result_cols,
             'table_rows': table_rows,
-            'is_tabular': (action in ('territory_summary','sales_vs_achievement','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','item_lov','projects_lov','crop_lov','policy_balance_by_customer')),
+            'is_tabular': (action in ('territory_summary','sales_vs_achievement','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses')),
             'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
             'customer_options': customer_options,
             'customer_list': customer_list,
+            'selected_father_name': selected_father_name,
             'db_options': db_options,
             'selected_db_key': selected_db_key,
             'base_url': base_url,
+            'item_options': item_options,
+            'project_options': project_options,
+            'pagination': {
+                'page': (page_obj.number if page_obj else 1),
+                'num_pages': (paginator.num_pages if paginator else 1),
+                'has_next': (page_obj.has_next() if page_obj else False),
+                'has_prev': (page_obj.has_previous() if page_obj else False),
+                'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)),
+                'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)),
+                'count': (paginator.count if paginator else len(result_rows)),
+                'page_size': page_size,
+            },
         }
     )
 
@@ -1846,6 +1986,862 @@ def select_oitm_api(request):
                 data.append(row)
             cur.close()
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Warehouse list for item",
+    operation_description="List warehouses for a specific ItemCode; when ItemCode is empty, returns all warehouses. Supports pagination.",
+    manual_parameters=[
+        openapi.Parameter('item_code', openapi.IN_QUERY, description="ItemCode (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def warehouse_for_item_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    item_code = (request.GET.get('item_code') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import warehouses_all
+            if not item_code:
+                data = warehouses_all(conn)
+            else:
+                data = warehouse_for_item(conn, item_code)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Contact persons",
+    operation_description="List contact persons. When both CardCode and ContactCode are empty or show_all=true, returns all. When CardCode only is provided, returns contacts for that BP. When both are provided, returns a single record.",
+    manual_parameters=[
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner code (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('contact_code', openapi.IN_QUERY, description="Contact code (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('show_all', openapi.IN_QUERY, description="Show all contacts", type=openapi.TYPE_BOOLEAN, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def contact_persons_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    card_code = (request.GET.get('card_code') or '').strip()
+    contact_code = (request.GET.get('contact_code') or '').strip()
+    show_all = (request.GET.get('show_all') or '').strip().lower() in ('true','1','yes')
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import contacts_all, contacts_by_card
+            if show_all or (not card_code and not contact_code):
+                data = contacts_all(conn)
+            elif card_code and not contact_code:
+                data = contacts_by_card(conn, card_code)
+            elif card_code and contact_code:
+                one = contact_person_name(conn, card_code, contact_code)
+                data = []
+                if one:
+                    data = [{
+                        'CardCode': card_code,
+                        'ContactCode': contact_code,
+                        'Name': one.get('Name') if isinstance(one, dict) else one
+                    }]
+            else:
+                data = []
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Project balance",
+    operation_description="Return project balances. When project_code is empty or show_all=true, returns balances for all projects. Otherwise returns specific project balance.",
+    manual_parameters=[
+        openapi.Parameter('project_code', openapi.IN_QUERY, description="Project code (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('show_all', openapi.IN_QUERY, description="Show all projects", type=openapi.TYPE_BOOLEAN, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def project_balance_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    project_code = (request.GET.get('project_code') or '').strip()
+    show_all = (request.GET.get('show_all') or '').strip().lower() in ('true','1','yes')
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import project_balances_all
+            if show_all or not project_code:
+                data = project_balances_all(conn)
+            else:
+                one = project_balance(conn, project_code)
+                data = []
+                if one:
+                    data = [one]
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Customer addresses",
+    operation_description="Return default billing addresses. When card_code is empty or show_all=true, returns all BPs' default billing addresses. Otherwise returns specific BP address.",
+    manual_parameters=[
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner code (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('show_all', openapi.IN_QUERY, description="Show all addresses", type=openapi.TYPE_BOOLEAN, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def customer_addresses_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    card_code = (request.GET.get('card_code') or '').strip()
+    show_all = (request.GET.get('show_all') or '').strip().lower() in ('true','1','yes')
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import customer_addresses_all
+            if show_all or not card_code:
+                data = customer_addresses_all(conn)
+            else:
+                data = customer_addresses(conn, card_code)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Territories (full)",
+    operation_description="List territories with optional status filter and pagination.",
+    manual_parameters=[
+        openapi.Parameter('status', openapi.IN_QUERY, description="Status: active/inactive", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('limit', openapi.IN_QUERY, description="Max records (default 500)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def territories_full_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    status_param = (request.GET.get('status') or '').strip().lower()
+    limit_param = (request.GET.get('limit') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import territories_all_full
+            limit_val = 500
+            try:
+                if limit_param:
+                    limit_val = int(limit_param)
+            except Exception:
+                limit_val = 500
+            if status_param not in ('active','inactive',''):
+                status_param = ''
+            data = territories_all_full(conn, limit_val, status_param or None)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="CWL (full)",
+    operation_description="List CWL rows with limit and pagination.",
+    manual_parameters=[
+        openapi.Parameter('limit', openapi.IN_QUERY, description="Max records (default 500)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def cwl_full_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    limit_param = (request.GET.get('limit') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import cwl_all_full
+            limit_val = 500
+            try:
+                if limit_param:
+                    limit_val = int(limit_param)
+            except Exception:
+                limit_val = 500
+            data = cwl_all_full(conn, limit_val)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Customer LOV",
+    operation_description="List customers with optional search and pagination.",
+    manual_parameters=[
+        openapi.Parameter('search', openapi.IN_QUERY, description="Search CardCode or CardName", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def customer_lov_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    search = (request.GET.get('search') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import customer_lov
+            data = customer_lov(conn, search or None)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Item LOV",
+    operation_description="List items with optional search and pagination.",
+    manual_parameters=[
+        openapi.Parameter('search', openapi.IN_QUERY, description="Search ItemCode or ItemName", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def item_lov_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    search = (request.GET.get('search') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import item_lov
+            data = item_lov(conn, search or None)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Projects LOV",
+    operation_description="List projects with optional search and pagination.",
+    manual_parameters=[
+        openapi.Parameter('search', openapi.IN_QUERY, description="Search ProjectCode or ProjectName", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def projects_lov_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    search = (request.GET.get('search') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import projects_lov
+            data = projects_lov(conn, search or None)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Crop LOV",
+    operation_description="List crops with pagination.",
+    manual_parameters=[
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def crop_lov_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import crop_lov
+            data = crop_lov(conn)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="Sales orders",
+    operation_description="List sales orders with optional filters and pagination.",
+    manual_parameters=[
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Customer CardCode", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('doc_status', openapi.IN_QUERY, description="Document Status: O (Open) or C (Closed)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('from_date', openapi.IN_QUERY, description="From date YYYY-MM-DD", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('to_date', openapi.IN_QUERY, description="To date YYYY-MM-DD", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('limit', openapi.IN_QUERY, description="Max records (default 100)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def sales_orders_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    card_code = (request.GET.get('card_code') or '').strip()
+    doc_status = (request.GET.get('doc_status') or '').strip().upper()
+    from_date = (request.GET.get('from_date') or '').strip()
+    to_date = (request.GET.get('to_date') or '').strip()
+    limit_param = (request.GET.get('limit') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 10
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+    except Exception:
+        default_page_size = 10
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import sales_orders_all
+            limit_val = 100
+            try:
+                if limit_param:
+                    limit_val = int(limit_param)
+            except Exception:
+                limit_val = 100
+            if doc_status not in ('O','C',''):
+                doc_status = ''
+            data = sales_orders_all(conn, limit=limit_val, card_code=(card_code or None), doc_status=(doc_status or None), from_date=(from_date or None), to_date=(to_date or None))
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()

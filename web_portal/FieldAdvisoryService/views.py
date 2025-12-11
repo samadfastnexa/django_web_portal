@@ -968,7 +968,10 @@ def api_child_customers(request):
     logger = logging.getLogger(__name__)
     
     father_card = request.GET.get('father_card')
-    logger.info(f"API called for child customers: father_card={father_card}")
+    search = (request.GET.get('search') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    logger.info(f"API called for child customers: father_card={father_card}, search={search}, page={page_param}, page_size={page_size_param}")
     
     if not father_card:
         logger.error("No father_card provided")
@@ -982,12 +985,36 @@ def api_child_customers(request):
         
         logger.info(f"Database connected, fetching child customers for {father_card}")
         
-        # Get child customers
-        child_customers = hana_connect.child_card_code(db, father_card)
+        # Get child customers with optional search
+        child_customers = hana_connect.child_card_code(db, father_card, search or None)
         db.close()
-        
-        logger.info(f"Found {len(child_customers)} child customers")
-        return JsonResponse({'children': child_customers})
+
+        # Pagination
+        try:
+            page_num = int(page_param) if page_param else 1
+        except Exception:
+            page_num = 1
+        default_page_size = 10
+        try:
+            default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+        except Exception:
+            default_page_size = 10
+        try:
+            page_size = int(page_size_param) if page_size_param else default_page_size
+        except Exception:
+            page_size = default_page_size
+
+        paginator = Paginator(child_customers or [], page_size)
+        page_obj = paginator.get_page(page_num)
+        logger.info(f"Found {paginator.count} child customers, returning page {page_obj.number}/{paginator.num_pages}")
+
+        return JsonResponse({
+            'children': list(page_obj.object_list),
+            'page': page_obj.number,
+            'page_size': page_size,
+            'num_pages': paginator.num_pages,
+            'count': paginator.count
+        })
         
     except Exception as e:
         import traceback
