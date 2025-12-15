@@ -10,6 +10,7 @@ from sap_integration.views import (
     hana_health_api,
     hana_count_tables_api,
     select_oitm_api,
+    set_database,
 )
 from django.urls import path, include
 from rest_framework import permissions
@@ -33,6 +34,7 @@ schema_view = get_schema_view(
 )
 urlpatterns = [
     path('', lambda request: redirect('/admin/', permanent=False)), # Redirect root(http://127.0.0.1:8000) URL to admin
+    path('admin/set-database/', admin.site.admin_view(set_database), name='set_database'),
     path('admin/hana-connect/', admin.site.admin_view(hana_connect_admin), name='hana_connect_admin'),
     path('admin/sap-bp-entry/', admin.site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
     path('admin/sap-bp-lookup/', admin.site.admin_view(bp_lookup_admin), name='sap_bp_lookup_admin'),

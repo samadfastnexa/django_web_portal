@@ -456,7 +456,14 @@ def hana_connect_admin(request):
                     elif action == 'customer_lov':
                         try:
                             search_param = request.GET.get('search')
-                            data = customer_lov(conn, (search_param or '').strip() or None)
+                            top_param = request.GET.get('top') or request.GET.get('limit')
+                            lim = None
+                            try:
+                                if top_param:
+                                    lim = int(str(top_param).strip())
+                            except Exception:
+                                lim = None
+                            data = customer_lov(conn, (search_param or '').strip() or None, limit=(lim or 5000))
                             result = data
                         except Exception as e_cl:
                             error = str(e_cl)
@@ -2484,6 +2491,8 @@ def cwl_full_api(request):
         openapi.Parameter('search', openapi.IN_QUERY, description="Search CardCode or CardName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('limit', openapi.IN_QUERY, description="Max records to fetch (alias: top)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('top', openapi.IN_QUERY, description="Max records to fetch (alias: limit)", type=openapi.TYPE_INTEGER, required=False),
     ],
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
 )
@@ -2507,6 +2516,7 @@ def customer_lov_api(request):
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
+    limit_param = (request.GET.get('top') or request.GET.get('limit') or '').strip()
     try:
         page_num = int(page_param) if page_param else 1
     except Exception:
@@ -2520,6 +2530,12 @@ def customer_lov_api(request):
         page_size = int(page_size_param) if page_size_param else default_page_size
     except Exception:
         page_size = default_page_size
+    limit_val = 1000
+    try:
+        if limit_param:
+            limit_val = int(limit_param)
+    except Exception:
+        limit_val = 1000
     try:
         from hdbcli import dbapi
         pwd = os.environ.get('HANA_PASSWORD','')
@@ -2536,7 +2552,7 @@ def customer_lov_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             from .hana_connect import customer_lov
-            data = customer_lov(conn, search or None)
+            data = customer_lov(conn, search or None, limit=limit_val)
             paginator = Paginator(data or [], page_size)
             page_obj = paginator.get_page(page_num)
             return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
@@ -2849,3 +2865,17 @@ def sales_orders_api(request):
                 pass
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+@staff_member_required
+def set_database(request):
+    """Handle database selection from global selector."""
+    from django.shortcuts import redirect
+    if request.method == 'POST':
+        db_key = request.POST.get('database', '4B-BIO')
+        request.session['selected_db'] = db_key
+        next_url = request.POST.get('next', request.META.get('HTTP_REFERER', '/admin/'))
+        return redirect(next_url)
+    return redirect('/admin/')
+

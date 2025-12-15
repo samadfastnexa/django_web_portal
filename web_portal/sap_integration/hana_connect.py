@@ -791,7 +791,7 @@ def sales_orders_all(db, limit: int = 100, card_code: str | None = None, doc_sta
     
     return _fetch_all(db, sql, tuple(params))
 
-def customer_lov(db, search: str | None = None) -> list:
+def customer_lov(db, search: str | None = None, limit: int = 1000) -> list:
     """Customer List of Values"""
     sql = (
         'SELECT '
@@ -801,10 +801,9 @@ def customer_lov(db, search: str | None = None) -> list:
         ' T1."CntctCode", '
         ' T0."LicTradNum" '
         'FROM OCRD T0 '
-        'INNER JOIN OCPR T1 ON T0."CardCode" = T1."CardCode" AND T0."CntctPrsn" = T1."Name" '
+        'LEFT JOIN OCPR T1 ON T0."CardCode" = T1."CardCode" AND T0."CntctPrsn" = T1."Name" '
         'WHERE T0."CardType" = \'C\' '
         'AND T0."validFor" = \'Y\' '
-        'AND T0."GroupCode" IN (100,102) '
     )
     
     params = []
@@ -813,7 +812,7 @@ def customer_lov(db, search: str | None = None) -> list:
         search_param = f'%{search.strip()}%'
         params.extend([search_param, search_param])
     
-    sql += ' ORDER BY T0."CardCode" LIMIT 100'
+    sql += ' ORDER BY T0."CardCode" LIMIT ' + str(int(limit or 1000))
     
     return _fetch_all(db, sql, tuple(params))
 

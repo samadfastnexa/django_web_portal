@@ -53,23 +53,21 @@ def _schema_for_company(key: str) -> str:
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description='Test child CardCode/CardName by FatherCard or FatherName')
-    parser.add_argument('--father-card', dest='father_card', help='Parent CardCode (FatherCard)')
-    parser.add_argument('--father-name', dest='father_name', help='Parent CardName to resolve CardCode')
-    parser.add_argument('--company-db', dest='company_db', default='4B-BIO', help='Company DB key (e.g., 4B-BIO)')
-    parser.add_argument('--search', dest='search', default='', help='Optional search text to filter children by CardCode or CardName')
+    parser = argparse.ArgumentParser(description='Test contact person queries')
+    parser.add_argument('--card-code', dest='card_code')
+    parser.add_argument('--contact-code', dest='contact_code')
+    parser.add_argument('--company-db', dest='company_db', default='4B-BIO')
+    parser.add_argument('--show-all', dest='show_all', action='store_true')
+    parser.add_argument('--search', dest='search', default='')
     args = parser.parse_args()
-    father_card = (args.father_card or '').strip() or 'BIC01563'
-    father_name = (args.father_name or '').strip()
-    company_db = (args.company_db or '4B-BIO').strip()
-    # Establish connection (prefer app helper; fallback to env-based connect)
-    db = None
-    # Try loading common .env locations
+
     here = os.path.dirname(os.path.abspath(__file__))
     _load_env_file(os.path.join(here, '.env'))
     _load_env_file(os.path.join(os.getcwd(), '.env'))
     _load_env_file(os.path.join(os.path.dirname(here), '.env'))
     _load_env_file(os.path.join(os.path.dirname(os.path.dirname(here)), '.env'))
+
+    db = None
     if callable(get_hana_connection):
         try:
             db = get_hana_connection()
@@ -88,44 +86,56 @@ def main():
     if not db:
         print('Connection failed')
         return
-    sch = _schema_for_company(company_db)
+
+    sch = _schema_for_company((args.company_db or '4B-BIO').strip())
     cur = db.cursor()
     cur.execute(f'SET SCHEMA "{sch}"')
     cur.close()
-    if not father_card and father_name:
-        # Resolve father_card by exact name match first, then LIKE fallback
-        cur = db.cursor()
-        cur.execute(
-            'SELECT T0."CardCode", T0."CardName" FROM OCRD T0 WHERE T0."CardType" = \'C\' AND T0."validFor" = \'Y\' AND UPPER(TRIM(T0."CardName")) = UPPER(TRIM(?)) ORDER BY T0."CardCode" LIMIT 1',
-            (father_name,)
-        )
-        row = cur.fetchone()
-        if not row:
-            like_param = f"%{father_name}%"
-            cur.execute(
-                'SELECT T0."CardCode", T0."CardName" FROM OCRD T0 WHERE T0."CardType" = \'C\' AND T0."validFor" = \'Y\' AND T0."CardName" LIKE ? ORDER BY T0."CardCode" LIMIT 1',
-                (like_param,)
-            )
-            row = cur.fetchone()
-        if row:
-            try:
-                father_card = row[0]
-                father_name = row[1]
-            except Exception:
-                try:
-                    father_card = row.get('CardCode')
-                    father_name = row.get('CardName')
-                except Exception:
-                    pass
-        cur.close()
-    rows = hana_connect.child_card_code(db, father_card, (args.search or '').strip() or None)
+
+    if args.show_all and not args.card_code and not args.contact_code:
+        rows = hana_connect.contacts_all(db, limit=50)
+        print('Mode: show_all')
+        print('Count:', len(rows))
+        for r in rows:
+            print(str(r.get('CardCode') or ''), str(r.get('CardName') or ''), str(r.get('ContactCode') or ''), str(r.get('Name') or ''))
+        db.close()
+        return
+
+    card_code = (args.card_code or '').strip()
+    contact_code = (args.contact_code or '').strip()
+    search = (args.search or '').strip()
+
+    if card_code and not contact_code:
+        rows = hana_connect.contacts_by_card(db, card_code, limit=100)
+        if search:
+            s = search.lower()
+            rows = [r for r in rows if (
+                (str(r.get('ContactCode') or '').lower().find(s) != -1) or
+                (str(r.get('Name') or '').lower().find(s) != -1)
+            )]
+        print('Mode: by_card')
+        print('CardCode:', card_code)
+        print('Count:', len(rows))
+        for r in rows:
+            print(str(r.get('ContactCode') or ''), str(r.get('Name') or ''))
+        db.close()
+        return
+
+    if card_code and contact_code:
+        one = hana_connect.contact_person_name(db, card_code, contact_code)
+        print('Mode: name_lookup')
+        print('CardCode:', card_code)
+        print('ContactCode:', contact_code)
+        if isinstance(one, dict):
+            print(str(one.get('Name') or ''))
+        else:
+            print(str(one or ''))
+        db.close()
+        return
+
+    print('Provide --card-code to list contacts, or both --card-code and --contact-code to lookup name, or use --show-all.')
     db.close()
-    print('FatherCard:', father_card)
-    print('FatherName:', father_name)
-    print('CompanyDB:', company_db, 'Schema:', sch)
-    print('Count:', len(rows))
-    for r in rows[:20]:
-        print(str(r.get('CardCode') or ''), '-', str(r.get('CardName') or ''))
 
 if __name__ == '__main__':
     main()
+
