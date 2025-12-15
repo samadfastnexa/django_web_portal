@@ -799,6 +799,11 @@
               <input type="date" name="end_date" value="{{ current_end_date }}" />
             </div>
           </div>
+          <div class="filter-field" data-key="in_millions" style="align-self:end">
+            <div class="filter-input">
+              <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="in_millions" value="true" {% if not request.GET.in_millions or request.GET.in_millions|lower == 'true' or request.GET.in_millions|lower == '1' or request.GET.in_millions|lower == 'yes' or request.GET.in_millions|lower == 'y' %}checked{% endif %}/> Show in millions</label>
+            </div>
+          </div>
         </div>
         <div class="filter-actions">
           <button type="submit" class="btn" id="applyBtn">
@@ -814,6 +819,16 @@
       <script>
         (function(){
           var form=document.getElementById('ts-filter-form');
+          form.addEventListener('submit',function(){
+            var cb=form.querySelector('input[name=\"in_millions\"]');
+            if(!cb || !cb.checked){
+              var hidden=document.createElement('input');
+              hidden.type='hidden';
+              hidden.name='in_millions';
+              hidden.value='false';
+              form.appendChild(hidden);
+            }
+          });
           function active(v){return v!==null&&v!==undefined&&String(v).trim()!==''}
           function sync(){
             var count=0;
@@ -907,6 +922,11 @@
               <input type="date" name="end_date" value="{{ current_end_date }}" />
             </div>
           </div>
+          <div class="filter-field" data-key="in_millions" style="align-self:end">
+            <div class="filter-input">
+              <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="in_millions" value="true" {% if not request.GET.in_millions or request.GET.in_millions|lower == 'true' or request.GET.in_millions|lower == '1' or request.GET.in_millions|lower == 'yes' or request.GET.in_millions|lower == 'y' %}checked{% endif %}/> Show in millions</label>
+            </div>
+          </div>
         </div>
         <div class="filter-actions">
           <button type="submit" class="btn" id="applyBtnSA">
@@ -922,6 +942,16 @@
       <script>
         (function(){
           var form=document.getElementById('sa-filter-form');
+          form.addEventListener('submit',function(){
+            var cb=form.querySelector('input[name=\"in_millions\"]');
+            if(!cb || !cb.checked){
+              var hidden=document.createElement('input');
+              hidden.type='hidden';
+              hidden.name='in_millions';
+              hidden.value='false';
+              form.appendChild(hidden);
+            }
+          });
           function active(v){return v!==null&&v!==undefined&&String(v).trim()!==''}
           function sync(){
             var count=0;

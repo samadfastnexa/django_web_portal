@@ -281,6 +281,7 @@ def hana_connect_admin(request):
                             month_param = None
                             start_date_param = request.GET.get('start_date')
                             end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
                             emp_val = None
                             if emp_id_param is not None and emp_id_param != '':
                                 try:
@@ -291,6 +292,33 @@ def hana_connect_admin(request):
                             mo_val = None
                             if error is None:
                                 data = territory_summary(conn, emp_val, (territory_param or '').strip() or None, yr_val, mo_val, (start_date_param or '').strip() or None, (end_date_param or '').strip() or None)
+                                if in_millions_param in ('true','1','yes','y'):
+                                    scaled = []
+                                    for row in data or []:
+                                        if isinstance(row, dict):
+                                            r = dict(row)
+                                            try:
+                                                v = r.get('COLLECTION_TARGET', None)
+                                                if v is None:
+                                                    v = r.get('colletion_Target', None)
+                                                if v is not None:
+                                                    r['COLLECTION_TARGET'] = round((float(v) / 1000000.0), 2)
+                                                    r['colletion_Target'] = r['COLLECTION_TARGET']
+                                            except Exception:
+                                                pass
+                                            try:
+                                                v = r.get('ACHIEVEMENT', None)
+                                                if v is None:
+                                                    v = r.get('DocTotal', None)
+                                                if v is not None:
+                                                    r['ACHIEVEMENT'] = round((float(v) / 1000000.0), 2)
+                                                    r['DocTotal'] = r['ACHIEVEMENT']
+                                            except Exception:
+                                                pass
+                                            scaled.append(r)
+                                        else:
+                                            scaled.append(row)
+                                    data = scaled
                                 result = data
                                 try:
                                     opts = territory_names(conn)
@@ -308,6 +336,7 @@ def hana_connect_admin(request):
                                 diagnostics['month'] = None
                                 diagnostics['start_date'] = (start_date_param or '').strip()
                                 diagnostics['end_date'] = (end_date_param or '').strip()
+                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
                                 request._territory_options = territory_options
                         except Exception as e_ts:
                             error = str(e_ts)
@@ -390,6 +419,7 @@ def hana_connect_admin(request):
                             month_param = None
                             start_date_param = request.GET.get('start_date')
                             end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
                             emp_val = None
                             if emp_id_param is not None and emp_id_param != '':
                                 try:
@@ -400,6 +430,35 @@ def hana_connect_admin(request):
                             mo_val = None
                             if error is None:
                                 data = sales_vs_achievement(conn, emp_val, (territory_param or '').strip() or None, yr_val, mo_val, (start_date_param or '').strip() or None, (end_date_param or '').strip() or None)
+                                if in_millions_param in ('', 'true','1','yes','y'):
+                                    scaled = []
+                                    for row in data or []:
+                                        if isinstance(row, dict):
+                                            r = dict(row)
+                                            try:
+                                                v = r.get('Sales_Target', None)
+                                                if v is None:
+                                                    v = r.get('SALES_TARGET', None)
+                                                if v is not None:
+                                                    val = round((float(v) / 1000000.0), 2)
+                                                    r['SALES_TARGET'] = val
+                                                    r.pop('Sales_Target', None)
+                                            except Exception:
+                                                pass
+                                            try:
+                                                v = r.get('Achievement', None)
+                                                if v is None:
+                                                    v = r.get('ACHIEVEMENT', None)
+                                                if v is not None:
+                                                    val2 = round((float(v) / 1000000.0), 2)
+                                                    r['ACHIEVEMENT'] = val2
+                                                    r.pop('Achievement', None)
+                                            except Exception:
+                                                pass
+                                            scaled.append(r)
+                                        else:
+                                            scaled.append(row)
+                                    data = scaled
                                 result = data
                                 try:
                                     opts = territory_names(conn)
@@ -417,6 +476,7 @@ def hana_connect_admin(request):
                                 diagnostics['month'] = None
                                 diagnostics['start_date'] = (start_date_param or '').strip()
                                 diagnostics['end_date'] = (end_date_param or '').strip()
+                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
                                 request._territory_options = territory_options
                         except Exception as e_sa:
                             error = str(e_sa)
@@ -694,7 +754,7 @@ def hana_connect_admin(request):
                 temp_conn = dbapi.connect(**kwargs)
                 if cfg['schema']:
                     cur = temp_conn.cursor()
-                    cur.execute(f'SET SCHEMA "{cfg['schema']}"')
+                    cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
                     cur.close()
                 item_options = item_lov(temp_conn, search=None)
                 temp_conn.close()
@@ -717,7 +777,7 @@ def hana_connect_admin(request):
                 temp_conn = dbapi.connect(**kwargs)
                 if cfg['schema']:
                     cur = temp_conn.cursor()
-                    cur.execute(f'SET SCHEMA "{cfg['schema']}"')
+                    cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
                     cur.close()
                 project_options = projects_lov(temp_conn, search=None)
                 temp_conn.close()
@@ -1558,10 +1618,15 @@ def policy_list_page(request):
     method='get',
     operation_description="Sales vs Achievement data",
     manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
         openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
         openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID", type=openapi.TYPE_INTEGER),
+        openapi.Parameter('in_millions', openapi.IN_QUERY, description="Scale numeric values to millions", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('legacy', openapi.IN_QUERY, description="Include legacy mixed-case keys", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('sum_all', openapi.IN_QUERY, description="Aggregate totals across territories", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('group_by', openapi.IN_QUERY, description="Aggregation level: 'month' or 'territory'", type=openapi.TYPE_STRING),
     ],
     responses={
         200: openapi.Response(description="OK"),
@@ -1582,13 +1647,30 @@ def sales_vs_achievement_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    db_param = (request.query_params.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    else:
+        cfg['schema'] = '4B-BIO_APP'
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
     territory = (request.query_params.get('territory') or '').strip()
+    in_millions_param = (request.query_params.get('in_millions') or '').strip().lower()
+    legacy_param = (request.query_params.get('legacy') or request.query_params.get('include_legacy') or request.query_params.get('compat') or '').strip().lower()
+    include_legacy = (legacy_param in ('true','1','yes','y'))
+    sum_all_param = (request.query_params.get('sum_all') or '').strip().lower()
+    group_by_param = (request.query_params.get('group_by') or '').strip().lower()
+    do_sum_all = (sum_all_param in ('true','1','yes','y'))
     emp_id_param = request.query_params.get('emp_id')
     emp_id = None
     if emp_id_param:
@@ -1612,6 +1694,161 @@ def sales_vs_achievement_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             data = sales_vs_achievement(conn, emp_id, territory or None, None, None, start_date or None, end_date or None)
+            if in_millions_param in ('true','1','yes','y'):
+                scaled = []
+                for row in data or []:
+                    if isinstance(row, dict):
+                        r = dict(row)
+                        try:
+                            v = r.get('Sales_Target', None)
+                            if v is None:
+                                v = r.get('SALES_TARGET', None)
+                            if v is not None:
+                                val = round((float(v) / 1000000.0), 2)
+                                r['SALES_TARGET'] = val
+                                if include_legacy:
+                                    r['Sales_Target'] = r['SALES_TARGET']
+                                else:
+                                    r.pop('Sales_Target', None)
+                        except Exception:
+                            pass
+                        try:
+                            v = r.get('Achievement', None)
+                            if v is None:
+                                v = r.get('ACHIEVEMENT', None)
+                            if v is None:
+                                v = r.get('ACCHIVEMENT', None)
+                            if v is not None:
+                                val2 = round((float(v) / 1000000.0), 2)
+                                r['ACCHIVEMENT'] = val2
+                                if include_legacy:
+                                    r['Achievement'] = r['ACCHIVEMENT']
+                                else:
+                                    r.pop('Achievement', None)
+                        except Exception:
+                            pass
+                        scaled.append(r)
+                    else:
+                        scaled.append(row)
+                data = scaled
+            if group_by_param == 'territory' and not do_sum_all:
+                grouped = {}
+                for r in (data or []):
+                    if isinstance(r, dict):
+                        tid = r.get('TERRITORYID')
+                        tname = r.get('TERRITORYNAME')
+                        k = (tid, tname)
+                        if k not in grouped:
+                            grouped[k] = {'SALES_TARGET': 0.0, 'ACCHIVEMENT': 0.0, 'TERRITORYID': tid, 'TERRITORYNAME': tname, 'F_REFDATE': r.get('F_REFDATE'), 'T_REFDATE': r.get('T_REFDATE')}
+                        st = r.get('SALES_TARGET') or 0.0
+                        ac = r.get('ACCHIVEMENT') or 0.0
+                        try:
+                            grouped[k]['SALES_TARGET'] += float(st)
+                        except Exception:
+                            pass
+                        try:
+                            grouped[k]['ACCHIVEMENT'] += float(ac)
+                        except Exception:
+                            pass
+                        f = r.get('F_REFDATE')
+                        t = r.get('T_REFDATE')
+                        if f and (grouped[k]['F_REFDATE'] is None or str(f) < str(grouped[k]['F_REFDATE'])):
+                            grouped[k]['F_REFDATE'] = f
+                        if t and (grouped[k]['T_REFDATE'] is None or str(t) > str(grouped[k]['T_REFDATE'])):
+                            grouped[k]['T_REFDATE'] = t
+                data = []
+                for k, g in grouped.items():
+                    row = {'TERRITORYID': g['TERRITORYID'] or 0, 'TERRITORYNAME': g['TERRITORYNAME'] or '', 'SALES_TARGET': g['SALES_TARGET'], 'ACCHIVEMENT': g['ACCHIVEMENT'], 'F_REFDATE': g['F_REFDATE'], 'T_REFDATE': g['T_REFDATE']}
+                    if include_legacy:
+                        row['Sales_Target'] = row['SALES_TARGET']
+                        row['Achievement'] = row['ACCHIVEMENT']
+                    data.append(row)
+            if do_sum_all:
+                if group_by_param == 'month':
+                    grouped = {}
+                    for r in (data or []):
+                        if isinstance(r, dict):
+                            k = (r.get('F_REFDATE'), r.get('T_REFDATE'))
+                            if k not in grouped:
+                                grouped[k] = {'SALES_TARGET': 0.0, 'ACCHIVEMENT': 0.0, 'F_REFDATE': k[0], 'T_REFDATE': k[1]}
+                            st = r.get('SALES_TARGET') or 0.0
+                            ac = r.get('ACCHIVEMENT') or 0.0
+                            try:
+                                grouped[k]['SALES_TARGET'] += float(st)
+                            except Exception:
+                                pass
+                            try:
+                                grouped[k]['ACCHIVEMENT'] += float(ac)
+                            except Exception:
+                                pass
+                    agg = []
+                    for k, g in grouped.items():
+                        row = {'TERRITORYID': 0, 'TERRITORYNAME': 'All Territories', 'SALES_TARGET': g['SALES_TARGET'], 'ACCHIVEMENT': g['ACCHIVEMENT'], 'F_REFDATE': g['F_REFDATE'], 'T_REFDATE': g['T_REFDATE']}
+                        if include_legacy:
+                            row['Sales_Target'] = row['SALES_TARGET']
+                            row['Achievement'] = row['ACCHIVEMENT']
+                        agg.append(row)
+                    data = agg
+                elif group_by_param == 'territory':
+                    grouped = {}
+                    for r in (data or []):
+                        if isinstance(r, dict):
+                            tid = r.get('TERRITORYID')
+                            tname = r.get('TERRITORYNAME')
+                            k = (tid, tname)
+                            if k not in grouped:
+                                grouped[k] = {'SALES_TARGET': 0.0, 'ACCHIVEMENT': 0.0, 'TERRITORYID': tid, 'TERRITORYNAME': tname, 'F_REFDATE': r.get('F_REFDATE'), 'T_REFDATE': r.get('T_REFDATE')}
+                            st = r.get('SALES_TARGET') or 0.0
+                            ac = r.get('ACCHIVEMENT') or 0.0
+                            try:
+                                grouped[k]['SALES_TARGET'] += float(st)
+                            except Exception:
+                                pass
+                            try:
+                                grouped[k]['ACCHIVEMENT'] += float(ac)
+                            except Exception:
+                                pass
+                            f = r.get('F_REFDATE')
+                            t = r.get('T_REFDATE')
+                            if f and (grouped[k]['F_REFDATE'] is None or str(f) < str(grouped[k]['F_REFDATE'])):
+                                grouped[k]['F_REFDATE'] = f
+                            if t and (grouped[k]['T_REFDATE'] is None or str(t) > str(grouped[k]['T_REFDATE'])):
+                                grouped[k]['T_REFDATE'] = t
+                    data = []
+                    for k, g in grouped.items():
+                        row = {'TERRITORYID': g['TERRITORYID'] or 0, 'TERRITORYNAME': g['TERRITORYNAME'] or '', 'SALES_TARGET': g['SALES_TARGET'], 'ACCHIVEMENT': g['ACCHIVEMENT'], 'F_REFDATE': g['F_REFDATE'], 'T_REFDATE': g['T_REFDATE']}
+                        if include_legacy:
+                            row['Sales_Target'] = row['SALES_TARGET']
+                            row['Achievement'] = row['ACCHIVEMENT']
+                        data.append(row)
+                else:
+                    total_st = 0.0
+                    total_ac = 0.0
+                    min_f = None
+                    max_t = None
+                    for r in (data or []):
+                        if isinstance(r, dict):
+                            st = r.get('SALES_TARGET') or 0.0
+                            ac = r.get('ACCHIVEMENT') or 0.0
+                            try:
+                                total_st += float(st)
+                            except Exception:
+                                pass
+                            try:
+                                total_ac += float(ac)
+                            except Exception:
+                                pass
+                            f = r.get('F_REFDATE')
+                            t = r.get('T_REFDATE')
+                            if f and (min_f is None or str(f) < str(min_f)):
+                                min_f = f
+                            if t and (max_t is None or str(t) > str(max_t)):
+                                max_t = t
+                    one = {'TERRITORYID': 0, 'TERRITORYNAME': 'All Territories', 'SALES_TARGET': total_st, 'ACCHIVEMENT': total_ac, 'F_REFDATE': (start_date or min_f), 'T_REFDATE': (end_date or max_t)}
+                    if include_legacy:
+                        one['Sales_Target'] = one['SALES_TARGET']
+                        one['Achievement'] = one['ACCHIVEMENT']
+                    data = [one]
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
         finally:
             try:
@@ -1625,6 +1862,7 @@ def sales_vs_achievement_api(request):
     method='get',
     operation_description="Territory summary data",
     manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
         openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
@@ -1645,10 +1883,21 @@ def territory_summary_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    db_param = (request.query_params.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    else:
+        cfg['schema'] = '4B-BIO_APP'
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
     territory = (request.query_params.get('territory') or '').strip()

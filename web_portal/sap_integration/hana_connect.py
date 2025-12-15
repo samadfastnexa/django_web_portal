@@ -395,12 +395,12 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
     emp_tbl = '"B4_EMP"'
     base = (
         'select '
-        ' c.TerritoryId, '
-        ' O."descript" as TerritoryName, '
-        ' sum(c.Sales_Target) as Sales_Target, '
-        ' sum(c.DocTotal) as Acchivement, '
-        ' F_REFDATE, '
-        ' T_REFDATE '
+        ' c.TerritoryId AS "TERRITORYID", '
+        ' O."descript" AS "TERRITORYNAME", '
+        ' SUM(c.Sales_Target) AS "SALES_TARGET", '
+        ' SUM(c.DocTotal) AS "ACCHIVEMENT", '
+        ' MIN(c.F_REFDATE) AS "F_REFDATE", '
+        ' MAX(c.T_REFDATE) AS "T_REFDATE" '
         ' from ' + sales_tbl + ' c '
         ' INNER JOIN "OTER" O ON O."territryID" = c.TerritoryId '
     )
@@ -414,32 +414,14 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
     if territory_name is not None and territory_name.strip() != '':
         where_clauses.append(' O."descript" = ?')
         params.append(territory_name.strip())
-    if start_date and end_date:
-        where_clauses.append(" F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
-        params.extend([start_date.strip(), end_date.strip()])
-    elif year is not None and month is not None and 1 <= int(month) <= 12:
-        y = int(year)
-        m = int(month)
-        start = date(y, m, 1)
-        if m == 12:
-            next_start = date(y + 1, 1, 1)
-        else:
-            next_start = date(y, m + 1, 1)
-        start_str = start.strftime('%Y-%m-%d')
-        next_str = next_start.strftime('%Y-%m-%d')
-        where_clauses.append(" F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND T_REFDATE < TO_DATE(?, 'YYYY-MM-DD') ")
-        params.extend([start_str, next_str])
+
     where_sql = ''
     if len(where_clauses) > 0:
         where_sql = ' where ' + ' AND '.join(where_clauses)
     tail = (
         ' group by c.TerritoryId, '
-        ' O."descript", '
-        ' F_REFDATE, '
-        ' T_REFDATE '
-        ' ORDER BY c.TerritoryId, '
-        ' F_REFDATE, '
-        ' T_REFDATE'
+        ' O."descript" '
+        ' ORDER BY c.TerritoryId'
     )
     sql = base + where_sql + tail
     return _fetch_all(db, sql, tuple(params))

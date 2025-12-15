@@ -755,6 +755,14 @@ def get_hana_connection():
     try:
         # Load .env file
         _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
+        try:
+            from django.conf import settings as _settings
+            _load_env_file(os.path.join(str(_settings.BASE_DIR), '.env'))
+            from pathlib import Path as _Path
+            _load_env_file(os.path.join(str(_Path(_settings.BASE_DIR).parent), '.env'))
+            _load_env_file(os.path.join(os.getcwd(), '.env'))
+        except Exception:
+            pass
         
         from hdbcli import dbapi
         from preferences.models import Setting
@@ -769,10 +777,10 @@ def get_hana_connection():
                 else:
                     schema = str(db_setting.value)
             else:
-                schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+                schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
         except Exception as e:
             print(f"Error getting schema from settings: {e}")
-            schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+            schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
         
         # Strip quotes if present
         schema = schema.strip('"\'')
@@ -782,12 +790,18 @@ def get_hana_connection():
         port = int(os.environ.get('HANA_PORT', 30015))
         user = os.environ.get('HANA_USER', '').strip()
         password = os.environ.get('HANA_PASSWORD', '').strip()
+        encrypt = (os.environ.get('HANA_ENCRYPT') or '').strip().lower() in ('true','1','yes')
+        ssl_validate = (os.environ.get('HANA_SSL_VALIDATE') or '').strip().lower() in ('true','1','yes')
         
         if not host or not user:
             return None
         
         # Connect
-        conn = dbapi.connect(address=host, port=port, user=user, password=password)
+        kwargs = {'address': host, 'port': port, 'user': user, 'password': password}
+        if encrypt:
+            kwargs['encrypt'] = True
+            kwargs['sslValidateCertificate'] = ssl_validate
+        conn = dbapi.connect(**kwargs)
         
         # Set schema
         cursor = conn.cursor()
