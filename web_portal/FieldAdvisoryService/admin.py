@@ -101,7 +101,7 @@ class SalesOrderForm(forms.ModelForm):
             'address': forms.Textarea(attrs={'rows': 3}),
             'comments': forms.Textarea(attrs={'rows': 3}),
             'sap_error': forms.Textarea(attrs={'rows': 3}),
-            'sap_response_json': forms.Textarea(attrs={'rows': 10, 'style': 'font-family: monospace; font-size: 12px;'}),
+            'sap_response_json': forms.Textarea(attrs={'rows': 18, 'style': 'font-family: monospace; font-size: 12px;'}),
         }
     
     def __init__(self, *args, **kwargs):

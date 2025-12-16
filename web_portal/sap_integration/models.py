@@ -13,6 +13,8 @@ class Policy(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        verbose_name = 'Policy'
+        verbose_name_plural = 'Policies'
         ordering = ['-updated_at']
 
     def __str__(self):

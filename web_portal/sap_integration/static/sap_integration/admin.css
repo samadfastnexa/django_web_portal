@@ -365,11 +365,20 @@
 .menu-item { margin: 6px 0; }
 .menu-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; color: #111827; text-decoration: none; border: 1px solid transparent; }
 .menu-link:hover { background: #fff7f3; border-color: #fde1d3; }
-.menu-icon { width: 22px; height: 22px; color: #6b7280; display: inline-flex; align-items: center; justify-content: center; }
+.menu-icon { width: 22px; height: 22px; color: var(--orange); display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #fff4ec; }
 .menu-icon svg { width: 20px; height: 20px; }
 .menu-text { font-weight: 600; }
 .menu-item.is-active .menu-link { background: var(--orange); border-color: var(--orange); color: #ffffff; }
 .menu-item.is-active .menu-icon { color: #ffffff; }
+
+.menu-link:hover .menu-icon { color: var(--orange-dark); background: #ffe4d0; }
+
+.menu-list .menu-item:nth-child(6n+1) .menu-icon { background: #fee2e2; color: #b91c1c; }
+.menu-list .menu-item:nth-child(6n+2) .menu-icon { background: #dbeafe; color: #1d4ed8; }
+.menu-list .menu-item:nth-child(6n+3) .menu-icon { background: #e0f2fe; color: #0369a1; }
+.menu-list .menu-item:nth-child(6n+4) .menu-icon { background: #dcfce7; color: #15803d; }
+.menu-list .menu-item:nth-child(6n+5) .menu-icon { background: #fef3c7; color: #b45309; }
+.menu-list .menu-item:nth-child(6n+6) .menu-icon { background: #ede9fe; color: #6d28d9; }
 
 .sidebar-footer { padding: 10px 8px; }
 .collapse-btn { border: 0; background: transparent; color: #6b7280; cursor: pointer; }
@@ -728,6 +737,23 @@
 [data-theme="dark"] #recent-actions-module .actionlist li:hover { background-color: rgba(255,255,255,0.06); }
 #recent-actions-module .actionlist li::before { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--hairline-color); background: #fff; color: var(--text-default); font-size: 16px; content: ""; }
 [data-theme="dark"] #recent-actions-module .actionlist li::before { background: #0b1224; border-color: #1f2937; color: #e2e8f0; }
+
+/* ==========================
+   Form dropdown sizing
+   ========================== */
+.form-row select,
+#content-main select,
+.inline-group .tabular select,
+.related-widget-wrapper select,
+select.sap-customer-lov,
+select.sap-item-lov,
+select.sap-warehouse-lov,
+select.sap-tax-lov,
+select.sap-project-lov,
+select.sap-crop-lov {
+  height: 42px;
+  font-size: 14px;
+}
 #recent-actions-module .actionlist li.addlink::before { content: "➕"; color: #16a34a; border-color: #22c55e; background: #eafff2; }
 #recent-actions-module .actionlist li.changelink::before { content: "✏️"; color: #eab308; border-color: #facc15; background: #fff7d6; }
 #recent-actions-module .actionlist li.deletelink::before { content: "❌"; color: #dc2626; border-color: #ef4444; background: #fff0f0; }

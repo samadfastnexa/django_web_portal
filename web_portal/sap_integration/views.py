@@ -1867,6 +1867,8 @@ def sales_vs_achievement_api(request):
         openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
         openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID", type=openapi.TYPE_INTEGER),
+        openapi.Parameter('sum_all', openapi.IN_QUERY, description="Aggregate totals across territories", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('group_by', openapi.IN_QUERY, description="Aggregation level: 'month' or 'territory'", type=openapi.TYPE_STRING, default='territory'),
     ],
     responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
 )
@@ -1902,6 +1904,9 @@ def territory_summary_api(request):
     end_date = (request.query_params.get('end_date') or '').strip()
     territory = (request.query_params.get('territory') or '').strip()
     emp_id_param = request.query_params.get('emp_id')
+    sum_all_param = (request.query_params.get('sum_all') or '').strip().lower()
+    group_by_param = (request.query_params.get('group_by') or 'territory').strip().lower()
+    do_sum_all = (sum_all_param in ('true','1','yes','y'))
     emp_id = None
     if emp_id_param:
         try:
@@ -1924,6 +1929,112 @@ def territory_summary_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             data = territory_summary(conn, emp_id, territory or None, None, None, start_date or None, end_date or None)
+            if group_by_param == 'territory' and not do_sum_all:
+                grouped = {}
+                for r in (data or []):
+                    if isinstance(r, dict):
+                        tid = r.get('TERRITORYID') or r.get('TerritoryId') or r.get('territoryid') or r.get('territoryId')
+                        tname = r.get('TERRITORYNAME') or r.get('TerritoryName') or r.get('DESCRIPT') or r.get('descript')
+                        k = (tid, tname)
+                        if k not in grouped:
+                            grouped[k] = {'COLLETION_TARGET': 0.0, 'DOCTOTAL': 0.0, 'TERRITORYID': tid, 'TERRITORYNAME': tname, 'F_REFDATE': r.get('F_REFDATE'), 'T_REFDATE': r.get('T_REFDATE')}
+                        st = r.get('COLLETION_TARGET') or r.get('COLLECTION_TARGET') or r.get('colletion_Target') or r.get('colletion_target') or 0.0
+                        ac = r.get('DOCTOTAL') or r.get('DocTotal') or 0.0
+                        try:
+                            grouped[k]['COLLETION_TARGET'] += float(st)
+                        except Exception:
+                            pass
+                        try:
+                            grouped[k]['DOCTOTAL'] += float(ac)
+                        except Exception:
+                            pass
+                        f = r.get('F_REFDATE')
+                        t = r.get('T_REFDATE')
+                        if f and (grouped[k]['F_REFDATE'] is None or str(f) < str(grouped[k]['F_REFDATE'])):
+                            grouped[k]['F_REFDATE'] = f
+                        if t and (grouped[k]['T_REFDATE'] is None or str(t) > str(grouped[k]['T_REFDATE'])):
+                            grouped[k]['T_REFDATE'] = t
+                data = []
+                for k, g in grouped.items():
+                    row = {'TERRITORYID': g['TERRITORYID'] or 0, 'TERRITORYNAME': g['TERRITORYNAME'] or '', 'COLLETION_TARGET': g['COLLETION_TARGET'], 'DOCTOTAL': g['DOCTOTAL'], 'F_REFDATE': g['F_REFDATE'], 'T_REFDATE': g['T_REFDATE']}
+                    data.append(row)
+            if do_sum_all:
+                if group_by_param == 'month':
+                    grouped = {}
+                    for r in (data or []):
+                        if isinstance(r, dict):
+                            k = (r.get('F_REFDATE'), r.get('T_REFDATE'))
+                            if k not in grouped:
+                                grouped[k] = {'COLLETION_TARGET': 0.0, 'DOCTOTAL': 0.0, 'F_REFDATE': k[0], 'T_REFDATE': k[1]}
+                            st = r.get('COLLETION_TARGET') or r.get('COLLECTION_TARGET') or r.get('colletion_Target') or r.get('colletion_target') or 0.0
+                            ac = r.get('DOCTOTAL') or r.get('DocTotal') or 0.0
+                            try:
+                                grouped[k]['COLLETION_TARGET'] += float(st)
+                            except Exception:
+                                pass
+                            try:
+                                grouped[k]['DOCTOTAL'] += float(ac)
+                            except Exception:
+                                pass
+                    agg = []
+                    for k, g in grouped.items():
+                        row = {'TERRITORYID': 0, 'TERRITORYNAME': 'All Territories', 'COLLETION_TARGET': g['COLLETION_TARGET'], 'DOCTOTAL': g['DOCTOTAL'], 'F_REFDATE': g['F_REFDATE'], 'T_REFDATE': g['T_REFDATE']}
+                        agg.append(row)
+                    data = agg
+                elif group_by_param == 'territory':
+                    grouped = {}
+                    for r in (data or []):
+                        if isinstance(r, dict):
+                            tid = r.get('TERRITORYID') or r.get('TerritoryId') or r.get('territoryid') or r.get('territoryId')
+                            tname = r.get('TERRITORYNAME') or r.get('TerritoryName') or r.get('DESCRIPT') or r.get('descript')
+                            k = (tid, tname)
+                            if k not in grouped:
+                                grouped[k] = {'COLLETION_TARGET': 0.0, 'DOCTOTAL': 0.0, 'TERRITORYID': tid, 'TERRITORYNAME': tname, 'F_REFDATE': r.get('F_REFDATE'), 'T_REFDATE': r.get('T_REFDATE')}
+                            st = r.get('COLLETION_TARGET') or r.get('COLLECTION_TARGET') or r.get('colletion_Target') or r.get('colletion_target') or 0.0
+                            ac = r.get('DOCTOTAL') or r.get('DocTotal') or 0.0
+                            try:
+                                grouped[k]['COLLETION_TARGET'] += float(st)
+                            except Exception:
+                                pass
+                            try:
+                                grouped[k]['DOCTOTAL'] += float(ac)
+                            except Exception:
+                                pass
+                            f = r.get('F_REFDATE')
+                            t = r.get('T_REFDATE')
+                            if f and (grouped[k]['F_REFDATE'] is None or str(f) < str(grouped[k]['F_REFDATE'])):
+                                grouped[k]['F_REFDATE'] = f
+                            if t and (grouped[k]['T_REFDATE'] is None or str(t) > str(grouped[k]['T_REFDATE'])):
+                                grouped[k]['T_REFDATE'] = t
+                    data = []
+                    for k, g in grouped.items():
+                        row = {'TERRITORYID': g['TERRITORYID'] or 0, 'TERRITORYNAME': g['TERRITORYNAME'] or '', 'COLLETION_TARGET': g['COLLETION_TARGET'], 'DOCTOTAL': g['DOCTOTAL'], 'F_REFDATE': g['F_REFDATE'], 'T_REFDATE': g['T_REFDATE']}
+                        data.append(row)
+                else:
+                    total_st = 0.0
+                    total_ac = 0.0
+                    min_f = None
+                    max_t = None
+                    for r in (data or []):
+                        if isinstance(r, dict):
+                            st = r.get('COLLETION_TARGET') or r.get('COLLECTION_TARGET') or r.get('colletion_Target') or r.get('colletion_target') or 0.0
+                            ac = r.get('DOCTOTAL') or r.get('DocTotal') or 0.0
+                            try:
+                                total_st += float(st)
+                            except Exception:
+                                pass
+                            try:
+                                total_ac += float(ac)
+                            except Exception:
+                                pass
+                            f = r.get('F_REFDATE')
+                            t = r.get('T_REFDATE')
+                            if f and (min_f is None or str(f) < str(min_f)):
+                                min_f = f
+                            if t and (max_t is None or str(t) > str(max_t)):
+                                max_t = t
+                    one = {'TERRITORYID': 0, 'TERRITORYNAME': 'All Territories', 'COLLETION_TARGET': total_st, 'DOCTOTAL': total_ac, 'F_REFDATE': (start_date or min_f), 'T_REFDATE': (end_date or max_t)}
+                    data = [one]
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
         finally:
             try:
