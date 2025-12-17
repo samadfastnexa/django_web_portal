@@ -115,6 +115,14 @@ TEMPLATES = [
 WSGI_APPLICATION = 'web_portal.wsgi.application'
 
 
+# Admin Site Header
+ADMIN_SITE_HEADER = "Agrigenie Admin Portal"
+
+# Admin Site Configuration
+ADMIN_SITE_HEADER = "Agrigenie Admin Portal"
+ADMIN_SITE_TITLE = "Agrigenie Admin"
+ADMIN_INDEX_TITLE = "Welcome to Agrigenie Portal"
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 

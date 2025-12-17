@@ -426,6 +426,55 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
     sql = base + where_sql + tail
     return _fetch_all(db, sql, tuple(params))
 
+def sales_vs_achievement_by_emp(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+    sales_tbl = '"B4_SALES_TARGET"'
+    emp_tbl = '"B4_EMP"'
+    base = (
+        'select '
+        ' e.empID AS "EMPID", '
+        ' c.TerritoryId AS "TERRITORYID", '
+        ' O."descript" AS "TERRITORYNAME", '
+        ' SUM(c.Sales_Target) AS "SALES_TARGET", '
+        ' SUM(c.DocTotal) AS "ACCHIVEMENT", '
+        ' MIN(c.F_REFDATE) AS "F_REFDATE", '
+        ' MAX(c.T_REFDATE) AS "T_REFDATE" '
+        ' from ' + sales_tbl + ' c '
+        ' INNER JOIN "OTER" O ON O."territryID" = c.TerritoryId '
+        ' INNER JOIN ' + emp_tbl + ' e ON e.U_TID = c.TerritoryId '
+    )
+    where_clauses = []
+    params = []
+    if emp_id is not None:
+        where_clauses.append(' e.empID = ?')
+        params.append(emp_id)
+    if territory_name is not None and territory_name.strip() != '':
+        where_clauses.append(' O."descript" = ?')
+        params.append(territory_name.strip())
+    if start_date and end_date:
+        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
+        params.extend([start_date.strip(), end_date.strip()])
+    elif year is not None and month is not None and 1 <= int(month) <= 12:
+        y = int(year)
+        m = int(month)
+        start = date(y, m, 1)
+        if m == 12:
+            next_start = date(y + 1, 1, 1)
+        else:
+            next_start = date(y, m + 1, 1)
+        start_str = start.strftime('%Y-%m-%d')
+        next_str = next_start.strftime('%Y-%m-%d')
+        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE < TO_DATE(?, 'YYYY-MM-DD') ")
+        params.extend([start_str, next_str])
+    where_sql = ''
+    if len(where_clauses) > 0:
+        where_sql = ' where ' + ' AND '.join(where_clauses)
+    tail = (
+        ' group by e.empID, c.TerritoryId, O."descript" '
+        ' ORDER BY e.empID, c.TerritoryId'
+    )
+    sql = base + where_sql + tail
+    return _fetch_all(db, sql, tuple(params))
+
 def fetchdata(db, p: dict) -> list:
     table = str(p.get('table', '') or '').strip()
     select = str(p.get('select', '') or '').strip()

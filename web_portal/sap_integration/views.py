@@ -480,6 +480,128 @@ def hana_connect_admin(request):
                                 request._territory_options = territory_options
                         except Exception as e_sa:
                             error = str(e_sa)
+                    elif action == 'sales_vs_achievement_by_emp':
+                        try:
+                            emp_id_param = request.GET.get('emp_id')
+                            territory_param = request.GET.get('territory')
+                            year_param = None
+                            month_param = None
+                            start_date_param = request.GET.get('start_date')
+                            end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+                            group_by_param = (request.GET.get('group_by') or '').strip().lower()
+                            if group_by_param not in ('emp','territory','month'):
+                                group_by_param = 'territory'
+                            emp_val = None
+                            if emp_id_param is not None and emp_id_param != '':
+                                try:
+                                    emp_val = int(emp_id_param)
+                                except Exception:
+                                    error = 'Invalid emp_id'
+                            yr_val = None
+                            mo_val = None
+                            if error is None:
+                                from .hana_connect import sales_vs_achievement_by_emp
+                                data = sales_vs_achievement_by_emp(conn, emp_val, (territory_param or '').strip() or None, yr_val, mo_val, (start_date_param or '').strip() or None, (end_date_param or '').strip() or None)
+                                if in_millions_param in ('', 'true','1','yes','y'):
+                                    scaled = []
+                                    for row in data or []:
+                                        if isinstance(row, dict):
+                                            r = dict(row)
+                                            try:
+                                                v = r.get('Sales_Target', None)
+                                                if v is None:
+                                                    v = r.get('SALES_TARGET', None)
+                                                if v is not None:
+                                                    r['SALES_TARGET'] = round((float(v) / 1000000.0), 2)
+                                                    r.pop('Sales_Target', None)
+                                            except Exception:
+                                                pass
+                                            try:
+                                                v = r.get('Achievement', None)
+                                                if v is None:
+                                                    v = r.get('ACHIEVEMENT', None)
+                                                if v is None:
+                                                    v = r.get('ACCHIVEMENT', None)
+                                                if v is not None:
+                                                    r['ACCHIVEMENT'] = round((float(v) / 1000000.0), 2)
+                                                    r.pop('Achievement', None)
+                                            except Exception:
+                                                pass
+                                            scaled.append(r)
+                                        else:
+                                            scaled.append(row)
+                                    data = scaled
+                                gb = (request.GET.get('group_by') or '').strip().lower()
+                                if gb not in ('emp','territory','month'):
+                                    gb = 'territory'
+                                if gb == 'emp':
+                                    grouped = {}
+                                    for r in (data or []):
+                                        if isinstance(r, dict):
+                                            eid = r.get('EMPID')
+                                            if eid is None:
+                                                continue
+                                            if eid not in grouped:
+                                                grouped[eid] = {
+                                                    'EMPID': eid,
+                                                    'SALES_TARGET': 0.0,
+                                                    'ACCHIVEMENT': 0.0,
+                                                    'TERRITORYID': 0,
+                                                    'TERRITORYNAME': 'All Territories',
+                                                    'F_REFDATE': r.get('F_REFDATE'),
+                                                    'T_REFDATE': r.get('T_REFDATE'),
+                                                }
+                                            st = r.get('SALES_TARGET') or 0.0
+                                            ac = r.get('ACCHIVEMENT') or 0.0
+                                            try:
+                                                grouped[eid]['SALES_TARGET'] += float(st)
+                                            except Exception:
+                                                pass
+                                            try:
+                                                grouped[eid]['ACCHIVEMENT'] += float(ac)
+                                            except Exception:
+                                                pass
+                                            f = r.get('F_REFDATE')
+                                            t = r.get('T_REFDATE')
+                                            if f and (grouped[eid]['F_REFDATE'] is None or str(f) < str(grouped[eid]['F_REFDATE'])):
+                                                grouped[eid]['F_REFDATE'] = f
+                                            if t and (grouped[eid]['T_REFDATE'] is None or str(t) > str(grouped[eid]['T_REFDATE'])):
+                                                grouped[eid]['T_REFDATE'] = t
+                                    agg = []
+                                    for _, g in grouped.items():
+                                        row = {
+                                            'EMPID': g['EMPID'],
+                                            'TERRITORYID': g['TERRITORYID'],
+                                            'TERRITORYNAME': g['TERRITORYNAME'],
+                                            'SALES_TARGET': g['SALES_TARGET'],
+                                            'ACCHIVEMENT': g['ACCHIVEMENT'],
+                                            'F_REFDATE': g['F_REFDATE'],
+                                            'T_REFDATE': g['T_REFDATE'],
+                                        }
+                                        agg.append(row)
+                                    data = agg
+                                result = data
+                                try:
+                                    opts = territory_names(conn)
+                                except Exception:
+                                    opts = []
+                                territory_options = []
+                                for row in opts or []:
+                                    v = row.get('TERRITORYNAME') or row.get('TerritoryName') or row.get('DESCRIPT') or row.get('descript')
+                                    if v and v not in territory_options:
+                                        territory_options.append(v)
+                                diagnostics['territory_options_count'] = len(territory_options)
+                                diagnostics['selected_territory'] = territory_param or ''
+                                diagnostics['emp_id'] = emp_val
+                                diagnostics['year'] = None
+                                diagnostics['month'] = None
+                                diagnostics['start_date'] = (start_date_param or '').strip()
+                                diagnostics['end_date'] = (end_date_param or '').strip()
+                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                                request._territory_options = territory_options
+                        except Exception as e_sa_emp:
+                            error = str(e_sa_emp)
                     elif action == 'sales_orders':
                         try:
                             card_code_param = request.GET.get('card_code')
@@ -858,7 +980,7 @@ def hana_connect_admin(request):
             'result_rows': paged_rows,
             'result_cols': result_cols,
             'table_rows': table_rows,
-            'is_tabular': (action in ('territory_summary','sales_vs_achievement','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses')),
+            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_by_emp','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses')),
             'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
             'customer_options': customer_options,
             'customer_list': customer_list,
@@ -1627,6 +1749,8 @@ def policy_list_page(request):
         openapi.Parameter('legacy', openapi.IN_QUERY, description="Include legacy mixed-case keys", type=openapi.TYPE_BOOLEAN),
         openapi.Parameter('sum_all', openapi.IN_QUERY, description="Aggregate totals across territories", type=openapi.TYPE_BOOLEAN),
         openapi.Parameter('group_by', openapi.IN_QUERY, description="Aggregation level: 'month' or 'territory'", type=openapi.TYPE_STRING),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number (default 1)", type=openapi.TYPE_INTEGER, default=1),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page (default 10)", type=openapi.TYPE_INTEGER, default=10),
     ],
     responses={
         200: openapi.Response(description="OK"),
@@ -1669,7 +1793,6 @@ def sales_vs_achievement_api(request):
     legacy_param = (request.query_params.get('legacy') or request.query_params.get('include_legacy') or request.query_params.get('compat') or '').strip().lower()
     include_legacy = (legacy_param in ('true','1','yes','y'))
     sum_all_param = (request.query_params.get('sum_all') or '').strip().lower()
-    group_by_param = (request.query_params.get('group_by') or '').strip().lower()
     do_sum_all = (sum_all_param in ('true','1','yes','y'))
     emp_id_param = request.query_params.get('emp_id')
     emp_id = None
@@ -1678,6 +1801,9 @@ def sales_vs_achievement_api(request):
             emp_id = int(emp_id_param)
         except Exception:
             return Response({'success': False, 'error': 'Invalid emp_id'}, status=status.HTTP_400_BAD_REQUEST)
+    group_by_param = (request.query_params.get('group_by') or '').strip().lower()
+    if group_by_param not in ('emp','territory','month'):
+        group_by_param = 'emp'
     try:
         from hdbcli import dbapi
         pwd = os.environ.get('HANA_PASSWORD','')
@@ -1849,7 +1975,244 @@ def sales_vs_achievement_api(request):
                         one['Sales_Target'] = one['SALES_TARGET']
                         one['Achievement'] = one['ACCHIVEMENT']
                     data = [one]
-            return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
+            page_param = (request.query_params.get('page') or '1').strip()
+            page_size_param = (request.query_params.get('page_size') or '').strip()
+            try:
+                page_num = int(page_param) if page_param else 1
+            except Exception:
+                page_num = 1
+            default_page_size = 10
+            try:
+                default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+            except Exception:
+                default_page_size = 10
+            try:
+                page_size = int(page_size_param) if page_size_param else default_page_size
+            except Exception:
+                page_size = default_page_size
+            paginator = Paginator(list(data or []), page_size)
+            try:
+                page_obj = paginator.page(page_num)
+                paged_rows = list(page_obj.object_list)
+            except Exception:
+                paged_rows = list(data or [])
+                page_obj = None
+            pagination = {
+                'page': (page_obj.number if page_obj else 1),
+                'num_pages': (paginator.num_pages if paginator else 1),
+                'has_next': (page_obj.has_next() if page_obj else False),
+                'has_prev': (page_obj.has_previous() if page_obj else False),
+                'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)),
+                'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)),
+                'count': (paginator.count if paginator else len(data or [])),
+                'page_size': page_size,
+            }
+            return Response({'success': True, 'count': (paginator.count if paginator else len(data or [])), 'data': paged_rows, 'pagination': pagination}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Sales vs Achievement grouped by employee and territory",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
+        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
+        openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID (optional to filter)", type=openapi.TYPE_INTEGER),
+        openapi.Parameter('in_millions', openapi.IN_QUERY, description="Scale numeric values to millions", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('legacy', openapi.IN_QUERY, description="Include legacy mixed-case keys", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('group_by', openapi.IN_QUERY, description="Aggregation level: use 'emp' to sum per EMPID", type=openapi.TYPE_STRING, default='emp'),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number (default 1)", type=openapi.TYPE_INTEGER, default=1),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page (default 10)", type=openapi.TYPE_INTEGER, default=10),
+    ],
+    responses={
+        200: openapi.Response(description="OK"),
+        400: openapi.Response(description="Bad Request"),
+        500: openapi.Response(description="Server Error"),
+    }
+)
+@api_view(['GET'])
+def sales_vs_achievement_by_emp_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    db_param = (request.query_params.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    else:
+        cfg['schema'] = '4B-BIO_APP'
+    start_date = (request.query_params.get('start_date') or '').strip()
+    end_date = (request.query_params.get('end_date') or '').strip()
+    territory = (request.query_params.get('territory') or '').strip()
+    in_millions_param = (request.query_params.get('in_millions') or '').strip().lower()
+    legacy_param = (request.query_params.get('legacy') or request.query_params.get('include_legacy') or request.query_params.get('compat') or '').strip().lower()
+    include_legacy = (legacy_param in ('true','1','yes','y'))
+    group_by_param = (request.query_params.get('group_by') or '').strip().lower()
+    emp_id_param = request.query_params.get('emp_id')
+    emp_id = None
+    if emp_id_param:
+        try:
+            emp_id = int(emp_id_param)
+        except Exception:
+            return Response({'success': False, 'error': 'Invalid emp_id'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            from .hana_connect import sales_vs_achievement_by_emp
+            data = sales_vs_achievement_by_emp(conn, emp_id, territory or None, None, None, start_date or None, end_date or None)
+            if in_millions_param in ('true','1','yes','y'):
+                scaled = []
+                for row in data or []:
+                    if isinstance(row, dict):
+                        r = dict(row)
+                        try:
+                            v = r.get('Sales_Target', None)
+                            if v is None:
+                                v = r.get('SALES_TARGET', None)
+                            if v is not None:
+                                r['SALES_TARGET'] = round((float(v) / 1000000.0), 2)
+                                if include_legacy:
+                                    r['Sales_Target'] = r['SALES_TARGET']
+                                else:
+                                    r.pop('Sales_Target', None)
+                        except Exception:
+                            pass
+                        try:
+                            v = r.get('Achievement', None)
+                            if v is None:
+                                v = r.get('ACHIEVEMENT', None)
+                            if v is None:
+                                v = r.get('ACCHIVEMENT', None)
+                            if v is not None:
+                                r['ACCHIVEMENT'] = round((float(v) / 1000000.0), 2)
+                                if include_legacy:
+                                    r['Achievement'] = r['ACCHIVEMENT']
+                                else:
+                                    r.pop('Achievement', None)
+                        except Exception:
+                            pass
+                        scaled.append(r)
+                    else:
+                        scaled.append(row)
+                data = scaled
+            if group_by_param == 'emp':
+                grouped = {}
+                for r in (data or []):
+                    if isinstance(r, dict):
+                        eid = r.get('EMPID')
+                        if eid is None:
+                            continue
+                        if eid not in grouped:
+                            grouped[eid] = {
+                                'EMPID': eid,
+                                'SALES_TARGET': 0.0,
+                                'ACCHIVEMENT': 0.0,
+                                'TERRITORYID': 0,
+                                'TERRITORYNAME': 'All Territories',
+                                'F_REFDATE': r.get('F_REFDATE'),
+                                'T_REFDATE': r.get('T_REFDATE'),
+                            }
+                        st = r.get('SALES_TARGET') or 0.0
+                        ac = r.get('ACCHIVEMENT') or 0.0
+                        try:
+                            grouped[eid]['SALES_TARGET'] += float(st)
+                        except Exception:
+                            pass
+                        try:
+                            grouped[eid]['ACCHIVEMENT'] += float(ac)
+                        except Exception:
+                            pass
+                        f = r.get('F_REFDATE')
+                        t = r.get('T_REFDATE')
+                        if f and (grouped[eid]['F_REFDATE'] is None or str(f) < str(grouped[eid]['F_REFDATE'])):
+                            grouped[eid]['F_REFDATE'] = f
+                        if t and (grouped[eid]['T_REFDATE'] is None or str(t) > str(grouped[eid]['T_REFDATE'])):
+                            grouped[eid]['T_REFDATE'] = t
+                agg = []
+                for _, g in grouped.items():
+                    row = {
+                        'EMPID': g['EMPID'],
+                        'TERRITORYID': g['TERRITORYID'],
+                        'TERRITORYNAME': g['TERRITORYNAME'],
+                        'SALES_TARGET': g['SALES_TARGET'],
+                        'ACCHIVEMENT': g['ACCHIVEMENT'],
+                        'F_REFDATE': g['F_REFDATE'],
+                        'T_REFDATE': g['T_REFDATE'],
+                    }
+                    if include_legacy:
+                        row['Sales_Target'] = row['SALES_TARGET']
+                        row['Achievement'] = row['ACCHIVEMENT']
+                    agg.append(row)
+                data = agg
+            page_param = (request.query_params.get('page') or '1').strip()
+            page_size_param = (request.query_params.get('page_size') or '').strip()
+            try:
+                page_num = int(page_param) if page_param else 1
+            except Exception:
+                page_num = 1
+            default_page_size = 10
+            try:
+                default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+            except Exception:
+                default_page_size = 10
+            try:
+                page_size = int(page_size_param) if page_size_param else default_page_size
+            except Exception:
+                page_size = default_page_size
+            paginator = Paginator(list(data or []), page_size)
+            try:
+                page_obj = paginator.page(page_num)
+                paged_rows = list(page_obj.object_list)
+            except Exception:
+                paged_rows = list(data or [])
+                page_obj = None
+            pagination = {
+                'page': (page_obj.number if page_obj else 1),
+                'num_pages': (paginator.num_pages if paginator else 1),
+                'has_next': (page_obj.has_next() if page_obj else False),
+                'has_prev': (page_obj.has_previous() if page_obj else False),
+                'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)),
+                'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)),
+                'count': (paginator.count if paginator else len(data or [])),
+                'page_size': page_size,
+            }
+            return Response({'success': True, 'count': (paginator.count if paginator else len(data or [])), 'data': paged_rows, 'pagination': pagination}, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()

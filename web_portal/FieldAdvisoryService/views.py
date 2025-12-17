@@ -280,6 +280,8 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
     serializer_class = DealerRequestSerializer
     permission_classes = [IsAuthenticated, HasRolePermission]
     parser_classes = [MultiPartParser, FormParser]  # Accept form-data
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['status', 'filer_status', 'card_type', 'is_posted_to_sap', 'requested_by']
 
     def get_queryset(self):
         user = self.request.user
@@ -292,10 +294,17 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
             # Return empty queryset for anonymous users or unauthenticated requests
             return DealerRequest.objects.none()
 
-        if user.is_superuser or (hasattr(user, 'role') and user.role.name == 'Admin'):
-            return DealerRequest.objects.all()
+        base_qs = DealerRequest.objects.all() if (user.is_superuser or (hasattr(user, 'role') and user.role.name == 'Admin')) else DealerRequest.objects.filter(requested_by=user)
 
-        return DealerRequest.objects.filter(requested_by=user)
+        # Support alias 'created_by' for filtering requested_by
+        created_by = self.request.query_params.get('created_by')
+        if created_by:
+            try:
+                base_qs = base_qs.filter(requested_by=int(created_by))
+            except ValueError:
+                base_qs = base_qs.none()
+
+        return base_qs
 
     @swagger_auto_schema(
         operation_description="Submit a new dealer registration request with comprehensive business partner information including contact details, address, tax information, and SAP configuration. All fields are optional except requested_by (auto-filled).",
@@ -336,7 +345,15 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Retrieve a list of dealer requests with comprehensive business partner information. Admins can see all requests, while users can only see their own submissions. Filter by status, filer_status, card_type, or SAP posting status.",
+        operation_description="Retrieve a list of dealer requests. Admins can see all requests; users only see their own. Supports filtering by status, filer_status, card_type, is_posted_to_sap, requested_by, and alias created_by.",
+        manual_parameters=[
+            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Filter by status (draft, pending, approved, rejected, posted_to_sap)'),
+            openapi.Parameter('filer_status', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Filter by filer_status (01 for Filer, 02 for Non-Filer)'),
+            openapi.Parameter('card_type', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Filter by card_type (cCustomer, cSupplier, cLid)'),
+            openapi.Parameter('is_posted_to_sap', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, description='Filter by SAP posting status'),
+            openapi.Parameter('requested_by', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Filter by requesting user ID'),
+            openapi.Parameter('created_by', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Alias for requested_by; filters by creator user ID'),
+        ],
         responses={
             200: openapi.Response(
                 description='List of dealer requests',
@@ -653,7 +670,7 @@ class TerritoryViewSet(viewsets.ModelViewSet):
     # permission_classes = [IsAdminOrReadOnly]
     permission_classes = [IsAuthenticated, HasRolePermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['zone']
+    filterset_fields = ['zone', 'company']
     search_fields = ['name']
 
     @swagger_auto_schema(
@@ -678,6 +695,28 @@ class TerritoryViewSet(viewsets.ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Territory.objects.none()
+        qs = super().get_queryset()
+        company_param = self.request.query_params.get('company')
+        if company_param:
+            try:
+                cid = int(company_param)
+                return qs.filter(company_id=cid)
+            except Exception:
+                pass
+        db_key = self.request.session.get('selected_db', '4B-BIO')
+        schema = '4B-BIO_APP' if db_key == '4B-BIO' else ('4B-ORANG_APP' if db_key == '4B-ORANG' else '4B-BIO_APP')
+        try:
+            from FieldAdvisoryService.models import Company
+            comp = Company.objects.filter(name=schema).first() or Company.objects.filter(Company_name=schema).first()
+            if comp:
+                return qs.filter(company=comp)
+        except Exception:
+            pass
+        return qs
 
 
 class CompanyNestedViewSet(viewsets.ReadOnlyModelViewSet):
