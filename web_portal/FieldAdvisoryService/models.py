@@ -36,6 +36,10 @@ class Company(BaseInfoModel):
     def __str__(self):
         return self.Company_name  # or self.name if BaseInfoModel has 'name'
     
+    class Meta:
+        verbose_name = "Company"
+        verbose_name_plural = "Companies"
+    
 class Region(models.Model):
     company = models.ForeignKey('Company', on_delete=models.PROTECT, related_name='regions')
     name = models.CharField(max_length=100)  # ✅ Region's own name
@@ -94,6 +98,10 @@ class Territory(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.zone.name} - {self.company.name})"
+    
+    class Meta:
+        verbose_name = "Territory"
+        verbose_name_plural = "Territories"
 
 class Dealer(models.Model):
     user = models.OneToOneField(

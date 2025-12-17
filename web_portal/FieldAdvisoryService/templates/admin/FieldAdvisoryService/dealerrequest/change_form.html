@@ -22,7 +22,7 @@
       {% with txt=m.message %}
         {% if txt|slice:"0:18" == "SAP_RESPONSE_JSON:" %}
           <h3 style="margin-top:16px;">Response</h3>
-          <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:500px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
+          <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:800px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
         {% endif %}
       {% endwith %}
     {% endfor %}
@@ -36,7 +36,7 @@
       {% with txt=m.message %}
         {% if txt|slice:"0:18" == "SAP_RESPONSE_JSON:" %}
           <h3 style="margin-top:16px;">Response</h3>
-          <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:500px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
+          <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:800px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
         {% endif %}
       {% endwith %}
     {% endfor %}
@@ -54,7 +54,7 @@
         {% with txt=m.message %}
           {% if txt|slice:"0:18" == "SAP_RESPONSE_JSON:" %}
             <h3 style="margin-top:12px;">Response</h3>
-            <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:420px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
+            <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:800px;overflow:auto;">{{ txt|cut:"SAP_RESPONSE_JSON:" }}</pre>
           {% elif "SAP Business Partner" in txt %}
             <div style="margin-top:12px;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;padding:10px;border-radius:10px;">{{ txt }}</div>
           {% endif %}
@@ -63,7 +63,7 @@
     {% endif %}
     {% if original.sap_response_json %}
       <h3 style="margin-top:12px;">Last SAP Response</h3>
-      <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:480px;overflow:auto;">{{ original.sap_response_json }}</pre>
+      <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:800px;overflow:auto;">{{ original.sap_response_json }}</pre>
     {% endif %}
   {% endif %}
 {% endblock %}

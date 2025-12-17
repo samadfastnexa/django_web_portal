@@ -106,6 +106,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'sap_integration.context_processors.db_selector',
             ],
         },
     },
@@ -114,17 +115,25 @@ TEMPLATES = [
 WSGI_APPLICATION = 'web_portal.wsgi.application'
 
 
+# Admin Site Header
+ADMIN_SITE_HEADER = "Agrigenie Admin Portal"
+
+# Admin Site Configuration
+ADMIN_SITE_HEADER = "Agrigenie Admin Portal"
+ADMIN_SITE_TITLE = "Agrigenie Admin"
+ADMIN_INDEX_TITLE = "Welcome to Agrigenie Portal"
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'agrigenie',
-        'USER': 'root',
-        'PASSWORD': 'samad',
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
+        'NAME': config('DB_NAME', default='agrigenie'),
+        'USER': config('DB_USER', default='root'),
+        'PASSWORD': config('DB_PASSWORD', default='samad'),
+        'HOST': config('DB_HOST', default='127.0.0.1'),
+        'PORT': config('DB_PORT', default='3306'),
     }
 }
 
@@ -159,7 +168,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Karachi'
 
 USE_I18N = True
 
@@ -195,6 +204,7 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.OrderingFilter',  # ✅ must be inside the list
     ],
+    'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%S%z',
 }
 
 

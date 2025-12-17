@@ -101,7 +101,7 @@ class SalesOrderForm(forms.ModelForm):
             'address': forms.Textarea(attrs={'rows': 3}),
             'comments': forms.Textarea(attrs={'rows': 3}),
             'sap_error': forms.Textarea(attrs={'rows': 3}),
-            'sap_response_json': forms.Textarea(attrs={'rows': 10, 'style': 'font-family: monospace; font-size: 12px;'}),
+            'sap_response_json': forms.Textarea(attrs={'rows': 18, 'style': 'font-family: monospace; font-size: 12px;'}),
         }
     
     def __init__(self, *args, **kwargs):
@@ -116,7 +116,10 @@ class SalesOrderForm(forms.ModelForm):
         try:
             db = get_hana_connection()
             if db:
-                customers = hana_connect.customer_lov(db)
+                try:
+                    customers = hana_connect.customer_codes_all(db, limit=2000)
+                except Exception:
+                    customers = hana_connect.customer_lov(db)
                 customer_choices = [('', '--- Select Customer ---')] + [
                     (c['CardCode'], f"{c['CardCode']} - {c['CardName']}") 
                     for c in customers
@@ -711,9 +714,45 @@ admin.site.register(SalesOrderAttachment)
 
 
 admin.site.register(Company)
-admin.site.register(Region)
-admin.site.register(Zone)
-admin.site.register(Territory)
+class _CompanySessionResolver:
+    def _get_selected_company(self, request):
+        try:
+            db_key = request.session.get('selected_db', '4B-BIO')
+            schema = '4B-BIO_APP' if db_key == '4B-BIO' else ('4B-ORANG_APP' if db_key == '4B-ORANG' else '4B-BIO_APP')
+            comp = Company.objects.filter(name=schema).first() or Company.objects.filter(Company_name=schema).first()
+            return comp
+        except Exception:
+            return None
+
+@admin.register(Region)
+class RegionAdmin(admin.ModelAdmin, _CompanySessionResolver):
+    list_display = ('name', 'company')
+    list_filter = ('company',)
+    search_fields = ('name',)
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        comp = self._get_selected_company(request)
+        return qs.filter(company=comp) if comp else qs
+
+@admin.register(Zone)
+class ZoneAdmin(admin.ModelAdmin, _CompanySessionResolver):
+    list_display = ('name', 'region', 'company')
+    list_filter = ('region', 'company')
+    search_fields = ('name', 'region__name')
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        comp = self._get_selected_company(request)
+        return qs.filter(company=comp) if comp else qs
+
+@admin.register(Territory)
+class TerritoryAdmin(admin.ModelAdmin, _CompanySessionResolver):
+    list_display = ('name', 'zone', 'company')
+    list_filter = ('zone', 'company')
+    search_fields = ('name', 'zone__name')
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        comp = self._get_selected_company(request)
+        return qs.filter(company=comp) if comp else qs
 
 @admin.register(Dealer)
 class DealerAdmin(admin.ModelAdmin):

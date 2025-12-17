@@ -5,11 +5,13 @@ from sap_integration.views import (
     bp_lookup_admin,
     sales_order_admin,
     sales_vs_achievement_api,
+    sales_vs_achievement_by_emp_api,
     territory_summary_api,
     products_catalog_api,
     hana_health_api,
     hana_count_tables_api,
     select_oitm_api,
+    set_database,
 )
 from django.urls import path, include
 from rest_framework import permissions
@@ -19,6 +21,12 @@ from django.shortcuts import redirect
 
 from django.conf import settings
 from django.conf.urls.static import static
+
+# Admin Site Configuration
+admin.site.site_header = getattr(settings, 'ADMIN_SITE_HEADER', 'Django Administration')
+admin.site.site_title = getattr(settings, 'ADMIN_SITE_TITLE', 'Django Admin')
+admin.site.index_title = getattr(settings, 'ADMIN_INDEX_TITLE', 'Site Administration')
+
 schema_view = get_schema_view(
    openapi.Info(
       title="web portal API",
@@ -33,11 +41,13 @@ schema_view = get_schema_view(
 )
 urlpatterns = [
     path('', lambda request: redirect('/admin/', permanent=False)), # Redirect root(http://127.0.0.1:8000) URL to admin
+    path('admin/set-database/', admin.site.admin_view(set_database), name='set_database'),
     path('admin/hana-connect/', admin.site.admin_view(hana_connect_admin), name='hana_connect_admin'),
     path('admin/sap-bp-entry/', admin.site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
     path('admin/sap-bp-lookup/', admin.site.admin_view(bp_lookup_admin), name='sap_bp_lookup_admin'),
     path('admin/sap-sales-order/', admin.site.admin_view(sales_order_admin), name='sap_sales_order_admin'),
     path('api/sap/sales-vs-achievement/', sales_vs_achievement_api, name='sales_vs_achievement_api'),
+    path('api/sap/sales-vs-achievement-by-emp/', sales_vs_achievement_by_emp_api, name='sales_vs_achievement_by_emp_api'),
     path('api/sap/territory-summary/', territory_summary_api, name='territory_summary_api'),
     path('api/sap/products-catalog/', products_catalog_api, name='products_catalog_api'),
     # Moved to sap_integration/urls.py: path('api/sap/policy-customer-balance/', ...)

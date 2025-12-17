@@ -63,7 +63,7 @@ class FarmerViewSet(viewsets.ModelViewSet):
             return queryset.select_related('registered_by')
     
     @swagger_auto_schema(
-        operation_description="Retrieve a searchable and filterable list of farmers",
+        operation_description="Retrieve a searchable and filterable list of farmers. Supports filtering by creator using either registered_by or alias created_by.",
         manual_parameters=[
             openapi.Parameter('search', openapi.IN_QUERY, description="Search across multiple fields", type=openapi.TYPE_STRING),
             openapi.Parameter('village', openapi.IN_QUERY, description="Filter by village", type=openapi.TYPE_STRING),
@@ -73,6 +73,8 @@ class FarmerViewSet(viewsets.ModelViewSet):
 
             openapi.Parameter('total_land_area_min', openapi.IN_QUERY, description="Minimum land area", type=openapi.TYPE_NUMBER),
             openapi.Parameter('total_land_area_max', openapi.IN_QUERY, description="Maximum land area", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('registered_by', openapi.IN_QUERY, description="Filter by creator (user ID)", type=openapi.TYPE_INTEGER),
+            openapi.Parameter('created_by', openapi.IN_QUERY, description="Alias for registered_by (user ID)", type=openapi.TYPE_INTEGER),
             openapi.Parameter('ordering', openapi.IN_QUERY, description="Order by field (prefix with - for descending)", type=openapi.TYPE_STRING),
         ],
         responses={

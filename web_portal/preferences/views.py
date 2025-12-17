@@ -14,6 +14,15 @@ from rest_framework import status
 from FieldAdvisoryService.models import Zone, Territory
 from FieldAdvisoryService.serializers import ZoneNestedSerializer, TerritoryNestedSerializer
 from django.db.models import Q
+from django.utils import timezone
+from datetime import timedelta
+from FieldAdvisoryService.models import MeetingSchedule, SalesOrder
+from farmers.models import Farmer
+from farmerMeetingDataEntry.models import Meeting, FieldDay
+import os
+from sap_integration.hana_connect import sales_vs_achievement_by_emp
+from sap_integration.hana_connect import _load_env_file as _hana_load_env_file
+
 class SettingViewSet(viewsets.ModelViewSet):
     queryset = Setting.objects.all()
     serializer_class = SettingSerializer
@@ -389,3 +398,256 @@ class AvailableLocationsView(APIView):
             "zones": zones,
             "territories": territory_list
         })
+
+class UserAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+    @swagger_auto_schema(
+        tags=["27. Analytics"],
+        operation_description="Get sales overview analytics for the authenticated user: Targets vs Achievements (optional), Today's Visits, Pending Sales Orders, and Total Farmers. Values include comparison against last month.",
+        manual_parameters=[
+            openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID to filter SAP sales overview", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD (optional for SAP totals)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD (optional for SAP totals)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('company', openapi.IN_QUERY, description="Company key mapped to HANA schema via settings (e.g., 4B-BIO)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('in_millions', openapi.IN_QUERY, description="Scale numeric values to millions", type=openapi.TYPE_BOOLEAN, required=False),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Analytics overview for the user",
+                examples={
+                    "application/json": {
+                        "todays_visits": {
+                            "current_value": 5,
+                            "last_month_value": 7
+                        },
+                        "pending_sales_orders": {
+                            "current_value": 64,
+                            "last_month_value": 60
+                        },
+                        "total_farmers": {
+                            "current_value": 220,
+                            "last_month_value": 210
+                        },
+                        "sales_target": {
+                            "current_value": 1000000.00,
+                            "last_month_value": 900000.00
+                        },
+                        "achievement": {
+                            "current_value": 950000.00,
+                            "last_month_value": 850000.00
+                        }
+                    }
+                }
+            )
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        today = timezone.localdate()
+        last_month_day = today - timedelta(days=30)
+        
+        # Today's Visits (meetings + field days + scheduled meetings)
+        visits_today = (
+            MeetingSchedule.objects.filter(staff=user, date=today).count() +
+            Meeting.objects.filter(user_id=user, date__date=today, is_active=True).count() +
+            FieldDay.objects.filter(user=user, date__date=today, is_active=True).count()
+        )
+        visits_last_month = (
+            MeetingSchedule.objects.filter(staff=user, date=last_month_day).count() +
+            Meeting.objects.filter(user_id=user, date__date=last_month_day, is_active=True).count() +
+            FieldDay.objects.filter(user=user, date__date=last_month_day, is_active=True).count()
+        )
+        
+        # Pending Sales Orders (current vs created around last month day)
+        pending_current = SalesOrder.objects.filter(staff=user, status='pending').count()
+        pending_last_month = SalesOrder.objects.filter(
+            staff=user, status='pending', created_at__date=last_month_day
+        ).count()
+        
+        # Total Farmers (current total vs total as of last month day)
+        total_farmers_current = Farmer.objects.filter(registered_by=user).count()
+        total_farmers_last_month = Farmer.objects.filter(
+            registered_by=user, registration_date__date__lte=last_month_day
+        ).count()
+        
+        # Sales Target and Achievement (SAP) with optional emp_id filter
+        emp_id_param = (self.request.GET.get('emp_id') or '').strip()
+
+        start_date_param = (self.request.GET.get('start_date') or '').strip()
+        end_date_param = (self.request.GET.get('end_date') or '').strip()
+        company_param = (self.request.GET.get('company') or '').strip()
+        in_millions_param = (self.request.GET.get('in_millions') or '').strip().lower()
+        sales_target_current = None
+        achievement_current = None
+        sales_target_last = None
+        achievement_last = None
+        sales_combined = None
+        company_options = []
+        try:
+            try:
+                _hana_load_env_file(os.path.join(os.path.dirname(__file__), '..', 'sap_integration', '.env'))
+            except Exception:
+                pass
+            try:
+                _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            except Exception:
+                pass
+            try:
+                _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '..', '.env'))
+            except Exception:
+                pass
+            try:
+                _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+            except Exception:
+                pass
+            from hdbcli import dbapi
+            host = os.environ.get('HANA_HOST') or ''
+            port = os.environ.get('HANA_PORT') or '30015'
+            user_name = os.environ.get('HANA_USER') or ''
+            password = os.environ.get('HANA_PASSWORD', '')
+            schema = os.environ.get('HANA_SCHEMA') or ''
+            try:
+                try:
+                    db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                    mapping = {}
+                    if db_setting:
+                        if isinstance(db_setting.value, dict):
+                            mapping = db_setting.value
+                        elif isinstance(db_setting.value, str):
+                            import json as _json
+                            try:
+                                mapping = _json.loads(db_setting.value)
+                            except Exception:
+                                mapping = {}
+                    if mapping:
+                        company_options = [
+                            {"key": k.strip().strip('"').strip("'"), "schema": str(v).strip().strip('"').strip("'")}
+                            for k, v in mapping.items()
+                        ]
+                        if company_param:
+                            selected_key = company_param.strip().strip('"').strip("'")
+                            val = mapping.get(selected_key)
+                            if isinstance(val, str) and val.strip() != '':
+                                schema = val.strip().strip('"').strip("'")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            encrypt = (str(os.environ.get('HANA_ENCRYPT') or '').strip().lower() in ('true','1','yes'))
+            ssl_validate = (str(os.environ.get('HANA_SSL_VALIDATE') or '').strip().lower() in ('true','1','yes'))
+            kwargs = {'address': host, 'port': int(port), 'user': user_name or '', 'password': password or ''}
+            if encrypt:
+                kwargs['encrypt'] = True
+                if os.environ.get('HANA_SSL_VALIDATE'):
+                    kwargs['sslValidateCertificate'] = ssl_validate
+            conn = dbapi.connect(**kwargs)
+            if schema:
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{schema}"')
+                cur.close()
+            emp_val = None
+            if emp_id_param:
+                try:
+                    emp_val = int(emp_id_param)
+                except Exception:
+                    emp_val = None
+            data = sales_vs_achievement_by_emp(conn, emp_val, None, None, None, (start_date_param or None), (end_date_param or None))
+            st_sum = 0.0
+            ac_sum = 0.0
+            min_f = None
+            max_t = None
+            for r in (data or []):
+                if isinstance(r, dict):
+                    try:
+                        st_sum += float(r.get('SALES_TARGET') or 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        ac_sum += float(r.get('ACCHIVEMENT') or r.get('ACHIEVEMENT') or 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        f = r.get('F_REFDATE')
+                        t = r.get('T_REFDATE')
+                        if f and (min_f is None or str(f) < str(min_f)):
+                            min_f = f
+                        if t and (max_t is None or str(t) > str(max_t)):
+                            max_t = t
+                    except Exception:
+                        pass
+            sales_target_current = st_sum
+            achievement_current = ac_sum
+            
+            sales_combined = {
+                "EMPID": emp_val if emp_val is not None else 0,
+                "TERRITORYID": 0,
+                "TERRITORYNAME": "All Territories",
+                "SALES_TARGET": st_sum,
+                "ACCHIVEMENT": ac_sum,
+                "F_REFDATE": min_f,
+                "T_REFDATE": max_t
+            }
+
+            lm_start = (last_month_day - timedelta(days=29)).isoformat()
+            lm_end = last_month_day.isoformat()
+            data_last = sales_vs_achievement_by_emp(conn, emp_val, None, None, None, lm_start, lm_end)
+            st_last = 0.0
+            ac_last = 0.0
+            for r in (data_last or []):
+                if isinstance(r, dict):
+                    try:
+                        st_last += float(r.get('SALES_TARGET') or 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        ac_last += float(r.get('ACCHIVEMENT') or r.get('ACHIEVEMENT') or 0.0)
+                    except Exception:
+                        pass
+            sales_target_last = st_last
+            achievement_last = ac_last
+            
+            # Add last month comparison to sales_combined
+            sales_combined["SALES_TARGET_LAST_MONTH"] = st_last
+            sales_combined["ACCHIVEMENT_LAST_MONTH"] = ac_last
+
+            if in_millions_param in ('true','1','yes','y'):
+                try:
+                    sales_target_current = round((float(sales_target_current or 0.0) / 1000000.0), 2)
+                    achievement_current = round((float(achievement_current or 0.0) / 1000000.0), 2)
+                    sales_target_last = round((float(sales_target_last or 0.0) / 1000000.0), 2)
+                    achievement_last = round((float(achievement_last or 0.0) / 1000000.0), 2)
+                    if sales_combined is not None:
+                        sales_combined["SALES_TARGET"] = sales_target_current
+                        sales_combined["ACCHIVEMENT"] = achievement_current
+                        sales_combined["SALES_TARGET_LAST_MONTH"] = sales_target_last
+                        sales_combined["ACCHIVEMENT_LAST_MONTH"] = achievement_last
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        
+        analytics = {
+            "todays_visits": {
+                "current_value": visits_today,
+                "last_month_value": visits_last_month
+            },
+            "pending_sales_orders": {
+                "current_value": pending_current,
+                "last_month_value": pending_last_month
+            },
+            "total_farmers": {
+                "current_value": total_farmers_current,
+                "last_month_value": total_farmers_last_month
+            }
+        }
+        if sales_combined is not None:
+            analytics["sales_combined"] = sales_combined
+        if company_options:
+            analytics["company_options"] = company_options
+            analytics["selected_company"] = company_param or ''
+        
+        return Response(analytics)
