@@ -249,6 +249,7 @@
       <a class="button {% if current_action == 'select_oitm' %}active{% endif %}" href="?action=select_oitm&company_db={{ selected_db_key }}">Select OITM</a>
       <a class="button {% if current_action == 'territory_summary' %}active{% endif %}" href="?action=territory_summary&company_db={{ selected_db_key }}">Collection VS Achievement</a>
       <a class="button {% if current_action == 'sales_vs_achievement' %}active{% endif %}" href="?action=sales_vs_achievement&company_db={{ selected_db_key }}">Sales VS Achievement</a>
+      <a class="button {% if current_action == 'sales_vs_achievement_by_emp' %}active{% endif %}" href="?action=sales_vs_achievement_by_emp&company_db={{ selected_db_key }}">Sales VS Achievement by Emp</a>
       <a class="button {% if current_action == 'products_catalog' %}active{% endif %}" href="?action=products_catalog&company_db={{ selected_db_key }}">Products Catalog</a>
       <a class="button {% if current_action == 'policy_customer_balance' %}active{% endif %}" href="?action=policy_customer_balance&company_db={{ selected_db_key }}">Policy Wise Customer Balance</a>
       <a class="button {% if current_action == 'list_territories_full' %}active{% endif %}" href="?action=list_territories_full&company_db={{ selected_db_key }}">All Territories</a>
@@ -971,10 +972,9 @@
         })();
       </script>
     {% endif %}
-
-    {% if current_action == 'policy_balance_by_customer' %}
+    {% if current_action == 'sales_vs_achievement_by_emp' %}
       <style>
-        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#8b5cf6;--filter-primary-600:#7c3aed;--filter-accent:#ec4899;--filter-radius:12px}
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#22c55e;--filter-primary-600:#16a34a;--filter-accent:#6366f1;--filter-radius:12px}
         .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
         .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
         .filter-title{font-size:16px;font-weight:600}
@@ -982,6 +982,119 @@
         @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(3, minmax(160px,1fr))}}
         @media (max-width:720px){.filter-grid{grid-template-columns:repeat(2, minmax(140px,1fr))}}
         .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600}
+        .btn:hover{background:var(--filter-primary-600)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#dcfce7}
+        .icon{width:16px;height:16px;fill:currentColor}
+      </style>
+      <form method="get" class="filter-card" id="svae-filter-form">
+        <input type="hidden" name="action" value="sales_vs_achievement_by_emp" />
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm4 0h14v-2H7v2z"/></svg>
+          <div class="filter-title">Filters</div>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field" data-key="group_by">
+            <div class="filter-label" title="Grouping">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z"/></svg>
+              Group By
+            </div>
+            <div class="filter-input">
+              <select name="group_by" id="svae_group_by">
+                {% with gb=request.GET.group_by|default:'territory' %}
+                  <option value="territory" {% if gb == 'territory' %}selected{% endif %}>Territory</option>
+                  <option value="emp" {% if gb == 'emp' %}selected{% endif %}>Employee</option>
+                {% endwith %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="combine_emp">
+            <div class="filter-label" title="Combine by EMPID">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M3 11h8v2H3v-2zm10 0h8v2h-8v-2zM5 7h14v2H5V7zm0 10h14v2H5v-2z"/></svg>
+              Combine by EMPID
+            </div>
+            <div class="filter-input">
+              <label style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" name="combine_emp" value="true" {% if request.GET.group_by == 'emp' %}checked{% endif %}/>
+                Combine rows for same EMPID
+              </label>
+            </div>
+          </div>
+          <div class="filter-field" data-key="territory">
+            <div class="filter-label" title="Choose Territory">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z"/></svg>
+              Territory
+            </div>
+            <div class="filter-input">
+              <select name="territory">
+                <option value="">All Territories</option>
+                {% for t in territory_options %}
+                  <option value="{{ t }}" {% if t == selected_territory %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="emp_id">
+            <div class="filter-label" title="Employee ID">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+              Emp ID
+            </div>
+            <div class="filter-input">
+              <input type="number" name="emp_id" value="{{ request.GET.emp_id|default:'' }}" placeholder="e.g., 299" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="start_date">
+            <div class="filter-label" title="Start Date"><svg class="icon" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/></svg>Start Date</div>
+            <div class="filter-input"><input type="date" name="start_date" value="{{ request.GET.start_date|default:'' }}" /></div>
+          </div>
+          <div class="filter-field" data-key="end_date">
+            <div class="filter-label" title="End Date"><svg class="icon" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/></svg>End Date</div>
+            <div class="filter-input"><input type="date" name="end_date" value="{{ request.GET.end_date|default:'' }}" /></div>
+          </div>
+          <div class="filter-field" data-key="in_millions">
+            <div class="filter-label" title="Scale to millions"><svg class="icon" viewBox="0 0 24 24"><path d="M3 3h18v2H3V3zm0 4h14v2H3V7zm0 4h10v2H3v-2zm0 4h6v2H3v-2z"/></svg>Scale</div>
+            <div class="filter-input"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="in_millions" value="true" {% if request.GET.in_millions in 'true 1 yes y' %}checked{% endif %}/> In Millions</label></div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply Filters
+          </button>
+          <a class="btn btn-secondary" href="?action=sales_vs_achievement_by_emp&company_db={{ selected_db_key }}">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+      <script>
+        (function(){
+          var form=document.getElementById('svae-filter-form');
+          form.addEventListener('submit',function(){
+            var cb=form.querySelector('input[name=\"in_millions\"]');
+            if(!cb || !cb.checked){
+              var hidden=document.createElement('input');
+              hidden.type='hidden';
+              hidden.name='in_millions';
+              hidden.value='false';
+              form.appendChild(hidden);
+            }
+            var comb=form.querySelector('input[name=\"combine_emp\"]');
+            var gb=form.querySelector('#svae_group_by');
+            if(comb && comb.checked && gb){gb.value='emp'}
+textContent=count+' active'}
+          }
+          sync();
+          Array.prototype.forEach.call(form.querySelectorAll('input, select'),function(el){
+            el.addEventListener('change',sync);
+            el.addEventListener('input',sync);
+}
         .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
         .filter-input{display:flex;align-items:center;gap:8px}
         .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}

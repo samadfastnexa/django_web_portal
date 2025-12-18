@@ -17,8 +17,8 @@
     html { font-size: var(--font-base); }
     body { line-height: 1.5; }
     /* Layout adjustments */
-    #container { padding: var(--pad); }
-    .content { padding: var(--pad); }
+    #container { padding: 0; }
+    .content { padding: 0; }
     .breadcrumbs { padding: 8px var(--pad); }
     /* Forms */
     input[type="text"], input[type="email"], input[type="number"], input[type="date"],
@@ -68,7 +68,7 @@
       body, .content { overflow-x: hidden; }
     }
     @media (min-width: 1025px) {
-      #container { padding: 20px; }
+      #container { padding: 0; }
     }
     /* Images/media */
     img, video { max-width: 100%; height: auto; }
