@@ -38,8 +38,6 @@ class MeetingAdmin(admin.ModelAdmin):
         'territory_fk',
         ('date', admin.DateFieldListFilter),
     ]
-
-    date_hierarchy = 'date'
     ordering = ['-date']
 
 
@@ -74,7 +72,6 @@ class FieldDayAdmin(admin.ModelAdmin):
         'zone_fk__name', 'region_fk__name', 'user__email', 'feedback'
     )
     readonly_fields = ('id',)
-    date_hierarchy = 'date'
     ordering = ['-date']
     inlines = [FieldDayAttendanceInline, FieldDayAttachmentInline]
 

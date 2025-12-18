@@ -124,80 +124,105 @@
           }
         } catch(e) {}
 
-        // Mobile nav toggle
-        var btn = document.getElementById('mobileNavToggle');
-        var nav = document.getElementById('nav-sidebar');
-        var overlay = document.getElementById('mobileOverlay');
-        if(!overlay){ overlay = document.createElement('div'); overlay.id = 'mobileOverlay'; document.body.appendChild(overlay); }
-        var mainEl = document.getElementById('main');
-        function setNavOpen(open){
-          if(open){
-            document.body.classList.add('nav-open');
-            if(nav){ nav.setAttribute('aria-expanded','true'); }
-            if(mainEl && !mainEl.classList.contains('shifted')){ mainEl.classList.add('shifted'); }
-            try {
-              var navWidth = 0;
+        // Mobile nav toggle (robust, wrapped in try/catch)
+        try {
+          var btn = document.getElementById('mobileNavToggle');
+          var nav = document.getElementById('nav-sidebar');
+          var mainEl = document.getElementById('main');
+          var overlay = document.getElementById('mobileOverlay');
+          if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'mobileOverlay';
+            document.body.appendChild(overlay);
+          }
+
+          function setNavOpen(open){
+            if (open) {
+              document.body.classList.add('nav-open');
               if (nav) {
-                navWidth = nav.offsetWidth || 0;
+                nav.setAttribute('aria-expanded','true');
               }
-              if (!navWidth) {
-                var bp = window.innerWidth;
-                if (bp <= 480 || (bp >= 481 && bp <= 768)) {
-                  navWidth = Math.min(window.innerWidth * 0.85, 340);
-                } else if (bp >= 769 && bp <= 1024) {
-                  navWidth = Math.min(window.innerWidth * 0.70, 360);
-                } else {
-                  navWidth = 0;
+              if (mainEl && !mainEl.classList.contains('shifted')) {
+                mainEl.classList.add('shifted');
+              }
+              try {
+                var navWidth = nav ? (nav.offsetWidth || 0) : 0;
+                if (!navWidth) {
+                  var bp = window.innerWidth;
+                  if (bp <= 480 || (bp >= 481 && bp <= 768)) {
+                    navWidth = Math.min(window.innerWidth * 0.85, 340);
+                  } else if (bp >= 769 && bp <= 1024) {
+                    navWidth = Math.min(window.innerWidth * 0.70, 360);
+                  }
                 }
+                overlay.style.left = (navWidth || 0) + 'px';
+              } catch(e) {}
+              try { localStorage.setItem('django.admin.navSidebarIsOpen', 'true'); } catch(e) {}
+            } else {
+              document.body.classList.remove('nav-open');
+              if (nav) {
+                nav.setAttribute('aria-expanded','false');
               }
-              overlay.style.left = navWidth + 'px';
-            } catch(e) {}
-            try { localStorage.setItem('django.admin.navSidebarIsOpen', 'true'); } catch(e) {}
-          } else {
-            document.body.classList.remove('nav-open');
-            if(nav){ nav.setAttribute('aria-expanded','false'); }
-            if(mainEl && mainEl.classList.contains('shifted')){ mainEl.classList.remove('shifted'); }
-            try { overlay.style.left = '0px'; } catch(e) {}
-            try { localStorage.setItem('django.admin.navSidebarIsOpen', 'false'); } catch(e) {}
-          }
-        }
-        function toggleNav(){
-          try {
-            var def = document.getElementById('toggle-nav-sidebar');
-            if (def) { def.click(); return; }
-          } catch(e) {}
-          var open = !document.body.classList.contains('nav-open');
-          setNavOpen(open);
-        }
-        if(btn){ btn.addEventListener('click', toggleNav, true); }
-        document.addEventListener('click', function(e){
-          var t = e.target;
-          if (!t) return;
-          if (t.id === 'mobileNavToggle' || (t.closest && t.closest('#mobileNavToggle'))){
-            e.preventDefault();
-            toggleNav();
-          }
-        }, true);
-        if(overlay){ overlay.addEventListener('click', function(){ setNavOpen(false); }); }
-        if(nav){ nav.addEventListener('click', function(ev){ ev.stopPropagation(); }); }
-        window.addEventListener('resize', function(){
-          try {
-            if (window.innerWidth > 768) {
-              setNavOpen(false);
-            } else if (document.body.classList.contains('nav-open') && overlay) {
-              var w = nav ? nav.offsetWidth : 0;
-              if (!w) {
-                var bp = window.innerWidth;
-                if (bp <= 480 || (bp >= 481 && bp <= 768)) {
-                  w = Math.min(window.innerWidth * 0.85, 340);
-                } else if (bp >= 769 && bp <= 1024) {
-                  w = Math.min(window.innerWidth * 0.70, 360);
-                }
+              if (mainEl && mainEl.classList.contains('shifted')) {
+                mainEl.classList.remove('shifted');
               }
-              overlay.style.left = (w || 0) + 'px';
+              try { overlay.style.left = '0px'; } catch(e) {}
+              try { localStorage.setItem('django.admin.navSidebarIsOpen', 'false'); } catch(e) {}
             }
-          } catch(e) {}
-        });
+          }
+
+          if (btn) {
+            btn.addEventListener('click', function(e){
+              e.preventDefault();
+              var open = !document.body.classList.contains('nav-open');
+              setNavOpen(open);
+            });
+          }
+
+          if (overlay) {
+            overlay.addEventListener('click', function(){
+              setNavOpen(false);
+            });
+          }
+
+          if (nav) {
+            nav.addEventListener('click', function(ev){
+              ev.stopPropagation();
+            });
+          }
+
+          function handleResize(){
+            try {
+              if (window.innerWidth > 768) {
+                document.body.classList.remove('nav-open');
+                if (overlay) {
+                  overlay.style.left = '0px';
+                }
+                if (nav) {
+                  nav.setAttribute('aria-expanded','true');
+                }
+                if (mainEl && !mainEl.classList.contains('shifted')) {
+                  mainEl.classList.add('shifted');
+                }
+                try { localStorage.setItem('django.admin.navSidebarIsOpen', 'true'); } catch(e) {}
+              } else if (document.body.classList.contains('nav-open') && overlay) {
+                var w = nav ? (nav.offsetWidth || 0) : 0;
+                if (!w) {
+                  var bp2 = window.innerWidth;
+                  if (bp2 <= 480 || (bp2 >= 481 && bp2 <= 768)) {
+                    w = Math.min(window.innerWidth * 0.85, 340);
+                  } else if (bp2 >= 769 && bp2 <= 1024) {
+                    w = Math.min(window.innerWidth * 0.70, 360);
+                  }
+                }
+                overlay.style.left = (w || 0) + 'px';
+              }
+            } catch(e) {}
+          }
+
+          window.addEventListener('resize', handleResize);
+          handleResize();
+        } catch(e) {}
 
         // Login password eye toggle (login page only)
         try {
