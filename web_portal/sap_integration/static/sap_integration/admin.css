@@ -401,6 +401,450 @@
   border-bottom: 1px solid var(--hairline-color);
 }
 
+/* Reserve space so filters never overlap table */
+#changelist { 
+  position: relative;
+  display: flex;
+  flex-direction: row;
+}
+#changelist #content-main { 
+  flex: 1;
+  min-width: 0;
+  max-width: calc(100% - 280px);
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 8px;
+}
+#changelist-filter { 
+  width: 260px;
+  flex-shrink: 0;
+}
+
+/* Changelist table: compact layout with horizontal scroll */
+#changelist .results { 
+  table-layout: auto; 
+  position: relative; 
+  z-index: 1; 
+  width: 100%;
+  max-width: 100%;
+  display: table;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+#changelist .results th, #changelist .results td { 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+  padding: 6px 10px !important;
+  max-width: 200px;
+  word-break: break-all;
+  word-wrap: normal;
+}
+
+/* Force all content inside cells to respect boundaries */
+#changelist .results td * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
+}
+/* Slim column widths for common fields */
+#changelist .results th:first-child, #changelist .results td:first-child { 
+  width: 35px; 
+  max-width: 35px;
+  min-width: 35px;
+  padding: 4px !important; 
+}
+#changelist .results th.action-checkbox-column, #changelist .results td.action-checkbox-column { 
+  width: 35px;
+  max-width: 35px;
+  min-width: 35px;
+  padding: 4px !important; 
+}
+/* date column width */
+#changelist .results th:nth-child(7), #changelist .results td:nth-child(7) { 
+  width: 140px; 
+  max-width: 140px;
+  min-width: 100px;
+}
+/* ID columns - make very slim */
+#changelist .results th.field-id, #changelist .results td.field-id { 
+  width: 80px;
+  max-width: 80px;
+  min-width: 60px;
+}
+/* Name/title columns - moderate width */
+#changelist .results th.field-name, #changelist .results td.field-name,
+#changelist .results th.field-title, #changelist .results td.field-title,
+#changelist .results th.field-name_of_fsm, #changelist .results td.field-name_of_fsm { 
+  max-width: 150px;
+  min-width: 100px;
+}
+/* Company/Region/Territory columns */
+#changelist .results th.field-company_fk, #changelist .results td.field-company_fk,
+#changelist .results th.field-territory_fk, #changelist .results td.field-territory_fk,
+#changelist .results th.field-region_fk, #changelist .results td.field-region_fk { 
+  max-width: 180px;
+  min-width: 120px;
+}
+/* Email/long text columns */
+#changelist .results th.field-email, #changelist .results td.field-email { 
+  max-width: 160px;
+  min-width: 120px;
+}
+/* Actions column */
+#changelist .results th.action-column, #changelist .results td.action-column { 
+  width: 80px;
+  max-width: 80px;
+  min-width: 80px;
+  text-align: center; 
+}
+/* Date columns */
+#changelist .results th.field-date_created, #changelist .results td.field-date_created,
+#changelist .results th.field-date_modified, #changelist .results td.field-date_modified,
+#changelist .results th.field-created_at, #changelist .results td.field-created_at,
+#changelist .results th.field-updated_at, #changelist .results td.field-updated_at { 
+  width: 140px;
+  max-width: 140px;
+  min-width: 120px;
+}
+
+/* Ensure filter sits above table and has opaque background */
+#changelist-filter { 
+  position: sticky; 
+  top: 70px; 
+  z-index: 6000; 
+  background: #fff; 
+  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+  float: right;
+  margin-left: 20px;
+}
+#changelist-filter .filter, #changelist-filter .filter ul, #changelist-filter .filter li { background: #fff; }
+
+/* Ensure main content doesn't overlap with filter */
+#changelist #content-main {
+  box-sizing: border-box;
+  padding-right: 0;
+}
+
+/* Horizontal scroll wrapper for table */
+#changelist .results-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  margin: 10px 0;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  background: #fff;
+  position: relative;
+}
+
+/* Pagination styling - make more prominent */
+.paginator {
+  padding: 12px 16px;
+  background: #f9fafb;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  margin: 16px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+}
+.paginator a, .paginator span {
+  padding: 6px 12px;
+  border-radius: 6px;
+  display: inline-block;
+  min-width: 32px;
+  text-align: center;
+}
+.paginator a {
+  background: #fff;
+  border: 1px solid var(--hairline-color);
+  color: var(--orange-dark);
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+.paginator a:hover {
+  background: var(--orange);
+  color: #fff;
+  border-color: var(--orange);
+}
+.paginator .this-page {
+  background: var(--orange);
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid var(--orange);
+}
+.paginator .end {
+  padding: 6px 10px;
+}
+
+/* Constrain filter list height and scroll if too long */
+#changelist-filter .filter ul {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Actions bar - make compact */
+.actions {
+  padding: 8px 12px;
+  background: #f9fafb;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  margin: 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.actions label {
+  font-size: 13px;
+  margin: 0;
+}
+.actions select {
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  height: auto;
+  min-height: 32px;
+}
+.actions button {
+  padding: 4px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  min-height: 32px;
+}
+.actions span.action-counter {
+  font-size: 12px;
+  color: #6b7280;
+  margin-left: auto;
+}
+.actions .question {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: #fff;
+  font-size: 12px;
+  cursor: help;
+  margin-left: 4px;
+}
+
+/* Results count info */
+#changelist .paginator + p,
+#changelist p.paginator {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 8px 0;
+}
+
+/* List display and show all link */
+#changelist .paginator .showall {
+  margin-left: 10px;
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid var(--hairline-color);
+  border-radius: 6px;
+  color: var(--orange-dark);
+  text-decoration: none;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+#changelist .paginator .showall:hover {
+  background: var(--orange-soft);
+  border-color: var(--orange);
+}
+
+/* Compact changelist header */
+#changelist .changelist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Make change list form more compact */
+#changelist-form {
+  margin: 0;
+}
+
+/* Column display toggle hint */
+#changelist .results th[title] {
+  cursor: help;
+}
+#changelist .results th[title]:hover {
+  background-color: var(--orange-dark);
+  color: #fff;
+}
+
+/* Improve table borders */
+#changelist .results {
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+}
+#changelist .results th,
+#changelist .results td {
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #f3f4f6;
+}
+#changelist .results th:last-child,
+#changelist .results td:last-child {
+  border-right: none;
+}
+#changelist .results tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Ensure the entire changelist form respects boundaries */
+#changelist-form {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+}
+
+/* Table container wrapper */
+.results-container {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Compact row styling */
+#changelist .results tbody tr {
+  height: 38px;
+}
+#changelist .results tbody tr:hover {
+  background-color: rgba(226, 104, 48, 0.08);
+}
+
+/* Additional overflow protection for all changelist elements */
+#changelist .form-row,
+#changelist .field-box,
+#changelist .related-widget-wrapper,
+#changelist .readonly {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-wrap: break-word;
+}
+
+/* Ensure long URLs and text in cells wrap properly */
+#changelist .results td a,
+#changelist .results td span,
+#changelist .results td div,
+#changelist .results td strong,
+#changelist .results td em {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* Prevent any text node from overflowing */
+#changelist .results td {
+  position: relative;
+}
+#changelist .results td::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  background: linear-gradient(to right, transparent, white);
+  pointer-events: none;
+}
+
+/* Make links more compact */
+#changelist .results td a {
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+/* Action column should be fixed width */
+#changelist .results th.action-checkbox-column,
+#changelist .results td.action-checkbox-column {
+  width: 35px;
+  max-width: 35px;
+  min-width: 35px;
+  text-align: center;
+}
+
+/* Object tools (action buttons) - make more compact */
+.object-tools {
+  margin: 8px 0;
+}
+.object-tools li {
+  margin-left: 8px;
+}
+.object-tools a {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* Search bar - make more compact */
+#changelist-search {
+  padding: 10px;
+  background: #f9fafb;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+#changelist-search input[type="text"] {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+#changelist-search input[type="submit"] {
+  padding: 6px 16px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* Narrow screens: stack filter above table */
+@media (max-width: 1024px) {
+  #changelist {
+    flex-direction: column;
+  }
+  #changelist #content-main { 
+    margin-right: 0; 
+    max-width: 100%;
+    padding: 4px;
+    width: 100%;
+  }
+  #changelist-filter { 
+    position: static; 
+    width: 100%;
+    box-shadow: none;
+    margin-bottom: 16px;
+  }
+  #changelist .results {
+    font-size: 12px;
+  }
+  #changelist .results th, #changelist .results td {
+    padding: 4px 6px !important;
+    max-width: 150px;
+  }
+  .paginator {
+    font-size: 12px;
+    padding: 8px;
+  }
+}
+
 /* ==========================
    Dark mode hover adjustments
    ========================== */
@@ -477,17 +921,38 @@
 /* =============================
    Changelist table enhancements
    ============================= */
-/* Header cells */
+/* Header cells - more compact and sticky */
 #changelist .results thead th {
   background-color: var(--orange-soft);
   color: #2b2b2b;
-  border-bottom: 1px solid var(--orange-soft-border);
+  border-bottom: 2px solid var(--orange-soft-border);
   font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 8px 10px !important;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 [data-theme="dark"] #changelist .results thead th {
   background-color: #1f1f1f;
   color: #f0f0f0;
-  border-bottom: 1px solid #333;
+  border-bottom: 2px solid #333;
+}
+
+/* Sortable column headers */
+#changelist .results thead th.sortable a {
+  padding: 0;
+  display: block;
+  color: inherit;
+}
+#changelist .results thead th.sorted {
+  background-color: var(--orange);
+  color: #fff;
+}
+#changelist .results thead th.sorted a {
+  color: #fff;
 }
 
 /* Row hover */
@@ -752,8 +1217,8 @@ select.sap-crop-lov {
   -moz-appearance: auto;
 }
 
-/* Fix for dropdowns in change list being clipped or hidden */
-.results, #changelist .results {
+/* Fix for dropdowns in generic result tables (not changelist) */
+.results {
   overflow: visible !important;
   overflow-x: visible !important;
   overflow-y: visible !important; /* Ensure vertical overflow is allowed */

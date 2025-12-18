@@ -30,6 +30,43 @@
     /* Tables */
     .results, .module table { width: 100%; }
     .module table th, .module table td { padding: 8px; }
+    
+    /* Prevent text overflow in admin changelist */
+    #changelist #content-main {
+      overflow-x: auto;
+      overflow-y: visible;
+      word-wrap: break-word;
+    }
+    #changelist .results {
+      min-width: 100%;
+      width: max-content;
+    }
+    #changelist .results th,
+    #changelist .results td {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    /* Compact styling for all admin pages */
+    #content-main {
+      font-size: 13px;
+    }
+    
+    /* Scrollbar styling for horizontal scroll */
+    #changelist #content-main::-webkit-scrollbar {
+      height: 10px;
+    }
+    #changelist #content-main::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 5px;
+    }
+    #changelist #content-main::-webkit-scrollbar-thumb {
+      background: #c7c7c7;
+      border-radius: 5px;
+    }
+    #changelist #content-main::-webkit-scrollbar-thumb:hover {
+      background: #a8a8a8;
+    }
     /* avoid overriding default admin button styles */
     .mobile-nav-toggle { display: none; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; color: #111827; cursor: pointer; }
     .mobile-nav-toggle:focus { outline: 2px solid #0ea5e9; }
