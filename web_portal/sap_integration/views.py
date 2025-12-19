@@ -15,7 +15,7 @@ import os
 import json
 import re
 import logging
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -480,6 +480,198 @@ def hana_connect_admin(request):
                                 request._territory_options = territory_options
                         except Exception as e_sa:
                             error = str(e_sa)
+                    elif action == 'sales_vs_achievement_geo':
+                        try:
+                            emp_id_param = request.GET.get('emp_id')
+                            region_param = request.GET.get('region')
+                            zone_param = request.GET.get('zone')
+                            territory_param = request.GET.get('territory')
+                            start_date_param = request.GET.get('start_date')
+                            end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+                            
+                            emp_val = None
+                            if emp_id_param is not None and emp_id_param != '':
+                                try:
+                                    emp_val = int(emp_id_param)
+                                except Exception:
+                                    error = 'Invalid emp_id'
+                            
+                            if error is None:
+                                data = sales_vs_achievement_geo(conn, emp_val, (region_param or '').strip() or None, (zone_param or '').strip() or None, (territory_param or '').strip() or None, (start_date_param or '').strip() or None, (end_date_param or '').strip() or None)
+                                
+                                # Scaling to millions if requested
+                                if in_millions_param in ('', 'true','1','yes','y'):
+                                    scaled = []
+                                    for row in data or []:
+                                        if isinstance(row, dict):
+                                            r = dict(row)
+                                            try:
+                                                v = r.get('Collection_Target', None)
+                                                if v is not None:
+                                                    r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                                            except Exception:
+                                                pass
+                                            try:
+                                                v = r.get('Collection_Achievement', None)
+                                                if v is not None:
+                                                    r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                                            except Exception:
+                                                pass
+                                            scaled.append(r)
+                                        else:
+                                            scaled.append(row)
+                                    data = scaled
+                                result = data
+                                
+                                # Fetch options for filters
+                                try:
+                                    geo_opts = geo_options(conn)
+                                    regions = sorted(list(set(r['Region'] for r in geo_opts if r.get('Region'))))
+                                    zones = sorted(list(set(r['Zone'] for r in geo_opts if r.get('Zone'))))
+                                    territories = sorted(list(set(r['Territory'] for r in geo_opts if r.get('Territory'))))
+                                    
+                                    request._geo_options = {
+                                        'regions': regions,
+                                        'zones': zones,
+                                        'territories': territories
+                                    }
+                                except Exception:
+                                    request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                    
+                                diagnostics['emp_id'] = emp_val
+                                diagnostics['start_date'] = (start_date_param or '').strip()
+                                diagnostics['end_date'] = (end_date_param or '').strip()
+                                diagnostics['region'] = (region_param or '').strip()
+                                diagnostics['zone'] = (zone_param or '').strip()
+                                diagnostics['territory'] = (territory_param or '').strip()
+                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                                
+                        except Exception as e_geo:
+                            error = str(e_geo)
+                    elif action == 'sales_vs_achievement_geo_inv':
+                        try:
+                            region_param = request.GET.get('region')
+                            zone_param = request.GET.get('zone')
+                            territory_param = request.GET.get('territory')
+                            start_date_param = request.GET.get('start_date')
+                            end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+                            
+                            data = sales_vs_achievement_geo_inv(
+                                conn, 
+                                region=(region_param or '').strip() or None, 
+                                zone=(zone_param or '').strip() or None, 
+                                territory=(territory_param or '').strip() or None,
+                                start_date=(start_date_param or '').strip() or None,
+                                end_date=(end_date_param or '').strip() or None
+                            )
+                            
+                            # Scaling to millions if requested
+                            if in_millions_param in ('', 'true','1','yes','y'):
+                                scaled = []
+                                for row in data or []:
+                                    if isinstance(row, dict):
+                                        r = dict(row)
+                                        try:
+                                            v = r.get('Sales', None)
+                                            if v is not None:
+                                                r['Sales'] = round((float(v) / 1000000.0), 2)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            v = r.get('Achievement', None)
+                                            if v is not None:
+                                                r['Achievement'] = round((float(v) / 1000000.0), 2)
+                                        except Exception:
+                                            pass
+                                        scaled.append(r)
+                                    else:
+                                        scaled.append(row)
+                                data = scaled
+                            
+                            # Hierarchical Transformation
+                            hierarchy = {}
+                            for row in (data or []):
+                                if not isinstance(row, dict):
+                                    continue
+                                reg = row.get('Region', 'Unknown Region')
+                                zon = row.get('Zone', 'Unknown Zone')
+                                ter = row.get('Territory', 'Unknown Territory')
+                                sal = 0.0
+                                ach = 0.0
+                                try:
+                                    sal = float(row.get('Sales') or 0.0)
+                                except: pass
+                                try:
+                                    ach = float(row.get('Achievement') or 0.0)
+                                except: pass
+
+                                if reg not in hierarchy:
+                                    hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                
+                                hierarchy[reg]['sales'] += sal
+                                hierarchy[reg]['achievement'] += ach
+                                
+                                if zon not in hierarchy[reg]['zones']:
+                                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                    
+                                hierarchy[reg]['zones'][zon]['sales'] += sal
+                                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                                
+                                hierarchy[reg]['zones'][zon]['territories'].append({
+                                    'name': ter,
+                                    'sales': sal,
+                                    'achievement': ach
+                                })
+
+                            # Convert dicts to sorted lists for rendering
+                            final_list = []
+                            for r_name in sorted(hierarchy.keys()):
+                                r_data = hierarchy[r_name]
+                                zones_list = []
+                                for z_name in sorted(r_data['zones'].keys()):
+                                    z_data = r_data['zones'][z_name]
+                                    # Sort territories by name
+                                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                                    zones_list.append(z_data)
+                                r_data['zones'] = zones_list
+                                final_list.append(r_data)
+                            
+                            # Rounding totals after aggregation
+                            for r in final_list:
+                                r['sales'] = round(r['sales'], 2)
+                                r['achievement'] = round(r['achievement'], 2)
+                                for z in r['zones']:
+                                    z['sales'] = round(z['sales'], 2)
+                                    z['achievement'] = round(z['achievement'], 2)
+
+                            result = final_list
+                            
+                            # Fetch options for filters
+                            try:
+                                geo_opts = geo_options(conn)
+                                regions = sorted(list(set(r['Region'] for r in geo_opts if r.get('Region'))))
+                                zones = sorted(list(set(r['Zone'] for r in geo_opts if r.get('Zone'))))
+                                territories = sorted(list(set(r['Territory'] for r in geo_opts if r.get('Territory'))))
+                                
+                                request._geo_options = {
+                                    'regions': regions,
+                                    'zones': zones,
+                                    'territories': territories
+                                }
+                            except Exception:
+                                request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                
+                            diagnostics['start_date'] = (start_date_param or '').strip()
+                            diagnostics['end_date'] = (end_date_param or '').strip()
+                            diagnostics['region'] = (region_param or '').strip()
+                            diagnostics['zone'] = (zone_param or '').strip()
+                            diagnostics['territory'] = (territory_param or '').strip()
+                            diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                            
+                        except Exception as e_geo_inv:
+                            error = str(e_geo_inv)
                     elif action == 'sales_vs_achievement_by_emp':
                         try:
                             emp_id_param = request.GET.get('emp_id')
@@ -961,6 +1153,8 @@ def hana_connect_admin(request):
                 if row.get('product_description_urdu_url'):
                     row['product_description_urdu_url_full'] = base_url + row['product_description_urdu_url']
     
+    geo_options = getattr(request, '_geo_options', {'regions': [], 'zones': [], 'territories': []})
+    
     return render(
         request,
         'admin/sap_integration/hana_connect.html',
@@ -969,6 +1163,7 @@ def hana_connect_admin(request):
             'error': error,
             'diagnostics_json': diag_json,
             'territory_options': territory_options,
+            'geo_options': geo_options,
             'selected_territory': selected_territory,
             'current_action': action,
             'current_emp_id': current_emp_id,

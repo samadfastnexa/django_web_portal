@@ -312,18 +312,32 @@ class DealerRequest(models.Model):
         self._previous_status = self.status
 
 class MeetingSchedule(models.Model):
-    staff = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='fas_meetings'
-    )
+    staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='fas_meetings')
+    fsm_name = models.CharField(max_length=100, default="Unknown FSM")
+    region = models.ForeignKey('FieldAdvisoryService.Region', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_region')
+    zone = models.ForeignKey('FieldAdvisoryService.Zone', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_zone')
+    territory = models.ForeignKey('FieldAdvisoryService.Territory', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_territory')
     date = models.DateField()
     location = models.CharField(max_length=200)
+    total_attendees = models.PositiveIntegerField(default=0)
+    key_topics_discussed = models.TextField(default="Not specified")
+    presence_of_zm = models.BooleanField(default=False)
+    presence_of_rsm = models.BooleanField(default=False)
+    feedback_from_attendees = models.TextField(blank=True, null=True)
+    suggestions_for_future = models.TextField(blank=True, null=True)
     min_farmers_required = models.PositiveIntegerField(default=5)
     confirmed_attendees = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return f"Meeting on {self.date} at {self.location}"
+
+class MeetingScheduleAttendance(models.Model):
+    schedule = models.ForeignKey(MeetingSchedule, related_name='attendees', on_delete=models.CASCADE)
+    farmer = models.ForeignKey('farmers.Farmer', on_delete=models.CASCADE, null=True, blank=True, related_name='schedule_attendances')
+    farmer_name = models.CharField(max_length=100, blank=True)
+    contact_number = models.CharField(max_length=15, blank=True)
+    acreage = models.FloatField(default=0.0)
+    crop = models.CharField(max_length=100, blank=True)
 
 class SalesOrder(models.Model):
     STATUS_CHOICES = (

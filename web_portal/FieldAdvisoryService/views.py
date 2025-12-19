@@ -21,11 +21,47 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
     ViewSet for managing Meeting Schedules.
     Supports list, retrieve, create, update, partial update, and delete.
     """
-    queryset = MeetingSchedule.objects.all()
+    queryset = MeetingSchedule.objects.select_related('region', 'zone', 'territory', 'staff').all()
     serializer_class = MeetingScheduleSerializer
+    parser_classes = [MultiPartParser, FormParser]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["fsm_name", "region", "zone", "territory", "location", "presence_of_zm", "presence_of_rsm", "staff"]
+    search_fields = ["fsm_name", "region__name", "zone__name", "territory__name", "location", "key_topics_discussed"]
+    ordering_fields = ["date", "fsm_name", "region__name", "zone__name", "territory__name", "total_attendees"]
+    common_parameters = [
+        openapi.Parameter('fsm_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='Field Sales Manager name'),
+        openapi.Parameter('territory_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Territory ID'),
+        openapi.Parameter('zone_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Zone ID'),
+        openapi.Parameter('region_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Region ID'),
+        openapi.Parameter('date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True, description='Meeting date (YYYY-MM-DD)'),
+        openapi.Parameter('location', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='Meeting location'),
+        openapi.Parameter('total_attendees', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Total number of attendees'),
+        openapi.Parameter('key_topics_discussed', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Key topics discussed'),
+        openapi.Parameter('presence_of_zm', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, required=False, description='Presence of Zone Manager'),
+        openapi.Parameter('presence_of_rsm', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, required=False, description='Presence of Regional Sales Manager'),
+        openapi.Parameter('feedback_from_attendees', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Feedback from attendees'),
+        openapi.Parameter('suggestions_for_future', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Suggestions for future'),
+        openapi.Parameter('attendee_name', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING), required=False, description='List of farmer names'),
+        openapi.Parameter('attendee_contact', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING), required=False, description='List of contact numbers'),
+        openapi.Parameter('attendee_acreage', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER), required=False, description='List of acreage values'),
+        openapi.Parameter('attendee_crop', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING), required=False, description='List of crops'),
+        openapi.Parameter('attendee_farmer_id', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING), required=False, description='List of farmer IDs to link existing farmers'),
+    ]
 
     @swagger_auto_schema(
-        operation_description="Retrieve a list of all meeting schedules with staff assignments and location details.",
+        operation_description="Retrieve a list of meeting schedules with FSM name, region, zone, territory, date, location, and attendee summary. Supports filtering by staff ID (to see specific user's records).",
+        manual_parameters=[
+            openapi.Parameter('staff', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Staff ID (User ID). Use to see specific user records.'),
+            openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by Field Sales Manager name'),
+            openapi.Parameter('region', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Region ID'),
+            openapi.Parameter('zone', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Zone ID'),
+            openapi.Parameter('territory', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Territory ID'),
+            openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by Location'),
+            openapi.Parameter('date', openapi.IN_QUERY, type=openapi.TYPE_STRING, format='date', required=False, description='Filter by Date (YYYY-MM-DD)'),
+            openapi.Parameter('key_topics_discussed', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by key topics'),
+            openapi.Parameter('presence_of_zm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Zone Manager'),
+            openapi.Parameter('presence_of_rsm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Regional Sales Manager'),
+        ],
         responses={
             200: openapi.Response(
                 description='List of meeting schedules',
@@ -33,11 +69,25 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
                     'application/json': [
                         {
                             'id': 1,
-                            'staff': 1,
-                            'date': '2024-02-15',
-                            'location': 'Community Center, Village ABC',
-                            'min_farmers_required': 10,
-                            'confirmed_attendees': 8
+                            'fsm_name': 'Ahmed Ali',
+                            'region_id': 1,
+                            'zone_id': 1,
+                            'territory_id': 1,
+                            'date': '2024-01-15',
+                            'location': 'Community Center',
+                            'total_attendees': 25,
+                            'key_topics_discussed': 'Crop rotation, pest management',
+                            'presence_of_zm': True,
+                            'presence_of_rsm': False,
+                            'attendees': [
+                                {
+                                    'id': 1,
+                                    'farmer_name': 'Farmer John',
+                                    'contact_number': '+92-300-1234567',
+                                    'acreage': 5.5,
+                                    'crop': 'Wheat'
+                                }
+                            ]
                         }
                     ]
                 }
@@ -49,18 +99,34 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Get detailed information of a specific meeting schedule including staff and attendance details.",
+        operation_description="Get detailed information of a specific meeting schedule including attendees.",
         responses={
             200: openapi.Response(
                 description='Meeting schedule details',
                 examples={
                     'application/json': {
                         'id': 1,
-                        'staff': 1,
-                        'date': '2024-02-15',
-                        'location': 'Community Center, Village ABC',
-                        'min_farmers_required': 10,
-                        'confirmed_attendees': 8
+                        'fsm_name': 'Ahmed Ali',
+                        'region_id': 1,
+                        'zone_id': 1,
+                        'territory_id': 1,
+                        'date': '2024-01-15',
+                        'location': 'Community Center',
+                        'total_attendees': 25,
+                        'key_topics_discussed': 'Crop rotation, pest management, irrigation techniques',
+                        'presence_of_zm': True,
+                        'presence_of_rsm': True,
+                        'feedback_from_attendees': 'Informative session',
+                        'suggestions_for_future': 'More demonstrations',
+                        'attendees': [
+                            {
+                                'id': 1,
+                                'farmer_name': 'Farmer John',
+                                'contact_number': '+92-300-1234567',
+                                'acreage': 5.5,
+                                'crop': 'Wheat'
+                            }
+                        ]
                     }
                 }
             ),
@@ -72,8 +138,9 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Schedule a new meeting with farmers by assigning staff, date, and location.",
-        request_body=MeetingScheduleSerializer,
+        operation_description="Create a meeting schedule with FSM name, region, zone, territory, and attendees.",
+        manual_parameters=common_parameters,
+        request_body=None,
         responses={
             201: 'Meeting schedule created successfully',
             400: 'Bad Request - Invalid data provided'
@@ -81,10 +148,19 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
         tags=["14. MeetingSchedules"]
     )
     def create(self, request, *args, **kwargs):
+        # Auto-assign the logged-in user as staff if not provided (though it's read-only now)
+        # Note: In standard perform_create we usually do serializer.save(staff=self.request.user)
         return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        fsm_name = user.get_full_name() or user.username
+        serializer.save(staff=user, fsm_name=fsm_name)
 
     @swagger_auto_schema(
         operation_description="Update all details of an existing meeting schedule (full update).",
+        manual_parameters=common_parameters,
+        request_body=None,
         responses={
             200: 'Meeting schedule updated successfully',
             404: 'Meeting schedule not found',
@@ -97,7 +173,8 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Update specific fields of a meeting schedule (partial update).",
-        request_body=MeetingScheduleSerializer,
+        manual_parameters=common_parameters,
+        request_body=None,
         responses={
             200: 'Meeting schedule updated successfully',
             404: 'Meeting schedule not found',

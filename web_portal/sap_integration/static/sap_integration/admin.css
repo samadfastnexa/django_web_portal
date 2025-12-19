@@ -1244,6 +1244,8 @@ select.sap-crop-lov {
   z-index: 9999 !important;
 }
 #recent-actions-module .actionlist li.addlink::before { content: "➕"; color: #16a34a; border-color: #22c55e; background: #eafff2; }
+#recent-actions-module .actionlist li.changelink::before { content: "✏️"; color: #ca8a04; border-color: #eab308; background: #fefce8; }
+#recent-actions-module .actionlist li.deletelink::before { content: "✖️"; color: #dc2626; border-color: #ef4444; background: #fef2f2; }
 [data-theme="dark"] #recent-actions-module .actionlist li.addlink::before { background: rgba(22,163,74,0.15); }
 [data-theme="dark"] #recent-actions-module .actionlist li.changelink::before { background: rgba(234,179,8,0.15); }
 [data-theme="dark"] #recent-actions-module .actionlist li.deletelink::before { background: rgba(220,38,38,0.15); }

@@ -1,6 +1,6 @@
 from django.urls import path,include,re_path
 from .views import (
-    AttendanceIndividualView, AttendanceCheckInView, AttendanceUpdateView, AttendanceUpdateView,
+    AttendanceListView, AttendanceIndividualView, AttendanceCheckInView, AttendanceUpdateView, AttendanceUpdateView,
     AttendanceRequestViewSet, AttendanceReportView, 
     LeaveRequestListCreateView, LeaveRequestDetailView, AttendanceByAttendeeView,
     AttendanceStatusView
@@ -12,6 +12,7 @@ router = DefaultRouter()
 router.register(r'attendance-requests', AttendanceRequestViewSet, basename='attendance-request')
 urlpatterns = [
 
+    path('attendances/', AttendanceListView.as_view(), name='attendance-list'),
     path('attendances/<int:pk>/', AttendanceIndividualView.as_view(), name='attendance-individual'),
     path('attendance/check-in/', AttendanceCheckInView.as_view(), name='attendance-check-in'),
     path('attendances/by-attendee/', AttendanceByAttendeeView.as_view(), name='attendance-by-attendee'),

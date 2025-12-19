@@ -133,6 +133,225 @@ def get_tables_count(db, schema: str) -> int:
     except Exception:
         return 0
 
+def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+    coll_tbl = '"B4_COLLECTION_TARGET"'
+    emp_tbl = '"B4_EMP"'
+    oter_tbl = '"OTER"'
+    
+    sql = (
+        'SELECT '
+        '    R."descript" AS Region, '
+        '    Z."descript" AS Zone, '
+        '    T."territryID" AS TerritoryId, '
+        '    T."descript" AS TerritoryName, '
+        '    SUM(c.colletion_Target) AS Collection_Target, '
+        '    SUM(c.DocTotal) AS Collection_Achievement, '
+        '    MIN(c.F_REFDATE) AS From_Date, '
+        '    MAX(c.T_REFDATE) AS To_Date '
+        'FROM ' + coll_tbl + ' c '
+        'INNER JOIN ' + oter_tbl + ' T '
+        '    ON T."territryID" = c.TerritoryId '
+        'LEFT JOIN ' + oter_tbl + ' Z '
+        '    ON Z."territryID" = T."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R '
+        '    ON R."territryID" = Z."parent" '
+    )
+    
+    where_clauses = []
+    params = []
+    
+    if emp_id is not None:
+        where_clauses.append(' c.TerritoryId IN (SELECT U_TID FROM ' + emp_tbl + ' WHERE empID = ?) ')
+        params.append(emp_id)
+        
+    if region and region.strip():
+        where_clauses.append(' R."descript" = ? ')
+        params.append(region.strip())
+        
+    if zone and zone.strip():
+        where_clauses.append(' Z."descript" = ? ')
+        params.append(zone.strip())
+        
+    if territory and territory.strip():
+        val = territory.strip()
+        where_clauses.append(' (T."descript" = ? OR T."descript" = ?) ')
+        params.extend([val, val + ' Territory'])
+        
+    if start_date and end_date:
+        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
+        params.extend([start_date.strip(), end_date.strip()])
+        
+    if where_clauses:
+        sql += ' WHERE ' + ' AND '.join(where_clauses)
+        
+    sql += (
+        ' GROUP BY '
+        '    R."descript", '
+        '    Z."descript", '
+        '    T."territryID", '
+        '    T."descript" '
+        ' ORDER BY '
+        '    R."descript", '
+        '    Z."descript", '
+        '    T."territryID" '
+    )
+    
+    rows = _fetch_all(db, sql, tuple(params))
+    
+    # Post-processing to remove " Territory" suffix
+    for r in rows:
+        v = r.get('TerritoryName')
+        if v and isinstance(v, str) and v.endswith(' Territory'):
+            r['TerritoryName'] = v[:-10]
+            
+    return rows
+
+def sales_vs_achievement_geo_inv(db, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+    """
+    Sales vs Achievement (Geo) using OINV table.
+    Hierarchy: Region (T3) -> Zone (T2) -> Territory (T1)
+    """
+    sql = (
+        'SELECT '
+        '    T3."descript" AS "Region", '
+        '    T2."descript" AS "Zone", '
+        '    T1."descript" AS "Territory", '
+        '    SUM(T0."DocTotal") AS "Sales", '
+        '    SUM((SELECT SUM("OpenCreQty") FROM INV1 WHERE "DocEntry" = T0."DocEntry")) AS "Achievement" '
+        'FROM OINV T0 '
+        '    INNER JOIN OCRD C0 ON T0."CardCode" = C0."CardCode" '
+        '    INNER JOIN OTER T1 ON C0."Territory" = T1."territryID" '
+        '    INNER JOIN OTER T2 ON T1."parent" = T2."territryID" '
+        '    INNER JOIN OTER T3 ON T2."parent" = T3."territryID" '
+    )
+    
+    where_clauses = []
+    params = []
+    
+    if region and region.strip():
+        where_clauses.append(' T3."descript" = ? ')
+        params.append(region.strip())
+        
+    if zone and zone.strip():
+        where_clauses.append(' T2."descript" = ? ')
+        params.append(zone.strip())
+        
+    if territory and territory.strip():
+        val = territory.strip()
+        where_clauses.append(' (T1."descript" = ? OR T1."descript" = ?) ')
+        params.extend([val, val + ' Territory'])
+
+    if start_date and end_date:
+        where_clauses.append(" T0.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND T0.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
+        params.extend([start_date.strip(), end_date.strip()])
+        
+    where_sql = ''
+    if where_clauses:
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        
+    group_by = (
+        ' GROUP BY '
+        '    T3."descript", '
+        '    T2."descript", '
+        '    T1."descript" '
+        ' ORDER BY 1, 2, 3'
+    )
+    
+    final_sql = sql + where_sql + group_by
+    rows = _fetch_all(db, final_sql, tuple(params))
+    
+    # Clean territory names
+    for r in rows:
+        v = r.get('Territory')
+        if v and isinstance(v, str) and v.endswith(' Territory'):
+            r['Territory'] = v[:-10]
+            
+    return rows
+
+def sales_vs_achievement_geo_profit(db, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+    """
+    Sales vs Achievement (Geo Profit) using OINV table.
+    Hierarchy: Region (T3) -> Zone (T2) -> Territory (T1)
+    Achievement is calculated from GrosProfit.
+    """
+    sql = (
+        'SELECT '
+        '    T3."descript" AS "Region", '
+        '    T2."descript" AS "Zone", '
+        '    T1."descript" AS "Territory", '
+        '    SUM(T0."DocTotal") AS "Sales", '
+        '    SUM(T0."GrosProfit") AS "Achievement" '
+        'FROM OINV T0 '
+        '    INNER JOIN OCRD C0 ON T0."CardCode" = C0."CardCode" '
+        '    INNER JOIN OTER T1 ON C0."Territory" = T1."territryID" '
+        '    INNER JOIN OTER T2 ON T1."parent" = T2."territryID" '
+        '    INNER JOIN OTER T3 ON T2."parent" = T3."territryID" '
+    )
+    
+    where_clauses = []
+    params = []
+    
+    if region and region.strip():
+        where_clauses.append(' T3."descript" = ? ')
+        params.append(region.strip())
+        
+    if zone and zone.strip():
+        where_clauses.append(' T2."descript" = ? ')
+        params.append(zone.strip())
+        
+    if territory and territory.strip():
+        val = territory.strip()
+        where_clauses.append(' (T1."descript" = ? OR T1."descript" = ?) ')
+        params.extend([val, val + ' Territory'])
+
+    if start_date and end_date:
+        where_clauses.append(" T0.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND T0.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
+        params.extend([start_date.strip(), end_date.strip()])
+        
+    where_sql = ''
+    if where_clauses:
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        
+    group_by = (
+        ' GROUP BY '
+        '    T3."descript", '
+        '    T2."descript", '
+        '    T1."descript" '
+        ' ORDER BY 1, 2, 3'
+    )
+    
+    final_sql = sql + where_sql + group_by
+    rows = _fetch_all(db, final_sql, tuple(params))
+    
+    # Clean territory names
+    for r in rows:
+        v = r.get('Territory')
+        if v and isinstance(v, str) and v.endswith(' Territory'):
+            r['Territory'] = v[:-10]
+            
+    return rows
+
+def geo_options(db) -> list:
+    oter_tbl = '"OTER"'
+    sql = (
+        'SELECT DISTINCT '
+        '    R."descript" AS Region, '
+        '    Z."descript" AS Zone, '
+        '    T."descript" AS Territory '
+        'FROM ' + oter_tbl + ' T '
+        'LEFT JOIN ' + oter_tbl + ' Z ON Z."territryID" = T."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R ON R."territryID" = Z."parent" '
+        'WHERE T."descript" IS NOT NULL '
+        'ORDER BY 1, 2, 3'
+    )
+    rows = _fetch_all(db, sql)
+    # Clean territory names in options
+    for r in rows:
+        v = r.get('Territory')
+        if v and isinstance(v, str) and v.endswith(' Territory'):
+            r['Territory'] = v[:-10]
+    return rows
+
 def territory_summary(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
     # Schema is already set via SET SCHEMA command, so no need for prefix
     coll_tbl = '"B4_COLLECTION_TARGET"'
@@ -156,8 +375,9 @@ def territory_summary(db, emp_id: int | None = None, territory_name: str | None 
         )
         params.append(emp_id)
     if territory_name is not None and territory_name.strip() != '':
-        where_clauses.append(' O."descript" = ?')
-        params.append(territory_name.strip())
+        val = territory_name.strip()
+        where_clauses.append(' (O."descript" = ? OR O."descript" = ?) ')
+        params.extend([val, val + ' Territory'])
     if start_date and end_date:
         where_clauses.append(" F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
         params.extend([start_date.strip(), end_date.strip()])
@@ -186,7 +406,14 @@ def territory_summary(db, emp_id: int | None = None, territory_name: str | None 
         ' T_REFDATE'
     )
     sql = base + where_sql + tail
-    return _fetch_all(db, sql, tuple(params))
+    rows = _fetch_all(db, sql, tuple(params))
+    for r in rows:
+        for k in list(r.keys()):
+            if k.upper() == 'TERRITORYNAME':
+                v = r[k]
+                if v and isinstance(v, str) and v.endswith(' Territory'):
+                    r[k] = v[:-10]
+    return rows
 
 def territory_names(db) -> list:
     sql = (
@@ -194,7 +421,14 @@ def territory_names(db) -> list:
         ' from "OTER" O '
         ' order by O."descript"'
     )
-    return _fetch_all(db, sql)
+    rows = _fetch_all(db, sql)
+    for r in rows:
+        for k in list(r.keys()):
+            if k.upper() == 'TERRITORYNAME':
+                v = r[k]
+                if v and isinstance(v, str) and v.endswith(' Territory'):
+                    r[k] = v[:-10]
+    return rows
 
 def territories_all(db) -> list:
     schema = os.environ.get('HANA_SCHEMA') or '4B-ORANG_APP'
@@ -412,8 +646,9 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
         )
         params.append(emp_id)
     if territory_name is not None and territory_name.strip() != '':
-        where_clauses.append(' O."descript" = ?')
-        params.append(territory_name.strip())
+        val = territory_name.strip()
+        where_clauses.append(' (O."descript" = ? OR O."descript" = ?) ')
+        params.extend([val, val + ' Territory'])
 
     where_sql = ''
     if len(where_clauses) > 0:
@@ -424,7 +659,14 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
         ' ORDER BY c.TerritoryId'
     )
     sql = base + where_sql + tail
-    return _fetch_all(db, sql, tuple(params))
+    rows = _fetch_all(db, sql, tuple(params))
+    for r in rows:
+        for k in list(r.keys()):
+            if k.upper() == 'TERRITORYNAME':
+                v = r[k]
+                if v and isinstance(v, str) and v.endswith(' Territory'):
+                    r[k] = v[:-10]
+    return rows
 
 def sales_vs_achievement_by_emp(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
     sales_tbl = '"B4_SALES_TARGET"'
@@ -448,8 +690,9 @@ def sales_vs_achievement_by_emp(db, emp_id: int | None = None, territory_name: s
         where_clauses.append(' e.empID = ?')
         params.append(emp_id)
     if territory_name is not None and territory_name.strip() != '':
-        where_clauses.append(' O."descript" = ?')
-        params.append(territory_name.strip())
+        val = territory_name.strip()
+        where_clauses.append(' (O."descript" = ? OR O."descript" = ?) ')
+        params.extend([val, val + ' Territory'])
     if start_date and end_date:
         where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
         params.extend([start_date.strip(), end_date.strip()])
@@ -473,7 +716,14 @@ def sales_vs_achievement_by_emp(db, emp_id: int | None = None, territory_name: s
         ' ORDER BY e.empID, c.TerritoryId'
     )
     sql = base + where_sql + tail
-    return _fetch_all(db, sql, tuple(params))
+    rows = _fetch_all(db, sql, tuple(params))
+    for r in rows:
+        for k in list(r.keys()):
+            if k.upper() == 'TERRITORYNAME':
+                v = r[k]
+                if v and isinstance(v, str) and v.endswith(' Territory'):
+                    r[k] = v[:-10]
+    return rows
 
 def fetchdata(db, p: dict) -> list:
     table = str(p.get('table', '') or '').strip()

@@ -35,62 +35,41 @@ User = get_user_model()
 
 
 
-# ✅ Individual Attendance Record with Filters
+# ✅ List All Attendance Records
+class AttendanceListView(generics.ListAPIView):
+    queryset = Attendance.objects.all()
+    serializer_class = AttendanceSerializer
+    permission_classes = [IsAuthenticated, HasRolePermission]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['attendee', 'user', 'source']
+    search_fields = ['attendee__username', 'attendee__email', 'user__username']
+    ordering_fields = ['created_at', 'check_in_time', 'check_out_time']
+
+    @swagger_auto_schema(
+        operation_description="Get a list of all attendance records with optional filtering.",
+        responses={
+            200: openapi.Response(
+                description='List of attendance records',
+                schema=AttendanceSerializer(many=True),
+            )
+        },
+        tags=["08. Attendance"]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+# ✅ Individual Attendance Record
 class AttendanceIndividualView(generics.RetrieveAPIView):
+    queryset = Attendance.objects.all()
     serializer_class = AttendanceSerializer
     permission_classes = [IsAuthenticated, HasRolePermission]
     lookup_field = 'pk'
-    
-    def get_queryset(self):
-        if getattr(self, 'swagger_fake_view', False):
-            return Attendance.objects.none()
-            
-        attendance_id = self.kwargs.get('pk')
-        filter_type = self.request.query_params.get('filter', 'daily')
-        
-        # Get the base attendance record
-        base_attendance = Attendance.objects.filter(id=attendance_id).first()
-        if not base_attendance:
-            return Attendance.objects.none()
-            
-        attendee = base_attendance.attendee
-        base_date = base_attendance.check_in_time.date() if base_attendance.check_in_time else base_attendance.check_out_time.date()
-        
-        from datetime import timedelta
-        
-        if filter_type == 'weekly':
-            # Get start of week (Monday)
-            start_date = base_date - timedelta(days=base_date.weekday())
-            end_date = start_date + timedelta(days=6)
-        elif filter_type == 'monthly':
-            # Get start and end of month
-            start_date = base_date.replace(day=1)
-            next_month = start_date.replace(month=start_date.month + 1) if start_date.month < 12 else start_date.replace(year=start_date.year + 1, month=1)
-            end_date = next_month - timedelta(days=1)
-        else:  # daily
-            start_date = end_date = base_date
-            
-        return Attendance.objects.filter(
-            attendee=attendee,
-            check_in_time__date__gte=start_date,
-            check_in_time__date__lte=end_date
-        ).order_by('-check_in_time')
-    
+
     @swagger_auto_schema(
-        operation_description="Get a single attendance record by ID with optional filtering. Use /attendances/by-attendee/{attendee_id}/ for all records of an attendee.",
-        manual_parameters=[
-            openapi.Parameter(
-                'filter',
-                openapi.IN_QUERY,
-                description='Filter type: daily, weekly, or monthly',
-                type=openapi.TYPE_STRING,
-                enum=['daily', 'weekly', 'monthly'],
-                default='daily'
-            )
-        ],
+        operation_description="Get a single attendance record by ID.",
         responses={
             200: openapi.Response(
-                description='Attendance record(s) based on filter',
+                description='Attendance record',
                 examples={
                     'application/json': {
                         'id': 1,
@@ -110,16 +89,7 @@ class AttendanceIndividualView(generics.RetrieveAPIView):
         tags=["08. Attendance"]
     )
     def get(self, request, *args, **kwargs):
-        filter_type = request.query_params.get('filter', 'daily')
-        
-        if filter_type == 'daily':
-            # Return single record for daily filter
-            return super().get(request, *args, **kwargs)
-        else:
-            # Return multiple records for weekly/monthly filters
-            queryset = self.get_queryset()
-            serializer = self.get_serializer(queryset, many=True)
-            return Response(serializer.data)
+        return super().get(request, *args, **kwargs) 
 
 # ✅ Check-in Endpoint (POST)
 class AttendanceCheckInView(generics.CreateAPIView):
