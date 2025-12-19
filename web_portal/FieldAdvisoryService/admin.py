@@ -3,7 +3,7 @@ from django.contrib import messages
 import json
 import logging
 import os
-from .models import Dealer, MeetingSchedule, SalesOrder, SalesOrderLine, SalesOrderAttachment
+from .models import Dealer, MeetingSchedule, MeetingScheduleAttendance, SalesOrder, SalesOrderLine, SalesOrderAttachment
 from .models import DealerRequest , Company, Region, Zone, Territory
 from sap_integration.sap_client import SAPClient
 from django import forms
@@ -11,7 +11,45 @@ from django.utils import timezone
 from sap_integration import hana_connect
 
 # admin.site.register(Dealer)
-admin.site.register(MeetingSchedule)
+class MeetingScheduleAttendanceInline(admin.TabularInline):
+    model = MeetingScheduleAttendance
+    extra = 1
+    fields = ('farmer', 'farmer_name', 'contact_number', 'acreage', 'crop')
+    readonly_fields = ('farmer_name', 'contact_number')
+    autocomplete_fields = ['farmer']
+
+@admin.register(MeetingSchedule)
+class MeetingScheduleAdmin(admin.ModelAdmin):
+    inlines = [MeetingScheduleAttendanceInline]
+    list_display = [
+        'id',
+        'fsm_name',
+        'date',
+        'region',
+        'zone',
+        'territory',
+        'location',
+        'total_attendees',
+        'presence_of_zm',
+        'presence_of_rsm'
+    ]
+    search_fields = [
+        'fsm_name',
+        'region__name',
+        'zone__name',
+        'territory__name',
+        'location',
+        'key_topics_discussed'
+    ]
+    list_filter = [
+        'region',
+        'zone',
+        'territory',
+        ('date', admin.DateFieldListFilter),
+        'presence_of_zm',
+        'presence_of_rsm'
+    ]
+    ordering = ['-date']
 
 
 def _load_env_file(path: str) -> None:
