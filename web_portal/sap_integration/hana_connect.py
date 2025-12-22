@@ -221,7 +221,7 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
         sql = (
             'SELECT '
             '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
-            '    Z."descript" AS "Zone", '
+            '    R1."descript" AS "Zone", '
             '    T."descript" AS "Territory", '
             '    HE."firstName" || \' \' || HE."lastName" AS "EmployeeName", '
             '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
@@ -245,7 +245,7 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
         group_by = (
             ' GROUP BY '
             '    COALESCE(R3."descript", R2."descript", R1."descript"), '
-            '    Z."descript", '
+            '    R1."descript", '
             '    T."territryID", '
             '    T."descript", '
             '    HE."firstName", '
@@ -257,7 +257,7 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
         sql = (
             'SELECT '
             '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
-            '    Z."descript" AS "Zone", '
+            '    R1."descript" AS "Zone", '
             '    T."descript" AS "Territory", '
             '    STRING_AGG(HE."firstName" || \' \' || HE."lastName", \', \') AS "EmployeeName", '
             '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
@@ -281,7 +281,7 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
         group_by = (
             ' GROUP BY '
             '    COALESCE(R3."descript", R2."descript", R1."descript"), '
-            '    Z."descript", '
+            '    R1."descript", '
             '    T."territryID", '
             '    T."descript" '
             ' ORDER BY 1, 2, 3'
@@ -299,7 +299,7 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
         params.append(region.strip())
         
     if zone and zone.strip():
-        where_clauses.append(' Z."descript" = ? ')
+        where_clauses.append(' R1."descript" = ? ')
         params.append(zone.strip())
         
     if territory and territory.strip():
@@ -323,6 +323,16 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
         v = r.get('Territory')
         if v and isinstance(v, str) and v.endswith(' Territory'):
             r['Territory'] = v[:-10]
+        
+        # Clean Zone names
+        z = r.get('Zone')
+        if z and isinstance(z, str) and z.endswith(' Zone'):
+            r['Zone'] = z[:-5]
+            
+        # Clean Region names
+        reg = r.get('Region')
+        if reg and isinstance(reg, str) and reg.endswith(' Region'):
+            r['Region'] = reg[:-7]
             
     return rows
 
@@ -430,7 +440,7 @@ def geo_options(db) -> list:
     sql = (
         'SELECT DISTINCT '
         '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
-        '    Z."descript" AS "Zone", '
+        '    R1."descript" AS "Zone", '
         '    T."descript" AS "Territory" '
         'FROM ' + oter_tbl + ' T '
         'LEFT JOIN ' + oter_tbl + ' Z ON Z."territryID" = T."parent" '
@@ -446,6 +456,17 @@ def geo_options(db) -> list:
         v = r.get('Territory')
         if v and isinstance(v, str) and v.endswith(' Territory'):
             r['Territory'] = v[:-10]
+            
+        # Clean Zone names
+        z = r.get('Zone')
+        if z and isinstance(z, str) and z.endswith(' Zone'):
+            r['Zone'] = z[:-5]
+            
+        # Clean Region names
+        reg = r.get('Region')
+        if reg and isinstance(reg, str) and reg.endswith(' Region'):
+            r['Region'] = reg[:-7]
+            
     return rows
 
 def territory_summary(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
