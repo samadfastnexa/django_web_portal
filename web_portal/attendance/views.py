@@ -12,7 +12,7 @@ from accounts.permissions import HasRolePermission
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 from .services import mark_attendance
-from django.utils.timezone import now
+from django.utils.timezone import now, localdate
 from datetime import timedelta
 from .models import LeaveRequest
 from .serializers import LeaveRequestSerializer
@@ -387,7 +387,7 @@ class AttendanceStatusView(APIView):
             return Response({'error': 'Authentication required'}, status=401)
         
         attendee_id = request.query_params.get('attendee_id')
-        today = timezone.now().date()
+        today = timezone.localdate()
         
         # Determine which user to check attendance for
         if attendee_id:
@@ -755,7 +755,7 @@ class AttendanceReportView(APIView):
         start_date_param = request.query_params.get("start_date")
         end_date_param = request.query_params.get("end_date")
 
-        today = now().date()
+        today = localdate()
 
         # 🔹 Handle date ranges
         if report_type == "daily":

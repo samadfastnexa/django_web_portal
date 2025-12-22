@@ -206,57 +206,115 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
             
     return rows
 
-def sales_vs_achievement_geo_inv(db, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_emp: bool = False) -> list:
     """
-    Sales vs Achievement (Geo) using OINV table.
-    Hierarchy: Region (T3) -> Zone (T2) -> Territory (T1)
+    Sales vs Achievement (Geo) using B4_COLLECTION_TARGET table (Updated per user request).
+    Hierarchy: Region (R1/R2/R3) -> Zone (Z) -> Territory (T)
     """
-    sql = (
-        'SELECT '
-        '    T3."descript" AS "Region", '
-        '    T2."descript" AS "Zone", '
-        '    T1."descript" AS "Territory", '
-        '    SUM(T0."DocTotal") AS "Sales", '
-        '    SUM((SELECT SUM("OpenCreQty") FROM INV1 WHERE "DocEntry" = T0."DocEntry")) AS "Achievement" '
-        'FROM OINV T0 '
-        '    INNER JOIN OCRD C0 ON T0."CardCode" = C0."CardCode" '
-        '    INNER JOIN OTER T1 ON C0."Territory" = T1."territryID" '
-        '    INNER JOIN OTER T2 ON T1."parent" = T2."territryID" '
-        '    INNER JOIN OTER T3 ON T2."parent" = T3."territryID" '
-    )
+    coll_tbl = '"B4_COLLECTION_TARGET"'
+    emp_tbl = '"B4_EMP"'
+    oter_tbl = '"OTER"'
+    ohem_tbl = '"OHEM"'
+
+    if group_by_emp:
+        # Detailed View: Group by Employee as well
+        sql = (
+            'SELECT '
+            '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+            '    Z."descript" AS "Zone", '
+            '    T."descript" AS "Territory", '
+            '    HE."firstName" || \' \' || HE."lastName" AS "EmployeeName", '
+            '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
+            '    SUM(c.DOCTOTAL) AS "Collection_Achievement" '
+            'FROM ' + coll_tbl + ' c '
+            'INNER JOIN ' + oter_tbl + ' T '
+            '    ON T."territryID" = c.TerritoryId '
+            'LEFT JOIN ' + oter_tbl + ' Z '
+            '    ON Z."territryID" = T."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R1 '
+            '    ON R1."territryID" = Z."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R2 '
+            '    ON R2."territryID" = R1."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R3 '
+            '    ON R3."territryID" = R2."parent" '
+            'LEFT JOIN ' + emp_tbl + ' E '
+            '    ON E."U_TID" = T."territryID" '
+            'LEFT JOIN ' + ohem_tbl + ' HE '
+            '    ON HE."empID" = E.empID '
+        )
+        group_by = (
+            ' GROUP BY '
+            '    COALESCE(R3."descript", R2."descript", R1."descript"), '
+            '    Z."descript", '
+            '    T."territryID", '
+            '    T."descript", '
+            '    HE."firstName", '
+            '    HE."lastName" '
+            ' ORDER BY 1, 2, 3'
+        )
+    else:
+        # Summary View: Group by Territory (Current behavior)
+        sql = (
+            'SELECT '
+            '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+            '    Z."descript" AS "Zone", '
+            '    T."descript" AS "Territory", '
+            '    STRING_AGG(HE."firstName" || \' \' || HE."lastName", \', \') AS "EmployeeName", '
+            '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
+            '    SUM(c.DOCTOTAL) AS "Collection_Achievement" '
+            'FROM ' + coll_tbl + ' c '
+            'INNER JOIN ' + oter_tbl + ' T '
+            '    ON T."territryID" = c.TerritoryId '
+            'LEFT JOIN ' + oter_tbl + ' Z '
+            '    ON Z."territryID" = T."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R1 '
+            '    ON R1."territryID" = Z."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R2 '
+            '    ON R2."territryID" = R1."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R3 '
+            '    ON R3."territryID" = R2."parent" '
+            'LEFT JOIN ' + emp_tbl + ' E '
+            '    ON E."U_TID" = T."territryID" '
+            'LEFT JOIN ' + ohem_tbl + ' HE '
+            '    ON HE."empID" = E.empID '
+        )
+        group_by = (
+            ' GROUP BY '
+            '    COALESCE(R3."descript", R2."descript", R1."descript"), '
+            '    Z."descript", '
+            '    T."territryID", '
+            '    T."descript" '
+            ' ORDER BY 1, 2, 3'
+        )
     
     where_clauses = []
     params = []
     
+    if emp_id is not None:
+        where_clauses.append(' c.TerritoryId IN (SELECT U_TID FROM ' + emp_tbl + ' WHERE empID = ?) ')
+        params.append(emp_id)
+
     if region and region.strip():
-        where_clauses.append(' T3."descript" = ? ')
+        where_clauses.append(' COALESCE(R3."descript", R2."descript", R1."descript") = ? ')
         params.append(region.strip())
         
     if zone and zone.strip():
-        where_clauses.append(' T2."descript" = ? ')
+        where_clauses.append(' Z."descript" = ? ')
         params.append(zone.strip())
         
     if territory and territory.strip():
         val = territory.strip()
-        where_clauses.append(' (T1."descript" = ? OR T1."descript" = ?) ')
+        where_clauses.append(' (T."descript" = ? OR T."descript" = ?) ')
         params.extend([val, val + ' Territory'])
 
     if start_date and end_date:
-        where_clauses.append(" T0.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND T0.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
+        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
         params.extend([start_date.strip(), end_date.strip()])
         
     where_sql = ''
     if where_clauses:
         where_sql = ' WHERE ' + ' AND '.join(where_clauses)
         
-    group_by = (
-        ' GROUP BY '
-        '    T3."descript", '
-        '    T2."descript", '
-        '    T1."descript" '
-        ' ORDER BY 1, 2, 3'
-    )
-    
     final_sql = sql + where_sql + group_by
     rows = _fetch_all(db, final_sql, tuple(params))
     
@@ -268,28 +326,52 @@ def sales_vs_achievement_geo_inv(db, region: str | None = None, zone: str | None
             
     return rows
 
-def sales_vs_achievement_geo_profit(db, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+def sales_vs_achievement_geo_profit(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_emp: bool = True) -> list:
     """
     Sales vs Achievement (Geo Profit) using OINV table.
     Hierarchy: Region (T3) -> Zone (T2) -> Territory (T1)
     Achievement is calculated from GrosProfit.
     """
-    sql = (
-        'SELECT '
-        '    T3."descript" AS "Region", '
-        '    T2."descript" AS "Zone", '
-        '    T1."descript" AS "Territory", '
-        '    SUM(T0."DocTotal") AS "Sales", '
-        '    SUM(T0."GrosProfit") AS "Achievement" '
-        'FROM OINV T0 '
-        '    INNER JOIN OCRD C0 ON T0."CardCode" = C0."CardCode" '
-        '    INNER JOIN OTER T1 ON C0."Territory" = T1."territryID" '
-        '    INNER JOIN OTER T2 ON T1."parent" = T2."territryID" '
-        '    INNER JOIN OTER T3 ON T2."parent" = T3."territryID" '
-    )
+    if group_by_emp:
+        sql = (
+            'SELECT '
+            '    T3."descript" AS "Region", '
+            '    T2."descript" AS "Zone", '
+            '    T1."descript" AS "Territory", '
+            '    OS."SlpName" AS "EmployeeName", '
+            '    SUM(T0."DocTotal") AS "Sales", '
+            '    SUM(T0."GrosProfit") AS "Achievement" '
+            'FROM OINV T0 '
+            '    INNER JOIN OCRD C0 ON T0."CardCode" = C0."CardCode" '
+            '    INNER JOIN OTER T1 ON C0."Territory" = T1."territryID" '
+            '    INNER JOIN OTER T2 ON T1."parent" = T2."territryID" '
+            '    INNER JOIN OTER T3 ON T2."parent" = T3."territryID" '
+            '    LEFT JOIN OSLP OS ON T0."SlpCode" = OS."SlpCode" '
+        )
+    else:
+        sql = (
+            'SELECT '
+            '    T3."descript" AS "Region", '
+            '    T2."descript" AS "Zone", '
+            '    T1."descript" AS "Territory", '
+            '    \'\' AS "EmployeeName", '
+            '    SUM(T0."DocTotal") AS "Sales", '
+            '    SUM(T0."GrosProfit") AS "Achievement" '
+            'FROM OINV T0 '
+            '    INNER JOIN OCRD C0 ON T0."CardCode" = C0."CardCode" '
+            '    INNER JOIN OTER T1 ON C0."Territory" = T1."territryID" '
+            '    INNER JOIN OTER T2 ON T1."parent" = T2."territryID" '
+            '    INNER JOIN OTER T3 ON T2."parent" = T3."territryID" '
+            '    LEFT JOIN OSLP OS ON T0."SlpCode" = OS."SlpCode" '
+        )
     
     where_clauses = []
     params = []
+    emp_tbl = '"B4_EMP"'
+
+    if emp_id is not None:
+        where_clauses.append(' T1."territryID" IN (SELECT U_TID FROM ' + emp_tbl + ' WHERE empID = ?) ')
+        params.append(emp_id)
     
     if region and region.strip():
         where_clauses.append(' T3."descript" = ? ')
@@ -312,13 +394,23 @@ def sales_vs_achievement_geo_profit(db, region: str | None = None, zone: str | N
     if where_clauses:
         where_sql = ' WHERE ' + ' AND '.join(where_clauses)
         
-    group_by = (
-        ' GROUP BY '
-        '    T3."descript", '
-        '    T2."descript", '
-        '    T1."descript" '
-        ' ORDER BY 1, 2, 3'
-    )
+    if group_by_emp:
+        group_by = (
+            ' GROUP BY '
+            '    T3."descript", '
+            '    T2."descript", '
+            '    T1."descript", '
+            '    OS."SlpName" '
+            ' ORDER BY 1, 2, 3'
+        )
+    else:
+        group_by = (
+            ' GROUP BY '
+            '    T3."descript", '
+            '    T2."descript", '
+            '    T1."descript" '
+            ' ORDER BY 1, 2, 3'
+        )
     
     final_sql = sql + where_sql + group_by
     rows = _fetch_all(db, final_sql, tuple(params))
@@ -333,14 +425,18 @@ def sales_vs_achievement_geo_profit(db, region: str | None = None, zone: str | N
 
 def geo_options(db) -> list:
     oter_tbl = '"OTER"'
+    # Updated to match the hierarchy logic in sales_vs_achievement_geo_inv
+    # Region = Coalesce(R3, R2, R1)
     sql = (
         'SELECT DISTINCT '
-        '    R."descript" AS Region, '
-        '    Z."descript" AS Zone, '
-        '    T."descript" AS Territory '
+        '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+        '    Z."descript" AS "Zone", '
+        '    T."descript" AS "Territory" '
         'FROM ' + oter_tbl + ' T '
         'LEFT JOIN ' + oter_tbl + ' Z ON Z."territryID" = T."parent" '
-        'LEFT JOIN ' + oter_tbl + ' R ON R."territryID" = Z."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R1 ON R1."territryID" = Z."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R2 ON R2."territryID" = R1."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R3 ON R3."territryID" = R2."parent" '
         'WHERE T."descript" IS NOT NULL '
         'ORDER BY 1, 2, 3'
     )
@@ -360,8 +456,8 @@ def territory_summary(db, emp_id: int | None = None, territory_name: str | None 
         'select '
         ' c.TerritoryId, '
         ' O."descript" as TerritoryName, '
-        ' sum(c.colletion_Target) as colletion_Target, '
-        ' sum(c.DocTotal) as DocTotal, '
+        ' sum(c.COLLETION_TARGET) as colletion_Target, '
+        ' sum(c.DOCTOTAL) as DocTotal, '
         ' F_REFDATE, '
         ' T_REFDATE '
         ' from ' + coll_tbl + ' c '

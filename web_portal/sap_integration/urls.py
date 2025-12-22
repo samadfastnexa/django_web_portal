@@ -19,6 +19,8 @@ from .views import (
     projects_lov_api,
     crop_lov_api,
     sales_orders_api,
+    sales_vs_achievement_geo_inv_api,
+    sales_vs_achievement_territory_api,
 )
 
 urlpatterns = [
@@ -44,4 +46,6 @@ urlpatterns = [
     path('projects-lov/', projects_lov_api, name='projects_lov_api'),
     path('crop-lov/', crop_lov_api, name='crop_lov_api'),
     path('sales-orders/', sales_orders_api, name='sales_orders_api'),
+    path('sales-vs-achievement-geo-inv/', sales_vs_achievement_geo_inv_api, name='sales_vs_achievement_geo_inv_api'),
+    path('sales-vs-achievement-territory/', sales_vs_achievement_territory_api, name='sales_vs_achievement_territory_api'),
 ]

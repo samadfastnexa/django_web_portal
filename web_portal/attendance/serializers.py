@@ -117,7 +117,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
             ).time()
         except Exception:
             return None
-        company_opening_dt = make_aware(datetime.combine(obj.check_in_time.date(), opening_time))
+        company_opening_dt = make_aware(datetime.combine(localtime(obj.check_in_time).date(), opening_time))
         gap = obj.check_in_time - company_opening_dt
         return round(gap.total_seconds() / 60, 2)
 
@@ -131,7 +131,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
             ).time()
         except Exception:
             return None
-        company_closing_dt = make_aware(datetime.combine(obj.check_out_time.date(), closing_time))
+        company_closing_dt = make_aware(datetime.combine(localtime(obj.check_out_time).date(), closing_time))
         gap = obj.check_out_time - company_closing_dt
         return round(gap.total_seconds() / 60, 2)
 
@@ -258,9 +258,9 @@ class AttendanceRequestSerializer(serializers.ModelSerializer):
             # 3️⃣ Prevent multiple requests of the SAME TYPE for the same date
             record_date = None
             if check_in:
-                record_date = check_in.date()
+                record_date = localtime(check_in).date()
             elif check_out:
-                record_date = check_out.date()
+                record_date = localtime(check_out).date()
             
             if record_date and not self.instance:  # Only for new requests
                 existing_requests = AttendanceRequest.objects.filter(

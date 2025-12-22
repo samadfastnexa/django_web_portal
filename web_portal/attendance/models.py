@@ -86,7 +86,7 @@ class Attendance(models.Model):
         if self.check_in_time and self.check_out_time:
             if self.check_out_time < self.check_in_time:
                 raise ValidationError("Check-out cannot be before check-in.")
-            if self.check_in_time.date() != self.check_out_time.date():
+            if timezone.localtime(self.check_in_time).date() != timezone.localtime(self.check_out_time).date():
                 raise ValidationError("Check-in/out must be on the same day.")
 
         # Role-based rules
@@ -94,12 +94,12 @@ class Attendance(models.Model):
             if self.attendee != user:
                 raise ValidationError("You cannot mark attendance for other users.")
             today = timezone.localdate()
-            if (self.check_in_time and self.check_in_time.date() != today) or \
-               (self.check_out_time and self.check_out_time.date() != today):
+            if (self.check_in_time and timezone.localtime(self.check_in_time).date() != today) or \
+               (self.check_out_time and timezone.localtime(self.check_out_time).date() != today):
                 raise ValidationError("You can only mark attendance for today.")
 
         # Duplicate prevention
-        record_date = self.check_in_time.date() if self.check_in_time else self.check_out_time.date()
+        record_date = timezone.localtime(self.check_in_time).date() if self.check_in_time else timezone.localtime(self.check_out_time).date()
         qs = Attendance.objects.filter(attendee=self.attendee).filter(
             check_in_time__date=record_date
         )
@@ -113,10 +113,12 @@ class Attendance(models.Model):
         opening_time = time(9, 0)
         closing_time = time(18, 0)
         if self.check_in_time:
-            official_open = datetime.combine(self.check_in_time.date(), opening_time, tzinfo=self.check_in_time.tzinfo)
+            local_check_in = timezone.localtime(self.check_in_time)
+            official_open = timezone.make_aware(datetime.combine(local_check_in.date(), opening_time))
             self.check_in_gap = self.check_in_time - official_open
         if self.check_out_time:
-            official_close = datetime.combine(self.check_out_time.date(), closing_time, tzinfo=self.check_out_time.tzinfo)
+            local_check_out = timezone.localtime(self.check_out_time)
+            official_close = timezone.make_aware(datetime.combine(local_check_out.date(), closing_time))
             self.check_out_gap = self.check_out_time - official_close
         super().save(*args, **kwargs)
 
@@ -179,8 +181,8 @@ class AttendanceRequest(models.Model):
         user = self.user
         if not (user.is_staff or user.is_superuser):
             today = timezone.localdate()
-            if (self.check_in_time and self.check_in_time.date() != today) or \
-            (self.check_out_time and self.check_out_time.date() != today):
+            if (self.check_in_time and timezone.localtime(self.check_in_time).date() != today) or \
+            (self.check_out_time and timezone.localtime(self.check_out_time).date() != today):
                 raise ValidationError("You can only request attendance for today.")
     
     
