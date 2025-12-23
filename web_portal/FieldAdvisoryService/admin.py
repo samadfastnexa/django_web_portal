@@ -784,8 +784,11 @@ class ZoneAdmin(admin.ModelAdmin, _CompanySessionResolver):
 
 @admin.register(Territory)
 class TerritoryAdmin(admin.ModelAdmin, _CompanySessionResolver):
-    list_display = ('name', 'zone', 'company')
-    list_filter = ('zone', 'company')
+    def region(self, obj):
+        return obj.zone.region if obj.zone else None
+    region.short_description = 'Region'
+    list_display = ('name', 'zone', 'region', 'company')
+    list_filter = ('zone', 'zone__region', 'company')
     search_fields = ('name', 'zone__name')
     def get_queryset(self, request):
         qs = super().get_queryset(request)

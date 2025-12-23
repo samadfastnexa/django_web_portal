@@ -1,0 +1,907 @@
+{
+  "meta": {
+    "companies": [
+      "4B-BIO_APP",
+      "4B-ORANG_APP"
+    ],
+    "source_company_db": "4B-BIO_APP"
+  },
+  "territories": [
+    {
+      "name": "Pakistan",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "D.G Khan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Fazalpur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Jampur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Kot Adu Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "KOT MITHAN Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Bakhar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Khanewal Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Multan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Shujabad Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Ali Pur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Liaqatpur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Muzaffar Garh Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Uch Sharif Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Basirpur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "SIKANDAR CHOWK Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Hujra Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Kasur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Pattoki Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "CHOWK SARWAR SHAHEED Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "D.I Khan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Haveli Lakha Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Okara Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Pakpattan-1 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Pakpattan-2 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Kahror Lal Esan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Chichawatni Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Harappa Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Shahkot Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Mianchannu Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sahiwal Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Bahawalnagar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Burewala Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Chishtian Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Mailsi Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Minchenabad Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Vehari Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Kunri-2 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Chiniot Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Faisalabad Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Nau Kot Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sargodha Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "T.T Singh Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Peshawar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Nankana Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Narowal Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sheikhupura Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Karachi-1 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Karachi-2 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Matli Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Talhar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sajawal Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Tando Allah Yar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Tando M. Khan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Khipro Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Kot Ghulam Muhammad Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Kunri-1 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Mirpurkhas Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Tando Ghulam Ali Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Umerkot Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Halla Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Nawabshah-1 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Nawabshah-2 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sanghar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Shahdadpur-1 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Tando Adam Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Dadu Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Larkana Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Nasirabad Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Radhan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Shehdadkot Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Jacobabad-1 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Jacobabad-2 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Kandh Kot Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Usta Muhammad Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Khairpur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Mehrabpur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "xNoshahro Feroz Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Khuzdar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Pashin Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Quetta Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Dharki Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Ghotki Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Jarwar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Khanpur Mahar Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Mirpur Mathelo Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Loralai Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Panu Aqil Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Ranipur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Shikarpur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sukkur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Disputed Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Dormant Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sindh Customers Bad Debit Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Jatoi Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Mianwali Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Lahore Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Arifwala Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Layyah Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sadiqabad Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Mardan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "R.Y.Khan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sawat Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Rohri Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Bahawalpur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "xRanipur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "DEPALPUR Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Samundri Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "KEHROR PACCA Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Shahdadpur-2 Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "DUNYA PUR Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Lodhran Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "KOT CHUTTA Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Badin Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "GAMBAT Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Sample Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "FARMER Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "TAUNSA Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "CHOWK QURESHI Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Jhang Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Ubaro Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "RAJAN PUR Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Hasil Pur Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Haroonabad Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Fortabbas Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Contract Growers Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Walking Customer Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    },
+    {
+      "name": "Kamyab Kissan Pocket",
+      "company": "4B-BIO_APP",
+      "zone": "",
+      "latitude": null,
+      "longitude": null
+    }
+  ]
+}

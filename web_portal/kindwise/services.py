@@ -21,13 +21,30 @@ def identify_crop(image_base64: str) -> dict:
     
     headers = {
         'Content-Type': 'application/json',
-        'Api-Key': getattr(settings, 'KINDWISE_API_KEY', '')
+        'Accept': 'application/json',
+        'Api-Key': getattr(settings, 'KINDWISE_API_KEY', ''),
     }
 
     try:
         conn.request("POST", "/api/v1/identification", payload, headers)
         res = conn.getresponse()
         data = res.read()
-        return json.loads(data.decode("utf-8"))
+        text = data.decode("utf-8", errors="replace") if data else ""
+        # Treat 200/201/202 as successful responses
+        if res.status not in (200, 201, 202):
+            return {
+                "error": "Kindwise API error",
+                "status": res.status,
+                "reason": res.reason,
+                "body": text[:1000],
+            }
+        try:
+            return json.loads(text)
+        except Exception as e:
+            return {
+                "error": f"Invalid JSON from Kindwise: {e}",
+                "status": res.status,
+                "body": text[:1000],
+            }
     except Exception as e:
         return {"error": str(e)}

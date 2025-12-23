@@ -69,37 +69,60 @@ class Command(BaseCommand):
             duplicates = 0
             errors_local: List[str] = []
 
-            # Treat leaf nodes (territory ids that never appear as a parent) as actual territories
+            # Treat leaf nodes (SAP Pockets). We will create Django Territories from their parent SAP Territory.
             leaves = [r for r in rows if (self._get_int(r.get("TERRITORYID")) not in parent_ids)]
+            processed_territory_ids: set[int] = set()
             with transaction.atomic():
                 for r in leaves:
-                    tid = self._get_int(r.get("TERRITORYID"))
-                    lname = (r.get("TERRITORYNAME") or "").strip()
-                    parent_id = self._get_int(r.get("PARENTID"))
-                    if tid is None or not lname:
+                    tid = self._get_int(r.get("TERRITORYID"))  # Pocket id
+                    parent_id = self._get_int(r.get("PARENTID"))  # SAP Territory id
+                    if tid is None or parent_id is None:
                         continue
-                    zone_row = by_id.get(parent_id) if parent_id is not None else None
+                    # Avoid duplicate inserts for multiple pockets under the same Territory
+                    if parent_id in processed_territory_ids:
+                        continue
+                    # SAP Hierarchy: Region → Zone → Sub Zone → Territory → Pocket (5 levels)
+                    # Django Model: Region → Zone → Territory (3 levels)
+                    # For a leaf Pocket:
+                    #   parent        = Territory
+                    #   grandparent   = Sub Zone
+                    #   great-grand   = Zone (desired Zone in Django)
+                    #   top-level     = Region (desired Region in Django)
+                    # Correct mapping: Django Zone = SAP Zone, Django Region = SAP Region
+                    territory_row = by_id.get(parent_id) if parent_id is not None else None
+                    sub_zone_row = by_id.get(self._get_int(territory_row.get("PARENTID")) if territory_row else None)
+                    zone_row = by_id.get(self._get_int(sub_zone_row.get("PARENTID")) if sub_zone_row else None)
                     region_row = by_id.get(self._get_int(zone_row.get("PARENTID")) if zone_row else None)
-                    region_name = (region_row.get("TERRITORYNAME") or "Unassigned").strip() if region_row else "Unassigned"
+                    # Some datasets include a Sub Region above Zone; climb one more level if present
+                    top_region_row = by_id.get(self._get_int(region_row.get("PARENTID")) if region_row and region_row.get("PARENTID") is not None else None)
+                    use_region_row = top_region_row or region_row
+                    region_name = (use_region_row.get("TERRITORYNAME") or "Unassigned").strip() if use_region_row else "Unassigned"
                     zone_name = (zone_row.get("TERRITORYNAME") or "Unassigned").strip() if zone_row else "Unassigned"
+                    territory_name = (territory_row.get("TERRITORYNAME") or "Unassigned").strip() if territory_row else "Unassigned"
+                    # Remove trailing ' Territory' from the name (case-insensitive)
+                    if territory_name.lower().endswith(" territory"):
+                        territory_name = territory_name[: -len(" territory")].rstrip()
                     region_obj, region_created = Region.objects.get_or_create(name=region_name, company=company)
                     if region_created:
                         inserted_regions += 1
                     zone_obj, zone_created = Zone.objects.get_or_create(name=zone_name, company=company, region=region_obj)
                     if zone_created:
                         inserted_zones += 1
-                    exists = Territory.objects.filter(name=lname, zone=zone_obj, company=company).exists()
+                    exists = Territory.objects.filter(name=territory_name, zone=zone_obj, company=company).exists()
                     if exists:
                         duplicates += 1
+                        processed_territory_ids.add(parent_id)
                         continue
                     if dry_run:
                         inserted_territories += 1
+                        processed_territory_ids.add(parent_id)
                         continue
                     try:
-                        Territory.objects.create(name=lname, zone=zone_obj, company=company)
+                        Territory.objects.create(name=territory_name, zone=zone_obj, company=company)
                         inserted_territories += 1
+                        processed_territory_ids.add(parent_id)
                     except Exception as ex:
-                        errors_local.append(f"Insert failed for '{lname}': {ex}")
+                        errors_local.append(f"Insert failed for '{territory_name}': {ex}")
 
             try:
                 db.close()

@@ -366,6 +366,7 @@ class ZoneSerializer(serializers.ModelSerializer):
 
 class TerritorySerializer(serializers.ModelSerializer):
     zone_name = serializers.CharField(source='zone.name', read_only=True)
+    region_name = serializers.CharField(source='zone.region.name', read_only=True)
 
     class Meta:
         model = Territory
