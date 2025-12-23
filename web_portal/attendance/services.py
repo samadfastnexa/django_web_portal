@@ -156,7 +156,10 @@ def mark_attendance(
     else:
         timestamp = timezone.now()
 
-    attendance_date = timestamp.date()
+    if timezone.is_naive(timestamp):
+        timestamp = timezone.make_aware(timestamp)
+
+    attendance_date = timezone.localtime(timestamp).date()
 
     try:
         with transaction.atomic():

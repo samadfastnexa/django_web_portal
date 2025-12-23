@@ -21,6 +21,7 @@ from pathlib import Path
 import sys
 from django.utils.safestring import mark_safe
 from django.core.paginator import Paginator
+from FieldAdvisoryService.models import Company, Region, Zone, Territory
 
 logger = logging.getLogger(__name__)
 
@@ -343,13 +344,115 @@ def hana_connect_admin(request):
                     elif action == 'products_catalog':
                         try:
                             data = products_catalog(conn, selected_schema)
-                            result = data
+                            hierarchy = {}
+                            for row in (data or []):
+                                if not isinstance(row, dict):
+                                    continue
+                                reg = row.get('Region', 'Unknown Region')
+                                zon = row.get('Zone', 'Unknown Zone')
+                                ter = row.get('Territory', 'Unknown Territory')
+                                sal = 0.0
+                                ach = 0.0
+                                try:
+                                    v = row.get('Collection_Target')
+                                    if v is None: v = row.get('COLLECTION_TARGET')
+                                    sal = float(v or 0.0)
+                                except: pass
+                                try:
+                                    v = row.get('Collection_Achievement')
+                                    if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
+                                    ach = float(v or 0.0)
+                                except: pass
+                                if reg not in hierarchy:
+                                    hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                hierarchy[reg]['sales'] += sal
+                                hierarchy[reg]['achievement'] += ach
+                                if zon not in hierarchy[reg]['zones']:
+                                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                hierarchy[reg]['zones'][zon]['sales'] += sal
+                                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                                hierarchy[reg]['zones'][zon]['territories'].append({
+                                    'name': ter,
+                                    'sales': sal,
+                                    'achievement': ach,
+                                    'employee_name': ''
+                                })
+                            final_list = []
+                            for r_name in sorted(hierarchy.keys()):
+                                r_data = hierarchy[r_name]
+                                zones_list = []
+                                for z_name in sorted(r_data['zones'].keys()):
+                                    z_data = r_data['zones'][z_name]
+                                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                                    zones_list.append(z_data)
+                                r_data['zones'] = zones_list
+                                final_list.append(r_data)
+                            for r in final_list:
+                                r['sales'] = round(r['sales'], 2)
+                                r['achievement'] = round(r['achievement'], 2)
+                                for z in r['zones']:
+                                    z['sales'] = round(z['sales'], 2)
+                                    z['achievement'] = round(z['achievement'], 2)
+                            result = final_list
                         except Exception as e_pc:
                             error = str(e_pc)
                     elif action == 'list_territories':
                         try:
                             data = territories_all(conn)
-                            result = data
+                            # Build hierarchical Region -> Zone -> Territory structure with aggregated totals
+                            hierarchy = {}
+                            for row in (data or []):
+                                if not isinstance(row, dict):
+                                    continue
+                                reg = row.get('Region', 'Unknown Region')
+                                zon = row.get('Zone', 'Unknown Zone')
+                                ter = row.get('Territory', 'Unknown Territory')
+                                sal = 0.0
+                                ach = 0.0
+                                try:
+                                    v = row.get('Collection_Target')
+                                    if v is None: v = row.get('COLLECTION_TARGET')
+                                    if v is None: v = row.get('colletion_Target')
+                                    sal = float(v or 0.0)
+                                except Exception:
+                                    pass
+                                try:
+                                    v = row.get('Collection_Achievement')
+                                    if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
+                                    if v is None: v = row.get('DocTotal')
+                                    ach = float(v or 0.0)
+                                except Exception:
+                                    pass
+                                if reg not in hierarchy:
+                                    hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                hierarchy[reg]['sales'] += sal
+                                hierarchy[reg]['achievement'] += ach
+                                if zon not in hierarchy[reg]['zones']:
+                                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                hierarchy[reg]['zones'][zon]['sales'] += sal
+                                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                                hierarchy[reg]['zones'][zon]['territories'].append({
+                                    'name': ter,
+                                    'sales': sal,
+                                    'achievement': ach
+                                })
+                            final_list = []
+                            for r_name in sorted(hierarchy.keys()):
+                                r_data = hierarchy[r_name]
+                                zones_list = []
+                                for z_name in sorted(r_data['zones'].keys()):
+                                    z_data = r_data['zones'][z_name]
+                                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                                    zones_list.append(z_data)
+                                r_data['zones'] = zones_list
+                                final_list.append(r_data)
+                            for r in final_list:
+                                r['sales'] = round(r['sales'], 2)
+                                r['achievement'] = round(r['achievement'], 2)
+                                for z in r['zones']:
+                                    z['sales'] = round(z['sales'], 2)
+                                    z['achievement'] = round(z['achievement'], 2)
+                            result = final_list
                             if isinstance(result, list) and len(result) == 0:
                                 error = 'No territories found'
                             # Diagnostics: show available OTER columns to help mapping
@@ -524,18 +627,20 @@ def hana_connect_admin(request):
                                     data = scaled
                                 result = data
                                 
-                                # Fetch options for filters
                                 try:
-                                    geo_opts = geo_options(conn)
-                                    regions = sorted(list(set(r['Region'] for r in geo_opts if r.get('Region'))))
-                                    zones = sorted(list(set(r['Zone'] for r in geo_opts if r.get('Zone'))))
-                                    territories = sorted(list(set(r['Territory'] for r in geo_opts if r.get('Territory'))))
-                                    
-                                    request._geo_options = {
-                                        'regions': regions,
-                                        'zones': zones,
-                                        'territories': territories
-                                    }
+                                    company = Company.objects.filter(Company_name=selected_db_key).first()
+                                    if company:
+                                        regions_qs = Region.objects.filter(company=company)
+                                        zones_qs = Zone.objects.filter(company=company)
+                                        territories_qs = Territory.objects.filter(company=company)
+                                    else:
+                                        regions_qs = Region.objects.all()
+                                        zones_qs = Zone.objects.all()
+                                        territories_qs = Territory.objects.all()
+                                    regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
                                 except Exception:
                                     request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                                     
@@ -551,20 +656,36 @@ def hana_connect_admin(request):
                             error = str(e_geo)
                     elif action == 'sales_vs_achievement_geo_inv':
                         try:
+                            emp_id_param = request.GET.get('emp_id')
                             region_param = request.GET.get('region')
                             zone_param = request.GET.get('zone')
                             territory_param = request.GET.get('territory')
                             start_date_param = request.GET.get('start_date')
                             end_date_param = request.GET.get('end_date')
                             in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+                            group_by_emp_param = request.GET.get('group_by_emp')
+                            
+                            # Default to False for Inv
+                            group_by_emp = False
+                            if group_by_emp_param is not None:
+                                group_by_emp = str(group_by_emp_param).strip().lower() in ('true','1','yes')
+                            
+                            emp_val = None
+                            if emp_id_param is not None and emp_id_param != '':
+                                try:
+                                    emp_val = int(emp_id_param)
+                                except Exception:
+                                    error = 'Invalid emp_id'
                             
                             data = sales_vs_achievement_geo_inv(
                                 conn, 
+                                emp_id=emp_val,
                                 region=(region_param or '').strip() or None, 
                                 zone=(zone_param or '').strip() or None, 
                                 territory=(territory_param or '').strip() or None,
                                 start_date=(start_date_param or '').strip() or None,
-                                end_date=(end_date_param or '').strip() or None
+                                end_date=(end_date_param or '').strip() or None,
+                                group_by_emp=group_by_emp
                             )
                             
                             # Scaling to millions if requested
@@ -574,15 +695,19 @@ def hana_connect_admin(request):
                                     if isinstance(row, dict):
                                         r = dict(row)
                                         try:
-                                            v = r.get('Sales', None)
+                                            v = r.get('Collection_Target')
+                                            if v is None: v = r.get('COLLECTION_TARGET')
+                                            if v is None: v = r.get('colletion_Target')
                                             if v is not None:
-                                                r['Sales'] = round((float(v) / 1000000.0), 2)
+                                                r['Collection_Target'] = round((float(v) / 1000000.0), 2)
                                         except Exception:
                                             pass
                                         try:
-                                            v = r.get('Achievement', None)
+                                            v = r.get('Collection_Achievement')
+                                            if v is None: v = r.get('COLLECTION_ACHIEVEMENT')
+                                            if v is None: v = r.get('DocTotal')
                                             if v is not None:
-                                                r['Achievement'] = round((float(v) / 1000000.0), 2)
+                                                r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
                                         except Exception:
                                             pass
                                         scaled.append(r)
@@ -601,10 +726,16 @@ def hana_connect_admin(request):
                                 sal = 0.0
                                 ach = 0.0
                                 try:
-                                    sal = float(row.get('Sales') or 0.0)
+                                    v = row.get('Collection_Target')
+                                    if v is None: v = row.get('COLLECTION_TARGET')
+                                    if v is None: v = row.get('colletion_Target')
+                                    sal = float(v or 0.0)
                                 except: pass
                                 try:
-                                    ach = float(row.get('Achievement') or 0.0)
+                                    v = row.get('Collection_Achievement')
+                                    if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
+                                    if v is None: v = row.get('DocTotal')
+                                    ach = float(v or 0.0)
                                 except: pass
 
                                 if reg not in hierarchy:
@@ -622,7 +753,8 @@ def hana_connect_admin(request):
                                 hierarchy[reg]['zones'][zon]['territories'].append({
                                     'name': ter,
                                     'sales': sal,
-                                    'achievement': ach
+                                    'achievement': ach,
+                                    'employee_name': row.get('EmployeeName', '')
                                 })
 
                             # Convert dicts to sorted lists for rendering
@@ -648,30 +780,327 @@ def hana_connect_admin(request):
 
                             result = final_list
                             
-                            # Fetch options for filters
                             try:
-                                geo_opts = geo_options(conn)
-                                regions = sorted(list(set(r['Region'] for r in geo_opts if r.get('Region'))))
-                                zones = sorted(list(set(r['Zone'] for r in geo_opts if r.get('Zone'))))
-                                territories = sorted(list(set(r['Territory'] for r in geo_opts if r.get('Territory'))))
-                                
-                                request._geo_options = {
-                                    'regions': regions,
-                                    'zones': zones,
-                                    'territories': territories
-                                }
+                                company = Company.objects.filter(Company_name=selected_db_key).first()
+                                if company:
+                                    regions_qs = Region.objects.filter(company=company)
+                                    zones_qs = Zone.objects.filter(company=company)
+                                    territories_qs = Territory.objects.filter(company=company)
+                                else:
+                                    regions_qs = Region.objects.all()
+                                    zones_qs = Zone.objects.all()
+                                    territories_qs = Territory.objects.all()
+                                regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
+                                zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
+                                territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
+                                request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
                             except Exception:
                                 request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                                 
+                            diagnostics['emp_id'] = emp_val
                             diagnostics['start_date'] = (start_date_param or '').strip()
                             diagnostics['end_date'] = (end_date_param or '').strip()
                             diagnostics['region'] = (region_param or '').strip()
                             diagnostics['zone'] = (zone_param or '').strip()
                             diagnostics['territory'] = (territory_param or '').strip()
                             diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                            diagnostics['group_by_emp'] = group_by_emp
                             
                         except Exception as e_geo_inv:
                             error = str(e_geo_inv)
+                    elif action == 'sales_vs_achievement_territory':
+                        try:
+                            region_param = request.GET.get('region')
+                            zone_param = request.GET.get('zone')
+                            territory_param = request.GET.get('territory')
+                            start_date_param = request.GET.get('start_date')
+                            end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+                            
+                            data = sales_vs_achievement_geo_inv(
+                                conn,
+                                emp_id=None,
+                                region=(region_param or '').strip() or None,
+                                zone=(zone_param or '').strip() or None,
+                                territory=(territory_param or '').strip() or None,
+                                start_date=(start_date_param or '').strip() or None,
+                                end_date=(end_date_param or '').strip() or None,
+                                group_by_emp=False
+                            )
+                            
+                            if in_millions_param in ('', 'true','1','yes','y'):
+                                scaled = []
+                                for row in data or []:
+                                    if isinstance(row, dict):
+                                        r = dict(row)
+                                        try:
+                                            v = r.get('Collection_Target')
+                                            if v is None: v = r.get('COLLECTION_TARGET')
+                                            if v is not None:
+                                                r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            v = r.get('Collection_Achievement')
+                                            if v is None: v = r.get('COLLECTION_ACHIEVEMENT')
+                                            if v is not None:
+                                                r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                                        except Exception:
+                                            pass
+                                        r.pop('EmployeeName', None)
+                                        scaled.append(r)
+                                    else:
+                                        scaled.append(row)
+                                data = scaled
+                            else:
+                                cleaned = []
+                                for row in data or []:
+                                    if isinstance(row, dict):
+                                        r = dict(row)
+                                        r.pop('EmployeeName', None)
+                                        cleaned.append(r)
+                                    else:
+                                        cleaned.append(row)
+                                data = cleaned
+                            
+                            hierarchy = {}
+                            for row in (data or []):
+                                if not isinstance(row, dict):
+                                    continue
+                                reg = None
+                                zon = None
+                                ter = None
+                                if reg is None: reg = row.get('Region')
+                                if reg is None: reg = row.get('REGION')
+                                if reg is None: reg = 'Unknown Region'
+                                if zon is None: zon = row.get('Zone')
+                                if zon is None: zon = row.get('ZONE')
+                                if zon is None: zon = 'Unknown Zone'
+                                if ter is None: ter = row.get('Territory')
+                                if ter is None: ter = row.get('TERRITORY')
+                                if ter is None: ter = row.get('TerritoryName')
+                                if ter is None: ter = row.get('TERRITORYNAME')
+                                if ter is None: ter = 'Unknown Territory'
+                                sal = 0.0
+                                ach = 0.0
+                                try:
+                                    v = row.get('Collection_Target')
+                                    if v is None: v = row.get('COLLECTION_TARGET')
+                                    if v is None: v = row.get('colletion_Target')
+                                    if v is None: v = row.get('COLLETION_TARGET')
+                                    sal = float(v or 0.0)
+                                except Exception:
+                                    pass
+                                try:
+                                    v = row.get('Collection_Achievement')
+                                    if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
+                                    if v is None: v = row.get('DocTotal')
+                                    if v is None: v = row.get('ACHIEVEMENT')
+                                    ach = float(v or 0.0)
+                                except Exception:
+                                    pass
+                                if reg not in hierarchy:
+                                    hierarchy[reg] = {'name': reg or 'Unknown Region', 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                hierarchy[reg]['sales'] += sal
+                                hierarchy[reg]['achievement'] += ach
+                                if zon not in hierarchy[reg]['zones']:
+                                    hierarchy[reg]['zones'][zon] = {'name': zon or 'Unknown Zone', 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                hierarchy[reg]['zones'][zon]['sales'] += sal
+                                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                                hierarchy[reg]['zones'][zon]['territories'].append({'name': ter or 'Unknown Territory', 'sales': sal, 'achievement': ach})
+                            final_list = []
+                            for r_name in sorted(hierarchy.keys()):
+                                r_data = hierarchy[r_name]
+                                zones_list = []
+                                for z_name in sorted(r_data['zones'].keys()):
+                                    z_data = r_data['zones'][z_name]
+                                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                                    zones_list.append(z_data)
+                                r_data['zones'] = zones_list
+                                final_list.append(r_data)
+                            for r in final_list:
+                                r['sales'] = round(r['sales'], 2)
+                                r['achievement'] = round(r['achievement'], 2)
+                                for z in r['zones']:
+                                    z['sales'] = round(z['sales'], 2)
+                                    z['achievement'] = round(z['achievement'], 2)
+                            result = final_list
+                            
+                            try:
+                                company = Company.objects.filter(Company_name=selected_db_key).first()
+                                if company:
+                                    regions_qs = Region.objects.filter(company=company)
+                                    zones_qs = Zone.objects.filter(company=company)
+                                    territories_qs = Territory.objects.filter(company=company)
+                                else:
+                                    regions_qs = Region.objects.all()
+                                    zones_qs = Zone.objects.all()
+                                    territories_qs = Territory.objects.all()
+                                regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
+                                zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
+                                territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
+                                request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                            except Exception:
+                                request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                            
+                            diagnostics['start_date'] = (start_date_param or '').strip()
+                            diagnostics['end_date'] = (end_date_param or '').strip()
+                            diagnostics['region'] = (region_param or '').strip()
+                            diagnostics['zone'] = (zone_param or '').strip()
+                            diagnostics['territory'] = (territory_param or '').strip()
+                            diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                        except Exception as e_svat:
+                            error = str(e_svat)
+                    elif action == 'sales_vs_achievement_geo_profit':
+                        try:
+                            emp_id_param = request.GET.get('emp_id')
+                            region_param = request.GET.get('region')
+                            zone_param = request.GET.get('zone')
+                            territory_param = request.GET.get('territory')
+                            start_date_param = request.GET.get('start_date')
+                            end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+                            group_by_emp_param = request.GET.get('group_by_emp')
+                            
+                            # Default to True for Profit
+                            group_by_emp = True
+                            if group_by_emp_param is not None:
+                                group_by_emp = str(group_by_emp_param).strip().lower() in ('true','1','yes')
+                            
+                            emp_val = None
+                            if emp_id_param is not None and emp_id_param != '':
+                                try:
+                                    emp_val = int(emp_id_param)
+                                except Exception:
+                                    error = 'Invalid emp_id'
+                            
+                            data = sales_vs_achievement_geo_profit(
+                                conn, 
+                                emp_id=emp_val,
+                                region=(region_param or '').strip() or None, 
+                                zone=(zone_param or '').strip() or None, 
+                                territory=(territory_param or '').strip() or None,
+                                start_date=(start_date_param or '').strip() or None,
+                                end_date=(end_date_param or '').strip() or None,
+                                group_by_emp=group_by_emp
+                            )
+                            
+                            # Scaling to millions if requested
+                            if in_millions_param in ('', 'true','1','yes','y'):
+                                scaled = []
+                                for row in data or []:
+                                    if isinstance(row, dict):
+                                        r = dict(row)
+                                        try:
+                                            v = r.get('Sales')
+                                            if v is None: v = r.get('SALES')
+                                            if v is not None:
+                                                r['Sales'] = round((float(v) / 1000000.0), 2)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            v = r.get('Achievement')
+                                            if v is None: v = r.get('ACHIEVEMENT')
+                                            if v is not None:
+                                                r['Achievement'] = round((float(v) / 1000000.0), 2)
+                                        except Exception:
+                                            pass
+                                        scaled.append(r)
+                                    else:
+                                        scaled.append(row)
+                                data = scaled
+                            
+                            # Hierarchical Transformation
+                            hierarchy = {}
+                            for row in (data or []):
+                                if not isinstance(row, dict):
+                                    continue
+                                reg = row.get('Region', 'Unknown Region')
+                                zon = row.get('Zone', 'Unknown Zone')
+                                ter = row.get('Territory', 'Unknown Territory')
+                                sal = 0.0
+                                ach = 0.0
+                                try:
+                                    v = row.get('Sales')
+                                    if v is None: v = row.get('SALES')
+                                    sal = float(v or 0.0)
+                                except: pass
+                                try:
+                                    v = row.get('Achievement')
+                                    if v is None: v = row.get('ACHIEVEMENT')
+                                    ach = float(v or 0.0)
+                                except: pass
+
+                                if reg not in hierarchy:
+                                    hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                
+                                hierarchy[reg]['sales'] += sal
+                                hierarchy[reg]['achievement'] += ach
+                                
+                                if zon not in hierarchy[reg]['zones']:
+                                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                    
+                                hierarchy[reg]['zones'][zon]['sales'] += sal
+                                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                                
+                                hierarchy[reg]['zones'][zon]['territories'].append({
+                                    'name': ter,
+                                    'sales': sal,
+                                    'achievement': ach,
+                                    'employee_name': row.get('EmployeeName', '')
+                                })
+
+                            # Convert dicts to sorted lists for rendering
+                            final_list = []
+                            for r_name in sorted(hierarchy.keys()):
+                                r_data = hierarchy[r_name]
+                                zones_list = []
+                                for z_name in sorted(r_data['zones'].keys()):
+                                    z_data = r_data['zones'][z_name]
+                                    # Sort territories by name
+                                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                                    zones_list.append(z_data)
+                                r_data['zones'] = zones_list
+                                final_list.append(r_data)
+                            
+                            # Rounding totals after aggregation
+                            for r in final_list:
+                                r['sales'] = round(r['sales'], 2)
+                                r['achievement'] = round(r['achievement'], 2)
+                                for z in r['zones']:
+                                    z['sales'] = round(z['sales'], 2)
+                                    z['achievement'] = round(z['achievement'], 2)
+
+                            result = final_list
+                            
+                            try:
+                                company = Company.objects.filter(Company_name=selected_db_key).first()
+                                if company:
+                                    regions_qs = Region.objects.filter(company=company)
+                                    zones_qs = Zone.objects.filter(company=company)
+                                    territories_qs = Territory.objects.filter(company=company)
+                                else:
+                                    regions_qs = Region.objects.all()
+                                    zones_qs = Zone.objects.all()
+                                    territories_qs = Territory.objects.all()
+                                regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
+                                zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
+                                territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
+                                request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                            except Exception:
+                                request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                
+                            diagnostics['emp_id'] = emp_val
+                            diagnostics['start_date'] = (start_date_param or '').strip()
+                            diagnostics['end_date'] = (end_date_param or '').strip()
+                            diagnostics['region'] = (region_param or '').strip()
+                            diagnostics['zone'] = (zone_param or '').strip()
+                            diagnostics['territory'] = (territory_param or '').strip()
+                            diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                            diagnostics['group_by_emp'] = group_by_emp
+                            
+                        except Exception as e_geo_prof:
+                            error = str(e_geo_prof)
                     elif action == 'sales_vs_achievement_by_emp':
                         try:
                             emp_id_param = request.GET.get('emp_id')
@@ -1175,7 +1604,7 @@ def hana_connect_admin(request):
             'result_rows': paged_rows,
             'result_cols': result_cols,
             'table_rows': table_rows,
-            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_by_emp','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses')),
+            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_geo','sales_vs_achievement_geo_inv','sales_vs_achievement_geo_profit','sales_vs_achievement_by_emp','sales_vs_achievement_territory','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses')),
             'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
             'customer_options': customer_options,
             'customer_list': customer_list,
@@ -2211,6 +2640,348 @@ def sales_vs_achievement_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+@swagger_auto_schema(
+    method='get',
+    operation_description="Sales vs Achievement (Geo Inv) with Region/Zone/Territory hierarchy",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
+        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('region', openapi.IN_QUERY, description="Region name", type=openapi.TYPE_STRING),
+        openapi.Parameter('zone', openapi.IN_QUERY, description="Zone name", type=openapi.TYPE_STRING),
+        openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
+        openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID (optional)", type=openapi.TYPE_INTEGER),
+        openapi.Parameter('group_by_emp', openapi.IN_QUERY, description="Group rows by employee", type=openapi.TYPE_BOOLEAN, default=False),
+        openapi.Parameter('in_millions', openapi.IN_QUERY, description="Scale numeric values to millions", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number (default 1)", type=openapi.TYPE_INTEGER, default=1),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page (default 10)", type=openapi.TYPE_INTEGER, default=10),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def sales_vs_achievement_geo_inv_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {'host': os.environ.get('HANA_HOST') or '', 'port': os.environ.get('HANA_PORT') or '30015', 'user': os.environ.get('HANA_USER') or '', 'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP', 'encrypt': os.environ.get('HANA_ENCRYPT') or '', 'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or ''}
+    db_param = (request.query_params.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    else:
+        cfg['schema'] = '4B-BIO_APP'
+    start_date = (request.query_params.get('start_date') or '').strip()
+    end_date = (request.query_params.get('end_date') or '').strip()
+    region = (request.query_params.get('region') or '').strip()
+    zone = (request.query_params.get('zone') or '').strip()
+    territory = (request.query_params.get('territory') or '').strip()
+    in_millions_param = (request.query_params.get('in_millions') or '').strip().lower()
+    group_by_emp_param = (request.query_params.get('group_by_emp') or '').strip().lower()
+    group_by_emp = (group_by_emp_param in ('true','1','yes','y'))
+    emp_id_param = request.query_params.get('emp_id')
+    emp_id = None
+    if emp_id_param:
+        try:
+            emp_id = int(emp_id_param)
+        except Exception:
+            return Response({'success': False, 'error': 'Invalid emp_id'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            data = sales_vs_achievement_geo_inv(conn, emp_id=emp_id, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_emp=group_by_emp)
+            if in_millions_param in ('true','1','yes','y'):
+                scaled = []
+                for row in data or []:
+                    if isinstance(row, dict):
+                        r = dict(row)
+                        try:
+                            v = r.get('Collection_Target')
+                            if v is None: v = r.get('COLLECTION_TARGET')
+                            if v is None: v = r.get('COLLETION_TARGET')
+                            if v is not None:
+                                r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                        except Exception:
+                            pass
+                        try:
+                            v = r.get('Collection_Achievement')
+                            if v is None: v = r.get('COLLECTION_ACHIEVEMENT')
+                            if v is None: v = r.get('DocTotal')
+                            if v is not None:
+                                r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                        except Exception:
+                            pass
+                        scaled.append(r)
+                    else:
+                        scaled.append(row)
+                data = scaled
+            hierarchy = {}
+            for row in (data or []):
+                if not isinstance(row, dict):
+                    continue
+                reg = row.get('Region') or row.get('REGION') or 'Unknown Region'
+                zon = row.get('Zone') or row.get('ZONE') or 'Unknown Zone'
+                ter = row.get('Territory') or row.get('TERRITORY') or 'Unknown Territory'
+                sal = 0.0
+                ach = 0.0
+                try:
+                    v = row.get('Collection_Target')
+                    if v is None: v = row.get('COLLECTION_TARGET')
+                    if v is None: v = row.get('COLLETION_TARGET')
+                    sal = float(v or 0.0)
+                except Exception:
+                    pass
+                try:
+                    v = row.get('Collection_Achievement')
+                    if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
+                    if v is None: v = row.get('DocTotal')
+                    ach = float(v or 0.0)
+                except Exception:
+                    pass
+                if reg not in hierarchy:
+                    hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                hierarchy[reg]['sales'] += sal
+                hierarchy[reg]['achievement'] += ach
+                if zon not in hierarchy[reg]['zones']:
+                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                hierarchy[reg]['zones'][zon]['sales'] += sal
+                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                territory_item = {'name': ter, 'sales': sal, 'achievement': ach}
+                if group_by_emp:
+                    territory_item['employee_name'] = row.get('EmployeeName','')
+                hierarchy[reg]['zones'][zon]['territories'].append(territory_item)
+            final_list = []
+            for r_name in sorted(hierarchy.keys()):
+                r_data = hierarchy[r_name]
+                zones_list = []
+                for z_name in sorted(r_data['zones'].keys()):
+                    z_data = r_data['zones'][z_name]
+                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                    zones_list.append(z_data)
+                r_data['zones'] = zones_list
+                final_list.append(r_data)
+            for r in final_list:
+                r['sales'] = round(r['sales'], 2)
+                r['achievement'] = round(r['achievement'], 2)
+                for z in r['zones']:
+                    z['sales'] = round(z['sales'], 2)
+                    z['achievement'] = round(z['achievement'], 2)
+            page_param = (request.query_params.get('page') or '1').strip()
+            page_size_param = (request.query_params.get('page_size') or '').strip()
+            try:
+                page_num = int(page_param) if page_param else 1
+            except Exception:
+                page_num = 1
+            default_page_size = 10
+            try:
+                default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+            except Exception:
+                default_page_size = 10
+            try:
+                page_size = int(page_size_param) if page_size_param else default_page_size
+            except Exception:
+                page_size = default_page_size
+            paginator = Paginator(list(final_list or []), page_size)
+            try:
+                page_obj = paginator.page(page_num)
+                paged_rows = list(page_obj.object_list)
+            except Exception:
+                paged_rows = list(final_list or [])
+                page_obj = None
+            pagination = {'page': (page_obj.number if page_obj else 1), 'num_pages': (paginator.num_pages if paginator else 1), 'has_next': (page_obj.has_next() if page_obj else False), 'has_prev': (page_obj.has_previous() if page_obj else False), 'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)), 'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)), 'count': (paginator.count if paginator else len(final_list or [])), 'page_size': page_size}
+            return Response({'success': True, 'count': (paginator.count if paginator else len(final_list or [])), 'data': paged_rows, 'pagination': pagination}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Sales vs Achievement (Territory) hierarchy by Region/Zone/Territory",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
+        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
+        openapi.Parameter('region', openapi.IN_QUERY, description="Region name", type=openapi.TYPE_STRING),
+        openapi.Parameter('zone', openapi.IN_QUERY, description="Zone name", type=openapi.TYPE_STRING),
+        openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
+        openapi.Parameter('in_millions', openapi.IN_QUERY, description="Scale numeric values to millions", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number (default 1)", type=openapi.TYPE_INTEGER, default=1),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page (default 10)", type=openapi.TYPE_INTEGER, default=10),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def sales_vs_achievement_territory_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    cfg = {'host': os.environ.get('HANA_HOST') or '', 'port': os.environ.get('HANA_PORT') or '30015', 'user': os.environ.get('HANA_USER') or '', 'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP', 'encrypt': os.environ.get('HANA_ENCRYPT') or '', 'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or ''}
+    db_param = (request.query_params.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    else:
+        cfg['schema'] = '4B-BIO_APP'
+    start_date = (request.query_params.get('start_date') or '').strip()
+    end_date = (request.query_params.get('end_date') or '').strip()
+    region = (request.query_params.get('region') or '').strip()
+    zone = (request.query_params.get('zone') or '').strip()
+    territory = (request.query_params.get('territory') or '').strip()
+    in_millions_param = (request.query_params.get('in_millions') or '').strip().lower()
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            data = sales_vs_achievement_geo_inv(conn, emp_id=None, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_emp=False)
+            if in_millions_param in ('true','1','yes','y'):
+                scaled = []
+                for row in data or []:
+                    if isinstance(row, dict):
+                        r = dict(row)
+                        try:
+                            v = r.get('Collection_Target')
+                            if v is None: v = r.get('COLLECTION_TARGET')
+                            if v is None: v = r.get('COLLETION_TARGET')
+                            if v is not None:
+                                r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                        except Exception:
+                            pass
+                        try:
+                            v = r.get('Collection_Achievement')
+                            if v is None: v = r.get('COLLECTION_ACHIEVEMENT')
+                            if v is None: v = r.get('DocTotal')
+                            if v is not None:
+                                r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                        except Exception:
+                            pass
+                        r.pop('EmployeeName', None)
+                        scaled.append(r)
+                    else:
+                        scaled.append(row)
+                data = scaled
+            hierarchy = {}
+            for row in (data or []):
+                if not isinstance(row, dict):
+                    continue
+                reg = row.get('Region') or row.get('REGION') or 'Unknown Region'
+                zon = row.get('Zone') or row.get('ZONE') or 'Unknown Zone'
+                ter = row.get('Territory') or row.get('TERRITORY') or 'Unknown Territory'
+                sal = 0.0
+                ach = 0.0
+                try:
+                    v = row.get('Collection_Target')
+                    if v is None: v = row.get('COLLECTION_TARGET')
+                    if v is None: v = row.get('COLLETION_TARGET')
+                    sal = float(v or 0.0)
+                except Exception:
+                    pass
+                try:
+                    v = row.get('Collection_Achievement')
+                    if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
+                    if v is None: v = row.get('DocTotal')
+                    ach = float(v or 0.0)
+                except Exception:
+                    pass
+                if reg not in hierarchy:
+                    hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                hierarchy[reg]['sales'] += sal
+                hierarchy[reg]['achievement'] += ach
+                if zon not in hierarchy[reg]['zones']:
+                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                hierarchy[reg]['zones'][zon]['sales'] += sal
+                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                hierarchy[reg]['zones'][zon]['territories'].append({'name': ter, 'sales': sal, 'achievement': ach})
+            final_list = []
+            for r_name in sorted(hierarchy.keys()):
+                r_data = hierarchy[r_name]
+                zones_list = []
+                for z_name in sorted(r_data['zones'].keys()):
+                    z_data = r_data['zones'][z_name]
+                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                    zones_list.append(z_data)
+                r_data['zones'] = zones_list
+                final_list.append(r_data)
+            for r in final_list:
+                r['sales'] = round(r['sales'], 2)
+                r['achievement'] = round(r['achievement'], 2)
+                for z in r['zones']:
+                    z['sales'] = round(z['sales'], 2)
+                    z['achievement'] = round(z['achievement'], 2)
+            page_param = (request.query_params.get('page') or '1').strip()
+            page_size_param = (request.query_params.get('page_size') or '').strip()
+            try:
+                page_num = int(page_param) if page_param else 1
+            except Exception:
+                page_num = 1
+            default_page_size = 10
+            try:
+                default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 10) or 10)
+            except Exception:
+                default_page_size = 10
+            try:
+                page_size = int(page_size_param) if page_size_param else default_page_size
+            except Exception:
+                page_size = default_page_size
+            paginator = Paginator(list(final_list or []), page_size)
+            try:
+                page_obj = paginator.page(page_num)
+                paged_rows = list(page_obj.object_list)
+            except Exception:
+                paged_rows = list(final_list or [])
+                page_obj = None
+            pagination = {'page': (page_obj.number if page_obj else 1), 'num_pages': (paginator.num_pages if paginator else 1), 'has_next': (page_obj.has_next() if page_obj else False), 'has_prev': (page_obj.has_previous() if page_obj else False), 'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)), 'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)), 'count': (paginator.count if paginator else len(final_list or [])), 'page_size': page_size}
+            return Response({'success': True, 'count': (paginator.count if paginator else len(final_list or [])), 'data': paged_rows, 'pagination': pagination}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 @swagger_auto_schema(
     method='get',
     operation_description="Sales vs Achievement grouped by employee and territory",

@@ -253,6 +253,7 @@
       <a class="button {% if current_action == 'sales_vs_achievement' %}active{% endif %}" href="?action=sales_vs_achievement&company_db={{ selected_db_key }}">Sales VS Achievement</a>
       <a class="button {% if current_action == 'sales_vs_achievement_by_emp' %}active{% endif %}" href="?action=sales_vs_achievement_by_emp&company_db={{ selected_db_key }}">Sales VS Achievement by Emp</a>
       <a class="button {% if current_action == 'sales_vs_achievement_geo_inv' %}active{% endif %}" href="?action=sales_vs_achievement_geo_inv&company_db={{ selected_db_key }}">Sales VS Achievement (Geo Inv)</a>
+      <a class="button {% if current_action == 'sales_vs_achievement_territory' %}active{% endif %}" href="?action=sales_vs_achievement_territory&company_db={{ selected_db_key }}">Sales VS Achievement (Territory)</a>
       <a class="button {% if current_action == 'sales_vs_achievement_geo_profit' %}active{% endif %}" href="?action=sales_vs_achievement_geo_profit&company_db={{ selected_db_key }}">Sales VS Achievement (Profit)</a>
       <a class="button {% if current_action == 'products_catalog' %}active{% endif %}" href="?action=products_catalog&company_db={{ selected_db_key }}">Products Catalog</a>
       <a class="button {% if current_action == 'policy_customer_balance' %}active{% endif %}" href="?action=policy_customer_balance&company_db={{ selected_db_key }}">Policy Wise Customer Balance</a>
@@ -492,6 +493,12 @@
         </div>
         <div class="filter-grid">
           <div class="filter-field">
+            <div class="filter-label" title="Employee ID">Emp ID</div>
+            <div class="filter-input">
+              <input type="number" name="emp_id" value="{{ request.GET.emp_id|default:'' }}" placeholder="e.g., 299" />
+            </div>
+          </div>
+          <div class="filter-field">
             <div class="filter-label" title="Region">Region</div>
             <div class="filter-input">
               <select name="region">
@@ -538,10 +545,12 @@
             <div class="filter-label" title="End Date">End Date</div>
             <div class="filter-input"><input type="date" name="end_date" value="{{ request.GET.end_date|default:'' }}" /></div>
           </div>
+
           <div class="filter-field">
              <div class="filter-label" title="Scale to millions">Scale</div>
              <div class="filter-input"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="in_millions" value="true" {% if request.GET.in_millions in 'true 1 yes y' %}checked{% endif %}/> In Millions</label></div>
           </div>
+
         </div>
         <div class="filter-actions">
           <button type="submit" class="btn">
@@ -558,6 +567,13 @@
 
     {% if current_action == 'sales_vs_achievement_geo_inv' %}
       <style>
+        /* Hierarchy Table Colors */
+        .region-row td { background-color: #bf66ff !important; color: #111827 !important; font-weight: 700; border-bottom: 1px solid #fff; }
+        .zone-row td { background-color: #80ff80 !important; color: #111827 !important; font-weight: 600; border-bottom: 1px solid #fff; }
+        .territory-row td { background-color: #ffbb99 !important; color: #111827 !important; border-bottom: 1px solid #fff; }
+        .indent-1 { padding-left: 30px !important; }
+        .indent-2 { padding-left: 60px !important; }
+
         :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#8b5cf6;--filter-primary-600:#7c3aed;--filter-accent:#6366f1;--filter-radius:12px}
         .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
         .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
@@ -584,6 +600,110 @@
         <div class="filter-header">
           <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
           <div class="filter-title">Sales VS Achievement (Geo Inv) Filters</div>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field">
+            <div class="filter-label" title="Employee ID">Emp ID</div>
+            <div class="filter-input">
+              <input type="number" name="emp_id" value="{{ request.GET.emp_id|default:'' }}" placeholder="e.g., 299" />
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label" title="Region">Region</div>
+            <div class="filter-input">
+              <select name="region">
+                <option value="">All Regions</option>
+                {% for r in geo_options.regions %}
+                  <option value="{{ r }}" {% if r == request.GET.region %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label" title="Zone">Zone</div>
+            <div class="filter-input">
+              <select name="zone">
+                <option value="">All Zones</option>
+                {% for z in geo_options.zones %}
+                  <option value="{{ z }}" {% if z == request.GET.zone %}selected{% endif %}>{{ z }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label" title="Territory">Territory</div>
+            <div class="filter-input">
+              <select name="territory">
+                <option value="">All Territories</option>
+                {% for t in geo_options.territories %}
+                  <option value="{{ t }}" {% if t == request.GET.territory %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label" title="Start Date">Start Date</div>
+            <div class="filter-input"><input type="date" name="start_date" value="{{ request.GET.start_date|default:'' }}" /></div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label" title="End Date">End Date</div>
+            <div class="filter-input"><input type="date" name="end_date" value="{{ request.GET.end_date|default:'' }}" /></div>
+          </div>
+          <div class="filter-field">
+             <div class="filter-label" title="Scale to millions">Scale</div>
+             <div class="filter-input"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="in_millions" value="true" {% if request.GET.in_millions in 'true 1 yes y' %}checked{% endif %}/> In Millions</label></div>
+          </div>
+          <div class="filter-field">
+             <div class="filter-label" title="Group by Employee">Detailed View</div>
+             <div class="filter-input">
+                <label style="display:flex;align-items:center;gap:8px">
+                  <input type="hidden" name="group_by_emp" value="false">
+                  <input type="checkbox" name="group_by_emp" value="true" {% if request.GET.group_by_emp == 'true' %}checked{% endif %}/> 
+                  Group by Emp
+                </label>
+             </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply Filters
+          </button>
+          <a class="btn btn-secondary" href="?action=sales_vs_achievement_geo_inv&company_db={{ selected_db_key }}">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+    {% endif %}
+    {% if current_action == 'sales_vs_achievement_territory' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#8b5cf6;--filter-primary-600:#7c3aed;--filter-accent:#6366f1;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(3, minmax(200px,1fr));gap:12px}
+        @media (max-width:900px){.filter-grid{grid-template-columns:repeat(2, minmax(200px,1fr))}}
+        @media (max-width:640px){.filter-grid{grid-template-columns:1fr}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}
+        .filter-input select:focus,.filter-input input:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(139,92,246,0.15)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(139,92,246,0.25)}
+        .btn:active{transform:translateY(0)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#f5f3ff}
+        .icon{width:16px;height:16px;fill:currentColor}
+      </style>
+      <form method="get" class="filter-card" id="territory-filter-form">
+        <input type="hidden" name="action" value="sales_vs_achievement_territory" />
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+          <div class="filter-title">Sales VS Achievement (Territory) Filters</div>
         </div>
         <div class="filter-grid">
           <div class="filter-field">
@@ -637,7 +757,7 @@
             <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
             Apply Filters
           </button>
-          <a class="btn btn-secondary" href="?action=sales_vs_achievement_geo_inv&company_db={{ selected_db_key }}">
+          <a class="btn btn-secondary" href="?action=sales_vs_achievement_territory&company_db={{ selected_db_key }}">
             <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
             Clear
           </a>
@@ -676,6 +796,12 @@
         </div>
         <div class="filter-grid">
           <div class="filter-field">
+            <div class="filter-label" title="Employee ID">Emp ID</div>
+            <div class="filter-input">
+              <input type="number" name="emp_id" value="{{ request.GET.emp_id|default:'' }}" placeholder="e.g., 299" />
+            </div>
+          </div>
+          <div class="filter-field">
             <div class="filter-label" title="Region">Region</div>
             <div class="filter-input">
               <select name="region">
@@ -719,6 +845,16 @@
           <div class="filter-field">
              <div class="filter-label" title="Scale to millions">Scale</div>
              <div class="filter-input"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="in_millions" value="true" {% if request.GET.in_millions in 'true 1 yes y' %}checked{% endif %}/> In Millions</label></div>
+          </div>
+          <div class="filter-field">
+             <div class="filter-label" title="Group by Employee">Detailed View</div>
+             <div class="filter-input">
+                <label style="display:flex;align-items:center;gap:8px">
+                  <input type="hidden" name="group_by_emp" value="false">
+                  <input type="checkbox" name="group_by_emp" value="true" {% if not request.GET.group_by_emp or request.GET.group_by_emp == 'true' %}checked{% endif %}/> 
+                  Group by Emp
+                </label>
+             </div>
           </div>
         </div>
         <div class="filter-actions">
@@ -1854,22 +1990,46 @@ textContent=count+' active'}
           alert(details);
         }
       </script>
-    {% elif current_action == 'sales_vs_achievement_geo_inv' and result_rows %}
+    {% elif current_action == 'sales_vs_achievement_geo_inv' and result_rows or current_action == 'sales_vs_achievement_geo_profit' and result_rows or current_action == 'sales_vs_achievement_territory' and result_rows %}
       <style>
-        .geo-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; margin-top: 20px; font-size: 14px; background: #fff; }
-        .geo-table th { background-color: #f8fafc; color: #0f172a; padding: 12px 16px; text-align: right; font-weight: 700; border-bottom: 1px solid #e5e7eb; }
+        .geo-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; table-layout: fixed; }
+        .geo-table th { background-color: #f8fafc; color: #0f172a !important; padding: 12px 16px; text-align: right; font-weight: 700; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em; }
         .geo-table th:first-child { text-align: left; }
-        .geo-table td { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; text-align: right; }
+        .geo-table td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; color: #0f172a !important; text-align: right; }
         .geo-table td:first-child { text-align: left; }
-        .region-row { background-color: #f0f9ff; font-weight: 700; color: #0369a1; }
-        .zone-row { background-color: #fff7ed; font-weight: 600; color: #c2410c; }
-        .territory-row { background-color: #ffffff; color: #475569; }
+        .geo-table th:first-child, .geo-table td:first-child { width: 100%; min-width: 300px; }
+        .geo-table th:nth-child(2), .geo-table td:nth-child(2) { width: 100%; }
+        .geo-table th:nth-child(3), .geo-table td:nth-child(3) { width: 15%; }
+        .geo-table th:nth-child(4), .geo-table td:nth-child(4) { width: 55%; }
+        .region-row { background-color: #bf66ff; font-weight: 700; color: #111827; }
+        .region-row td { background-color: #bf66ff !important; color: #111827 !important; }
+        .region-row td:first-child { background-color: #bf66ff !important; color: #111827 !important; }
+        .zone-row { background-color: #80ff80; font-weight: 600; color: #111827; }
+        .zone-row td { background-color: #80ff80 !important; color: #111827 !important; }
+        .zone-row td:first-child { background-color: #80ff80 !important; color: #111827 !important; }
+        .territory-row { background-color: #ffbb99; color: #111827; }
+        .territory-row td { background-color: #ffbb99 !important; color: #111827 !important; }
+        .territory-row td:first-child { background-color: #ffbb99 !important; color: #111827 !important; }
         .indent-1 { padding-left: 32px !important; position: relative; }
-        .indent-1::before { content: "↳"; position: absolute; left: 12px; opacity: 0.5; }
+        .indent-1::before { content: ""; position: absolute; left: 12px; top: 50%; width: 12px; height: 1px; background: #94a3b8; }
+        .indent-1::after { content: ""; position: absolute; left: 12px; top: 0; bottom: 50%; width: 1px; background: #94a3b8; }
         .indent-2 { padding-left: 56px !important; position: relative; }
-        .indent-2::before { content: "↳"; position: absolute; left: 36px; opacity: 0.5; }
-        .geo-table tr:hover { background-color: #f8fafc; transition: background-color 0.15s; }
+        .indent-2::before { content: ""; position: absolute; left: 36px; top: 50%; width: 12px; height: 1px; background: #94a3b8; }
+        .indent-2::after { content: ""; position: absolute; left: 36px; top: 0; bottom: 50%; width: 1px; background: #94a3b8; }
+        .indent-2 { padding-left: 56px !important; position: relative; }
+        .indent-2::before { content: ""; position: absolute; left: 36px; top: 50%; width: 12px; height: 1px; background: #cbd5e1; }
+        .indent-2::after { content: ""; position: absolute; left: 36px; top: 0; bottom: 50%; width: 1px; background: #cbd5e1; }
+        .geo-table tr:hover { background-color: #f8fafc; }
+        .emp-name { color: #64748b; font-size: 13px; font-style: italic; }
       </style>
+      {% if current_action == 'sales_vs_achievement_geo_inv' %}
+      <style>
+        .geo-table th:first-child, .geo-table td:first-child { width: 15%; min-width: 300px; }
+        .geo-table th:nth-child(2), .geo-table td:nth-child(2) { width: 8%; }
+        .geo-table th:nth-child(3), .geo-table td:nth-child(3) { width: 8%; }
+        .geo-table th:nth-child(4), .geo-table td:nth-child(4) { width: 69%; }
+      </style>
+      {% endif %}
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h3 style="margin:0;">Region / Zone / Territory Breakdown</h3>
         <div style="font-size:13px; color:#64748b;">
@@ -1883,26 +2043,30 @@ textContent=count+' active'}
               <th>Location</th>
               <th>Sales</th>
               <th>Achievement</th>
+              {% if current_action != 'sales_vs_achievement_territory' %}<th>Employee</th>{% endif %}
             </tr>
           </thead>
           <tbody>
             {% for region in result_rows %}
                <tr class="region-row">
-                 <td>{{ region.name }}</td>
-                 <td>{{ region.sales }}</td>
-                 <td>{{ region.achievement }}</td>
+                 <td>Region: {{ region.name|default:"Unknown Region" }}</td>
+                 <td>{{ region.sales|default_if_none:0|floatformat:2 }}</td>
+                 <td>{{ region.achievement|default_if_none:0|floatformat:2 }}</td>
+                 {% if current_action != 'sales_vs_achievement_territory' %}<td></td>{% endif %}
                </tr>
                {% for zone in region.zones %}
                  <tr class="zone-row">
-                   <td class="indent-1">{{ zone.name }}</td>
-                   <td>{{ zone.sales }}</td>
-                   <td>{{ zone.achievement }}</td>
+                   <td class="indent-1">Zone: {{ zone.name|default:"Unknown Zone" }}</td>
+                   <td>{{ zone.sales|default_if_none:0|floatformat:2 }}</td>
+                   <td>{{ zone.achievement|default_if_none:0|floatformat:2 }}</td>
+                   {% if current_action != 'sales_vs_achievement_territory' %}<td></td>{% endif %}
                  </tr>
                  {% for territory in zone.territories %}
                    <tr class="territory-row">
-                     <td class="indent-2">{{ territory.name }}</td>
-                     <td>{{ territory.sales }}</td>
-                     <td>{{ territory.achievement }}</td>
+                     <td class="indent-2">Territory: {{ territory.name|default:"Unknown Territory" }}</td>
+                     <td>{{ territory.sales|default_if_none:0|floatformat:2 }}</td>
+                     <td>{{ territory.achievement|default_if_none:0|floatformat:2 }}</td>
+                     <td class="emp-name">{{ territory.employee_name }}</td>
                    </tr>
                  {% endfor %}
                {% endfor %}
@@ -1999,6 +2163,50 @@ textContent=count+' active'}
     {% endif %}
   </div>
   
+   <script>
+     document.addEventListener('DOMContentLoaded', function() {
+       const today = new Date();
+       const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      
+      function formatDate(d) {
+          let month = '' + (d.getMonth() + 1);
+          let day = '' + d.getDate();
+          let year = d.getFullYear();
+
+          if (month.length < 2) month = '0' + month;
+          if (day.length < 2) day = '0' + day;
+
+          return [year, month, day].join('-');
+      }
+
+       // Auto-fill dates for Geo Inv report if empty
+       const geoInvForm = document.getElementById('geo-inv-filter-form');
+       if (geoInvForm) {
+           const startInput = geoInvForm.querySelector('input[name="start_date"]');
+           const endInput = geoInvForm.querySelector('input[name="end_date"]');
+           
+           if (startInput && !startInput.value) {
+               startInput.value = formatDate(firstDay);
+           }
+           if (endInput && !endInput.value) {
+               endInput.value = formatDate(today);
+           }
+       }
+       const territoryForm = document.getElementById('territory-filter-form');
+       if (territoryForm) {
+           const startInput = territoryForm.querySelector('input[name="start_date"]');
+           const endInput = territoryForm.querySelector('input[name="end_date"]');
+           
+           if (startInput && !startInput.value) {
+               startInput.value = formatDate(firstDay);
+           }
+           if (endInput && !endInput.value) {
+               endInput.value = formatDate(today);
+           }
+       }
+     });
+   </script>
+
 </div>
 {% endblock %}
   {% if current_action == 'project_balance' %}
