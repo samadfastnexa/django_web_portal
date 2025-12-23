@@ -71,4 +71,5 @@ urlpatterns = [
     path('api/sap/', include('sap_integration.urls')),
     path('api/crop-management/', include('crop_management.urls')),
      path('api/', include('crop_manage.urls')),  # <-- add this
+    path('kindwise/', include('kindwise.urls')),  # Kindwise app URLs
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

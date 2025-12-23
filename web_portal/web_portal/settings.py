@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'sap_integration', # app for SAP integration
     'crop_management',  # app for crop management - R&D & MIS
     'crop_manage',
+    'kindwise',  # app for Kindwise crop identification
 ]
 
 MIDDLEWARE = [
@@ -242,7 +243,7 @@ SWAGGER_SETTINGS = {
         'drf_yasg.inspectors.SimpleFieldInspector',
         'drf_yasg.inspectors.StringDefaultFieldInspector',
     ],
-    'DEFAULT_AUTO_SCHEMA_CLASS': 'drf_yasg.inspectors.SwaggerAutoSchema',
+    'DEFAULT_AUTO_SCHEMA_CLASS': 'web_portal.swagger.CustomAutoSchema',
     'SUPPORTED_SUBMIT_METHODS': ['get', 'post', 'put', 'delete', 'patch'],
     'OPERATIONS_SORTER': 'alpha',
     'TAGS_SORTER': 'alpha',
@@ -252,3 +253,7 @@ SWAGGER_SETTINGS = {
     'DEFAULT_MODEL_DEPTH': 3,
 }
 WEATHER_API_KEY = "36c4dcfbb24443b18b2112951252507"
+
+# Kindwise API Configuration
+KINDWISE_API_KEY = 'm1Rx5M1cCciIUYbNaCpDH4gOKwBItDTeciJ1aSg01x5A3lUUQz'
+
