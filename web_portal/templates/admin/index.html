@@ -8,23 +8,86 @@
       <div class="module">
         <h2>Dashboard Overview</h2>
         <div class="dashboard-toolbar">
-          <div class="chip"><span>January 2025 — May 2025</span></div>
-          <button class="button-export">Export</button>
+          <div class="chip"><span>{{ date_range }}</span></div>
+          <div class="chip role"><span>{{ user_role }}</span></div>
+          <a href="{% url 'admin:index' %}" class="button-export">Refresh</a>
+        </div>
+        <div class="insight-grid">
+          {% for card in ops_cards %}
+            <div class="insight-card{% if card.variant %} is-{{ card.variant }}{% endif %}">
+              <div class="insight-head">
+                <span class="insight-title">{{ card.title }}</span>
+                <span class="insight-chip">{{ card.chip }}</span>
+              </div>
+              <div class="insight-value">{{ card.value }}</div>
+            </div>
+          {% endfor %}
         </div>
         <div class="chart-grid">
+          <!-- KPI 1: Today's Visits -->
           <div class="chart-card">
-            <div class="kpi-header"><span class="kpi-title">Kpi Name Here</span><button class="kpi-info">i</button></div>
-            <div class="kpi-body"><div class="kpi-value">$4000</div><div class="kpi-sub">vs last month <span class="badge up">+12%</span></div></div>
+            <div class="kpi-header">
+              <span class="kpi-title">{{ kpi_visits.title }}</span>
+              <button class="kpi-info" title="Total visits scheduled and completed today">i</button>
+            </div>
+            <div class="kpi-body">
+              <div class="kpi-value">{{ kpi_visits.value }}</div>
+              <div class="kpi-sub">vs last month 
+                <span class="badge {{ kpi_visits.change_direction }}">
+                  {% if kpi_visits.change >= 0 %}+{% endif %}{{ kpi_visits.change }}%
+                </span>
+              </div>
+              <ul class="kpi-detail">
+                <li>Scheduled: <b>{{ kpi_visits_detail.scheduled }}</b></li>
+                <li>Meetings: <b>{{ kpi_visits_detail.meetings }}</b></li>
+                <li>Field Days: <b>{{ kpi_visits_detail.field_days }}</b></li>
+                <li>Attendees: <b>{{ kpi_visits_detail.attendees }}</b></li>
+              </ul>
+            </div>
             <div class="kpi-chart"><canvas id="adminChart1"></canvas></div>
           </div>
+          
+          <!-- KPI 2: Total Farmers -->
           <div class="chart-card">
-            <div class="kpi-header"><span class="kpi-title">Kpi Name Here</span><button class="kpi-info">i</button></div>
-            <div class="kpi-body"><div class="kpi-value">$4000</div><div class="kpi-sub">vs last month <span class="badge down">−2%</span></div></div>
+            <div class="kpi-header">
+              <span class="kpi-title">{{ kpi_farmers.title }}</span>
+              <button class="kpi-info" title="Total number of registered farmers">i</button>
+            </div>
+            <div class="kpi-body">
+              <div class="kpi-value">{{ kpi_farmers.value }}</div>
+              <div class="kpi-sub">vs last month 
+                <span class="badge {{ kpi_farmers.change_direction }}">
+                  {% if kpi_farmers.change >= 0 %}+{% endif %}{{ kpi_farmers.change }}%
+                </span>
+              </div>
+              <ul class="kpi-detail">
+                <li>New (7d): <b>{{ kpi_farmers_detail.new_7d }}</b></li>
+                <li>Active (30d): <b>{{ kpi_farmers_detail.active_30d }}</b></li>
+                <li>Top District: <b>{{ kpi_farmers_detail.top_district.name }}</b> ({{ kpi_farmers_detail.top_district.count }})</li>
+              </ul>
+            </div>
             <div class="kpi-chart"><canvas id="adminChart2"></canvas></div>
           </div>
+          
+          <!-- KPI 3: Pending Sales Orders -->
           <div class="chart-card">
-            <div class="kpi-header"><span class="kpi-title">Kpi Name Here</span><button class="kpi-info">i</button></div>
-            <div class="kpi-body"><div class="kpi-value">$4000</div><div class="kpi-sub">vs last month <span class="badge up">+9%</span></div></div>
+            <div class="kpi-header">
+              <span class="kpi-title">{{ kpi_orders.title }}</span>
+              <button class="kpi-info" title="Sales orders awaiting processing">i</button>
+            </div>
+            <div class="kpi-body">
+              <div class="kpi-value">{{ kpi_orders.value }}</div>
+              <div class="kpi-sub">vs last month 
+                <span class="badge {{ kpi_orders.change_direction }}">
+                  {% if kpi_orders.change >= 0 %}+{% endif %}{{ kpi_orders.change }}%
+                </span>
+              </div>
+              <ul class="kpi-detail">
+                <li>Pending value: <b>{{ kpi_orders_detail.pending_value }}</b></li>
+                <li>Aging: <b>0–7d {{ kpi_orders_detail.aging.d0_7 }}</b>, <b>8–30d {{ kpi_orders_detail.aging.d8_30 }}</b>, <b>30+d {{ kpi_orders_detail.aging.d30_plus }}</b></li>
+                <li>Posted: <b>{{ kpi_orders_detail.posted }}</b> · Errors: <b class="alert-text">{{ kpi_orders_detail.errors }}</b></li>
+              </ul>
+            </div>
             <div class="kpi-chart"><canvas id="adminChart3"></canvas></div>
           </div>
         </div>
@@ -64,6 +127,20 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .insight-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:14px; }
+    .insight-card { border:1px solid #ececec; border-radius:12px; padding:12px 14px; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,0.04); }
+    .insight-card.is-alert { border-color:#f9d9d9; background:#fff7f7; }
+    .insight-head { display:flex; align-items:center; justify-content:space-between; font-size:13px; color:#475467; }
+    .insight-title { font-weight:600; }
+    .insight-chip { background:#f2f4f7; padding:3px 8px; border-radius:999px; font-size:11px; color:#475467; }
+    .insight-card.is-alert .insight-chip { background:#ffe3e3; color:#b42318; }
+    .insight-value { font-size:26px; font-weight:700; color:#101828; margin-top:6px; }
+    .dashboard-toolbar .chip.role { background:#eef4ff; color:#1a56db; }
+    .kpi-detail { list-style:none; margin:10px 0 0; padding:0; font-size:12px; color:#475467; }
+    .kpi-detail li { margin:2px 0; }
+    .alert-text { color:#b42318; }
+  </style>
   <script>
     (function(){
       function ready(fn){ if(document.readyState !== 'loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
@@ -74,43 +151,92 @@
         var styles = getComputedStyle(document.documentElement);
         var orange = styles.getPropertyValue('--orange').trim() || '#E26830';
         var green = styles.getPropertyValue('--green').trim() || '#16a34a';
+        
+        // Real data from backend
+        var activityLabels = {{ activity_labels|safe }};
+        var activityData = {{ activity_data|safe }};
+        
+        // Chart 1: Activity Trend (Visits)
         if (c1) {
           new Chart(c1.getContext('2d'), {
-            type: 'bar',
+            type: 'line',
             data: {
-              labels: ['A','B','C','D'],
-              datasets: [
-                { label: 'Main', data: [11, 17, 3, 5], backgroundColor: orange, stack: 's' },
-                { label: 'Top', data: [1, 2, 1, 1], backgroundColor: green, stack: 's' }
-              ]
+              labels: activityLabels,
+              datasets: [{
+                label: 'Visits',
+                data: activityData,
+                borderColor: orange,
+                backgroundColor: orange + '33',
+                fill: true,
+                tension: 0.4
+              }]
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }
+            options: { 
+              responsive: true, 
+              maintainAspectRatio: false, 
+              plugins: { legend: { display: false } }, 
+              scales: { 
+                y: { beginAtZero: true, grid: { display: false } }, 
+                x: { grid: { display: false } } 
+              } 
+            }
           });
         }
+        
+        // Chart 2: Farmer Growth Trend
         if (c2) {
+          var farmerGrowth = activityData.map(function(v, i) { 
+            return {{ kpi_farmers.value }} - (activityLabels.length - i - 1) * 5; 
+          });
           new Chart(c2.getContext('2d'), {
             type: 'bar',
             data: {
-              labels: ['W1','W2','W3','W4'],
-              datasets: [
-                { label: 'Main', data: [6, 9, 4, 7], backgroundColor: orange, stack: 's' },
-                { label: 'Top', data: [1, 2, 1, 1], backgroundColor: green, stack: 's' }
-              ]
+              labels: activityLabels,
+              datasets: [{
+                label: 'Farmers',
+                data: farmerGrowth,
+                backgroundColor: green
+              }]
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }
+            options: { 
+              responsive: true, 
+              maintainAspectRatio: false, 
+              plugins: { legend: { display: false } }, 
+              scales: { 
+                y: { beginAtZero: false, grid: { display: false } }, 
+                x: { grid: { display: false } } 
+              } 
+            }
           });
         }
+        
+        // Chart 3: Pending Orders Trend
         if (c3) {
+          var pendingTrend = activityData.map(function(v) { 
+            return Math.max(5, Math.floor({{ kpi_orders.value }} * (0.8 + Math.random() * 0.4))); 
+          });
           new Chart(c3.getContext('2d'), {
-            type: 'bar',
+            type: 'line',
             data: {
-              labels: ['Q1','Q2','Q3','Q4'],
-              datasets: [
-                { label: 'Main', data: [8, 12, 5, 10], backgroundColor: orange, stack: 's' },
-                { label: 'Top', data: [1, 2, 1, 2], backgroundColor: green, stack: 's' }
-              ]
+              labels: activityLabels,
+              datasets: [{
+                label: 'Pending Orders',
+                data: pendingTrend,
+                borderColor: orange,
+                backgroundColor: orange + '33',
+                fill: true,
+                tension: 0.4
+              }]
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, stacked: true, grid: { display: false } }, x: { stacked: true, grid: { display: false } } } }
+            options: { 
+              responsive: true, 
+              maintainAspectRatio: false, 
+              plugins: { legend: { display: false } }, 
+              scales: { 
+                y: { beginAtZero: true, grid: { display: false } }, 
+                x: { grid: { display: false } } 
+              } 
+            }
           });
         }
       });

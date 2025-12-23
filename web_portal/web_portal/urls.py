@@ -22,10 +22,17 @@ from django.shortcuts import redirect
 from django.conf import settings
 from django.conf.urls.static import static
 
-# Admin Site Configuration
-admin.site.site_header = getattr(settings, 'ADMIN_SITE_HEADER', 'Django Administration')
-admin.site.site_title = getattr(settings, 'ADMIN_SITE_TITLE', 'Django Admin')
-admin.site.index_title = getattr(settings, 'ADMIN_INDEX_TITLE', 'Site Administration')
+# Import custom admin site
+from django.utils.module_loading import autodiscover_modules
+from web_portal.admin import admin_site
+
+# Ensure all admin modules load into the custom admin site registry
+autodiscover_modules("admin", register_to=admin_site)
+
+# Admin Site Configuration - Use custom admin site for analytics
+admin_site.site_header = getattr(settings, 'ADMIN_SITE_HEADER', 'Django Administration')
+admin_site.site_title = getattr(settings, 'ADMIN_SITE_TITLE', 'Django Admin')
+admin_site.index_title = getattr(settings, 'ADMIN_INDEX_TITLE', 'Site Administration')
 
 schema_view = get_schema_view(
    openapi.Info(
@@ -41,11 +48,11 @@ schema_view = get_schema_view(
 )
 urlpatterns = [
     path('', lambda request: redirect('/admin/', permanent=False)), # Redirect root(http://127.0.0.1:8000) URL to admin
-    path('admin/set-database/', admin.site.admin_view(set_database), name='set_database'),
-    path('admin/hana-connect/', admin.site.admin_view(hana_connect_admin), name='hana_connect_admin'),
-    path('admin/sap-bp-entry/', admin.site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
-    path('admin/sap-bp-lookup/', admin.site.admin_view(bp_lookup_admin), name='sap_bp_lookup_admin'),
-    path('admin/sap-sales-order/', admin.site.admin_view(sales_order_admin), name='sap_sales_order_admin'),
+    path('admin/set-database/', admin_site.admin_view(set_database), name='set_database'),
+    path('admin/hana-connect/', admin_site.admin_view(hana_connect_admin), name='hana_connect_admin'),
+    path('admin/sap-bp-entry/', admin_site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
+    path('admin/sap-bp-lookup/', admin_site.admin_view(bp_lookup_admin), name='sap_bp_lookup_admin'),
+    path('admin/sap-sales-order/', admin_site.admin_view(sales_order_admin), name='sap_sales_order_admin'),
     path('api/sap/sales-vs-achievement/', sales_vs_achievement_api, name='sales_vs_achievement_api'),
     path('api/sap/sales-vs-achievement-by-emp/', sales_vs_achievement_by_emp_api, name='sales_vs_achievement_by_emp_api'),
     path('api/sap/territory-summary/', territory_summary_api, name='territory_summary_api'),
@@ -54,7 +61,7 @@ urlpatterns = [
     path('api/sap/health/', hana_health_api, name='hana_health_api'),
     path('api/sap/count-tables/', hana_count_tables_api, name='hana_count_tables_api'),
     path('api/sap/select-oitm/', select_oitm_api, name='select_oitm_api'),
-    path('admin/', admin.site.urls),
+    path('admin/', admin_site.urls),  # Use custom admin site
     
     # Swagger
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
@@ -72,4 +79,5 @@ urlpatterns = [
     path('api/crop-management/', include('crop_management.urls')),
      path('api/', include('crop_manage.urls')),  # <-- add this
     path('api/kindwise/', include('kindwise.urls')),  # Kindwise app URLs
+    path('api/analytics/', include('analytics.urls')),  # Analytics dashboard APIs
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

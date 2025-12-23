@@ -1,9 +1,10 @@
 from django.contrib import admin
+from web_portal.admin import admin_site
 from django.utils.html import format_html
 from .models import Farm
 
 
-@admin.register(Farm)
+@admin.register(Farm, site=admin_site)
 class FarmAdmin(admin.ModelAdmin):
     list_display = ("name", "owner", "size", "soil_type", "is_active", "status_display", "created_at")
     list_filter = ("soil_type", "is_active", "created_at", "deleted_at")

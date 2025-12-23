@@ -1,4 +1,5 @@
 from django.contrib import admin
+from web_portal.admin import admin_site
 from .models import Meeting, FarmerAttendance, MeetingAttachment, FieldDay, FieldDayAttendance, FieldDayAttachment, FieldDayAttendanceCrop
 class FarmerAttendanceInline(admin.TabularInline):
     model = FarmerAttendance
@@ -10,7 +11,7 @@ class MeetingAttachmentInline(admin.TabularInline):
     extra = 1
 
 
-@admin.register(Meeting)
+@admin.register(Meeting, site=admin_site)
 class MeetingAdmin(admin.ModelAdmin):
     inlines = [FarmerAttendanceInline, MeetingAttachmentInline]
 
@@ -57,7 +58,7 @@ class FieldDayAttachmentInline(admin.TabularInline):
     model = FieldDayAttachment
     extra = 1
 
-@admin.register(FieldDay)
+@admin.register(FieldDay, site=admin_site)
 class FieldDayAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'title', 'company_fk', 'territory_fk', 'zone_fk', 'region_fk', 
@@ -81,7 +82,7 @@ class FieldDayAttendanceCropInline(admin.TabularInline):
     fields = ['crop_name', 'acreage']
 
 
-@admin.register(FieldDayAttendance)
+@admin.register(FieldDayAttendance, site=admin_site)
 class FieldDayAttendanceAdmin(admin.ModelAdmin):
     list_display = ('field_day', 'farmer_info', 'farmer_name', 'contact_number', 'acreage', 'crop', 'get_crops_display')
     search_fields = ('farmer__farmer_id', 'farmer__first_name', 'farmer__last_name', 'farmer_name', 'contact_number', 'crop')
@@ -117,7 +118,7 @@ class FieldDayAttendanceAdmin(admin.ModelAdmin):
     get_crops_display.short_description = "Crops (New)"
 
 
-@admin.register(FieldDayAttendanceCrop)
+@admin.register(FieldDayAttendanceCrop, site=admin_site)
 class FieldDayAttendanceCropAdmin(admin.ModelAdmin):
     list_display = ['attendance', 'crop_name', 'acreage']
     list_filter = ['crop_name']

@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'crop_management',  # app for crop management - R&D & MIS
     'crop_manage',
     'kindwise',  # app for Kindwise crop identification
+    'analytics',  # app for analytics and dashboard
 ]
 
 MIDDLEWARE = [

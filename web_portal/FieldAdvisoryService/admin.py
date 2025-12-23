@@ -1,4 +1,5 @@
 from django.contrib import admin
+from web_portal.admin import admin_site
 from django.contrib import messages
 import json
 import logging
@@ -18,7 +19,7 @@ class MeetingScheduleAttendanceInline(admin.TabularInline):
     readonly_fields = ('farmer_name', 'contact_number')
     autocomplete_fields = ['farmer']
 
-@admin.register(MeetingSchedule)
+@admin.register(MeetingSchedule, site=admin_site)
 class MeetingScheduleAdmin(admin.ModelAdmin):
     inlines = [MeetingScheduleAttendanceInline]
     list_display = [
@@ -392,7 +393,7 @@ class SalesOrderLineInline(admin.TabularInline):
         return formset
 
 
-@admin.register(SalesOrder)
+@admin.register(SalesOrder, site=admin_site)
 class SalesOrderAdmin(admin.ModelAdmin):
     form = SalesOrderForm
     list_display = ('id', 'card_code', 'card_name', 'doc_date', 'status', 'is_posted_to_sap', 'sap_doc_num', 'created_at')
@@ -762,7 +763,7 @@ class _CompanySessionResolver:
         except Exception:
             return None
 
-@admin.register(Region)
+@admin.register(Region, site=admin_site)
 class RegionAdmin(admin.ModelAdmin, _CompanySessionResolver):
     list_display = ('name', 'company')
     list_filter = ('company',)
@@ -772,7 +773,7 @@ class RegionAdmin(admin.ModelAdmin, _CompanySessionResolver):
         comp = self._get_selected_company(request)
         return qs.filter(company=comp) if comp else qs
 
-@admin.register(Zone)
+@admin.register(Zone, site=admin_site)
 class ZoneAdmin(admin.ModelAdmin, _CompanySessionResolver):
     list_display = ('name', 'region', 'company')
     list_filter = ('region', 'company')
@@ -782,7 +783,7 @@ class ZoneAdmin(admin.ModelAdmin, _CompanySessionResolver):
         comp = self._get_selected_company(request)
         return qs.filter(company=comp) if comp else qs
 
-@admin.register(Territory)
+@admin.register(Territory, site=admin_site)
 class TerritoryAdmin(admin.ModelAdmin, _CompanySessionResolver):
     def region(self, obj):
         return obj.zone.region if obj.zone else None
@@ -795,7 +796,7 @@ class TerritoryAdmin(admin.ModelAdmin, _CompanySessionResolver):
         comp = self._get_selected_company(request)
         return qs.filter(company=comp) if comp else qs
 
-@admin.register(Dealer)
+@admin.register(Dealer, site=admin_site)
 class DealerAdmin(admin.ModelAdmin):
     list_display = ('name', 'user', 'user_email', 'contact_number', 'company', 'is_active')
     list_select_related = ('user',)
@@ -805,7 +806,7 @@ class DealerAdmin(admin.ModelAdmin):
         return obj.user.email if obj.user else '-'
     user_email.short_description = 'Email'
     
-@admin.register(DealerRequest)
+@admin.register(DealerRequest, site=admin_site)
 class DealerRequestAdmin(admin.ModelAdmin):
     change_list_template = 'admin/fieldadvisoryservice/dealerrequest/change_list.html'
     change_form_template = 'admin/fieldadvisoryservice/dealerrequest/change_form.html'

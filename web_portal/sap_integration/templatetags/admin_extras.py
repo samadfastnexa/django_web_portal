@@ -1,5 +1,5 @@
 from django import template
-from django.contrib.admin.sites import site
+from web_portal.admin import admin_site
 
 register = template.Library()
 
@@ -9,7 +9,7 @@ def get_all_app_list(context):
     if request is None:
         return []
     try:
-        return site.get_app_list(request)
+        return admin_site.get_app_list(request)
     except Exception:
         return []
 

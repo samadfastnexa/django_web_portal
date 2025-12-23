@@ -1,7 +1,8 @@
 from django.contrib import admin
+from web_portal.admin import admin_site
 from .models import Attendance, AttendanceRequest
 
-@admin.register(Attendance)
+@admin.register(Attendance, site=admin_site)
 class AttendanceAdmin(admin.ModelAdmin):
     list_display = ('attendee', 'user', 'check_in_time', 'check_out_time', 'source')
     list_filter = ('source', 'created_at')
@@ -10,7 +11,7 @@ class AttendanceAdmin(admin.ModelAdmin):
     
 
 
-@admin.register(AttendanceRequest)
+@admin.register(AttendanceRequest, site=admin_site)
 class AttendanceRequestAdmin(admin.ModelAdmin):
     list_display = ['user', 'check_type', 'attendance', 'created_at']
     fields = ['user', 'check_type', 'check_in_time', 'check_out_time', 'reason', 'attendance']
