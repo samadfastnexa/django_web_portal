@@ -2066,6 +2066,55 @@ textContent=count+' active'}
           alert(details);
         }
       </script>
+      
+      <!-- Pagination Controls for Products Catalog -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding:16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;flex-wrap:wrap;gap:16px">
+        <div style="font-weight:600;color:#0f172a;font-size:15px">
+          Page {{ pagination.page }} of {{ pagination.num_pages }} | Total: {{ pagination.count }} products
+        </div>
+        
+        <div style="display:flex;align-items:center;gap:8px">
+          {% if pagination.has_prev %}
+            <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page=1" style="background:#fff;color:#0ea5e9;border:1px solid #0ea5e9;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:600">
+              « First
+            </a>
+            <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.prev_page }}" style="background:#0ea5e9;color:#fff;border:1px solid #0ea5e9;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:600">
+              ‹ Previous
+            </a>
+          {% else %}
+            <span style="padding:10px 14px;background:#e2e8f0;color:#94a3b8;border-radius:8px;font-weight:600">« First</span>
+            <span style="padding:10px 14px;background:#e2e8f0;color:#94a3b8;border-radius:8px;font-weight:600">‹ Previous</span>
+          {% endif %}
+          
+          <span style="padding:10px 16px;background:#fff;border:2px solid #0ea5e9;border-radius:8px;font-weight:700;color:#0ea5e9">
+            {{ pagination.page }}
+          </span>
+          
+          {% if pagination.has_next %}
+            <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.next_page }}" style="background:#0ea5e9;color:#fff;border:1px solid #0ea5e9;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:600">
+              Next ›
+            </a>
+            <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.num_pages }}" style="background:#fff;color:#0ea5e9;border:1px solid #0ea5e9;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:600">
+              Last »
+            </a>
+          {% else %}
+            <span style="padding:10px 14px;background:#e2e8f0;color:#94a3b8;border-radius:8px;font-weight:600">Next ›</span>
+            <span style="padding:10px 14px;background:#e2e8f0;color:#94a3b8;border-radius:8px;font-weight:600">Last »</span>
+          {% endif %}
+        </div>
+        
+        <form method="get" style="display:flex;align-items:center;gap:10px">
+          {% for k,v in request.GET.items %}
+            {% if k != 'page_size' and k != 'page' %}
+              <input type="hidden" name="{{ k }}" value="{{ v }}" />
+            {% endif %}
+          {% endfor %}
+          <label style="font-weight:600;color:#334155;white-space:nowrap">Items per page:</label>
+          <input type="number" name="page_size" min="1" max="200" value="{{ pagination.page_size }}" style="width:70px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-weight:600" />
+          <button type="submit" style="background:#10b981;border:1px solid #10b981;color:#fff;padding:8px 16px;border-radius:8px;font-weight:600;cursor:pointer">Apply</button>
+        </form>
+      </div>
+      
     {% elif current_action == 'sales_vs_achievement_geo_inv' and result_rows or current_action == 'sales_vs_achievement_geo_profit' and result_rows or current_action == 'sales_vs_achievement_territory' and result_rows %}
       <style>
         .geo-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; table-layout: fixed; }
@@ -2204,27 +2253,52 @@ textContent=count+' active'}
         </tbody>
       </table>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
-        <div>Page {{ pagination.page }} of {{ pagination.num_pages }} ({{ pagination.count }} items)</div>
-        {% if pagination.has_prev %}
-          <a class="btn btn-secondary" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.prev_page }}">Prev</a>
-        {% else %}
-          <span class="btn btn-secondary" style="opacity:.5;pointer-events:none">Prev</span>
-        {% endif %}
-        {% if pagination.has_next %}
-          <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.next_page }}">Next</a>
-        {% else %}
-          <span class="btn" style="opacity:.5;pointer-events:none">Next</span>
-        {% endif %}
-        <form method="get" style="display:flex;align-items:center;gap:8px">
+      
+      <!-- Enhanced Pagination Controls -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding:16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;flex-wrap:wrap;gap:16px">
+        <div style="font-weight:600;color:#0f172a;font-size:15px">
+          Page {{ pagination.page }} of {{ pagination.num_pages }} | Total: {{ pagination.count }} items
+        </div>
+        
+        <div style="display:flex;align-items:center;gap:8px">
+          {% if pagination.has_prev %}
+            <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page=1" style="background:#fff;color:#0ea5e9;border:1px solid #0ea5e9">
+              « First
+            </a>
+            <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.prev_page }}" style="background:#0ea5e9;color:#fff;border:1px solid #0ea5e9">
+              ‹ Previous
+            </a>
+          {% else %}
+            <span style="padding:10px 14px;background:#e2e8f0;color:#94a3b8;border-radius:8px;font-weight:600">« First</span>
+            <span style="padding:10px 14px;background:#e2e8f0;color:#94a3b8;border-radius:8px;font-weight:600">‹ Previous</span>
+          {% endif %}
+          
+          <span style="padding:10px 16px;background:#fff;border:2px solid #0ea5e9;border-radius:8px;font-weight:700;color:#0ea5e9">
+            {{ pagination.page }}
+          </span>
+          
+          {% if pagination.has_next %}
+            <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.next_page }}" style="background:#0ea5e9;color:#fff;border:1px solid #0ea5e9">
+              Next ›
+            </a>
+            <a class="btn" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.num_pages }}" style="background:#fff;color:#0ea5e9;border:1px solid #0ea5e9">
+              Last »
+            </a>
+          {% else %}
+            <span style="padding:10px 14px;background:#e2e8f0;color:#94a3b8;border-radius:8px;font-weight:600">Next ›</span>
+            <span style="padding:10px 14px;background:#e2e8f0;color:#94a3b8;border-radius:8px;font-weight:600">Last »</span>
+          {% endif %}
+        </div>
+        
+        <form method="get" style="display:flex;align-items:center;gap:10px">
           {% for k,v in request.GET.items %}
             {% if k != 'page_size' and k != 'page' %}
               <input type="hidden" name="{{ k }}" value="{{ v }}" />
             {% endif %}
           {% endfor %}
-          <label>Page Size</label>
-          <input type="number" name="page_size" min="1" max="200" value="{{ pagination.page_size }}" style="width:80px" />
-          <button type="submit" class="btn btn-secondary">Apply</button>
+          <label style="font-weight:600;color:#334155;white-space:nowrap">Items per page:</label>
+          <input type="number" name="page_size" min="1" max="200" value="{{ pagination.page_size }}" style="width:70px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-weight:600" />
+          <button type="submit" class="btn" style="background:#10b981;border-color:#10b981;color:#fff">Apply</button>
         </form>
       </div>
     {% elif result_json %}

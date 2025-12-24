@@ -433,6 +433,10 @@ class SalesOrderAdmin(admin.ModelAdmin):
     inlines = [SalesOrderLineInline]
     
     actions = ['post_to_sap']
+
+    class Media:
+        css = {'all': ('admin/salesorder_loading.css',)}
+        js = ('admin/salesorder_loading.js',)
     
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)

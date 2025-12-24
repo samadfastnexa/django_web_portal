@@ -571,6 +571,12 @@
                 return;
             }
             
+            if (!fatherCard || fatherCard.trim() === '') {
+                console.log('No father card provided, clearing child customers');
+                $childSelect.html('<option value="">--- Select Parent Customer First ---</option>');
+                return;
+            }
+            
             console.log('Current child select value:', $childSelect.val());
             console.log('Current child select HTML:', $childSelect.html().substring(0, 100));
             
@@ -586,6 +592,7 @@
                 url: apiUrl,
                 method: 'GET',
                 data: { father_card: fatherCard },
+                timeout: 10000,  // 10 second timeout
                 success: function(response) {
                     console.log('✓ Child customers API SUCCESS');
                     console.log('Response:', response);
@@ -596,11 +603,17 @@
                     if (response.children && response.children.length > 0) {
                         console.log('Building options for', response.children.length, 'children');
                         response.children.forEach(function(child, index) {
-                            var option = '<option value="' + child.CardCode + '">' + 
-                                      child.CardCode + ' - ' + child.CardName + '</option>';
-                            options += option;
-                            if (index < 3) {
-                                console.log('  Option', index + 1, ':', option.substring(0, 80));
+                            try {
+                                var cardCode = child.CardCode || '';
+                                var cardName = child.CardName || '';
+                                var option = '<option value="' + cardCode + '">' + 
+                                          cardCode + ' - ' + cardName + '</option>';
+                                options += option;
+                                if (index < 3) {
+                                    console.log('  Option', index + 1, ':', option.substring(0, 80));
+                                }
+                            } catch (e) {
+                                console.error('Error processing child option:', e, child);
                             }
                         });
                     } else {
@@ -619,10 +632,25 @@
                     console.error('Status Text:', xhr.statusText);
                     console.error('Response:', xhr.responseText);
                     console.error('Error:', error);
-                    $childSelect.html('<option value="">--- Error Loading Children ---</option>');
+                    console.error('Timeout:', status === 'timeout');
+                    
+                    // Try to parse error response
+                    var errorMsg = 'Error loading child customers';
+                    try {
+                        var errorData = JSON.parse(xhr.responseText);
+                        if (errorData.error) {
+                            errorMsg = errorData.error;
+                        }
+                    } catch (e) {
+                        errorMsg = xhr.statusText || errorMsg;
+                    }
+                    
+                    $childSelect.html('<option value="">--- Error: ' + errorMsg + ' ---</option>');
+                    console.error('Full error message:', errorMsg);
                 }
             });
         }
+
         
         // Handle child customer selection to auto-fill child name
         $(document).on('change', '#id_u_s_card_code', function() {

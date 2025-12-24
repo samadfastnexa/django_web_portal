@@ -262,39 +262,74 @@ class AttendanceByAttendeeView(generics.ListAPIView):
         if getattr(self, 'swagger_fake_view', False):
             return Attendance.objects.none()
         
-        attendee_id = self.request.query_params.get('attendee_id')
+        attendee_id_param = self.request.query_params.get('attendee_id')
         filter_type = self.request.query_params.get('filter', 'daily')
         
-        # If attendee_id is None (not provided), return all records; otherwise filter by attendee_id
-        if attendee_id is None:
-            queryset = Attendance.objects.all()
-        else:
-            queryset = Attendance.objects.filter(attendee_id=attendee_id)
+        # Base queryset
+        base_qs = Attendance.objects.all()
         
+        # Filter by attendee_id when provided.
+        # Also include records where `user_id` matches, to cover cases where attendance
+        # was marked using the `user` field instead of `attendee`.
+        from django.db.models import Q
+        if attendee_id_param not in (None, ''):
+            try:
+                attendee_id = int(attendee_id_param)
+                base_qs = base_qs.filter(
+                    Q(attendee_id=attendee_id) | Q(user_id=attendee_id)
+                )
+            except (TypeError, ValueError):
+                # If invalid attendee_id, return empty
+                return Attendance.objects.none()
+        
+        # Time-range filtering
         from django.utils import timezone
-        from datetime import timedelta
+        from datetime import datetime, time, timedelta
+        today = timezone.localdate()
         
-        today = timezone.now().date()
+        # Build daily start/end as timezone-aware datetimes
+        def aware_dt(d: datetime.date, t: time):
+            dt = datetime.combine(d, t)
+            # Make aware using current timezone
+            return timezone.make_aware(dt, timezone.get_current_timezone())
         
         if filter_type == 'daily':
-            # Get today's attendance records
-            queryset = queryset.filter(check_in_time__date=today)
+            start_dt = aware_dt(today, time.min)
+            end_dt = aware_dt(today, time.max)
+            base_qs = base_qs.filter(
+                Q(check_in_time__gte=start_dt, check_in_time__lte=end_dt) |
+                Q(check_out_time__gte=start_dt, check_out_time__lte=end_dt) |
+                Q(created_at__gte=start_dt, created_at__lte=end_dt)
+            )
         elif filter_type == 'weekly':
-            # Get this week's attendance records (Monday to Sunday)
+            # Monday (0) to Sunday (6)
             start_of_week = today - timedelta(days=today.weekday())
             end_of_week = start_of_week + timedelta(days=6)
-            queryset = queryset.filter(
-                check_in_time__date__gte=start_of_week,
-                check_in_time__date__lte=end_of_week
+            start_dt = aware_dt(start_of_week, time.min)
+            end_dt = aware_dt(end_of_week, time.max)
+            base_qs = base_qs.filter(
+                Q(check_in_time__gte=start_dt, check_in_time__lte=end_dt) |
+                Q(check_out_time__gte=start_dt, check_out_time__lte=end_dt) |
+                Q(created_at__gte=start_dt, created_at__lte=end_dt)
             )
         elif filter_type == 'monthly':
-            # Get this month's attendance records
-            queryset = queryset.filter(
-                check_in_time__year=today.year,
-                check_in_time__month=today.month
+            # First day of month to last day of month
+            start_of_month = today.replace(day=1)
+            # Next month first day minus one day
+            if start_of_month.month == 12:
+                next_month_start = start_of_month.replace(year=start_of_month.year + 1, month=1, day=1)
+            else:
+                next_month_start = start_of_month.replace(month=start_of_month.month + 1, day=1)
+            end_of_month = next_month_start - timedelta(days=1)
+            start_dt = aware_dt(start_of_month, time.min)
+            end_dt = aware_dt(end_of_month, time.max)
+            base_qs = base_qs.filter(
+                Q(check_in_time__gte=start_dt, check_in_time__lte=end_dt) |
+                Q(check_out_time__gte=start_dt, check_out_time__lte=end_dt) |
+                Q(created_at__gte=start_dt, created_at__lte=end_dt)
             )
         
-        return queryset.order_by('-check_in_time')
+        return base_qs.order_by('-created_at')
     
     @swagger_auto_schema(
         operation_description="Get attendance records with time-based filtering (daily, weekly, monthly). If attendee_id is provided as a query parameter, returns records for that specific user. If attendee_id is not provided, returns all attendance records for all users.",

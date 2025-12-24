@@ -1,0 +1,58 @@
+/* Loading overlay for Sales Order admin screens */
+.salesorder-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 20% 20%, rgba(255, 187, 153, 0.35), transparent 50%),
+              radial-gradient(circle at 80% 0%, rgba(255, 224, 204, 0.45), transparent 40%),
+              rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.salesorder-loading-overlay.active {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.salesorder-loading-card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 24px 28px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+}
+
+.salesorder-spinner {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 5px solid rgba(255, 126, 69, 0.18);
+  border-top-color: #ff7e45;
+  animation: salesorder-spin 0.8s linear infinite;
+}
+
+@keyframes salesorder-spin {
+  to { transform: rotate(360deg); }
+}
+
+.salesorder-loading-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.salesorder-loading-sub {
+  font-size: 13px;
+  color: #475569;
+  text-align: center;
+}

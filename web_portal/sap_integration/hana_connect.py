@@ -660,20 +660,22 @@ def products_catalog(db, schema_name: str = '') -> list:
     sql = (
         'SELECT '
         ' T1."ItmsGrpCod", '
-        ' substr(T1."ItmsGrpNam",\'4\') AS ItmsGrpNam, '
-        ' T0."U_PCN" AS "Product_Catalog_Name", '
+        ' SUBSTR(T1."ItmsGrpNam", 4) AS "ItmsGrpNam", '
+        ' T0."U_PCN" AS "Product_Catalog_Code", '
         ' T0."ItemCode", '
         ' T0."ItemName", '
         ' T0."U_GenericName", '
         ' T0."U_BrandName", '
         ' T0."SalPackMsr", '
-        ' (SELECT T2."FileName"||\'.\'||T2."FileExt" FROM "ATC1" T2 WHERE T2."U_IMG_C" = \'Product Image\' AND T2."AbsEntry" = T0."AtcEntry") AS "Product_Image", '
-        ' (SELECT T2."FileName"||\'.\'||T2."FileExt" FROM "ATC1" T2 WHERE T2."U_IMG_C" = \'Product Description Urdu\' AND T2."AbsEntry" = T0."AtcEntry") AS "Product_Description_Urdu" '
-        ' FROM "OITM" T0 '
-        ' INNER JOIN "OITB" T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
-        ' WHERE T0."Series" = \'72\' '
-        ' AND T0."validFor" = \'Y\' '
-        ' AND T0."U_PCN" = \'Gabru-Df\''
+        ' PI."FileName" || \'.\' || PI."FileExt" AS "Product_Image", '
+        ' PU."FileName" || \'.\' || PU."FileExt" AS "Product_Description_Urdu" '
+        'FROM OITM T0 '
+        'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
+        'LEFT JOIN ATC1 PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."U_IMG_C" = \'Product Image\' '
+        'LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."U_IMG_C" = \'Product Description Urdu\' '
+        'WHERE T0."Series" = \'72\' '
+        'AND T0."validFor" = \'Y\' '
+        'ORDER BY T1."ItmsGrpCod", T0."ItemCode"'
     )
     results = _fetch_all(db, sql)
     
@@ -1413,6 +1415,21 @@ def policy_link(db, bp_code: str = None, show_all: bool = False) -> list:
     
     sql = ''.join(sql_parts)
     return _fetch_all(db, sql, tuple(params) if params else None)
+
+def all_child_customers(db, limit: int = 5000) -> list:
+    """Get all child customers (customers with FatherCard set) from all parents"""
+    sql = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T0."CardName", '
+        ' T0."FatherCard" '
+        'FROM OCRD T0 '
+        'WHERE T0."FatherCard" IS NOT NULL '
+        'AND TRIM(T0."FatherCard") <> \'\' '
+        'ORDER BY T0."FatherCard", T0."CardCode" '
+        'LIMIT ' + str(int(limit or 5000))
+    )
+    return _fetch_all(db, sql)
 
 def child_card_code(db, father_card: str, search: str | None = None) -> list:
     """Get child CardCode and CardName by FatherCard with optional search"""

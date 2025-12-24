@@ -1,5 +1,9 @@
 from rest_framework import viewsets,permissions,filters
 from django_filters.rest_framework import DjangoFilterBackend
+from django.core.paginator import Paginator
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from django.contrib.admin.views.decorators import staff_member_required
 
 from .models import Dealer, MeetingSchedule, SalesOrder
 from .serializers import DealerSerializer, DealerRequestSerializer,MeetingScheduleSerializer, SalesOrderSerializer
@@ -1111,13 +1115,32 @@ def api_child_customers(request):
         db = get_hana_connection()
         if not db:
             logger.error("Database connection failed")
-            return JsonResponse({'error': 'Database connection failed'}, status=500)
+            return JsonResponse({'error': 'Database connection failed - HANA service unavailable', 'children': []}, status=200)
         
         logger.info(f"Database connected, fetching child customers for {father_card}")
         
         # Get child customers with optional search
-        child_customers = hana_connect.child_card_code(db, father_card, search or None)
-        db.close()
+        try:
+            child_customers = hana_connect.child_card_code(db, father_card, search or None)
+        except Exception as e:
+            logger.error(f"Error calling child_card_code: {str(e)}")
+            child_customers = []
+        finally:
+            try:
+                db.close()
+            except:
+                pass
+
+        # Return empty list if no children found
+        if not child_customers:
+            logger.info(f"No child customers found for {father_card}")
+            return JsonResponse({
+                'children': [],
+                'page': 1,
+                'page_size': 10,
+                'num_pages': 0,
+                'count': 0
+            })
 
         # Pagination
         try:
@@ -1150,8 +1173,7 @@ def api_child_customers(request):
         import traceback
         error_trace = traceback.format_exc()
         logger.error(f"Error in api_child_customers: {str(e)}\n{error_trace}")
-        return JsonResponse({'error': str(e), 'trace': error_trace}, status=500)
-
+        return JsonResponse({'error': str(e), 'trace': error_trace, 'children': []}, status=200)
 
 @staff_member_required
 @require_http_methods(["GET"])
