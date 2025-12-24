@@ -8,16 +8,14 @@
       <div class="module">
         <h2>Dashboard Overview</h2>
         <div class="dashboard-toolbar">
-          <div class="chip"><span>{{ date_range }}</span></div>
-          <div class="chip role"><span>{{ user_role }}</span></div>
           <a href="{% url 'admin:index' %}" class="button-export">Refresh</a>
         </div>
         <div class="insight-grid">
           {% for card in ops_cards %}
-            <div class="insight-card{% if card.variant %} is-{{ card.variant }}{% endif %}">
+            <div class="insight-card{% if card.variant %} is-{{ card.variant }}{% endif %}{% if card.variant == 'alert' and card.value %} is-critical{% endif %}">
               <div class="insight-head">
                 <span class="insight-title">{{ card.title }}</span>
-                <span class="insight-chip">{{ card.chip }}</span>
+                <span class="insight-chip{% if card.variant == 'alert' %} attention{% endif %}" aria-live="polite">{{ card.chip|title }}</span>
               </div>
               <div class="insight-value">{{ card.value }}</div>
             </div>
@@ -134,7 +132,10 @@
     .insight-head { display:flex; align-items:center; justify-content:space-between; font-size:13px; color:#475467; }
     .insight-title { font-weight:600; }
     .insight-chip { background:#f2f4f7; padding:3px 8px; border-radius:999px; font-size:11px; color:#475467; }
-    .insight-card.is-alert .insight-chip { background:#ffe3e3; color:#b42318; }
+    .insight-card.is-alert .insight-chip { background:#ffe3e3; color:#b42318; border:1px solid #f3b4b4; font-weight:700; text-transform:uppercase; letter-spacing:.2px; position:relative; padding-left:28px; }
+    .insight-card.is-alert .insight-chip::before { content:"⚠"; position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:14px; }
+    .insight-card.is-alert.is-critical .insight-chip { background:#ffe1e1; color:#b00020; border-color:#f1999a; animation:pulseAlert 1.6s ease-in-out infinite; }
+    @keyframes pulseAlert { 0% { box-shadow:0 0 0 0 rgba(180,35,24,.3); } 70% { box-shadow:0 0 0 8px rgba(180,35,24,0); } 100% { box-shadow:0 0 0 0 rgba(180,35,24,0); } }
     .insight-value { font-size:26px; font-weight:700; color:#101828; margin-top:6px; }
     .dashboard-toolbar .chip.role { background:#eef4ff; color:#1a56db; }
     .kpi-detail { list-style:none; margin:10px 0 0; padding:0; font-size:12px; color:#475467; }
