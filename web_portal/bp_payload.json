@@ -1,0 +1,11 @@
+{
+  "CardCode": "BIC01563",
+  "CardName": "Test Partner BIC01563",
+  "CardType": "cCustomer",
+  "GroupCode": 100,
+  "Series": 70,
+  "Address": "Test Address",
+  "Phone1": "03001234567",
+  "FederalTaxID": "00000-0000000-0",
+  "Currency": "##"
+}

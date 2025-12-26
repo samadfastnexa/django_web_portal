@@ -86,7 +86,8 @@ def sales_order_admin(request):
         try:
             payload_text = request.POST.get('payload') or payload_text
             data = json.loads(payload_text)
-            client = SAPClient()
+            selected_db = request.session.get('selected_db', '4B-BIO')
+            client = SAPClient(company_db_key=selected_db)
             result = client.create_sales_order(data)
         except Exception as e:
             error = str(e)
@@ -1732,7 +1733,8 @@ def bp_entry_admin(request):
                     }
                 ]
                 
-                client = SAPClient()
+                selected_db = request.session.get('selected_db', '4B-BIO')
+                client = SAPClient(company_db_key=selected_db)
                 try:
                     # Log the payload for debugging
                     import logging
@@ -1900,7 +1902,8 @@ def bp_lookup_admin(request):
     table_rows = []
     if request.method in ('POST',) or (request.method == 'GET'):
         try:
-            client = SAPClient()
+            selected_db = request.session.get('selected_db', '4B-BIO')
+            client = SAPClient(company_db_key=selected_db)
             if card_code:
                 result = client.get_bp_details(card_code)
             else:
@@ -1960,7 +1963,8 @@ def get_business_partner_data(request, card_code=None):
     
     try:
         # Initialize SAP client
-        sap_client = SAPClient()
+        selected_db = request.session.get('selected_db', '4B-BIO')
+        sap_client = SAPClient(company_db_key=selected_db)
         
         # If card_code is provided, get specific business partner
         if card_code and card_code.strip():
@@ -2019,7 +2023,7 @@ def get_business_partner_data(request, card_code=None):
 
 
 # Wrapper for list endpoint with Swagger documentation
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="List all Business Partners from SAP (CardCode NOT required - use this endpoint to get all BPs)",
     operation_summary="List All Business Partners",
@@ -2076,7 +2080,7 @@ def get_business_partners_list(request):
 
 
 # Wrapper for detail endpoint with Swagger documentation
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Get specific Business Partner by CardCode (CardCode IS required in URL path for this endpoint)",
     operation_summary="Get Business Partner by CardCode",
@@ -2133,7 +2137,7 @@ def get_business_partner_detail(request, card_code):
     return get_business_partner_data(request, card_code=card_code)
 
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="List all policies from SAP Projects (UDF U_pol)",
     manual_parameters=[
@@ -2193,7 +2197,8 @@ def list_policies(request):
     Optional: ?active=true|false
     """
     try:
-        sap_client = SAPClient()
+        selected_db = request.session.get('selected_db', '4B-BIO')
+        sap_client = SAPClient(company_db_key=selected_db)
         policies = sap_client.get_all_policies()
 
         active_param = request.query_params.get('active')
@@ -2217,7 +2222,7 @@ def list_policies(request):
 
 
 # --- Database policy listing (secure API) ---
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="List policies stored in the database with search and filtering.",
     manual_parameters=[
@@ -2258,7 +2263,7 @@ def list_db_policies(request):
 
 
 # --- Sync from SAP to DB ---
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='post',
     operation_description="Sync policies from SAP Projects (UDF U_pol) into the database.",
     responses={
@@ -2267,7 +2272,8 @@ def list_db_policies(request):
 )
 @api_view(['POST'])
 def sync_policies(request):
-    client = SAPClient()
+    selected_db = request.session.get('selected_db', '4B-BIO')
+    client = SAPClient(company_db_key=selected_db)
     try:
         rows = client.get_all_policies()
     except Exception as e:
@@ -2322,7 +2328,7 @@ def policy_list_page(request):
     """Render a responsive page to list DB policies with a Sync button."""
     return render(request, 'sap_integration/policies.html')
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Sales vs Achievement data",
     manual_parameters=[
@@ -2602,7 +2608,7 @@ def sales_vs_achievement_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Sales vs Achievement (Geo Inv) with Region/Zone/Territory hierarchy",
     manual_parameters=[
@@ -2780,7 +2786,7 @@ def sales_vs_achievement_geo_inv_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Sales vs Achievement (Territory) hierarchy by Region/Zone/Territory",
     manual_parameters=[
@@ -2944,7 +2950,7 @@ def sales_vs_achievement_territory_api(request):
                 pass
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Sales vs Achievement grouped by employee and territory",
     manual_parameters=[
@@ -3149,7 +3155,7 @@ def sales_vs_achievement_by_emp_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Territory summary data",
     manual_parameters=[
@@ -3335,7 +3341,7 @@ def territory_summary_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Products catalog with images based on database",
     manual_parameters=[
@@ -3452,7 +3458,7 @@ def get_policy_customer_balance_data(request, card_code=None):
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # Wrapper for list all policies customer balance (no card_code required)
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="List All Policy Customer Balances",
     operation_description="Get policy-wise customer balance for all customers (CardCode NOT required - use this endpoint to get all policy balances). Returns balance grouped by customer and project/policy.",
@@ -3469,7 +3475,7 @@ def policy_customer_balance_list(request):
     return get_policy_customer_balance_data(request, card_code=None)
 
 # Wrapper for specific customer balance (card_code required in path)
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Get Policy Customer Balance by CardCode",
     operation_description="Get policy-wise customer balance for a specific customer by CardCode (CardCode IS required in URL path for this endpoint). Returns balance grouped by project/policy for the specified customer.",
@@ -3482,7 +3488,7 @@ def policy_customer_balance_detail(request, card_code):
     """
     return get_policy_customer_balance_data(request, card_code=card_code)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="HANA health",
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
@@ -3537,7 +3543,7 @@ def hana_health_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Count HANA tables",
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
@@ -3591,7 +3597,7 @@ def hana_count_tables_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_description="Select sample from OITM",
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
@@ -3652,7 +3658,7 @@ def select_oitm_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Warehouse list for item",
     operation_description="List warehouses for a specific ItemCode; when ItemCode is empty, returns all warehouses. Supports pagination.",
@@ -3727,7 +3733,7 @@ def warehouse_for_item_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Contact persons",
     operation_description="List contact persons. When both CardCode and ContactCode are empty or show_all=true, returns all. When CardCode only is provided, returns contacts for that BP. When both are provided, returns a single record.",
@@ -3817,7 +3823,7 @@ def contact_persons_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Project balance",
     operation_description="Return project balances. When project_code is empty or show_all=true, returns balances for all projects. Otherwise returns specific project balance.",
@@ -3897,7 +3903,7 @@ def project_balance_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Customer addresses",
     operation_description="Return default billing addresses. When card_code is empty or show_all=true, returns all BPs' default billing addresses. Otherwise returns specific BP address.",
@@ -3974,7 +3980,7 @@ def customer_addresses_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Territories (full)",
     operation_description="List territories with optional status filter and pagination.",
@@ -4056,7 +4062,7 @@ def territories_full_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="CWL (full)",
     operation_description="List CWL rows with limit and pagination.",
@@ -4134,7 +4140,7 @@ def cwl_full_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Customer LOV",
     operation_description="List customers with optional search and pagination.",
@@ -4215,7 +4221,7 @@ def customer_lov_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Item LOV",
     operation_description="List items with optional search and pagination.",
@@ -4287,7 +4293,7 @@ def item_lov_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Projects LOV",
     operation_description="List projects with optional search and pagination.",
@@ -4359,7 +4365,7 @@ def projects_lov_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Crop LOV",
     operation_description="List crops with pagination.",
@@ -4429,7 +4435,7 @@ def crop_lov_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(
+@swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Sales orders",
     operation_description="List sales orders with optional filters and pagination.",
@@ -4523,10 +4529,41 @@ def sales_orders_api(request):
 def set_database(request):
     """Handle database selection from global selector."""
     from django.shortcuts import redirect
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if request.method == 'POST':
         db_key = request.POST.get('database', '4B-BIO')
         request.session['selected_db'] = db_key
+        request.session.modified = True  # Force session save
+        
+        logger.info(f"Database switched to: {db_key}")
+        logger.info(f"Session key: {request.session.session_key}")
+        logger.info(f"Session data: {dict(request.session.items())}")
+        
         next_url = request.POST.get('next', request.META.get('HTTP_REFERER', '/admin/'))
-        return redirect(next_url)
+        
+        # Update the company_db parameter in the URL if it exists
+        parsed = urlparse(next_url)
+        query_params = parse_qs(parsed.query)
+        
+        # Update or add company_db parameter
+        query_params['company_db'] = [db_key]
+        
+        # Rebuild the URL
+        new_query = urlencode(query_params, doseq=True)
+        new_url = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment
+        ))
+        
+        logger.info(f"Redirecting to: {new_url}")
+        
+        return redirect(new_url)
     return redirect('/admin/')
 

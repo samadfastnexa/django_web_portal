@@ -870,8 +870,8 @@ def _load_env_file(path: str) -> None:
     except Exception:
         pass
 
-def get_hana_connection():
-    """Get HANA database connection"""
+def get_hana_connection(request=None, selected_db_key=None):
+    """Get HANA database connection honoring the selected DB (session/global dropdown)."""
     try:
         # Load .env file
         _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
@@ -886,22 +886,54 @@ def get_hana_connection():
         
         from hdbcli import dbapi
         from preferences.models import Setting
-        
-        # Get database name from settings
+
+        if not selected_db_key and request and hasattr(request, 'session'):
+            selected_db_key = request.session.get('selected_db')
+
+        # Get database name from settings, preferring selected_db_key when provided
         try:
             db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-            if db_setting and hasattr(db_setting, 'value'):
-                # If value is a dict, get the current selected schema
-                if isinstance(db_setting.value, dict):
-                    schema = list(db_setting.value.values())[0] if db_setting.value else '4B-BIO_APP'
+            raw_value = getattr(db_setting, 'value', None) if db_setting else None
+            schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+            db_options = {}
+
+            if isinstance(raw_value, dict):
+                db_options = raw_value
+            elif isinstance(raw_value, str):
+                try:
+                    import json
+                    parsed = json.loads(raw_value)
+                    if isinstance(parsed, dict):
+                        db_options = parsed
+                    else:
+                        schema = str(parsed)
+                except Exception:
+                    schema = raw_value
+
+            cleaned = {}
+            for k, v in db_options.items():
+                clean_key = str(k).strip().strip('"').strip("'")
+                clean_val = str(v).strip().strip('"').strip("'")
+                cleaned[clean_key] = clean_val
+            db_options = cleaned
+
+            if db_options:
+                if selected_db_key and selected_db_key in db_options:
+                    schema = db_options[selected_db_key]
                 else:
-                    schema = str(db_setting.value)
-            else:
-                schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+                    schema = list(db_options.values())[0]
+            elif raw_value and not isinstance(raw_value, dict):
+                schema = str(raw_value).strip().strip('"').strip("'")
         except Exception as e:
             print(f"Error getting schema from settings: {e}")
             schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
-        
+            if selected_db_key:
+                key_upper = str(selected_db_key).upper()
+                if key_upper.startswith('4B-ORANG'):
+                    schema = '4B-ORANG_APP'
+                elif key_upper.startswith('4B-BIO'):
+                    schema = '4B-BIO_APP'
+
         # Strip quotes if present
         schema = schema.strip('"\'')
         
@@ -941,7 +973,7 @@ def api_warehouse_for_item(request):
         return JsonResponse({'error': 'item_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -960,7 +992,7 @@ def api_customer_address(request):
         return JsonResponse({'error': 'card_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -995,7 +1027,7 @@ def api_policy_link(request):
         return JsonResponse({'error': 'project_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -1025,7 +1057,7 @@ def api_discounts(request):
         return JsonResponse({'error': 'policy, item_code, and pl parameters required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -1074,7 +1106,7 @@ def api_project_balance(request):
         return JsonResponse({'error': 'project_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -1112,7 +1144,7 @@ def api_child_customers(request):
         return JsonResponse({'error': 'father_card parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed - HANA service unavailable', 'children': []}, status=200)
@@ -1190,7 +1222,7 @@ def api_customer_details(request):
         return JsonResponse({'error': 'card_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed'}, status=500)

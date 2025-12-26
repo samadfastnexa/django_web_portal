@@ -73,32 +73,79 @@ def _load_env_file(path: str) -> None:
         pass
 
 
-def get_hana_connection():
-    """Get HANA database connection"""
+def get_hana_connection(selected_db_key=None):
+    """Get HANA database connection honoring the selected DB (session/global dropdown)."""
     try:
         # Load .env file
         _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
         
         from hdbcli import dbapi
         from preferences.models import Setting
+
+        # Resolve schema based on selected_db_key
+        # Priority: 1. Direct mapping from selected_db_key, 2. Database settings, 3. Fallback
+        schema = None
         
-        # Get database name from settings
-        try:
-            db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-            if db_setting and hasattr(db_setting, 'value'):
-                # If value is a dict, get the current selected schema
-                if isinstance(db_setting.value, dict):
-                    schema = list(db_setting.value.values())[0] if db_setting.value else '4B-BIO_APP'
-                else:
-                    schema = str(db_setting.value)
-            else:
-                schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
-        except Exception as e:
-            print(f"Error getting schema from settings: {e}")
+        # FIRST: Try direct mapping from selected_db_key (most reliable)
+        if selected_db_key:
+            key_upper = str(selected_db_key).strip().upper()
+            print(f"[HANA] selected_db_key: {selected_db_key} (upper: {key_upper})")
+            
+            if '4B-ORANG' in key_upper or 'ORANG' in key_upper:
+                schema = '4B-ORANG_APP'
+                print(f"[HANA] Direct mapping: {selected_db_key} -> {schema}")
+            elif '4B-BIO' in key_upper or 'BIO' in key_upper:
+                schema = '4B-BIO_APP'
+                print(f"[HANA] Direct mapping: {selected_db_key} -> {schema}")
+        
+        # SECOND: Try database settings if no direct match
+        if not schema:
+            try:
+                db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                raw_value = getattr(db_setting, 'value', None) if db_setting else None
+                db_options = {}
+
+                # Extract mapping from stored value
+                if isinstance(raw_value, dict):
+                    db_options = raw_value
+                elif isinstance(raw_value, str):
+                    try:
+                        import json
+                        parsed = json.loads(raw_value)
+                        if isinstance(parsed, dict):
+                            db_options = parsed
+                        else:
+                            schema = str(parsed)
+                    except Exception:
+                        schema = raw_value
+
+                cleaned = {}
+                for k, v in db_options.items():
+                    clean_key = str(k).strip().strip('"').strip("'")
+                    clean_val = str(v).strip().strip('"').strip("'")
+                    cleaned[clean_key] = clean_val
+                db_options = cleaned
+
+                if db_options and selected_db_key:
+                    schema = db_options.get(selected_db_key)
+                    print(f"[HANA] From settings: {selected_db_key} -> {schema}")
+                elif db_options and not schema:
+                    schema = list(db_options.values())[0]
+                    print(f"[HANA] From settings (first): {schema}")
+                elif raw_value and not isinstance(raw_value, dict):
+                    schema = str(raw_value).strip().strip('"').strip("'")
+            except Exception as e:
+                print(f"[HANA] Error getting schema from settings: {e}")
+        
+        # LAST: Fallback to environment variable or default
+        if not schema:
             schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
-        
+            print(f"[HANA] Fallback to env/default: {schema}")
+
         # Strip quotes if present
-        schema = schema.strip('"\'')
+        schema = schema.strip("'\"")
+        
+        print(f"[HANA] FINAL SCHEMA TO USE: {schema}")
         
         # Connection parameters
         host = os.environ.get('HANA_HOST', '').strip()
@@ -113,12 +160,28 @@ def get_hana_connection():
         # Connect
         print(f"Connecting to HANA: {host}:{port} as {user}, schema={schema}")
         conn = dbapi.connect(address=host, port=port, user=user, password=password)
-        
-        # Set schema
+
+        # Set schema and verify
         cursor = conn.cursor()
         cursor.execute(f'SET SCHEMA "{schema}"')
-        cursor.close()
-        
+        try:
+            cursor.execute('SELECT CURRENT_SCHEMA FROM DUMMY')
+            row = cursor.fetchone()
+            current_schema = None
+            if row:
+                try:
+                    current_schema = row[0]
+                except Exception:
+                    current_schema = None
+            print(f"HANA current schema: {current_schema}")
+        except Exception as e:
+            print(f"Warning: could not verify current schema: {e}")
+        finally:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+
         print("HANA connection successful")
         return conn
     except Exception as e:
@@ -144,21 +207,42 @@ class SalesOrderForm(forms.ModelForm):
         }
     
     def __init__(self, *args, **kwargs):
+        # Capture request to honor selected database
+        self.request = kwargs.pop('request', None)
+        selected_db_key = kwargs.pop('selected_db_key', None)
+        
+        # Try multiple sources to get the selected DB (in priority order)
+        if not selected_db_key and self.request:
+            # 1. Try URL parameter
+            selected_db_key = self.request.GET.get('company_db')
+            # 2. Try session
+            if not selected_db_key and hasattr(self.request, 'session'):
+                selected_db_key = self.request.session.get('selected_db')
+
         super().__init__(*args, **kwargs)
         
         print("=== FORM INITIALIZATION DEBUG ===")
-        print(f"Available fields: {list(self.fields.keys())}")
+        print(f"[FORM] Selected DB key: {selected_db_key}")
+        print(f"[FORM] Request method: {getattr(self.request, 'method', 'UNKNOWN')}")
+        print(f"[FORM] Request GET params: {dict(self.request.GET) if self.request else 'No request'}")
+        print(f"[FORM] Available fields: {list(self.fields.keys())}")
         print(f"u_s_card_code field type: {type(self.fields.get('u_s_card_code'))}")
         print(f"u_s_card_code widget type: {type(self.fields.get('u_s_card_code').widget) if 'u_s_card_code' in self.fields else 'N/A'}")
         
         # Populate customer dropdown
         try:
-            db = get_hana_connection()
+            db = get_hana_connection(selected_db_key)
             if db:
                 try:
                     customers = hana_connect.customer_codes_all(db, limit=2000)
                 except Exception:
                     customers = hana_connect.customer_lov(db)
+                # Log a preview of customer codes to confirm correct company
+                try:
+                    preview = [c.get('CardCode') for c in (customers or [])][:5]
+                    print(f"Customer code preview: {preview}")
+                except Exception:
+                    pass
                 customer_choices = [('', '--- Select Customer ---')] + [
                     (c['CardCode'], f"{c['CardCode']} - {c['CardName']}") 
                     for c in customers
@@ -242,10 +326,16 @@ class SalesOrderLineInlineForm(forms.ModelForm):
         }
     
     def __init__(self, *args, **kwargs):
+        # Capture request to honor selected database
+        self.request = kwargs.pop('request', None)
+        selected_db_key = kwargs.pop('selected_db_key', None)
+        if not selected_db_key and self.request and hasattr(self.request, 'session'):
+            selected_db_key = self.request.session.get('selected_db')
+
         super().__init__(*args, **kwargs)
         
         try:
-            db = get_hana_connection()
+            db = get_hana_connection(selected_db_key)
             if db:
                 # Populate item dropdown
                 items = hana_connect.item_lov(db)
@@ -365,7 +455,16 @@ class SalesOrderLineInline(admin.TabularInline):
     
     def get_formset(self, request, obj=None, **kwargs):
         """Customize the formset with proper labels and help text"""
-        formset = super().get_formset(request, obj, **kwargs)
+        base_formset = super().get_formset(request, obj, **kwargs)
+        selected_db_key = request.session.get('selected_db') if hasattr(request, 'session') else None
+
+        class RequestAwareFormSet(base_formset):
+            def _construct_form(self2, i, **kw):
+                kw['request'] = request
+                kw['selected_db_key'] = selected_db_key
+                return super()._construct_form(i, **kw)
+
+        formset = RequestAwareFormSet
         # Update labels and help text only for fields that exist
         if hasattr(formset.form, 'base_fields'):
             if 'u_pl' in formset.form.base_fields:
@@ -439,7 +538,18 @@ class SalesOrderAdmin(admin.ModelAdmin):
         js = ('admin/salesorder_loading.js',)
     
     def get_form(self, request, obj=None, **kwargs):
-        form = super().get_form(request, obj, **kwargs)
+        base_form = super().get_form(request, obj, **kwargs)
+
+        # Wrap form to inject request so dropdown data respects the selected DB
+        class RequestAwareSalesOrderForm(base_form):
+            def __init__(self2, *args, **kw):
+                kw['request'] = request
+                # Explicitly pass selected_db_key so form always knows the intended company
+                kw['selected_db_key'] = request.GET.get('company_db') or request.session.get('selected_db')
+                super().__init__(*args, **kw)
+
+        form = RequestAwareSalesOrderForm
+
         # Update field labels (only for fields that are editable)
         if 'doc_date' in form.base_fields:
             form.base_fields['doc_date'].label = 'Posting Date'
@@ -477,6 +587,7 @@ class SalesOrderAdmin(admin.ModelAdmin):
         """Display a button to post this order to SAP"""
         from django.utils.html import format_html
         from django.urls import reverse
+        import json
         
         if obj.pk:
             if obj.is_posted_to_sap:
@@ -488,12 +599,85 @@ class SalesOrderAdmin(admin.ModelAdmin):
                     obj.sap_doc_entry, obj.sap_doc_num
                 )
             else:
+                # Build SAP payload preview - COMPLETE structure
+                try:
+                    payload_lines = []
+                    for line in obj.document_lines.all().order_by('line_num'):
+                        payload_lines.append({
+                            "LineNum": line.line_num,
+                            "ItemCode": line.item_code,
+                            "ItemDescription": line.item_description,
+                            "Quantity": float(line.quantity),
+                            "DiscountPercent": float(line.discount_percent),
+                            "WarehouseCode": line.warehouse_code,
+                            "VatGroup": line.vat_group,
+                            "UnitsOfMeasurment": float(line.units_of_measurment),
+                            "TaxPercentagePerRow": float(line.tax_percentage_per_row),
+                            "UnitPrice": float(line.unit_price),
+                            "UoMEntry": line.uom_entry,
+                            "MeasureUnit": line.measure_unit,
+                            "UoMCode": line.uom_code,
+                            "ProjectCode": line.project_code,
+                            "U_SD": float(line.u_sd),
+                            "U_AD": float(line.u_ad),
+                            "U_EXD": float(line.u_exd),
+                            "U_zerop": float(line.u_zerop),
+                            "U_pl": line.u_pl,
+                            "U_BP": float(line.u_bp) if line.u_bp else None,
+                            "U_policy": line.u_policy,
+                            "U_focitem": line.u_focitem,
+                            "U_crop": line.u_crop
+                        })
+                    
+                    payload_preview = {
+                        "Series": obj.series,
+                        "DocType": obj.doc_type,
+                        "DocDate": obj.doc_date.strftime('%Y-%m-%d') if obj.doc_date else None,
+                        "DocDueDate": obj.doc_due_date.strftime('%Y-%m-%d') if obj.doc_due_date else None,
+                        "TaxDate": obj.tax_date.strftime('%Y-%m-%d') if obj.tax_date else None,
+                        "CardCode": obj.card_code or "",
+                        "CardName": obj.card_name or "",
+                        "ContactPersonCode": obj.contact_person_code,
+                        "FederalTaxID": obj.federal_tax_id,
+                        "PayToCode": obj.pay_to_code,
+                        "Address": obj.address,
+                        "DocCurrency": obj.doc_currency,
+                        "DocRate": float(obj.doc_rate),
+                        "Comments": obj.comments or "",
+                        "SummeryType": obj.summery_type,
+                        "DocObjectCode": obj.doc_object_code,
+                        "U_sotyp": obj.u_sotyp,
+                        "U_USID": obj.u_usid,
+                        "U_SWJE": obj.u_swje,
+                        "U_SECJE": obj.u_secje,
+                        "U_CRJE": obj.u_crje,
+                        "U_SCardCode": obj.u_s_card_code or "",
+                        "U_SCardName": obj.u_s_card_name or "",
+                        "DocumentLines": payload_lines[:5]  # Show first 5 lines
+                    }
+                    
+                    payload_html = format_html(
+                        '<details style="margin: 10px 0; padding: 10px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">'
+                        '<summary style="cursor: pointer; font-weight: bold; color: #495057;">📋 Complete SAP Payload Preview (Click to expand)</summary>'
+                        '<pre style="margin: 10px 0; padding: 10px; background: #ffffff; border: 1px solid #ced4da; border-radius: 3px; '
+                        'overflow-x: auto; font-size: 11px; font-family: monospace; max-height: 500px;">{}</pre>'
+                        '<p style="color: #6c757d; font-size: 12px; margin: 5px 0;">Showing {} of {} document lines. Check server logs for complete payload.</p>'
+                        '</details>',
+                        json.dumps(payload_preview, indent=2, ensure_ascii=False),
+                        min(5, len(payload_lines)),
+                        len(payload_lines)
+                    )
+                except Exception as e:
+                    payload_html = format_html('<p style="color: #856404;">Could not generate payload preview: {}</p>', str(e))
+                
                 url = reverse('admin:post_order_to_sap', args=[obj.pk])
                 return format_html(
+                    '{}'
                     '<a class="button" href="{}" style="padding: 10px 15px; background-color: #417690; color: white; '
                     'text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">'
                     'Add to SAP'
                     '</a>',
+                    payload_html,
                     url
                 )
         return "-"
@@ -517,26 +701,32 @@ class SalesOrderAdmin(admin.ModelAdmin):
                     "DocDate": order.doc_date.strftime('%Y-%m-%d') if order.doc_date else None,
                     "DocDueDate": order.doc_due_date.strftime('%Y-%m-%d') if order.doc_due_date else None,
                     "TaxDate": order.tax_date.strftime('%Y-%m-%d') if order.tax_date else None,
-                    "CardCode": order.card_code,
-                    "CardName": order.card_name,
-                    "ContactPersonCode": order.contact_person_code,
-                    "FederalTaxID": order.federal_tax_id,
-                    "PayToCode": order.pay_to_code,
-                    "Address": order.address,
-                    "DocCurrency": order.doc_currency,
-                    "DocRate": float(order.doc_rate),
+                    "CardCode": order.card_code or "",
+                    "CardName": order.card_name or "",
+                    "ContactPersonCode": order.contact_person_code or None,
+                    "FederalTaxID": order.federal_tax_id or None,
+                    "PayToCode": order.pay_to_code or None,
+                    "Address": order.address or "",
+                    "DocCurrency": order.doc_currency or "PKR",
+                    "DocRate": float(order.doc_rate) if order.doc_rate else 1.0,
                     "Comments": order.comments or "",
-                    "SummeryType": order.summery_type,
-                    "DocObjectCode": order.doc_object_code,
-                    "U_sotyp": order.u_sotyp,
-                    "U_USID": order.u_usid,
-                    "U_SWJE": order.u_swje,
-                    "U_SECJE": order.u_secje,
-                    "U_CRJE": order.u_crje,
-                    "U_SCardCode": order.u_s_card_code,
-                    "U_SCardName": order.u_s_card_name,
+                    "SummeryType": order.summery_type or "dNoSummary",
+                    "DocObjectCode": order.doc_object_code or "oOrders",
+                    "U_sotyp": order.u_sotyp or "01",
+                    "U_USID": order.u_usid or None,
+                    "U_SWJE": order.u_swje or None,
+                    "U_SECJE": order.u_secje or None,
+                    "U_CRJE": order.u_crje or None,
+                    "U_SCardCode": order.u_s_card_code or "",
+                    "U_SCardName": order.u_s_card_name or "",
                     "DocumentLines": []
                 }
+                
+                # Validate required fields
+                if not payload["CardCode"]:
+                    raise ValueError(f"Order #{order.id}: CardCode is required")
+                if not payload["CardName"]:
+                    raise ValueError(f"Order #{order.id}: CardName is required")
                 
                 # Add document lines
                 for line in order.document_lines.all().order_by('line_num'):
@@ -568,7 +758,8 @@ class SalesOrderAdmin(admin.ModelAdmin):
                     payload["DocumentLines"].append(line_data)
                 
                 # Post to SAP
-                sap_client = SAPClient()
+                selected_db = request.session.get('selected_db', '4B-BIO')
+                sap_client = SAPClient(company_db_key=selected_db)
                 response = sap_client.post('Orders', payload)
                 
                 # Store complete response
@@ -621,7 +812,15 @@ class SalesOrderAdmin(admin.ModelAdmin):
         
         order = SalesOrder.objects.get(pk=order_id)
         
-        # Check if already posted
+        # Log the order data from database
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[ORDER DATA] Order #{order_id} from database:")
+        logger.info(f"  CardCode: {order.card_code}")
+        logger.info(f"  CardName: {order.card_name}")
+        logger.info(f"  U_SCardCode: {order.u_s_card_code}")
+        logger.info(f"  U_SCardName: {order.u_s_card_name}")
+        logger.info(f"  DocumentLines: {order.document_lines.count()}")
         if order.is_posted_to_sap:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({
@@ -640,58 +839,76 @@ class SalesOrderAdmin(admin.ModelAdmin):
                 "DocDate": order.doc_date.strftime('%Y-%m-%d') if order.doc_date else None,
                 "DocDueDate": order.doc_due_date.strftime('%Y-%m-%d') if order.doc_due_date else None,
                 "TaxDate": order.tax_date.strftime('%Y-%m-%d') if order.tax_date else None,
-                "CardCode": order.card_code,
-                "CardName": order.card_name,
-                "ContactPersonCode": order.contact_person_code,
-                "FederalTaxID": order.federal_tax_id,
-                "PayToCode": order.pay_to_code,
-                "Address": order.address,
-                "DocCurrency": order.doc_currency,
-                "DocRate": float(order.doc_rate),
+                "CardCode": order.card_code or "",
+                "CardName": order.card_name or "",
+                "ContactPersonCode": order.contact_person_code or None,
+                "FederalTaxID": order.federal_tax_id or None,
+                "PayToCode": order.pay_to_code or None,
+                "Address": order.address or "",
+                "DocCurrency": order.doc_currency or "PKR",
+                "DocRate": float(order.doc_rate) if order.doc_rate else 1.0,
                 "Comments": order.comments or "",
-                "SummeryType": order.summery_type,
-                "DocObjectCode": order.doc_object_code,
-                "U_sotyp": order.u_sotyp,
-                "U_USID": order.u_usid,
-                "U_SWJE": order.u_swje,
-                "U_SECJE": order.u_secje,
-                "U_CRJE": order.u_crje,
-                "U_SCardCode": order.u_s_card_code,
-                "U_SCardName": order.u_s_card_name,
+                "SummeryType": order.summery_type or "dNoSummary",
+                "DocObjectCode": order.doc_object_code or "oOrders",
+                "U_sotyp": order.u_sotyp or "01",
+                "U_USID": order.u_usid or None,
+                "U_SWJE": order.u_swje or None,
+                "U_SECJE": order.u_secje or None,
+                "U_CRJE": order.u_crje or None,
+                "U_SCardCode": order.u_s_card_code or "",
+                "U_SCardName": order.u_s_card_name or "",
                 "DocumentLines": []
             }
+            
+            # Validate required fields
+            if not payload["CardCode"]:
+                raise ValueError("CardCode is required but is empty")
+            if not payload["CardName"]:
+                raise ValueError("CardName is required but is empty")
+            
+            # Log the complete payload before posting
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[SAP PAYLOAD] Order #{order.id} payload:")
+            logger.info(json.dumps(payload, indent=2, ensure_ascii=False))
             
             # Add document lines
             for line in order.document_lines.all().order_by('line_num'):
                 line_data = {
                     "LineNum": line.line_num,
-                    "ItemCode": line.item_code,
-                    "ItemDescription": line.item_description,
-                    "Quantity": float(line.quantity),
-                    "DiscountPercent": float(line.discount_percent),
-                    "WarehouseCode": line.warehouse_code,
-                    "VatGroup": line.vat_group,
-                    "UnitsOfMeasurment": float(line.units_of_measurment),
-                    "TaxPercentagePerRow": float(line.tax_percentage_per_row),
-                    "UnitPrice": float(line.unit_price),
-                    "UoMEntry": line.uom_entry,
-                    "MeasureUnit": line.measure_unit,
-                    "UoMCode": line.uom_code,
-                    "ProjectCode": line.project_code,
-                    "U_SD": float(line.u_sd),
-                    "U_AD": float(line.u_ad),
-                    "U_EXD": float(line.u_exd),
-                    "U_zerop": float(line.u_zerop),
-                    "U_pl": line.u_pl,
+                    "ItemCode": line.item_code or "",
+                    "ItemDescription": line.item_description or "",
+                    "Quantity": float(line.quantity) if line.quantity else 0.0,
+                    "DiscountPercent": float(line.discount_percent) if line.discount_percent else 0.0,
+                    "WarehouseCode": line.warehouse_code or "",
+                    "VatGroup": line.vat_group or "SE",
+                    "UnitsOfMeasurment": float(line.units_of_measurment) if line.units_of_measurment else 1.0,
+                    "TaxPercentagePerRow": float(line.tax_percentage_per_row) if line.tax_percentage_per_row else 0.0,
+                    "UnitPrice": float(line.unit_price) if line.unit_price else 0.0,
+                    "UoMEntry": line.uom_entry or None,
+                    "MeasureUnit": line.measure_unit or "",
+                    "UoMCode": line.uom_code or "",
+                    "ProjectCode": line.project_code or "",
+                    "U_SD": float(line.u_sd) if line.u_sd else 0.0,
+                    "U_AD": float(line.u_ad) if line.u_ad else 0.0,
+                    "U_EXD": float(line.u_exd) if line.u_exd else 0.0,
+                    "U_zerop": float(line.u_zerop) if line.u_zerop else 0.0,
+                    "U_pl": line.u_pl or None,
                     "U_BP": float(line.u_bp) if line.u_bp else None,
-                    "U_policy": line.u_policy,
-                    "U_focitem": line.u_focitem,
-                    "U_crop": line.u_crop
+                    "U_policy": line.u_policy or "",
+                    "U_focitem": line.u_focitem or "No",
+                    "U_crop": line.u_crop or None
                 }
                 payload["DocumentLines"].append(line_data)
             
+            # Log the complete payload with document lines
+            logger.info(f"[SAP PAYLOAD] Complete payload with {len(payload['DocumentLines'])} lines:")
+            logger.info(json.dumps(payload, indent=2, ensure_ascii=False))
+            
             # Post to SAP (this is the blocking call that takes 10-20 seconds)
-            sap_client = SAPClient()
+            selected_db = request.session.get('selected_db', '4B-BIO')
+            logger.info(f"[SAP PAYLOAD] Using company DB: {selected_db}")
+            sap_client = SAPClient(company_db_key=selected_db)
             response = sap_client.post('Orders', payload)
             
             # Store complete response
@@ -884,7 +1101,8 @@ class DealerRequestAdmin(admin.ModelAdmin):
         
         # Call SAP only when transitioning to 'approved' or 'posted_to_sap'
         if obj.status in ['approved', 'posted_to_sap'] and prev_status not in ['approved', 'posted_to_sap'] and not obj.is_posted_to_sap:
-            sap = SAPClient()
+            selected_db = request.session.get('selected_db', '4B-BIO')
+            sap = SAPClient(company_db_key=selected_db)
             territory_id = None
             if obj.territory and obj.territory.name:
                 territory_id = sap.get_territory_id_by_name(obj.territory.name)
@@ -1064,7 +1282,8 @@ class DealerRequestAdmin(admin.ModelAdmin):
             obj.save()
             if prev_status == 'approved':
                 continue
-            sap = SAPClient()
+            selected_db = request.session.get('selected_db', '4B-BIO')
+            sap = SAPClient(company_db_key=selected_db)
             territory_id = None
             if obj.territory and obj.territory.name:
                 territory_id = sap.get_territory_id_by_name(obj.territory.name)
@@ -1201,7 +1420,8 @@ class DealerRequestAdmin(admin.ModelAdmin):
             # Also fetch and display current BP details if CardCode is known
             try:
                 if obj.sap_card_code:
-                    sap = SAPClient()
+                    selected_db = request.session.get('selected_db', '4B-BIO')
+                    sap = SAPClient(company_db_key=selected_db)
                     try:
                         details = sap.get_bp_details(obj.sap_card_code)
                     except Exception:

@@ -35,7 +35,8 @@ class PolicyAdmin(admin.ModelAdmin):
 
     def sync_policies_from_sap(self, request, queryset):
         """Admin action: Sync policies from SAP Projects (UDF U_pol)."""
-        client = SAPClient()
+        selected_db = request.session.get('selected_db', '4B-BIO')
+        client = SAPClient(company_db_key=selected_db)
         try:
             data = client.get_all_policies()
         except Exception as e:
