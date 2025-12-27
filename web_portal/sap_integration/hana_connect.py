@@ -206,7 +206,114 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
             
     return rows
 
-def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_emp: bool = False) -> list:
+def collection_vs_achievement(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False) -> list:
+    """
+    Collection vs Achievement (Geo) using B4_COLLECTION_TARGET table.
+    Hierarchy: Region (R3/R2/R1) -> Zone (Z) -> Territory (T)
+    """
+    coll_tbl = '"B4_COLLECTION_TARGET"'
+    emp_tbl = '"B4_EMP"'
+    oter_tbl = '"OTER"'
+    
+    # Base SELECT
+    select_clause = (
+        'SELECT '
+        '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+        '    R1."descript" AS "Zone", '
+        '    T."territryID" AS "TerritoryId", '
+        '    T."descript" AS "TerritoryName", '
+        '    SUM(c.colletion_Target) AS "Collection_Target", '
+        '    SUM(c.DocTotal) AS "Collection_Achievement", '
+    )
+    
+    if group_by_date:
+        select_clause += (
+            '    c.F_REFDATE AS "From_Date", '
+            '    c.T_REFDATE AS "To_Date" '
+        )
+    else:
+        select_clause += (
+            '    MIN(c.F_REFDATE) AS "From_Date", '
+            '    MAX(c.T_REFDATE) AS "To_Date" '
+        )
+        
+    from_clause = (
+        'FROM ' + coll_tbl + ' c '
+        'INNER JOIN ' + oter_tbl + ' T '
+        '    ON T."territryID" = c.TerritoryId '
+        'LEFT JOIN ' + oter_tbl + ' Z '
+        '    ON Z."territryID" = T."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R1 '
+        '    ON R1."territryID" = Z."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R2 '
+        '    ON R2."territryID" = R1."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R3 '
+        '    ON R3."territryID" = R2."parent" '
+    )
+    
+    where_clauses = []
+    params = []
+    
+    if emp_id is not None and not ignore_emp_filter:
+        where_clauses.append(' c.TerritoryId IN (SELECT U_TID FROM ' + emp_tbl + ' WHERE empID = ?) ')
+        params.append(emp_id)
+        
+    if region and region.strip():
+        # Search across all region levels to be safe, or just check the coalesced result logic if possible.
+        # But for SQL WHERE, we typically check the columns. 
+        # Given the hierarchy R3->R2->R1, usually Region is the top most.
+        # Let's match the pattern used in sales_vs_achievement_geo_inv if available, or just check R3/R2/R1.
+        # For simplicity and correctness with the SELECT COALESCE:
+        where_clauses.append(' (R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ?) ')
+        params.extend([region.strip(), region.strip(), region.strip()])
+        
+    if zone and zone.strip():
+        where_clauses.append(' R1."descript" = ? ')
+        params.append(zone.strip())
+        
+    if territory and territory.strip():
+        where_clauses.append(' (T."descript" = ? OR T."descript" = ?) ')
+        params.extend([territory.strip(), territory.strip() + ' Territory'])
+        
+    if start_date and end_date:
+        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
+        params.extend([start_date.strip(), end_date.strip()])
+        
+    where_sql = ''
+    if len(where_clauses) > 0:
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        
+    group_by_fields = [
+        'COALESCE(R3."descript", R2."descript", R1."descript")',
+        'R1."descript"',
+        'T."territryID"',
+        'T."descript"'
+    ]
+    
+    if group_by_date:
+        group_by_fields.extend(['c.F_REFDATE', 'c.T_REFDATE'])
+        
+    group_by_sql = ' GROUP BY ' + ', '.join(group_by_fields)
+    
+    # Order by Region, Zone, TerritoryId (and dates if included)
+    order_by_sql = ' ORDER BY 1, 2, 3'
+    if group_by_date:
+        order_by_sql += ', 7, 8'
+
+    full_sql = select_clause + from_clause + where_sql + group_by_sql + order_by_sql
+    
+    rows = _fetch_all(db, full_sql, tuple(params))
+    
+    # Post-processing to remove " Territory" suffix
+    for r in rows:
+        v = r.get('TerritoryName')
+        if v and isinstance(v, str) and v.endswith(' Territory'):
+            r['TerritoryName'] = v[:-10]
+            
+    return rows
+
+
+def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_emp: bool = False, group_by_date: bool = False) -> list:
     """
     Sales vs Achievement (Geo) using B4_COLLECTION_TARGET table (Updated per user request).
     Hierarchy: Region (R1/R2/R3) -> Zone (Z) -> Territory (T)
@@ -252,16 +359,53 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
             '    HE."lastName" '
             ' ORDER BY 1, 2, 3'
         )
+    elif group_by_date:
+        # Detailed View: Group by Date (Collection vs Achievement request)
+        sql = (
+            'SELECT '
+            '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+            '    R1."descript" AS "Zone", '
+            '    T."territryID" AS "TerritoryId", '
+            '    T."descript" AS "Territory", '
+            '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
+            '    SUM(c.DOCTOTAL) AS "Collection_Achievement", '
+            '    c.F_REFDATE AS "From_Date", '
+            '    c.T_REFDATE AS "To_Date" '
+            'FROM ' + coll_tbl + ' c '
+            'INNER JOIN ' + oter_tbl + ' T '
+            '    ON T."territryID" = c.TerritoryId '
+            'LEFT JOIN ' + oter_tbl + ' Z '
+            '    ON Z."territryID" = T."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R1 '
+            '    ON R1."territryID" = Z."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R2 '
+            '    ON R2."territryID" = R1."parent" '
+            'LEFT JOIN ' + oter_tbl + ' R3 '
+            '    ON R3."territryID" = R2."parent" '
+        )
+        group_by = (
+            ' GROUP BY '
+            '    COALESCE(R3."descript", R2."descript", R1."descript"), '
+            '    R1."descript", '
+            '    T."territryID", '
+            '    T."descript", '
+            '    c.F_REFDATE, '
+            '    c.T_REFDATE '
+            ' ORDER BY 1, 2, 3, 6, 7'
+        )
     else:
         # Summary View: Group by Territory (Current behavior)
         sql = (
             'SELECT '
             '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
             '    R1."descript" AS "Zone", '
+            '    T."territryID" AS "TerritoryId", '
             '    T."descript" AS "Territory", '
             '    STRING_AGG(HE."firstName" || \' \' || HE."lastName", \', \') AS "EmployeeName", '
             '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
-            '    SUM(c.DOCTOTAL) AS "Collection_Achievement" '
+            '    SUM(c.DOCTOTAL) AS "Collection_Achievement", '
+            '    MIN(c.F_REFDATE) AS "From_Date", '
+            '    MAX(c.T_REFDATE) AS "To_Date" '
             'FROM ' + coll_tbl + ' c '
             'INNER JOIN ' + oter_tbl + ' T '
             '    ON T."territryID" = c.TerritoryId '
@@ -286,6 +430,7 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
             '    T."descript" '
             ' ORDER BY 1, 2, 3'
         )
+
     
     where_clauses = []
     params = []
@@ -295,12 +440,14 @@ def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | No
         params.append(emp_id)
 
     if region and region.strip():
-        where_clauses.append(' COALESCE(R3."descript", R2."descript", R1."descript") = ? ')
-        params.append(region.strip())
+        val = region.strip()
+        where_clauses.append(' (COALESCE(R3."descript", R2."descript", R1."descript") = ? OR COALESCE(R3."descript", R2."descript", R1."descript") = ?) ')
+        params.extend([val, val + ' Region'])
         
     if zone and zone.strip():
-        where_clauses.append(' R1."descript" = ? ')
-        params.append(zone.strip())
+        val = zone.strip()
+        where_clauses.append(' (R1."descript" = ? OR R1."descript" = ?) ')
+        params.extend([val, val + ' Zone'])
         
     if territory and territory.strip():
         val = territory.strip()
@@ -384,12 +531,14 @@ def sales_vs_achievement_geo_profit(db, emp_id: int | None = None, region: str |
         params.append(emp_id)
     
     if region and region.strip():
-        where_clauses.append(' T3."descript" = ? ')
-        params.append(region.strip())
+        val = region.strip()
+        where_clauses.append(' (T3."descript" = ? OR T3."descript" = ?) ')
+        params.extend([val, val + ' Region'])
         
     if zone and zone.strip():
-        where_clauses.append(' T2."descript" = ? ')
-        params.append(zone.strip())
+        val = zone.strip()
+        where_clauses.append(' (T2."descript" = ? OR T2."descript" = ?) ')
+        params.extend([val, val + ' Zone'])
         
     if territory and territory.strip():
         val = territory.strip()

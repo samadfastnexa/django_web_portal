@@ -325,7 +325,7 @@
     <div class="actions-grid">
       <a class="button {% if current_action == 'health' %}active{% endif %}" href="?action=health&company_db={{ selected_db_key }}">Health Check</a>
       <a class="button {% if current_action == 'select_oitm' %}active{% endif %}" href="?action=select_oitm&company_db={{ selected_db_key }}">Select OITM</a>
-      <a class="button {% if current_action == 'territory_summary' %}active{% endif %}" href="?action=territory_summary&company_db={{ selected_db_key }}">Collection VS Achievement</a>
+      <a class="button {% if current_action == 'collection_vs_achievement' %}active{% endif %}" href="?action=collection_vs_achievement&company_db={{ selected_db_key }}">Collection VS Achievement</a>
       <a class="button {% if current_action == 'sales_vs_achievement' %}active{% endif %}" href="?action=sales_vs_achievement&company_db={{ selected_db_key }}">Sales VS Achievement</a>
       <a class="button {% if current_action == 'sales_vs_achievement_by_emp' %}active{% endif %}" href="?action=sales_vs_achievement_by_emp&company_db={{ selected_db_key }}">Sales VS Achievement by Emp</a>
       <a class="button {% if current_action == 'sales_vs_achievement_geo_inv' %}active{% endif %}" href="?action=sales_vs_achievement_geo_inv&company_db={{ selected_db_key }}">Sales VS Achievement (Geo Inv)</a>
@@ -752,6 +752,8 @@
         </div>
       </form>
     {% endif %}
+
+
     {% if current_action == 'sales_vs_achievement_territory' %}
       <style>
         :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#8b5cf6;--filter-primary-600:#7c3aed;--filter-accent:#6366f1;--filter-radius:12px}
@@ -1327,6 +1329,184 @@
               if(active(val)){f.classList.add('active');count++}else{f.classList.remove('active')}
             });
             var chip=document.getElementById('activeCount');
+            if(chip){chip.textContent=count+' active'}
+          }
+          sync();
+          Array.prototype.forEach.call(form.querySelectorAll('input, select'),function(el){
+            el.addEventListener('change',sync);
+            el.addEventListener('input',sync);
+          });
+        })();
+      </script>
+    {% endif %}
+
+    {% if current_action == 'collection_vs_achievement' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#8b5cf6;--filter-primary-600:#7c3aed;--filter-accent:#f59e0b;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(6, minmax(160px,1fr));gap:12px}
+        @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(3, minmax(160px,1fr))}}
+        @media (max-width:720px){.filter-grid{grid-template-columns:repeat(2, minmax(140px,1fr))}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input select,.filter-input input{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}
+        .filter-input select:focus,.filter-input input:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(139,92,246,0.15)}
+        .filter-field.active .filter-input select,.filter-field.active .filter-input input{border-color:var(--filter-primary);box-shadow:0 2px 12px rgba(139,92,246,0.18)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,0.25)}
+        .btn-secondary{background:#fff;color:var(--filter-primary);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#f5f3ff}
+        .chip{font-size:12px;color:#fff;background:var(--filter-accent);border-radius:999px;padding:2px 8px}
+        .icon{width:16px;height:16px;fill:currentColor}
+      </style>
+      <form method="get" class="filter-card" id="cva-filter-form">
+        <input type="hidden" name="action" value="collection_vs_achievement" />
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+        <div class="filter-header">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/><path d="M7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg>
+          <div class="filter-title">Collection Filters</div>
+          <span class="chip" id="activeCountCVA">0 active</span>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field" data-key="emp_id">
+            <div class="filter-label" title="Employee ID">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.418 0-8 2.239-8 5v3h16v-3c0-2.761-3.582-5-8-5z"/></svg>
+              Emp ID
+            </div>
+            <div class="filter-input">
+              <input type="number" name="emp_id" value="{{ diagnostics.emp_id|default:'' }}" placeholder="e.g. 729" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="region">
+            <div class="filter-label" title="Region">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              Region
+            </div>
+            <div class="filter-input">
+              <select name="region">
+                <option value="">All Regions</option>
+                {% for r in geo_options.regions %}
+                  <option value="{{ r }}" {% if r == diagnostics.region %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="zone">
+            <div class="filter-label" title="Zone">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              Zone
+            </div>
+            <div class="filter-input">
+              <select name="zone">
+                <option value="">All Zones</option>
+                {% for z in geo_options.zones %}
+                  <option value="{{ z }}" {% if z == diagnostics.zone %}selected{% endif %}>{{ z }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="territory">
+            <div class="filter-label" title="Territory">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              Territory
+            </div>
+            <div class="filter-input">
+              <select name="territory">
+                <option value="">All Territories</option>
+                {% for t in geo_options.territories %}
+                  <option value="{{ t }}" {% if t == diagnostics.territory %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="start_date">
+            <div class="filter-label" title="From Date">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
+              From
+            </div>
+            <div class="filter-input">
+              <input type="date" name="start_date" value="{{ diagnostics.start_date }}" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="end_date">
+            <div class="filter-label" title="To Date">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
+              To
+            </div>
+            <div class="filter-input">
+              <input type="date" name="end_date" value="{{ diagnostics.end_date }}" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="group_by_date" style="align-self:end">
+            <div class="filter-input">
+              <label style="display:flex;align-items:center;gap:8px" title="Group results by date range"><input type="checkbox" name="group_by_date" value="true" {% if diagnostics.group_by_date %}checked{% endif %}/> Group by Date</label>
+            </div>
+          </div>
+          <div class="filter-field" data-key="ignore_emp_filter" style="align-self:end">
+            <div class="filter-input">
+              <label style="display:flex;align-items:center;gap:8px" title="Show all data regardless of logged-in user permissions"><input type="checkbox" name="ignore_emp_filter" value="true" {% if diagnostics.ignore_emp_filter %}checked{% endif %}/> Ignore Emp Filter</label>
+            </div>
+          </div>
+          <div class="filter-field" data-key="in_millions" style="align-self:end">
+            <div class="filter-input">
+              <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="in_millions" value="true" {% if diagnostics.in_millions %}checked{% endif %}/> Show in millions</label>
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn" id="applyBtnCVA">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply Filters
+          </button>
+          <a class="btn btn-secondary" href="?action=collection_vs_achievement&company_db={{ selected_db_key }}" id="clearBtnCVA">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+      <script>
+        (function(){
+          var form=document.getElementById('cva-filter-form');
+          if(!form) return;
+          form.addEventListener('submit',function(){
+            var cb=form.querySelector('input[name="in_millions"]');
+            if(!cb || !cb.checked){
+              var hidden=document.createElement('input');
+              hidden.type='hidden';
+              hidden.name='in_millions';
+              hidden.value='false';
+              form.appendChild(hidden);
+            }
+            var gbd=form.querySelector('input[name="group_by_date"]');
+            if(!gbd || !gbd.checked){
+              var h=document.createElement('input');
+              h.type='hidden';
+              h.name='group_by_date';
+              h.value='false';
+              form.appendChild(h);
+            }
+            var ief=form.querySelector('input[name="ignore_emp_filter"]');
+            if(!ief || !ief.checked){
+              var h=document.createElement('input');
+              h.type='hidden';
+              h.name='ignore_emp_filter';
+              h.value='false';
+              form.appendChild(h);
+            }
+          });
+          function active(v){return v!==null&&v!==undefined&&String(v).trim()!==''}
+          function sync(){
+            var count=0;
+            Array.prototype.forEach.call(form.querySelectorAll('.filter-field'),function(f){
+              var el=f.querySelector('input, select');
+              var val=el?el.value:'';
+              if(active(val)){f.classList.add('active');count++}else{f.classList.remove('active')}
+            });
+            var chip=document.getElementById('activeCountCVA');
             if(chip){chip.textContent=count+' active'}
           }
           sync();
@@ -2115,7 +2295,7 @@ textContent=count+' active'}
         </form>
       </div>
       
-    {% elif current_action == 'sales_vs_achievement_geo_inv' and result_rows or current_action == 'sales_vs_achievement_geo_profit' and result_rows or current_action == 'sales_vs_achievement_territory' and result_rows %}
+    {% elif current_action == 'sales_vs_achievement_geo_inv' and result_rows or current_action == 'sales_vs_achievement_geo_profit' and result_rows or current_action == 'sales_vs_achievement_territory' and result_rows or current_action == 'collection_vs_achievement' and result_rows %}
       <style>
         .geo-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; table-layout: fixed; }
         .geo-table th { background-color: #f8fafc; color: #0f172a !important; padding: 12px 16px; text-align: right; font-weight: 700; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em; }
@@ -2166,9 +2346,13 @@ textContent=count+' active'}
           <thead>
             <tr>
               <th>Location</th>
-              <th>Sales</th>
+              <th>{% if current_action == 'collection_vs_achievement' %}Target{% else %}Sales{% endif %}</th>
               <th>Achievement</th>
-              {% if current_action != 'sales_vs_achievement_territory' %}<th>Employee</th>{% endif %}
+              {% if current_action == 'collection_vs_achievement' %}
+                  <th>Date Range</th>
+              {% elif current_action != 'sales_vs_achievement_territory' %}
+                  <th>Employee</th>
+              {% endif %}
             </tr>
           </thead>
           <tbody>

@@ -15,7 +15,7 @@ import os
 import json
 import re
 import logging
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -606,6 +606,175 @@ def hana_connect_admin(request):
                                 
                         except Exception as e_geo:
                             error = str(e_geo)
+                    elif action == 'collection_vs_achievement':
+                        try:
+                            emp_id_param = request.GET.get('emp_id')
+                            region_param = request.GET.get('region')
+                            zone_param = request.GET.get('zone')
+                            territory_param = request.GET.get('territory')
+                            start_date_param = request.GET.get('start_date')
+                            end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+                            detailed_view_param = (request.GET.get('detailed_view') or '').strip().lower()
+                            
+                            is_detailed = detailed_view_param in ('true', '1', 'yes', 'on')
+                            
+                            emp_val = None
+                            if emp_id_param is not None and emp_id_param != '':
+                                try:
+                                    emp_val = int(emp_id_param)
+                                except Exception:
+                                    error = 'Invalid emp_id'
+                            
+                            if error is None:
+                                data = sales_vs_achievement_geo_inv(
+                                    conn,
+                                    emp_id=emp_val,
+                                    region=(region_param or '').strip() or None,
+                                    zone=(zone_param or '').strip() or None,
+                                    territory=(territory_param or '').strip() or None,
+                                    start_date=(start_date_param or '').strip() or None,
+                                    end_date=(end_date_param or '').strip() or None,
+                                    group_by_emp=False,
+                                    group_by_date=is_detailed
+                                )
+                                
+                                if in_millions_param in ('', 'true','1','yes','y'):
+                                    scaled = []
+                                    for row in data or []:
+                                        if isinstance(row, dict):
+                                            r = dict(row)
+                                            try:
+                                                v = r.get('Collection_Target')
+                                                if v is None: v = r.get('COLLECTION_TARGET')
+                                                if v is not None:
+                                                    r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                                            except Exception:
+                                                pass
+                                            try:
+                                                v = r.get('Collection_Achievement')
+                                                if v is None: v = r.get('COLLECTION_ACHIEVEMENT')
+                                                if v is not None:
+                                                    r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                                            except Exception:
+                                                pass
+                                            scaled.append(r)
+                                        else:
+                                            scaled.append(row)
+                                    data = scaled
+
+                                # Hierarchical Transformation
+                                hierarchy = {}
+                                for row in (data or []):
+                                    if not isinstance(row, dict):
+                                        continue
+                                    reg = row.get('Region', 'Unknown Region')
+                                    zon = row.get('Zone', 'Unknown Zone')
+                                    ter = row.get('Territory', 'Unknown Territory')
+                                    
+                                    # Handle Date Range
+                                    date_range_str = ""
+                                    if is_detailed:
+                                        fd = row.get('From_Date')
+                                        td = row.get('To_Date')
+                                        if fd and td:
+                                            date_range_str = f"{fd} to {td}"
+                                        elif fd:
+                                            date_range_str = f"From {fd}"
+                                        elif td:
+                                            date_range_str = f"To {td}"
+                                    else:
+                                        # For aggregated view, we might also want to show date range if min/max available
+                                        fd = row.get('From_Date')
+                                        td = row.get('To_Date')
+                                        if fd and td:
+                                             date_range_str = f"{fd} to {td}"
+
+                                    sal = 0.0
+                                    ach = 0.0
+                                    try:
+                                        v = row.get('Collection_Target')
+                                        if v is None: v = row.get('COLLECTION_TARGET')
+                                        if v is None: v = row.get('colletion_Target')
+                                        sal = float(v or 0.0)
+                                    except: pass
+                                    try:
+                                        v = row.get('Collection_Achievement')
+                                        if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
+                                        if v is None: v = row.get('DocTotal')
+                                        ach = float(v or 0.0)
+                                    except: pass
+
+                                    if reg not in hierarchy:
+                                        hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                    
+                                    hierarchy[reg]['sales'] += sal
+                                    hierarchy[reg]['achievement'] += ach
+                                    
+                                    if zon not in hierarchy[reg]['zones']:
+                                        hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                        
+                                    hierarchy[reg]['zones'][zon]['sales'] += sal
+                                    hierarchy[reg]['zones'][zon]['achievement'] += ach
+                                    
+                                    hierarchy[reg]['zones'][zon]['territories'].append({
+                                        'name': ter,
+                                        'sales': sal,
+                                        'achievement': ach,
+                                        'date_range': date_range_str
+                                    })
+
+                                # Convert dicts to sorted lists
+                                final_list = []
+                                for r_name in sorted(hierarchy.keys()):
+                                    r_data = hierarchy[r_name]
+                                    zones_list = []
+                                    for z_name in sorted(r_data['zones'].keys()):
+                                        z_data = r_data['zones'][z_name]
+                                        # Sort territories by name and date
+                                        z_data['territories'] = sorted(z_data['territories'], key=lambda x: (x['name'], x['date_range']))
+                                        zones_list.append(z_data)
+                                    r_data['zones'] = zones_list
+                                    final_list.append(r_data)
+                                
+                                # Rounding
+                                for r in final_list:
+                                    r['sales'] = round(r['sales'], 2)
+                                    r['achievement'] = round(r['achievement'], 2)
+                                    for z in r['zones']:
+                                        z['sales'] = round(z['sales'], 2)
+                                        z['achievement'] = round(z['achievement'], 2)
+
+                                result = final_list
+                                
+                                try:
+                                    company = Company.objects.filter(Company_name=selected_db_key).first()
+                                    if company:
+                                        regions_qs = Region.objects.filter(company=company)
+                                        zones_qs = Zone.objects.filter(company=company)
+                                        territories_qs = Territory.objects.filter(company=company)
+                                    else:
+                                        regions_qs = Region.objects.all()
+                                        zones_qs = Zone.objects.all()
+                                        territories_qs = Territory.objects.all()
+                                    regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                except Exception:
+                                    request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                    
+                                diagnostics['emp_id'] = emp_val
+                                diagnostics['start_date'] = (start_date_param or '').strip()
+                                diagnostics['end_date'] = (end_date_param or '').strip()
+                                diagnostics['region'] = (region_param or '').strip()
+                                diagnostics['zone'] = (zone_param or '').strip()
+                                diagnostics['territory'] = (territory_param or '').strip()
+                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                                diagnostics['detailed_view'] = is_detailed
+                                
+                        except Exception as e_coll:
+                            error = str(e_coll)
                     elif action == 'sales_vs_achievement_geo_inv':
                         try:
                             emp_id_param = request.GET.get('emp_id')
@@ -903,6 +1072,151 @@ def hana_connect_admin(request):
                             diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
                         except Exception as e_svat:
                             error = str(e_svat)
+                    elif action == 'collection_vs_achievement':
+                        try:
+                            emp_id_param = request.GET.get('emp_id')
+                            region_param = request.GET.get('region')
+                            zone_param = request.GET.get('zone')
+                            territory_param = request.GET.get('territory')
+                            start_date_param = request.GET.get('start_date')
+                            end_date_param = request.GET.get('end_date')
+                            in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+                            group_by_date_param = (request.GET.get('group_by_date') or '').strip().lower()
+                            ignore_emp_filter_param = (request.GET.get('ignore_emp_filter') or '').strip().lower()
+                            
+                            emp_val = None
+                            if emp_id_param is not None and emp_id_param != '':
+                                try:
+                                    emp_val = int(emp_id_param)
+                                except Exception:
+                                    error = 'Invalid emp_id'
+                            
+                            data = collection_vs_achievement(
+                                conn,
+                                emp_id=emp_val,
+                                region=(region_param or '').strip() or None,
+                                zone=(zone_param or '').strip() or None,
+                                territory=(territory_param or '').strip() or None,
+                                start_date=(start_date_param or '').strip() or None,
+                                end_date=(end_date_param or '').strip() or None,
+                                group_by_date=(group_by_date_param in ('true', '1', 'yes', 'on')),
+                                ignore_emp_filter=(ignore_emp_filter_param in ('true', '1', 'yes', 'on'))
+                            )
+                            
+                            if in_millions_param in ('', 'true','1','yes','y'):
+                                scaled = []
+                                for row in data or []:
+                                    if isinstance(row, dict):
+                                        r = dict(row)
+                                        try:
+                                            v = r.get('Collection_Target')
+                                            if v is not None:
+                                                r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            v = r.get('Collection_Achievement')
+                                            if v is not None:
+                                                r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                                        except Exception:
+                                            pass
+                                        scaled.append(r)
+                                    else:
+                                        scaled.append(row)
+                                data = scaled
+
+                            hierarchy = {}
+                            for row in (data or []):
+                                if not isinstance(row, dict):
+                                    continue
+                                reg = row.get('Region', 'Unknown Region')
+                                zon = row.get('Zone', 'Unknown Zone')
+                                ter = row.get('TerritoryName', 'Unknown Territory')
+                                sal = 0.0
+                                ach = 0.0
+                                try:
+                                    v = row.get('Collection_Target')
+                                    sal = float(v or 0.0)
+                                except Exception:
+                                    pass
+                                try:
+                                    v = row.get('Collection_Achievement')
+                                    ach = float(v or 0.0)
+                                except Exception:
+                                    pass
+                                
+                                from_date = row.get('From_Date')
+                                to_date = row.get('To_Date')
+                                date_range_str = ''
+                                if from_date and to_date:
+                                    date_range_str = f"{from_date} to {to_date}"
+                                elif from_date:
+                                    date_range_str = f"From {from_date}"
+                                elif to_date:
+                                    date_range_str = f"To {to_date}"
+
+                                if reg not in hierarchy:
+                                    hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                hierarchy[reg]['sales'] += sal
+                                hierarchy[reg]['achievement'] += ach
+                                if zon not in hierarchy[reg]['zones']:
+                                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                hierarchy[reg]['zones'][zon]['sales'] += sal
+                                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                                hierarchy[reg]['zones'][zon]['territories'].append({
+                                    'name': ter, 
+                                    'sales': sal, 
+                                    'achievement': ach,
+                                    'employee_name': date_range_str  # Reuse employee_name field for Date Range display
+                                })
+                            
+                            final_list = []
+                            for r_name in sorted(hierarchy.keys()):
+                                r_data = hierarchy[r_name]
+                                zones_list = []
+                                for z_name in sorted(r_data['zones'].keys()):
+                                    z_data = r_data['zones'][z_name]
+                                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                                    zones_list.append(z_data)
+                                r_data['zones'] = zones_list
+                                final_list.append(r_data)
+                            
+                            for r in final_list:
+                                r['sales'] = round(r['sales'], 2)
+                                r['achievement'] = round(r['achievement'], 2)
+                                for z in r['zones']:
+                                    z['sales'] = round(z['sales'], 2)
+                                    z['achievement'] = round(z['achievement'], 2)
+                            result = final_list
+                            
+                            try:
+                                company = Company.objects.filter(Company_name=selected_db_key).first()
+                                if company:
+                                    regions_qs = Region.objects.filter(company=company)
+                                    zones_qs = Zone.objects.filter(company=company)
+                                    territories_qs = Territory.objects.filter(company=company)
+                                else:
+                                    regions_qs = Region.objects.all()
+                                    zones_qs = Zone.objects.all()
+                                    territories_qs = Territory.objects.all()
+                                regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
+                                zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
+                                territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
+                                request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                            except Exception:
+                                request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                            
+                            diagnostics['emp_id'] = emp_val
+                            diagnostics['start_date'] = (start_date_param or '').strip()
+                            diagnostics['end_date'] = (end_date_param or '').strip()
+                            diagnostics['region'] = (region_param or '').strip()
+                            diagnostics['zone'] = (zone_param or '').strip()
+                            diagnostics['territory'] = (territory_param or '').strip()
+                            diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                            diagnostics['group_by_date'] = (group_by_date_param in ('true', '1', 'yes', 'on'))
+                            diagnostics['ignore_emp_filter'] = (ignore_emp_filter_param in ('true', '1', 'yes', 'on'))
+                        except Exception as e_cva:
+                            error = str(e_cva)
                     elif action == 'sales_vs_achievement_geo_profit':
                         try:
                             emp_id_param = request.GET.get('emp_id')
@@ -1567,7 +1881,7 @@ def hana_connect_admin(request):
             'result_rows': paged_rows,
             'result_cols': result_cols,
             'table_rows': table_rows,
-            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_geo','sales_vs_achievement_geo_inv','sales_vs_achievement_geo_profit','sales_vs_achievement_by_emp','sales_vs_achievement_territory','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses','products_catalog')),
+            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_geo','sales_vs_achievement_geo_inv','sales_vs_achievement_geo_profit','collection_vs_achievement','sales_vs_achievement_by_emp','sales_vs_achievement_territory','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses','products_catalog')),
             'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
             'customer_options': customer_options,
             'customer_list': customer_list,
