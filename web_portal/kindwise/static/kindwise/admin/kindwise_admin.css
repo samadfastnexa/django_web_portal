@@ -1,0 +1,373 @@
+/**
+ * Kindwise Admin Styling
+ * Custom styles for Kindwise identification records in Django admin
+ */
+
+/* =====================
+   Page Header
+   ===================== */
+#content h1 {
+    color: #ff6600;
+    border-bottom: 3px solid #ff6600;
+    padding-bottom: 10px;
+}
+
+/* =====================
+   List View Styling
+   ===================== */
+.module table {
+    border-collapse: collapse;
+}
+
+.module table thead th {
+    background: linear-gradient(135deg, #ff6600 0%, #ff8533 100%) !important;
+    color: white !important;
+    font-weight: 600 !important;
+    padding: 12px 10px !important;
+    border: none !important;
+}
+
+.module table tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+.module table tbody tr:hover {
+    background-color: #fff3e0 !important;
+}
+
+.module table tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+.module table tbody td {
+    padding: 10px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/* =====================
+   Fieldset Styling
+   ===================== */
+.module h2,
+fieldset h2 {
+    background: linear-gradient(135deg, #ff6600 0%, #ff8533 100%);
+    color: white;
+    padding: 12px 15px;
+    border-radius: 6px 6px 0 0;
+    margin: 0 0 15px 0;
+    font-weight: 600;
+}
+
+fieldset.module {
+    border: 2px solid #ff6600;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.form-row {
+    padding: 15px;
+}
+
+/* =====================
+   Read-only Field Styling
+   ===================== */
+.readonly {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+}
+
+/* =====================
+   Status Badge Enhancements
+   ===================== */
+.status-success {
+    background: #28a745;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.status-error {
+    background: #dc3545;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.status-pending {
+    background: #ffc107;
+    color: #333;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+/* =====================
+   Action Button Styling
+   ===================== */
+.button,
+input[type="submit"],
+input[type="button"],
+.submit-row input,
+a.button {
+    background: linear-gradient(135deg, #ff6600 0%, #ff8533 100%);
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.button:hover,
+input[type="submit"]:hover,
+input[type="button"]:hover,
+.submit-row input:hover,
+a.button:hover {
+    background: linear-gradient(135deg, #e55a00 0%, #ff6600 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(255, 102, 0, 0.3);
+}
+
+/* =====================
+   Filter Sidebar
+   ===================== */
+#changelist-filter {
+    background: #f8f9fa;
+    border-left: 3px solid #ff6600;
+}
+
+#changelist-filter h2 {
+    background: #ff6600;
+    color: white;
+    padding: 10px 15px;
+    margin: 0;
+    font-weight: 600;
+}
+
+#changelist-filter h3 {
+    color: #ff6600;
+    font-weight: 600;
+    padding: 10px 15px;
+    border-bottom: 2px solid #ff6600;
+}
+
+#changelist-filter li.selected a {
+    color: #ff6600;
+    font-weight: 600;
+}
+
+/* =====================
+   Search Bar
+   ===================== */
+#changelist-search input[type="text"] {
+    border: 2px solid #ff6600;
+    border-radius: 5px;
+    padding: 8px 12px;
+}
+
+#changelist-search input[type="text"]:focus {
+    outline: none;
+    border-color: #ff8533;
+    box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.1);
+}
+
+#changelist-search input[type="submit"] {
+    background: #ff6600;
+    border: none;
+    color: white;
+    padding: 8px 20px;
+    border-radius: 5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* =====================
+   Pagination
+   ===================== */
+.paginator {
+    color: #666;
+}
+
+.paginator a,
+.paginator a:link,
+.paginator a:visited {
+    background: #ff6600;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    text-decoration: none;
+    margin: 0 2px;
+}
+
+.paginator a:hover {
+    background: #e55a00;
+}
+
+.paginator .this-page {
+    background: #333;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    margin: 0 2px;
+}
+
+/* =====================
+   JSON Response Container
+   ===================== */
+.json-response-container {
+    background: #f8f9fa;
+    border: 3px solid #ff6600;
+    border-radius: 6px;
+    padding: 15px;
+    margin: 10px 0;
+    max-height: 500px;
+    overflow: auto;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.json-response-container::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+}
+
+.json-response-container::-webkit-scrollbar-track {
+    background: #e0e0e0;
+}
+
+.json-response-container::-webkit-scrollbar-thumb {
+    background: #ff6600;
+    border: 3px solid #e0e0e0;
+    border-radius: 4px;
+}
+
+.json-response-container::-webkit-scrollbar-thumb:hover {
+    background: #e55a00;
+}
+
+/* =====================
+   Suggestions Box
+   ===================== */
+.suggestions-box {
+    background: #e7f3ff;
+    border-left: 4px solid #2196F3;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.suggestions-box h4 {
+    color: #1976D2;
+    margin: 0 0 10px 0;
+    font-size: 16px;
+}
+
+.suggestions-box .suggestion-item {
+    margin: 8px 0;
+    padding: 8px;
+    background: white;
+    border-radius: 4px;
+    border-left: 3px solid #4CAF50;
+}
+
+/* =====================
+   Modal/Details Overlay
+   ===================== */
+.kindwise-modal {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.kindwise-modal-content {
+    background-color: white;
+    margin: 5% auto;
+    padding: 0;
+    border: 3px solid #ff6600;
+    border-radius: 8px;
+    width: 80%;
+    max-width: 900px;
+    max-height: 80vh;
+    overflow: auto;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.kindwise-modal-header {
+    background: linear-gradient(135deg, #ff6600 0%, #ff8533 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 6px 6px 0 0;
+}
+
+.kindwise-modal-header h2 {
+    margin: 0;
+    color: white;
+    background: none;
+    padding: 0;
+}
+
+.kindwise-modal-close {
+    color: white;
+    float: right;
+    font-size: 32px;
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.kindwise-modal-close:hover {
+    opacity: 0.8;
+}
+
+.kindwise-modal-body {
+    padding: 20px;
+}
+
+/* =====================
+   Dark Mode Support
+   ===================== */
+@media (prefers-color-scheme: dark) {
+    .module table tbody tr:nth-child(even) {
+        background-color: #2a2a2a;
+    }
+    
+    .module table tbody tr:hover {
+        background-color: #3a3a3a !important;
+    }
+    
+    .json-response-container {
+        background: #2b2b2b;
+        color: #e0e0e0;
+    }
+    
+    fieldset.module {
+        border-color: #ff8533;
+    }
+}
+
+/* =====================
+   Responsive Adjustments
+   ===================== */
+@media (max-width: 768px) {
+    .kindwise-modal-content {
+        width: 95%;
+        margin: 10% auto;
+    }
+    
+    .json-response-container {
+        max-height: 300px;
+        font-size: 11px;
+    }
+}

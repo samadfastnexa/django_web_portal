@@ -203,7 +203,26 @@ class SalesOrderForm(forms.ModelForm):
             'address': forms.Textarea(attrs={'rows': 3}),
             'comments': forms.Textarea(attrs={'rows': 3}),
             'sap_error': forms.Textarea(attrs={'rows': 3}),
-            'sap_response_json': forms.Textarea(attrs={'rows': 18, 'style': 'font-family: monospace; font-size: 12px;'}),
+            'sap_response_json': forms.Textarea(attrs={
+                'rows': 18,
+                'class': 'sap-json-viewer',
+                'placeholder': 'SAP API response will appear here after posting...',
+                'style': (
+                    'height: 400px !important; '
+                    'max-height: 400px !important; '
+                    'overflow: scroll !important; '
+                    'font-family: Consolas, Monaco, "Courier New", monospace !important; '
+                    'font-size: 13px !important; '
+                    'line-height: 1.6 !important; '
+                    'background-color: #f8f9fa !important; '
+                    'border: 2px solid #dee2e6 !important; '
+                    'border-radius: 6px !important; '
+                    'padding: 12px !important; '
+                    'white-space: pre !important; '
+                    'display: block !important; '
+                    'width: 100% !important;'
+                )
+            }),
         }
     
     def __init__(self, *args, **kwargs):
@@ -323,6 +342,7 @@ class SalesOrderLineInlineForm(forms.ModelForm):
             'vat_group': forms.Select(attrs={'class': 'sap-tax-lov'}),
             'project_code': forms.Select(attrs={'class': 'sap-project-lov'}),
             'u_crop': forms.Select(attrs={'class': 'sap-crop-lov'}),
+            'u_policy': forms.Select(attrs={'class': 'sap-policy-lov'}),
         }
     
     def __init__(self, *args, **kwargs):
@@ -414,6 +434,82 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                 except Exception as e:
                     print(f"Error loading warehouses: {e}")
                 
+                # Populate policy dropdown based on customer card_code
+                try:
+                    # Get card_code from parent SalesOrder instance
+                    card_code = None
+                    if self.instance and self.instance.pk and hasattr(self.instance, 'sales_order'):
+                        card_code = self.instance.sales_order.card_code
+                    elif self.instance and hasattr(self.instance, 'sales_order'):
+                        # For new lines, try to get from the parent form data
+                        card_code = getattr(self.instance.sales_order, 'card_code', None)
+                    
+                    # Try to get from initial data or request
+                    if not card_code and self.request and self.request.method == 'GET':
+                        # Try to extract from URL or query params
+                        sales_order_id = self.request.resolver_match.kwargs.get('object_id')
+                        if sales_order_id:
+                            try:
+                                from .models import SalesOrder
+                                sales_order = SalesOrder.objects.get(pk=sales_order_id)
+                                card_code = sales_order.card_code
+                            except:
+                                pass
+                    
+                    print(f"DEBUG: Loading policies for card_code: {card_code}")
+                    
+                    if card_code:
+                        # First, try to get all policies to see if any exist
+                        all_policies = hana_connect.policy_link(db, show_all=True)
+                        print(f"DEBUG: Total policies in system: {len(all_policies) if all_policies else 0}")
+                        if all_policies and len(all_policies) > 0:
+                            print(f"DEBUG: Sample policy: {all_policies[0]}")
+                        
+                        # Fetch policies for this customer
+                        policies = hana_connect.policy_link(db, bp_code=card_code, show_all=False)
+                        print(f"DEBUG: Found {len(policies) if policies else 0} policies for {card_code}")
+                        
+                        if policies:
+                            policy_choices = [('', '--- Select Policy ---')] + [
+                                (
+                                    str(policy.get('U_proj', '')),
+                                    f"{policy.get('U_proj', '')} - {policy.get('PrjName', 'N/A')} (DocEntry: {policy.get('DocEntry', 'N/A')})"
+                                )
+                                for policy in policies
+                            ]
+                        else:
+                            # If no policies found for specific customer, show all available policies
+                            print(f"DEBUG: No policies found for {card_code}, showing all available policies")
+                            if all_policies:
+                                policy_choices = [('', f'--- All Policies (No specific for {card_code}) ---')] + [
+                                    (
+                                        str(policy.get('U_proj', '')),
+                                        f"{policy.get('U_proj', '')} - {policy.get('PrjName', 'N/A')} (BP: {policy.get('U_bp', 'N/A')}, DocEntry: {policy.get('DocEntry', 'N/A')})"
+                                    )
+                                    for policy in all_policies[:100]  # Limit to first 100
+                                ]
+                            else:
+                                policy_choices = [('', f'--- No Policies Available in System ---')]
+                    else:
+                        # No card_code available, show generic message
+                        policy_choices = [('', '--- Select Customer First ---')]
+                    
+                    if 'u_policy' in self.fields:
+                        self.fields['u_policy'].widget = forms.Select(
+                            choices=policy_choices,
+                            attrs={'class': 'sap-policy-lov', 'style': 'width: 400px;'}
+                        )
+                        print(f"DEBUG: Policy dropdown loaded with {len(policy_choices)} options")
+                except Exception as e:
+                    print(f"ERROR loading policies: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    if 'u_policy' in self.fields:
+                        self.fields['u_policy'].widget = forms.Select(
+                            choices=[('', '--- Error Loading Policies ---')],
+                            attrs={'class': 'sap-policy-lov', 'style': 'width: 400px;'}
+                        )
+                
                 db.close()
                 print(f"Loaded {len(item_choices)-1} items, {len(tax_choices)-1} tax codes, {len(project_choices)-1} projects, {len(crop_choices)-1} crops")
             else:
@@ -498,7 +594,7 @@ class SalesOrderAdmin(admin.ModelAdmin):
     list_display = ('id', 'card_code', 'card_name', 'doc_date', 'status', 'is_posted_to_sap', 'sap_doc_num', 'created_at')
     list_filter = ('status', 'is_posted_to_sap', 'doc_date', 'created_at')
     search_fields = ('card_code', 'card_name', 'federal_tax_id', 'u_s_card_code')
-    readonly_fields = ('created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_json', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code', 'card_name', 'contact_person_code', 'federal_tax_id', 'pay_to_code', 'address')
+    readonly_fields = ('created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_display', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code', 'card_name', 'contact_person_code', 'federal_tax_id', 'pay_to_code', 'address')
     
     fieldsets = (
         ('Basic Information', {
@@ -525,7 +621,7 @@ class SalesOrderAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('SAP Integration', {
-            'fields': ('add_to_sap_button', 'is_posted_to_sap', 'sap_doc_entry', 'sap_doc_num', 'posted_at', 'sap_error', 'sap_response_json'),
+            'fields': ('add_to_sap_button', 'is_posted_to_sap', 'sap_doc_entry', 'sap_doc_num', 'posted_at', 'sap_error', 'sap_response_display'),
         }),
     )
     
@@ -534,8 +630,16 @@ class SalesOrderAdmin(admin.ModelAdmin):
     actions = ['post_to_sap']
 
     class Media:
-        css = {'all': ('admin/salesorder_loading.css',)}
-        js = ('admin/salesorder_loading.js',)
+        css = {
+            'all': (
+                'admin/salesorder_loading.css',
+                'FieldAdvisoryService/css/sap_response_json.css',
+            )
+        }
+        js = (
+            'admin/salesorder_loading.js',
+            'FieldAdvisoryService/js/sap_json_scroll.js',
+        )
     
     def get_form(self, request, obj=None, **kwargs):
         base_form = super().get_form(request, obj, **kwargs)
@@ -682,6 +786,75 @@ class SalesOrderAdmin(admin.ModelAdmin):
                 )
         return "-"
     add_to_sap_button.short_description = "SAP Action"
+    
+    def sap_response_display(self, obj):
+        """Display SAP response JSON in a scrollable container with visible scrollbar"""
+        from django.utils.html import format_html
+        from django.utils.safestring import mark_safe
+        import json
+        
+        if not obj.sap_response_json:
+            return format_html('<div style="padding: 10px; color: #999; font-style: italic;">No SAP response yet</div>')
+        
+        # Pretty print the JSON
+        try:
+            json_obj = json.loads(obj.sap_response_json)
+            formatted_json = json.dumps(json_obj, indent=2)
+        except:
+            formatted_json = obj.sap_response_json
+        
+        return format_html(
+            '<div style="'
+            'width: 100%; '
+            'height: 400px; '
+            'overflow: scroll !important; '
+            'overflow-y: scroll !important; '
+            'overflow-x: scroll !important; '
+            'border: 3px solid #ff6600; '
+            'border-radius: 6px; '
+            'background: #f8f9fa; '
+            'padding: 0; '
+            'position: relative; '
+            'display: block; '
+            'box-sizing: border-box; '
+            'scrollbar-width: auto; '
+            'scrollbar-color: #ff6600 #e0e0e0;'
+            '">'
+            '<pre style="'
+            'margin: 0; '
+            'padding: 12px; '
+            'font-family: Consolas, Monaco, monospace; '
+            'font-size: 13px; '
+            'line-height: 1.6; '
+            'color: #2c3e50; '
+            'white-space: pre; '
+            'word-wrap: normal; '
+            'background: transparent; '
+            'border: none; '
+            'min-height: 100%; '
+            'overflow: visible;'
+            '">{}</pre>'
+            '</div>'
+            '<style>'
+            'div[style*="border: 3px solid #ff6600"]::-webkit-scrollbar {{ '
+            'width: 16px !important; '
+            'height: 16px !important; '
+            'display: block !important; '
+            '}} '
+            'div[style*="border: 3px solid #ff6600"]::-webkit-scrollbar-track {{ '
+            'background: #e0e0e0 !important; '
+            '}} '
+            'div[style*="border: 3px solid #ff6600"]::-webkit-scrollbar-thumb {{ '
+            'background: #ff6600 !important; '
+            'border: 3px solid #e0e0e0 !important; '
+            '}} '
+            'div[style*="border: 3px solid #ff6600"]::-webkit-scrollbar-thumb:hover {{ '
+            'background: #cc5200 !important; '
+            '}}'
+            '</style>',
+            formatted_json
+        )
+    sap_response_display.short_description = "Sap response json"
     
     def post_to_sap(self, request, queryset):
         """Action to post selected sales orders to SAP"""

@@ -538,7 +538,7 @@ class CollectionAnalyticsView(APIView):
     permission_classes = [IsAuthenticated]
     
     @swagger_auto_schema(
-        tags=["Analytics Dashboard"],
+        tags=["SAP"],
         operation_description="Get detailed collection vs achievement analytics with various filters",
         manual_parameters=[
             openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g. 4B-BIO-app)", type=openapi.TYPE_STRING, required=False),

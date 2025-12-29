@@ -1274,3 +1274,64 @@ select.sap-crop-lov {
   padding: 6px 0;
   border-bottom: 1px solid var(--hairline-color, #e9ecef);
 }
+
+/* =====================
+   Fix Inline Form Overlapping Text
+   ===================== */
+
+/* Hide the .original paragraph that shows "Line 0: FG00001 - 20.00" text */
+/* This paragraph contains initial values and overlaps with form fields */
+.inline-group .tabular tbody tr td .original,
+.inline-group .tabular .original,
+.inline-related tbody tr td p.original,
+tbody tr td p.original {
+    display: none !important;
+}
+
+/* Ensure proper spacing for inline table cells */
+.inline-group .tabular tbody tr td {
+    padding: 8px 10px !important;
+    vertical-align: middle !important;
+}
+
+/* Fix table row display */
+.inline-group .tabular tbody tr {
+    display: table-row !important;
+}
+
+/* Ensure form fields are visible and properly styled */
+.inline-group .tabular tbody tr td input,
+.inline-group .tabular tbody tr td select,
+.inline-group .tabular tbody tr td textarea {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+}
+
+/* Style the inline table headers */
+.inline-group .tabular thead th {
+    background-color: var(--orange, #E26830) !important;
+    color: white !important;
+    font-weight: 600 !important;
+    padding: 12px 10px !important;
+    text-align: left !important;
+    border: none !important;
+}
+
+/* Add alternating row colors for better readability */
+.inline-group .tabular tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+.inline-group .tabular tbody tr:nth-child(odd) {
+    background-color: white;
+}
+
+/* Dark mode support */
+[data-theme="dark"] .inline-group .tabular tbody tr:nth-child(even) {
+    background-color: #2a2a2a;
+}
+
+[data-theme="dark"] .inline-group .tabular tbody tr:nth-child(odd) {
+    background-color: #1a1a1a;
+}

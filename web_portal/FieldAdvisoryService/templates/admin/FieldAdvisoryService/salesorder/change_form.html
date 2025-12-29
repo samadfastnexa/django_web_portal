@@ -760,9 +760,28 @@
             var itemCode = row.find('[id$="-item_code"]').val();
             var pl = row.find('[id$="-u_pl"]').val();
             
-            if (policy && itemCode && pl) {
-                // Load discounts
-                loadDiscounts(policy, itemCode, pl, row);
+            if (policy) {
+                // Ensure Policy Link and Project Balance are in sync with selected policy
+                if (!pl || pl === '') {
+                    loadPolicyLink(policy, row);
+                    // loadPolicyLink will trigger discounts if itemCode present
+                } else {
+                    if (itemCode) {
+                        loadDiscounts(policy, itemCode, pl, row);
+                    }
+                    $.ajax({
+                        url: '/api/field/api/project_balance/',
+                        method: 'GET',
+                        data: { project_code: policy },
+                        success: function(resp) {
+                            var balance = resp && resp.u_bp != null ? resp.u_bp : '';
+                            var $uBp = row.find('[id$="-u_bp"]');
+                            if ($uBp.length) {
+                                $uBp.val(balance);
+                            }
+                        }
+                    });
+                }
             }
         });
         
@@ -791,12 +810,75 @@
         
         function loadPolicyLink(projectCode, row) {
             console.log('Loading policy link for project:', projectCode);
-            // TODO: Implement policy link loading
+            if (!projectCode) {
+                console.warn('No project code provided to loadPolicyLink');
+                return;
+            }
+            var $uPl = row.find('[id$="-u_pl"]');
+            var $uPolicy = row.find('[id$="-u_policy"]');
+            var $uBp = row.find('[id$="-u_bp"]');
+            if ($uPolicy.length) {
+                // Ensure the Policy (Policy Code) reflects the selected project
+                $uPolicy.val(projectCode);
+            }
+            $.ajax({
+                url: '/api/field/api/policy_link/',
+                method: 'GET',
+                data: { project_code: projectCode },
+                success: function(resp) {
+                    var docEntry = resp && resp.policy_link ? resp.policy_link : '';
+                    if ($uPl.length) {
+                        $uPl.val(docEntry);
+                    }
+                    console.log('Policy Link (DocEntry) set to:', docEntry);
+                    // After setting PL, optionally load discounts if item present
+                    var itemCode = row.find('[id$="-item_code"]').val();
+                    if (itemCode && docEntry) {
+                        loadDiscounts(projectCode, itemCode, docEntry, row);
+                    }
+                },
+                error: function(xhr) {
+                    console.error('Error loading policy link:', xhr.status, xhr.responseText);
+                }
+            });
+            $.ajax({
+                url: '/api/field/api/project_balance/',
+                method: 'GET',
+                data: { project_code: projectCode },
+                success: function(resp) {
+                    var balance = resp && resp.u_bp != null ? resp.u_bp : '';
+                    if ($uBp.length) {
+                        $uBp.val(balance);
+                    }
+                    console.log('Project balance (U_BP) set to:', balance);
+                },
+                error: function(xhr) {
+                    console.error('Error loading project balance:', xhr.status, xhr.responseText);
+                }
+            });
         }
         
         function loadDiscounts(policy, itemCode, pl, row) {
             console.log('Loading discounts for:', policy, itemCode, pl);
-            // TODO: Implement discount loading
+            if (!policy || !itemCode || !pl) {
+                console.warn('Missing parameters for loadDiscounts', { policy: policy, itemCode: itemCode, pl: pl });
+                return;
+            }
+            $.ajax({
+                url: '/api/field/api/discounts/',
+                method: 'GET',
+                data: { policy: policy, item_code: itemCode, pl: pl },
+                success: function(resp) {
+                    var ad = parseFloat(resp && resp.u_ad != null ? resp.u_ad : 0);
+                    var exd = parseFloat(resp && resp.u_exd != null ? resp.u_exd : 0);
+                    var total = (isNaN(ad) ? 0 : ad) + (isNaN(exd) ? 0 : exd);
+                    row.find('[id$="-discount_percent"]').val(total.toFixed(2));
+                    console.log('Discounts applied. U_AD:', ad, 'U_EXD:', exd, 'Total:', total.toFixed(2));
+                },
+                error: function(xhr) {
+                    console.error('Error loading discounts:', xhr.status, xhr.responseText);
+                }
+            });
         }
     });
 })(django.jQuery);

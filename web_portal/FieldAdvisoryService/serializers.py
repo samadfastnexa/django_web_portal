@@ -212,6 +212,42 @@ class SalesOrderAttachmentSerializer(serializers.ModelSerializer):
 
 class SalesOrderSerializer(serializers.ModelSerializer):
     attachments = SalesOrderAttachmentSerializer(many=True, read_only=True)
+    
+    # Make all fields optional for easier mobile API usage
+    staff = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    schedule = serializers.PrimaryKeyRelatedField(queryset=MeetingSchedule.objects.all(), required=False, allow_null=True)
+    dealer = serializers.PrimaryKeyRelatedField(queryset=Dealer.objects.all(), required=False, allow_null=True)
+    status = serializers.CharField(required=False, allow_blank=True)
+    
+    # SAP fields - all optional
+    series = serializers.IntegerField(required=False, allow_null=True)
+    doc_type = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    doc_date = serializers.DateField(required=False, allow_null=True)
+    doc_due_date = serializers.DateField(required=False, allow_null=True)
+    tax_date = serializers.DateField(required=False, allow_null=True)
+    
+    card_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    card_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    contact_person_code = serializers.IntegerField(required=False, allow_null=True)
+    federal_tax_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    pay_to_code = serializers.IntegerField(required=False, allow_null=True)
+    address = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+    doc_currency = serializers.CharField(required=False, allow_blank=True)
+    doc_rate = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, allow_null=True)
+    
+    comments = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    summery_type = serializers.CharField(required=False, allow_blank=True)
+    doc_object_code = serializers.CharField(required=False, allow_blank=True)
+    
+    # UDF fields - all optional
+    u_sotyp = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_usid = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_swje = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_secje = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_crje = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_s_card_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_s_card_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = SalesOrder

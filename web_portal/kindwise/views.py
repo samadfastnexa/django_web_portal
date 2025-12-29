@@ -158,3 +158,216 @@ def identify_view(request):
         'id', 'status', 'created_at', 'image_name', 'response_payload'
     )
     return JsonResponse({'count': qs.count(), 'results': list(qs)}, safe=False)
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="""
+    Get all Kindwise identification records or filter by specific user.
+    
+    - Without user_id: Returns all identification records (Admin use)
+    - With user_id: Returns records for specific user only
+    
+    Results are ordered by most recent first.
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            name="user_id",
+            in_=openapi.IN_QUERY,
+            type=openapi.TYPE_INTEGER,
+            description="User ID to filter records (optional - omit to get all records)",
+            required=False
+        )
+    ],
+    responses={
+        200: openapi.Response(
+            description="List of identification records",
+            examples={
+                "application/json": {
+                    "user_id": 5,
+                    "user_name": "John Doe",
+                    "count": 2,
+                    "results": [
+                        {
+                            "id": 10,
+                            "status": "success",
+                            "created_at": "2024-01-15T10:30:00Z",
+                            "image_name": "tomato.jpg",
+                            "response_payload": {
+                                "classification": {
+                                    "suggestions": [
+                                        {"name": "Tomato", "probability": 0.95}
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        ),
+        404: "User not found"
+    },
+    tags=["kindwise"]
+)
+@api_view(['GET'])
+@csrf_exempt
+def records_by_user(request):
+    """Get all Kindwise identification records or filter by specific user"""
+    user_id = request.GET.get('user_id')
+    
+    try:
+        if user_id:
+            # Validate user exists
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            
+            try:
+                user = User.objects.get(pk=user_id)
+                # Handle different user models - some may not have get_full_name
+                if hasattr(user, 'get_full_name') and callable(user.get_full_name):
+                    user_name = user.get_full_name() or user.username
+                elif hasattr(user, 'full_name'):
+                    user_name = user.full_name or user.username
+                elif hasattr(user, 'first_name') and hasattr(user, 'last_name'):
+                    user_name = f"{user.first_name} {user.last_name}".strip() or user.username
+                else:
+                    user_name = user.username
+            except User.DoesNotExist:
+                return JsonResponse(
+                    {'error': f'User with ID {user_id} not found'},
+                    status=404
+                )
+            
+            # Get records for specific user
+            qs = KindwiseIdentification.objects.filter(user_id=user_id).values(
+                'id', 'status', 'created_at', 'image_name', 'response_payload'
+            )
+            
+            if not qs.exists():
+                return JsonResponse({
+                    'message': f'No identification records found for user {user_name} (ID: {user_id})',
+                    'user_id': int(user_id),
+                    'user_name': user_name,
+                    'count': 0,
+                    'results': []
+                }, status=200)
+            
+            return JsonResponse({
+                'user_id': int(user_id),
+                'user_name': user_name,
+                'count': qs.count(),
+                'results': list(qs)
+            }, safe=False)
+        else:
+            # Get all records (no user filter)
+            qs = KindwiseIdentification.objects.all().values(
+                'id', 'user_id', 'status', 'created_at', 'image_name', 'response_payload'
+            )
+            
+            return JsonResponse({
+                'message': 'All identification records',
+                'count': qs.count(),
+                'results': list(qs)
+            }, safe=False)
+            
+    except ValueError:
+        return JsonResponse(
+            {'error': 'Invalid user ID format. Must be a valid integer.'},
+            status=400
+        )
+    except Exception as e:
+        return JsonResponse(
+            {'error': f'Error retrieving records: {str(e)}'},
+            status=500
+        )
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="""
+    Get a specific Kindwise identification record by ID.
+    
+    Returns complete details including:
+    - Record ID and status
+    - User information
+    - Image name
+    - Request and response payloads
+    - Timestamp and metadata
+    """,
+    responses={
+        200: openapi.Response(
+            description="Single identification record",
+            examples={
+                "application/json": {
+                    "id": 10,
+                    "user_id": 5,
+                    "user_name": "John Doe",
+                    "status": "success",
+                    "image_name": "tomato.jpg",
+                    "created_at": "2024-01-15T10:30:00Z",
+                    "source_ip": "192.168.1.1",
+                    "request_payload": {"has_image": True, "user_id": 5},
+                    "response_payload": {
+                        "classification": {
+                            "suggestions": [
+                                {"name": "Tomato", "probability": 0.95}
+                            ]
+                        }
+                    }
+                }
+            }
+        ),
+        404: "Record not found"
+    },
+    tags=["kindwise"]
+)
+@api_view(['GET'])
+@csrf_exempt
+def record_detail(request, record_id):
+    """Get a specific Kindwise identification record by ID"""
+    try:
+        record = KindwiseIdentification.objects.get(pk=record_id)
+        
+        # Get user information if available
+        user_name = None
+        if record.user_id:
+            try:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                user = User.objects.get(pk=record.user_id)
+                
+                # Handle different user models
+                if hasattr(user, 'get_full_name') and callable(user.get_full_name):
+                    user_name = user.get_full_name() or user.username
+                elif hasattr(user, 'full_name'):
+                    user_name = user.full_name or user.username
+                elif hasattr(user, 'first_name') and hasattr(user, 'last_name'):
+                    user_name = f"{user.first_name} {user.last_name}".strip() or user.username
+                else:
+                    user_name = user.username
+            except:
+                user_name = f"User {record.user_id}"
+        
+        return JsonResponse({
+            'id': record.id,
+            'user_id': record.user_id,
+            'user_name': user_name,
+            'status': record.status,
+            'image_name': record.image_name,
+            'created_at': record.created_at,
+            'source_ip': record.source_ip,
+            'user_agent': record.user_agent,
+            'request_payload': record.request_payload,
+            'response_payload': record.response_payload
+        }, safe=False)
+        
+    except KindwiseIdentification.DoesNotExist:
+        return JsonResponse(
+            {'error': f'Identification record with ID {record_id} not found'},
+            status=404
+        )
+    except Exception as e:
+        return JsonResponse(
+            {'error': f'Error retrieving record: {str(e)}'},
+            status=500
+        )
