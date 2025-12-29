@@ -107,7 +107,7 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
             crop_data = result.get('crop', {})
             crop_suggestions = crop_data.get('suggestions', [])
             if crop_suggestions:
-                html += '<div style="margin-bottom: 20px; padding: 18px; background: #e8f5e9; border-left: 5px solid #4CAF50; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">''
+                html += '<div style="margin-bottom: 20px; padding: 18px; background: #e8f5e9; border-left: 5px solid #4CAF50; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">'
                 html += '<h3 style="margin: 0 0 15px 0; color: #2e7d32; font-size: 18px; font-weight: 600;">🌾 Crop Identification</h3>'
                 
                 for i, sug in enumerate(crop_suggestions[:3]):  # Top 3
@@ -115,7 +115,7 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
                     scientific = sug.get('scientific_name', '')
                     prob = sug.get('probability', 0) * 100
                     
-                    html += f'<div style="margin: 12px 0; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid #4CAF50; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">''
+                    html += f'<div style="margin: 12px 0; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid #4CAF50; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">'
                     html += f'<div style="font-size: 16px; font-weight: 600; color: #333; margin-bottom: 5px;">{i+1}. {name.title()}</div>'
                     if scientific:
                         html += f'<div style="color: #666; font-style: italic; font-size: 14px; margin: 4px 0;">{scientific}</div>'
@@ -145,7 +145,7 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
             disease_data = result.get('disease', {})
             disease_suggestions = disease_data.get('suggestions', [])
             if disease_suggestions:
-                html += '<div style="margin-bottom: 20px; padding: 18px; background: #fff3e0; border-left: 5px solid #FF9800; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">''
+                html += '<div style="margin-bottom: 20px; padding: 18px; background: #fff3e0; border-left: 5px solid #FF9800; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">'
                 html += '<h3 style="margin: 0 0 15px 0; color: #e65100; font-size: 18px; font-weight: 600;">🔬 Disease/Health Analysis</h3>'
                 
                 for i, sug in enumerate(disease_suggestions[:5]):  # Top 5
@@ -161,7 +161,7 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
                         border_color = '#FF5722' if prob > 50 else '#FFC107'
                         bg_color = '#FF5722' if prob > 50 else '#FFC107'
                     
-                    html += f'<div style="margin: 12px 0; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid {border_color}; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">''
+                    html += f'<div style="margin: 12px 0; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid {border_color}; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">'
                     html += f'<div style="font-size: 16px; font-weight: 600; color: #333; margin-bottom: 5px;">{i+1}. {name.title()}</div>'
                     if scientific and scientific.lower() != name.lower() and scientific != 'healthy':
                         html += f'<div style="color: #666; font-style: italic; font-size: 14px; margin: 4px 0;">{scientific}</div>'
@@ -191,9 +191,9 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
             input_data = response.get('input', {})
             images = input_data.get('images', [])
             if images and images[0]:
-                html += '<div style="margin-bottom: 20px; padding: 18px; background: #f3e5f5; border-left: 5px solid #9C27B0; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">''
+                html += '<div style="margin-bottom: 20px; padding: 18px; background: #f3e5f5; border-left: 5px solid #9C27B0; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">'
                 html += '<h3 style="margin: 0 0 15px 0; color: #6a1b9a; font-size: 18px; font-weight: 600;">📸 Submitted Image</h3>'
-                html += f'<img src="{images[0]}" style="max-width: 400px; max-height: 400px; border-radius: 6px; border: 3px solid #9C27B0; box-shadow: 0 3px 10px rgba(0,0,0,0.12);">''
+                html += f'<img src="{images[0]}" style="max-width: 400px; max-height: 400px; border-radius: 6px; border: 3px solid #9C27B0; box-shadow: 0 3px 10px rgba(0,0,0,0.12);">'
                 html += '</div>'
             
             # Additional Info
