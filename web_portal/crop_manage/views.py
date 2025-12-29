@@ -45,7 +45,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all crops with their stages",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="List of crops retrieved successfully",
@@ -58,7 +58,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Create a new crop with stages using form data format. Use nested notation for stages: stages[0][stage_name], stages[0][days_after_sowing], etc. Example form data: name=Rice, variety=Basmati-385, season=Kharif, stages[0][stage_name]=Transplanting, stages[0][days_after_sowing]=25, stages[0][brand]=Syngenta, stages[0][active_ingredient]=Chlorpyrifos, stages[0][dose_per_acre]=500ml, stages[0][purpose]=Pest control and nutrient management",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             201: openapi.Response(
@@ -73,7 +73,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a specific crop by ID",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Crop retrieved successfully",
@@ -87,7 +87,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Update a crop and its stages using form data format. Use nested notation for stages: stages[0][stage_name], stages[0][days_after_sowing], etc.",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             200: openapi.Response(
@@ -103,7 +103,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Partially update a crop using form data format",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             200: openapi.Response(
@@ -119,7 +119,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Delete a crop and all its stages",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             204: openapi.Response(description="Crop deleted successfully"),
             404: openapi.Response(description="Crop not found")
@@ -146,7 +146,7 @@ class CropStageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all crop stages",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="List of crop stages retrieved successfully",
@@ -159,7 +159,7 @@ class CropStageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Create a new crop stage using form data format. Example form data: crop=1, stage_name=Germination, days_after_sowing=7, brand=Mahyco, active_ingredient=Thiamethoxam, dose_per_acre=100g, purpose=Seed treatment for early pest protection",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             201: openapi.Response(
@@ -174,7 +174,7 @@ class CropStageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a specific crop stage by ID",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Crop stage retrieved successfully",
@@ -188,7 +188,7 @@ class CropStageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Update a crop stage using form data format",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             200: openapi.Response(
@@ -212,7 +212,7 @@ class TrialViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all trials with their treatments",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="List of trials retrieved successfully",
@@ -225,7 +225,7 @@ class TrialViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Create a new trial",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             201: openapi.Response(
                 description="Trial created successfully",
@@ -239,7 +239,7 @@ class TrialViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a specific trial by ID with all treatments",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Trial retrieved successfully",
@@ -253,7 +253,7 @@ class TrialViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Update a trial",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Trial updated successfully",
@@ -268,7 +268,7 @@ class TrialViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Partially update a trial",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Trial partially updated successfully",
@@ -283,7 +283,7 @@ class TrialViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Delete a trial and all its treatments",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             204: openapi.Response(description="Trial deleted successfully"),
             404: openapi.Response(description="Trial not found")
@@ -302,7 +302,7 @@ class TrialTreatmentViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all trial treatments",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="List of treatments retrieved successfully",
@@ -315,7 +315,7 @@ class TrialTreatmentViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Create a new trial treatment",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             201: openapi.Response(
                 description="Treatment created successfully",
@@ -329,7 +329,7 @@ class TrialTreatmentViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a specific trial treatment by ID",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Treatment retrieved successfully",
@@ -343,7 +343,7 @@ class TrialTreatmentViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Update a trial treatment",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Treatment updated successfully",
@@ -358,7 +358,7 @@ class TrialTreatmentViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Partially update a trial treatment",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Treatment partially updated successfully",
@@ -373,7 +373,7 @@ class TrialTreatmentViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Delete a trial treatment",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             204: openapi.Response(description="Treatment deleted successfully"),
             404: openapi.Response(description="Treatment not found")
@@ -392,7 +392,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all products",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="List of products retrieved successfully",
@@ -405,7 +405,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Create a new product",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             201: openapi.Response(
                 description="Product created successfully",
@@ -419,7 +419,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a specific product by ID",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Product retrieved successfully",
@@ -433,7 +433,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Update a product",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Product updated successfully",
@@ -448,7 +448,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Partially update a product",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Product partially updated successfully",
@@ -463,7 +463,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Delete a product",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             204: openapi.Response(description="Product deleted successfully"),
             404: openapi.Response(description="Product not found")
@@ -607,7 +607,7 @@ def export_trials_pdf(request):
 
     @swagger_auto_schema(
         operation_description="Partially update a crop stage using form data format",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             200: openapi.Response(
@@ -623,7 +623,7 @@ def export_trials_pdf(request):
 
     @swagger_auto_schema(
         operation_description="Delete a crop stage",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             204: openapi.Response(description="Crop stage deleted successfully"),
             404: openapi.Response(description="Crop stage not found")

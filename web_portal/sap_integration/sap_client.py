@@ -57,7 +57,7 @@ class SAPClient:
     _lock = threading.Lock()
     _route_id = None
 
-    def __init__(self):
+    def __init__(self, company_db_key=None):
         try:
             try:
                 _load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
@@ -68,52 +68,95 @@ class SAPClient:
             # Priority 1: Try environment variables (for .env configuration)
             # Priority 2: Fall back to Django settings (for database configuration)
             
-            # Get username from settings
-            try:
-                sap_cred = Setting.objects.get(slug='sap_credential').value
-                if isinstance(sap_cred, str):
-                    sap_cred = json.loads(sap_cred)
-                elif not isinstance(sap_cred, dict):
-                    raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
-                self.username = str(sap_cred.get('Username') or '').strip()
-            except Setting.DoesNotExist:
-                raise ImproperlyConfigured('SAP_USERNAME not found in settings')
+            # Get username
+            self.username = os.environ.get('SAP_USERNAME')
+            if not self.username:
+                try:
+                    sap_cred = Setting.objects.get(slug='sap_credential').value
+                    if isinstance(sap_cred, str):
+                        sap_cred = json.loads(sap_cred)
+                    elif not isinstance(sap_cred, dict):
+                        raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
+                    self.username = str(sap_cred.get('Username') or '').strip()
+                except Setting.DoesNotExist:
+                    pass
+            if not self.username:
+                raise ImproperlyConfigured('SAP_USERNAME not found in settings or environment')
             
-            # Get password from settings
-            try:
-                sap_cred = Setting.objects.get(slug='sap_credential').value
-                if isinstance(sap_cred, str):
-                    sap_cred = json.loads(sap_cred)
-                elif not isinstance(sap_cred, dict):
-                    raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
-                self.password = str(sap_cred.get('Passwords') or '').strip()
-            except Setting.DoesNotExist:
-                raise ImproperlyConfigured('SAP_PASSWORD not found in settings')
+            # Get password
+            self.password = os.environ.get('SAP_PASSWORD')
+            if not self.password:
+                try:
+                    sap_cred = Setting.objects.get(slug='sap_credential').value
+                    if isinstance(sap_cred, str):
+                        sap_cred = json.loads(sap_cred)
+                    elif not isinstance(sap_cred, dict):
+                        raise ImproperlyConfigured('sap_credential value must be a dict or JSON string')
+                    self.password = str(sap_cred.get('Passwords') or '').strip()
+                except Setting.DoesNotExist:
+                    pass
+            if not self.password:
+                raise ImproperlyConfigured('SAP_PASSWORD not found in settings or environment')
             
-            # Get company database from settings
-            try:
-                raw_db = Setting.objects.get(slug='SAP_COMPANY_DB').value
-                if isinstance(raw_db, str):
-                    try:
-                        parsed = json.loads(raw_db)
-                    except Exception:
+            # Get company database
+            # Priority: 1. company_db_key parameter, 2. Database settings, 3. Environment variable
+            self.company_db = None
+            
+            # First, try to resolve from database settings if a key is provided
+            if company_db_key:
+                try:
+                    raw_db = Setting.objects.get(slug='SAP_COMPANY_DB').value
+                    if isinstance(raw_db, str):
+                        try:
+                            parsed = json.loads(raw_db)
+                        except Exception:
+                            parsed = raw_db
+                    else:
                         parsed = raw_db
-                else:
-                    parsed = raw_db
-                parsed = _normalize_mapping(parsed)
-                if isinstance(parsed, dict):
-                    key = '4B-ORANG'
-                    picked = parsed.get(key) or parsed.get('4B-ORANG') or parsed.get('4B-BIO')
-                    self.company_db = str(picked or '').strip()
-                else:
-                    self.company_db = str(parsed or '').strip()
-            except Setting.DoesNotExist:
-                raise ImproperlyConfigured('SAP_COMPANY_DB not found in settings')
+                    parsed = _normalize_mapping(parsed)
+                    if isinstance(parsed, dict):
+                        picked = parsed.get(company_db_key)
+                        if picked:
+                            self.company_db = str(picked or '').strip()
+                            # Debug logging
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.info(f"SAPClient initialized with company_db_key={company_db_key}, selected company_db={self.company_db}, available options={list(parsed.keys())}")
+                except Setting.DoesNotExist:
+                    pass
+            
+            # If still not found, try environment variable or default from settings
+            if not self.company_db:
+                self.company_db = os.environ.get('SAP_COMPANY_DB')
+                
+            if not self.company_db:
+                try:
+                    raw_db = Setting.objects.get(slug='SAP_COMPANY_DB').value
+                    if isinstance(raw_db, str):
+                        try:
+                            parsed = json.loads(raw_db)
+                        except Exception:
+                            parsed = raw_db
+                    else:
+                        parsed = raw_db
+                    parsed = _normalize_mapping(parsed)
+                    if isinstance(parsed, dict):
+                        # Fallback to first available or BIO
+                        key = '4B-BIO'
+                        picked = parsed.get(key) or parsed.get('4B-ORANG')
+                        self.company_db = str(picked or '').strip()
+                    else:
+                        self.company_db = str(parsed or '').strip()
+                except Setting.DoesNotExist:
+                    pass
+                    
+            if not self.company_db:
+                raise ImproperlyConfigured('SAP_COMPANY_DB not found in settings or environment')
 
             # Get SAP B1 Service Layer connection details
             self.host = (os.environ.get('SAP_B1S_HOST') or "fourbtest.vdc.services").strip()
             self.port = int((os.environ.get('SAP_B1S_PORT') or 50000))
-            self.base_path = (os.environ.get('SAP_B1S_BASE_PATH') or "/b1s/v2").strip()
+            self.base_path = (os.environ.get('SAP_B1S_BASE_PATH') or "/b1s/v1").strip()
 
             self.ssl_context = ssl.create_default_context()
             self.ssl_context.check_hostname = False
@@ -162,6 +205,17 @@ class SAPClient:
             'Password': self.password,
             'CompanyDB': self.company_db
         }
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[SAP LOGIN] Attempting login with:")
+        logger.info(f"  Host: {self.host}:{self.port}")
+        logger.info(f"  Base Path: {self.base_path}")
+        logger.info(f"  UserName: {self.username}")
+        logger.info(f"  CompanyDB: {self.company_db}")
+        logger.info(f"  Password length: {len(self.password)}")
+        
         headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
 
         def do_login(data, base_path):
@@ -175,7 +229,13 @@ class SAPClient:
                 response_data = response.read()
 
                 if response.status != 200:
-                    raise Exception(f"Login failed with status {response.status}: {response_data.decode('utf-8')}")
+                    error_detail = response_data.decode('utf-8')
+                    logger.error(f"[SAP LOGIN] Failed with status {response.status}")
+                    logger.error(f"[SAP LOGIN] Error response: {error_detail}")
+                    logger.error(f"[SAP LOGIN] Attempted login: UserName={self.username}, CompanyDB={self.company_db}")
+                    logger.error(f"[SAP LOGIN] Host: {self.host}:{self.port}")
+                    logger.error(f"[SAP LOGIN] Base Path: {self.base_path}")
+                    raise Exception(f"Login failed with status {response.status}: {error_detail}")
 
                 login_response = json.loads(response_data.decode('utf-8'))
                 try:
@@ -281,7 +341,6 @@ class SAPClient:
                 parsed_json = json.loads(response_text) if response_text else None
             except Exception:
                 parsed_json = None
-
             if 200 <= response.status < 300:
                 if isinstance(parsed_json, (dict, list)):
                     return parsed_json
@@ -306,17 +365,34 @@ class SAPClient:
                         error_msg = message_data.get('value', '')
                     error_code = error_data.get('code', '')
 
-            if retry and (
-                'Critical cache refresh failure' in error_msg or
-                'Invalid session' in error_msg or
-                'session already timeout' in error_msg or
+            # Retry once for cache/session/internal errors by forcing a relogin
+            internal_error = response.status >= 500 or error_code in [299]
+            cache_failure = 'Critical cache refresh failure' in (error_msg or response_text)
+            session_invalid = (
+                'Invalid session' in (error_msg or '') or
+                'session already timeout' in (error_msg or '') or
                 error_code in [-2001, -1101, -1001, 301]
-            ):
+            )
+            if retry and (cache_failure or session_invalid or internal_error):
                 with self._lock:
                     self._global_session_id = None
+                time.sleep(random.uniform(0.1, 0.3))
                 return self._make_request(method, path, body, retry=False)
 
-            raise Exception(f"SAP error {response.status}: {error_msg or response_text}")
+            try:
+                hdrs = dict(response.getheaders())
+            except Exception:
+                hdrs = {}
+
+            detail = {
+                'status': response.status,
+                'error_code': error_code,
+                'message': error_msg or response_text,
+                'body': parsed_json if parsed_json is not None else response_text,
+                'headers': hdrs,
+            }
+
+            raise Exception(json.dumps(detail))
         finally:
             self._close_connection(conn)
 
@@ -468,6 +544,20 @@ class SAPClient:
         if isinstance(res, dict) and 'value' in res:
             return res['value']
         return res
+
+    def post(self, resource: str, payload: dict):
+        """Generic POST helper for Service Layer resources.
+        Example: post('Orders', payload) -> POST /b1s/v2/Orders
+        """
+        if not resource or not isinstance(resource, str):
+            raise ValueError("resource must be a non-empty string")
+        body = json.dumps(payload or {})
+        # Allow callers to pass either 'Orders' or '/Orders'
+        if resource.startswith('/'):
+            path = f"{self.base_path}{resource}"
+        else:
+            path = f"{self.base_path}/{resource}"
+        return self._make_request("POST", path, body)
 
     def get_dealer_bp_info(self, dealer_id: int):
         try:

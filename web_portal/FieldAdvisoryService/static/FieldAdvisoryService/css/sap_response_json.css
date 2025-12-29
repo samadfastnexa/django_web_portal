@@ -1,0 +1,209 @@
+/**
+ * SAP Response JSON Field Enhancement
+ * Provides scrollable, well-formatted display for SAP API responses
+ */
+
+/* Target the SAP response JSON textarea - FORCE SCROLL */
+textarea#id_sap_response_json,
+#id_sap_response_json.vLargeTextField,
+#id_sap_response_json {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+    
+    /* Fixed height with scroll - CRITICAL */
+    height: 400px !important;
+    max-height: 400px !important;
+    min-height: 400px !important;
+    overflow: scroll !important;
+    overflow-y: scroll !important;
+    overflow-x: scroll !important;
+    
+    /* Ensure block display */
+    display: block !important;
+    width: 100% !important;
+    
+    /* Styling */
+    background-color: #f8f9fa !important;
+    border: 2px solid #dee2e6 !important;
+    border-radius: 6px !important;
+    padding: 12px !important;
+    box-sizing: border-box !important;
+    
+    /* Better readability */
+    color: #2c3e50 !important;
+    white-space: pre !important;
+    word-wrap: normal !important;
+    word-break: normal !important;
+    
+    /* Smooth scrolling */
+    scroll-behavior: smooth !important;
+    -webkit-overflow-scrolling: touch !important;
+    
+    /* Box shadow for depth */
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Hover state */
+textarea#id_sap_response_json:hover,
+#id_sap_response_json:hover {
+    border-color: #ff6600 !important;
+    background-color: #ffffff !important;
+    overflow: scroll !important;
+}
+
+/* Focus state */
+textarea#id_sap_response_json:focus,
+#id_sap_response_json:focus {
+    border-color: #ff6600 !important;
+    background-color: #ffffff !important;
+    box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.1), inset 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+    outline: none !important;
+    overflow: scroll !important;
+}
+
+/* Custom scrollbar for webkit browsers - FORCE VISIBLE */
+textarea#id_sap_response_json::-webkit-scrollbar,
+#id_sap_response_json::-webkit-scrollbar {
+    width: 14px !important;
+    height: 14px !important;
+    display: block !important;
+}
+
+textarea#id_sap_response_json::-webkit-scrollbar-track,
+#id_sap_response_json::-webkit-scrollbar-track {
+    background: #e0e0e0 !important;
+    border-radius: 6px !important;
+}
+
+textarea#id_sap_response_json::-webkit-scrollbar-thumb,
+#id_sap_response_json::-webkit-scrollbar-thumb {
+    background: #ff6600 !important;
+    border-radius: 6px !important;
+    border: 2px solid #e0e0e0 !important;
+    min-height: 40px !important;
+}
+
+textarea#id_sap_response_json::-webkit-scrollbar-thumb:hover,
+#id_sap_response_json::-webkit-scrollbar-thumb:hover {
+    background: #e55a00 !important;
+}
+
+/* Firefox scrollbar - FORCE VISIBLE */
+textarea#id_sap_response_json,
+#id_sap_response_json {
+    scrollbar-width: auto !important;
+    scrollbar-color: #ff6600 #e0e0e0 !important;
+}
+
+/* Field wrapper styling */
+.form-row.field-sap_response_json {
+    margin-bottom: 20px;
+}
+
+.form-row.field-sap_response_json > div {
+    width: 100% !important;
+}
+
+/* Label styling */
+.form-row.field-sap_response_json label {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    display: block;
+    font-size: 14px;
+}
+
+/* Add a small icon/indicator for JSON content */
+.form-row.field-sap_response_json label::after {
+    content: " 📋";
+    font-size: 12px;
+    opacity: 0.6;
+}
+
+/* Read-only mode styling */
+#id_sap_response_json[readonly] {
+    background-color: #e9ecef !important;
+    cursor: not-allowed;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    #id_sap_response_json {
+        background-color: #2b2b2b !important;
+        color: #e0e0e0 !important;
+        border-color: #444 !important;
+    }
+    
+    #id_sap_response_json:hover {
+        background-color: #333333 !important;
+    }
+    
+    #id_sap_response_json:focus {
+        background-color: #333333 !important;
+        border-color: #ff6600 !important;
+    }
+    
+    #id_sap_response_json::-webkit-scrollbar-track {
+        background: #1a1a1a;
+    }
+    
+    #id_sap_response_json::-webkit-scrollbar-thumb {
+        background: #ff6600;
+        border-color: #1a1a1a;
+    }
+    
+    .form-row.field-sap_response_json label {
+        color: #e0e0e0;
+    }
+}
+
+/* Print styling - expand to show all content */
+@media print {
+    #id_sap_response_json {
+        max-height: none !important;
+        overflow: visible !important;
+        page-break-inside: avoid;
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    #id_sap_response_json {
+        font-size: 11px !important;
+        max-height: 300px !important;
+    }
+}
+
+/* Add a helpful tooltip/hint text below the field */
+.form-row.field-sap_response_json .help {
+    font-size: 12px;
+    color: #6c757d;
+    font-style: italic;
+    margin-top: 4px;
+    display: block;
+}
+
+/* JSON syntax highlighting classes (if needed for future enhancement) */
+.json-key {
+    color: #0066cc;
+    font-weight: 600;
+}
+
+.json-string {
+    color: #008800;
+}
+
+.json-number {
+    color: #cc6600;
+}
+
+.json-boolean {
+    color: #cc0000;
+    font-weight: bold;
+}
+
+.json-null {
+    color: #999999;
+    font-style: italic;
+}

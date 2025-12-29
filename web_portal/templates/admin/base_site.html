@@ -1,6 +1,41 @@
 {% extends "admin/base.html" %}
-{% load static %}
 {% load i18n %}
+
+{% block extrastyle %}
+<style>
+  /* Header enhancements */
+  #header { background:#E26830; border-bottom:none; }
+  #branding { display:flex; align-items:center; gap:14px; }
+  .brand-title { font-weight:800; font-size:22px; color:#fff; letter-spacing:.3px; }
+  .brand-sub { font-size:12px; color:#ffe8dc; opacity:.9; }
+  #user-tools { display:flex; align-items:center; gap:10px; color:#fff; }
+  #user-tools .role-chip { background:#ffffff; color:#1a56db; padding:6px 12px; border-radius:999px; font-size:12px; font-weight:700; border:1px solid rgba(255,255,255,.6); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  #user-tools .user-welcome { font-weight:700; color:#fff; letter-spacing:.3px; }
+  #user-tools a { color:#fff; opacity:.95; }
+  #user-tools a:hover { text-decoration:underline; opacity:1; }
+  .divider { opacity:.35; margin:0 6px; color:#fff; }
+  #user-tools .logout-btn { background:#ffffff; color:#E26830; padding:8px 14px; border-radius:999px; font-size:12px; font-weight:800; border:1px solid rgba(255,255,255,.7); box-shadow:0 1px 2px rgba(0,0,0,.12); cursor:pointer; }
+  #user-tools .logout-btn:hover { background:#fff; color:#c2512d; border-color:#fff; }
+</style>
+{% endblock %}
+
+{# Do not override branding to avoid duplicate block definitions #}
+
+{% block userlinks %}
+  {% if has_permission %}
+    <span class="role-chip">{{ user.role.name|default:'Admin'|upper }}</span>
+    <span class="user-welcome">{% translate 'WELCOME,' %} {{ user.get_username|upper }}</span>
+    <span class="divider">/</span>
+    <form id="logout-form" method="post" action="{% url 'admin:logout' %}" style="display:inline; margin:0;">
+      {% csrf_token %}
+      <button type="submit" class="logout-btn">{% translate 'LOG OUT' %}</button>
+    </form>
+  {% else %}
+    <a href="{% url 'admin:login' %}">{% translate 'Log in' %}</a>
+  {% endif %}
+{% endblock %}
+{% block welcome-msg %}{% endblock %}
+{% load static %}
 
 {% block extrahead %}
   {{ block.super }}
@@ -109,6 +144,81 @@
     }
     /* Images/media */
     img, video { max-width: 100%; height: auto; }
+    
+    /* =====================================================
+       MOVE ADD BUTTON OUT OF CONTENT DIV
+       Position object-tools (Add button) after the heading
+       ===================================================== */
+    #content {
+      position: relative;
+    }
+    
+    /* Position object-tools absolute to right side after heading */
+    .object-tools {
+      position: absolute !important;
+      top: 12px !important;
+      right: 0 !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      list-style: none !important;
+      z-index: 100 !important;
+    }
+    
+    .object-tools li {
+      margin: 0 !important;
+      display: inline-block !important;
+    }
+    
+    .object-tools a {
+      padding: 10px 20px !important;
+      font-size: 14px !important;
+      border-radius: 8px !important;
+      background: #E26830 !important;
+      color: #fff !important;
+      text-decoration: none !important;
+      font-weight: 600 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      transition: all 0.2s ease !important;
+      border: none !important;
+      box-shadow: 0 2px 4px rgba(226, 104, 48, 0.2) !important;
+    }
+    
+    .object-tools a:hover {
+      background: #C75A2A !important;
+      transform: translateY(-2px) !important;
+      box-shadow: 0 4px 12px rgba(226, 104, 48, 0.3) !important;
+    }
+    
+    .object-tools a::before {
+      content: "+" !important;
+      font-size: 18px !important;
+      font-weight: bold !important;
+      line-height: 1 !important;
+    }
+    
+    /* Adjust page heading to make room for button */
+    #content > h1 {
+      margin-bottom: 20px !important;
+      padding-bottom: 12px !important;
+      padding-right: 150px !important; /* Make room for button */
+      border-bottom: 2px solid #F3C7B4 !important;
+    }
+    
+    /* Make sure content has enough top padding */
+    #content {
+      padding-top: 20px !important;
+    }
+    
+    /* For changelist pages */
+    #changelist {
+      padding-top: 0 !important;
+    }
+    
     /* Theme toggle button styling */
     .theme-toggle {
       background: transparent !important;

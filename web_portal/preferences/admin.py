@@ -105,6 +105,7 @@ import json
 
     
 from django.contrib import admin
+from web_portal.admin import admin_site
 from django import forms
 from django.utils.safestring import mark_safe
 import json
@@ -303,7 +304,7 @@ class SettingForm(forms.ModelForm):
 
 
 # ✅ Step 3: Admin Registration
-@admin.register(Setting)
+@admin.register(Setting, site=admin_site)
 class SettingAdmin(admin.ModelAdmin):
     form = SettingForm
     list_display = ('slug', 'user', 'created_at', 'updated_at', 'is_active')

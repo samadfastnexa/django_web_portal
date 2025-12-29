@@ -1,5 +1,11 @@
-from rest_framework import viewsets,permissions,filters
+from rest_framework import viewsets,permissions,filters, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from django.core.paginator import Paginator
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from django.contrib.admin.views.decorators import staff_member_required
 
 from .models import Dealer, MeetingSchedule, SalesOrder
 from .serializers import DealerSerializer, DealerRequestSerializer,MeetingScheduleSerializer, SalesOrderSerializer
@@ -253,7 +259,22 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Create a new sales order linking a dealer with a meeting schedule.",
+        operation_description="""
+        Create a new sales order linking a dealer with a meeting schedule.
+        
+        **All fields are optional** to make API easy for mobile developers.
+        Provide only the fields you need - the system will handle defaults.
+        
+        Common fields for mobile apps:
+        - staff: User ID creating the order
+        - dealer: Dealer ID (optional)
+        - schedule: Meeting schedule ID (optional)
+        - card_code: Customer code (BP Code)
+        - card_name: Customer name
+        - comments: Order remarks
+        
+        All SAP-related fields (doc_date, doc_due_date, series, etc.) are optional.
+        """,
         request_body=SalesOrderSerializer,
         responses={
             201: 'Sales order created successfully',
@@ -277,12 +298,24 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         return super().update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Update specific fields of a sales order, typically used for status changes.",
+        operation_description="""
+        Update specific fields of a sales order (PATCH method).
+        
+        **All fields are optional** - send only the fields you want to update.
+        Typically used for status changes, adding comments, or updating SAP posting information.
+        
+        Example: Update just the status
+        ```json
+        {
+            "status": "entertained"
+        }
+        ```
+        """,
         request_body=SalesOrderSerializer,
         responses={
             200: 'Sales order updated successfully',
             404: 'Sales order not found',
-            400: 'Bad Request - Invalid status value'
+            400: 'Bad Request - Invalid data'
         },
         tags=["15. SalesOrders"]
     )
@@ -299,6 +332,110 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        method='get',
+        operation_description="""
+        Get all sales orders created by a specific user/staff member.
+        
+        Pass the user ID as a URL parameter to filter sales orders by the staff who created them.
+        Returns all sales orders with their details including status, customer info, and SAP posting status.
+        
+        Example: `/api/sales-orders/by-user/5/` returns all orders created by user with ID 5
+        """,
+        responses={
+            200: openapi.Response(
+                description='List of sales orders created by the specified user',
+                schema=SalesOrderSerializer(many=True),
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'staff': 5,
+                            'dealer': 2,
+                            'card_code': 'C20000',
+                            'card_name': 'ABC Traders',
+                            'status': 'pending',
+                            'is_posted_to_sap': False,
+                            'created_at': '2024-01-15T10:30:00Z'
+                        },
+                        {
+                            'id': 2,
+                            'staff': 5,
+                            'dealer': 3,
+                            'card_code': 'C20001',
+                            'card_name': 'XYZ Company',
+                            'status': 'entertained',
+                            'is_posted_to_sap': True,
+                            'sap_doc_num': 123456,
+                            'created_at': '2024-01-16T14:20:00Z'
+                        }
+                    ]
+                }
+            ),
+            404: 'User not found or no orders exist for this user'
+        },
+        tags=["15. SalesOrders"]
+    )
+    @action(detail=False, methods=['get'], url_path='by-user/(?P<user_id>[^/.]+)')
+    def by_user(self, request, user_id=None):
+        """Get all sales orders created by a specific user"""
+        try:
+            # Validate user exists
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            
+            try:
+                user = User.objects.get(pk=user_id)
+                # Handle different user models - some may not have get_full_name
+                if hasattr(user, 'get_full_name') and callable(user.get_full_name):
+                    user_name = user.get_full_name() or user.username
+                elif hasattr(user, 'full_name'):
+                    user_name = user.full_name or user.username
+                elif hasattr(user, 'first_name') and hasattr(user, 'last_name'):
+                    user_name = f"{user.first_name} {user.last_name}".strip() or user.username
+                else:
+                    user_name = user.username
+            except User.DoesNotExist:
+                return Response(
+                    {'error': f'User with ID {user_id} not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Get all sales orders for this user
+            orders = SalesOrder.objects.filter(staff=user).order_by('-created_at')
+            
+            if not orders.exists():
+                return Response(
+                    {
+                        'message': f'No sales orders found for user {user_name} (ID: {user_id})',
+                        'user_id': user_id,
+                        'user_name': user_name,
+                        'count': 0,
+                        'orders': []
+                    },
+                    status=status.HTTP_200_OK
+                )
+            
+            serializer = self.get_serializer(orders, many=True)
+            
+            return Response({
+                'user_id': user_id,
+                'user_name': user_name,
+                'count': orders.count(),
+                'orders': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except ValueError:
+            return Response(
+                {'error': 'Invalid user ID format. Must be a valid integer.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Error retrieving sales orders: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class DealerViewSet(viewsets.ModelViewSet):
@@ -866,8 +1003,8 @@ def _load_env_file(path: str) -> None:
     except Exception:
         pass
 
-def get_hana_connection():
-    """Get HANA database connection"""
+def get_hana_connection(request=None, selected_db_key=None):
+    """Get HANA database connection honoring the selected DB (session/global dropdown)."""
     try:
         # Load .env file
         _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
@@ -882,22 +1019,54 @@ def get_hana_connection():
         
         from hdbcli import dbapi
         from preferences.models import Setting
-        
-        # Get database name from settings
+
+        if not selected_db_key and request and hasattr(request, 'session'):
+            selected_db_key = request.session.get('selected_db')
+
+        # Get database name from settings, preferring selected_db_key when provided
         try:
             db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-            if db_setting and hasattr(db_setting, 'value'):
-                # If value is a dict, get the current selected schema
-                if isinstance(db_setting.value, dict):
-                    schema = list(db_setting.value.values())[0] if db_setting.value else '4B-BIO_APP'
+            raw_value = getattr(db_setting, 'value', None) if db_setting else None
+            schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+            db_options = {}
+
+            if isinstance(raw_value, dict):
+                db_options = raw_value
+            elif isinstance(raw_value, str):
+                try:
+                    import json
+                    parsed = json.loads(raw_value)
+                    if isinstance(parsed, dict):
+                        db_options = parsed
+                    else:
+                        schema = str(parsed)
+                except Exception:
+                    schema = raw_value
+
+            cleaned = {}
+            for k, v in db_options.items():
+                clean_key = str(k).strip().strip('"').strip("'")
+                clean_val = str(v).strip().strip('"').strip("'")
+                cleaned[clean_key] = clean_val
+            db_options = cleaned
+
+            if db_options:
+                if selected_db_key and selected_db_key in db_options:
+                    schema = db_options[selected_db_key]
                 else:
-                    schema = str(db_setting.value)
-            else:
-                schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+                    schema = list(db_options.values())[0]
+            elif raw_value and not isinstance(raw_value, dict):
+                schema = str(raw_value).strip().strip('"').strip("'")
         except Exception as e:
             print(f"Error getting schema from settings: {e}")
             schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
-        
+            if selected_db_key:
+                key_upper = str(selected_db_key).upper()
+                if key_upper.startswith('4B-ORANG'):
+                    schema = '4B-ORANG_APP'
+                elif key_upper.startswith('4B-BIO'):
+                    schema = '4B-BIO_APP'
+
         # Strip quotes if present
         schema = schema.strip('"\'')
         
@@ -937,7 +1106,7 @@ def api_warehouse_for_item(request):
         return JsonResponse({'error': 'item_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -956,7 +1125,7 @@ def api_customer_address(request):
         return JsonResponse({'error': 'card_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -991,7 +1160,7 @@ def api_policy_link(request):
         return JsonResponse({'error': 'project_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -1021,7 +1190,7 @@ def api_discounts(request):
         return JsonResponse({'error': 'policy, item_code, and pl parameters required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -1070,7 +1239,7 @@ def api_project_balance(request):
         return JsonResponse({'error': 'project_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
@@ -1108,16 +1277,35 @@ def api_child_customers(request):
         return JsonResponse({'error': 'father_card parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             logger.error("Database connection failed")
-            return JsonResponse({'error': 'Database connection failed'}, status=500)
+            return JsonResponse({'error': 'Database connection failed - HANA service unavailable', 'children': []}, status=200)
         
         logger.info(f"Database connected, fetching child customers for {father_card}")
         
         # Get child customers with optional search
-        child_customers = hana_connect.child_card_code(db, father_card, search or None)
-        db.close()
+        try:
+            child_customers = hana_connect.child_card_code(db, father_card, search or None)
+        except Exception as e:
+            logger.error(f"Error calling child_card_code: {str(e)}")
+            child_customers = []
+        finally:
+            try:
+                db.close()
+            except:
+                pass
+
+        # Return empty list if no children found
+        if not child_customers:
+            logger.info(f"No child customers found for {father_card}")
+            return JsonResponse({
+                'children': [],
+                'page': 1,
+                'page_size': 10,
+                'num_pages': 0,
+                'count': 0
+            })
 
         # Pagination
         try:
@@ -1150,8 +1338,7 @@ def api_child_customers(request):
         import traceback
         error_trace = traceback.format_exc()
         logger.error(f"Error in api_child_customers: {str(e)}\n{error_trace}")
-        return JsonResponse({'error': str(e), 'trace': error_trace}, status=500)
-
+        return JsonResponse({'error': str(e), 'trace': error_trace, 'children': []}, status=200)
 
 @staff_member_required
 @require_http_methods(["GET"])
@@ -1168,7 +1355,7 @@ def api_customer_details(request):
         return JsonResponse({'error': 'card_code parameter required'}, status=400)
     
     try:
-        db = get_hana_connection()
+        db = get_hana_connection(request)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed'}, status=500)

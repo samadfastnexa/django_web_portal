@@ -1,4 +1,5 @@
 from django.contrib import admin
+from web_portal.admin import admin_site
 from django.utils.translation import gettext_lazy as _
 from django.urls import path
 from django.shortcuts import redirect
@@ -23,7 +24,7 @@ def _parse_date(val):
     return None
 
 
-@admin.register(Policy)
+@admin.register(Policy, site=admin_site)
 class PolicyAdmin(admin.ModelAdmin):
     list_display = ('code', 'name', 'policy', 'active', 'valid_from', 'valid_to', 'updated_at')
     list_filter = ('active',)
@@ -34,7 +35,8 @@ class PolicyAdmin(admin.ModelAdmin):
 
     def sync_policies_from_sap(self, request, queryset):
         """Admin action: Sync policies from SAP Projects (UDF U_pol)."""
-        client = SAPClient()
+        selected_db = request.session.get('selected_db', '4B-BIO')
+        client = SAPClient(company_db_key=selected_db)
         try:
             data = client.get_all_policies()
         except Exception as e:
@@ -84,7 +86,7 @@ class PolicyAdmin(admin.ModelAdmin):
         self.sync_policies_from_sap(request, Policy.objects.all())
         return redirect('admin:sap_integration_policy_changelist')
 
-@admin.register(HanaConnect)
+@admin.register(HanaConnect, site=admin_site)
 class HanaConnectAdmin(admin.ModelAdmin):
     def changelist_view(self, request, extra_context=None):
         return redirect('hana_connect_admin')

@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User, Role, SalesStaffProfile
+from web_portal.admin import admin_site
 
 # Inline for Sales Staff profile
 class SalesProfileInline(admin.StackedInline):
@@ -24,7 +25,7 @@ class SalesProfileInline(admin.StackedInline):
     filter_horizontal = ('companies', 'regions', 'zones', 'territories')  # ✅ better M2M UI
 
 
-@admin.register(User)
+@admin.register(User, site=admin_site)
 class CustomUserAdmin(BaseUserAdmin):
     list_display = [
         'id', 'username', 'email', 'first_name', 'last_name',
@@ -48,7 +49,7 @@ class CustomUserAdmin(BaseUserAdmin):
     inlines = [SalesProfileInline]  # Attach inline here
 
 
-@admin.register(Role)
+@admin.register(Role, site=admin_site)
 class RoleAdmin(admin.ModelAdmin):
     list_display = ['id', 'name']
     filter_horizontal = ['permissions']

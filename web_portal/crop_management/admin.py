@@ -1,11 +1,12 @@
 from django.contrib import admin
+from web_portal.admin import admin_site
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .models import Crop, CropVariety, YieldData, FarmingPractice, CropResearch
 
 
-@admin.register(Crop)
+@admin.register(Crop, site=admin_site)
 class CropAdmin(admin.ModelAdmin):
     """Admin interface for Crop model"""
     
@@ -62,7 +63,7 @@ class CropAdmin(admin.ModelAdmin):
         return super().get_queryset(request).prefetch_related('varieties')
 
 
-@admin.register(CropVariety)
+@admin.register(CropVariety, site=admin_site)
 class CropVarietyAdmin(admin.ModelAdmin):
     """Admin interface for CropVariety model"""
     
@@ -110,7 +111,7 @@ class CropVarietyAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related('crop')
 
 
-@admin.register(YieldData)
+@admin.register(YieldData, site=admin_site)
 class YieldDataAdmin(admin.ModelAdmin):
     """Admin interface for YieldData model"""
     
@@ -182,7 +183,7 @@ class YieldDataAdmin(admin.ModelAdmin):
         )
 
 
-@admin.register(FarmingPractice)
+@admin.register(FarmingPractice, site=admin_site)
 class FarmingPracticeAdmin(admin.ModelAdmin):
     """Admin interface for FarmingPractice model"""
     
@@ -243,7 +244,7 @@ class FarmingPracticeAdmin(admin.ModelAdmin):
         )
 
 
-@admin.register(CropResearch)
+@admin.register(CropResearch, site=admin_site)
 class CropResearchAdmin(admin.ModelAdmin):
     """Admin interface for CropResearch model"""
     

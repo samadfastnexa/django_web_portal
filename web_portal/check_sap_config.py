@@ -55,6 +55,7 @@ print("\n4. Test Connection:")
 try:
     from sap_integration.sap_client import SAPClient
     client = SAPClient()
+    print(f"   Using Company DB: {client.company_db}")
     session_id = client.get_session_id()
     print(f"   ✓ Connection successful!")
     print(f"   Session ID: {session_id}")

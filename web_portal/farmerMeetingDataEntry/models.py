@@ -166,15 +166,22 @@ class FieldDayAttendance(models.Model):
     # ✅ Link to farmer record (optional)
     farmer = models.ForeignKey('farmers.Farmer', on_delete=models.CASCADE, null=True, blank=True, 
                               related_name='field_day_attendances', 
+                              verbose_name="Farmer",
                               help_text="Link to farmer record")
     
     # ✅ Attendee information (auto-filled from farmer if linked)
-    farmer_name = models.CharField(max_length=100, blank=True, 
+    farmer_name = models.CharField(max_length=100, blank=True,
+                                  verbose_name="Farmer Name",
                                   help_text="Farmer name (auto-filled from farmer record if linked)")
     contact_number = models.CharField(max_length=15, blank=True,
+                                     verbose_name="Contact Number",
                                      help_text="Contact number (auto-filled from farmer record if linked)")
-    acreage = models.FloatField(default=0.0, help_text="Acreage for this specific field day")
-    crop = models.CharField(max_length=100, blank=True, help_text="Crop discussed/demonstrated (deprecated - use crops relationship)")
+    acreage = models.FloatField(default=0.0, 
+                               verbose_name="Acreage",
+                               help_text="Acreage for this specific field day")
+    crop = models.CharField(max_length=100, blank=True, 
+                          verbose_name="Crop",
+                          help_text="Crop discussed/demonstrated (deprecated - use crops relationship)")
 
 
 class FieldDayAttendanceCrop(models.Model):
