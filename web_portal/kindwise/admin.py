@@ -3,10 +3,11 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .models import KindwiseIdentification
+from web_portal.admin import admin_site  # Use custom admin site
 import json
 
 
-@admin.register(KindwiseIdentification)
+@admin.register(KindwiseIdentification, site=admin_site)
 class KindwiseIdentificationAdmin(admin.ModelAdmin):
     list_display = ('id', 'user_link', 'status_badge', 'image_name', 'created_at', 'view_details_link')
     list_filter = ('status', 'created_at')
@@ -90,58 +91,132 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
     request_payload_display.short_description = 'Request Payload'
     
     def response_payload_display(self, obj):
-        """Display formatted response payload with scrollable container"""
+        """Display formatted response payload in readable format with images"""
         if not obj.response_payload:
             return format_html('<span style="color: #999;">No response data</span>')
         
         try:
-            formatted = json.dumps(obj.response_payload, indent=2)
+            response = obj.response_payload
+            if not isinstance(response, dict):
+                return str(obj.response_payload)
             
-            # Extract key suggestions if available
-            suggestions_html = ""
-            if isinstance(obj.response_payload, dict):
-                classification = obj.response_payload.get('classification', {})
-                suggestions = classification.get('suggestions', [])
+            html = ""
+            result = response.get('result', {})
+            
+            # Crop Identification Section
+            crop_data = result.get('crop', {})
+            crop_suggestions = crop_data.get('suggestions', [])
+            if crop_suggestions:
+                html += '<div style="margin-bottom: 30px; padding: 28px; background: #e8f5e9; border-left: 7px solid #4CAF50; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.06);">'
+                html += '<h3 style="margin: 0 0 22px 0; color: #2e7d32; font-size: 23px; font-weight: 700;">🌾 Crop Identification</h3>'
                 
-                if suggestions:
-                    suggestions_html = '<div style="margin-bottom: 15px; padding: 15px; background: #e7f3ff; border-left: 4px solid #2196F3; border-radius: 4px;">'
-                    suggestions_html += '<h4 style="margin: 0 0 10px 0; color: #1976D2;">🌱 Top Identifications</h4>'
-                    for i, sug in enumerate(suggestions[:5]):  # Top 5
-                        name = sug.get('name', 'Unknown')
-                        prob = sug.get('probability', 0) * 100
-                        suggestions_html += f'<div style="margin: 5px 0;"><strong>{i+1}. {name}</strong> - {prob:.1f}%</div>'
-                    suggestions_html += '</div>'
+                for i, sug in enumerate(crop_suggestions[:3]):  # Top 3
+                    name = sug.get('name', 'Unknown')
+                    scientific = sug.get('scientific_name', '')
+                    prob = sug.get('probability', 0) * 100
+                    
+                    html += f'<div style="margin: 18px 0; padding: 22px; background: white; border-radius: 8px; border-left: 5px solid #4CAF50; box-shadow: 0 2px 6px rgba(0,0,0,0.08);">'
+                    html += f'<div style="font-size: 21px; font-weight: 700; color: #333; margin-bottom: 8px;">{i+1}. {name.title()}</div>'
+                    if scientific:
+                        html += f'<div style="color: #666; font-style: italic; font-size: 17px; margin: 8px 0;">{scientific}</div>'
+                    html += f'<div style="margin-top: 12px;"><span style="background: #4CAF50; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 700; font-size: 18px;">{prob:.1f}% Confidence</span></div>'
+                    
+                    # Similar images for crop
+                    similar = sug.get('similar_images', [])
+                    if similar:
+                        html += '<div style="margin-top: 18px;">'
+                        html += '<div style="color: #555; font-size: 16px; font-weight: 700; margin-bottom: 12px;">Similar Images:</div>'
+                        html += '<div style="display: flex; gap: 15px; flex-wrap: wrap;">'
+                        for img in similar[:3]:  # Show first 3 images
+                            img_url = img.get('url_small') or img.get('url', '')
+                            similarity = img.get('similarity', 0) * 100
+                            citation = img.get('citation', 'Unknown')
+                            if img_url:
+                                html += f'<div style="position: relative;">'
+                                html += f'<img src="{img_url}" style="width: 210px; height: 210px; object-fit: cover; border-radius: 8px; border: 3px solid #4CAF50; box-shadow: 0 3px 10px rgba(0,0,0,0.12);" title="{citation} - {similarity:.1f}% similar">'
+                                html += f'<div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.82); color: white; padding: 5px 10px; border-radius: 5px; font-size: 14px; font-weight: 700;">{similarity:.0f}%</div>'
+                                html += '</div>'
+                        html += '</div></div>'
+                    
+                    html += '</div>'
+                html += '</div>'
             
+            # Disease Identification Section
+            disease_data = result.get('disease', {})
+            disease_suggestions = disease_data.get('suggestions', [])
+            if disease_suggestions:
+                html += '<div style="margin-bottom: 30px; padding: 28px; background: #fff3e0; border-left: 7px solid #FF9800; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.06);">'
+                html += '<h3 style="margin: 0 0 22px 0; color: #e65100; font-size: 23px; font-weight: 700;">🔬 Disease/Health Analysis</h3>'
+                
+                for i, sug in enumerate(disease_suggestions[:5]):  # Top 5
+                    name = sug.get('name', 'Unknown')
+                    scientific = sug.get('scientific_name', '')
+                    prob = sug.get('probability', 0) * 100
+                    
+                    # Color code based on disease type
+                    if name.lower() == 'healthy':
+                        border_color = '#4CAF50'
+                        bg_color = '#4CAF50'
+                    else:
+                        border_color = '#FF5722' if prob > 50 else '#FFC107'
+                        bg_color = '#FF5722' if prob > 50 else '#FFC107'
+                    
+                    html += f'<div style="margin: 18px 0; padding: 22px; background: white; border-radius: 8px; border-left: 5px solid {border_color}; box-shadow: 0 2px 6px rgba(0,0,0,0.08);">'
+                    html += f'<div style="font-size: 21px; font-weight: 700; color: #333; margin-bottom: 8px;">{i+1}. {name.title()}</div>'
+                    if scientific and scientific.lower() != name.lower() and scientific != 'healthy':
+                        html += f'<div style="color: #666; font-style: italic; font-size: 17px; margin: 8px 0;">{scientific}</div>'
+                    html += f'<div style="margin-top: 12px;"><span style="background: {bg_color}; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 700; font-size: 18px;">{prob:.1f}% Probability</span></div>'
+                    
+                    # Similar images for disease
+                    similar = sug.get('similar_images', [])
+                    if similar:
+                        html += '<div style="margin-top: 18px;">'
+                        html += '<div style="color: #555; font-size: 16px; font-weight: 700; margin-bottom: 12px;">Similar Cases:</div>'
+                        html += '<div style="display: flex; gap: 15px; flex-wrap: wrap;">'
+                        for img in similar[:3]:  # Show first 3 images
+                            img_url = img.get('url_small') or img.get('url', '')
+                            similarity = img.get('similarity', 0) * 100
+                            citation = img.get('citation', 'Unknown')
+                            if img_url:
+                                html += f'<div style="position: relative;">'
+                                html += f'<img src="{img_url}" style="width: 210px; height: 210px; object-fit: cover; border-radius: 8px; border: 3px solid {border_color}; box-shadow: 0 3px 10px rgba(0,0,0,0.12);" title="{citation} - {similarity:.1f}% similar">'
+                                html += f'<div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.82); color: white; padding: 5px 10px; border-radius: 5px; font-size: 14px; font-weight: 700;">{similarity:.0f}%</div>'
+                                html += '</div>'
+                        html += '</div></div>'
+                    
+                    html += '</div>'
+                html += '</div>'
+            
+            # Submitted Image
+            input_data = response.get('input', {})
+            images = input_data.get('images', [])
+            if images and images[0]:
+                html += '<div style="margin-bottom: 30px; padding: 28px; background: #f3e5f5; border-left: 7px solid #9C27B0; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.06);">'
+                html += '<h3 style="margin: 0 0 22px 0; color: #6a1b9a; font-size: 23px; font-weight: 700;">📸 Submitted Image</h3>'
+                html += f'<img src="{images[0]}" style="max-width: 600px; max-height: 600px; border-radius: 10px; border: 4px solid #9C27B0; box-shadow: 0 5px 16px rgba(0,0,0,0.18);">'
+                html += '</div>'
+            
+            # Additional Info
+            is_plant = result.get('is_plant', {})
+            if is_plant:
+                is_plant_binary = is_plant.get('binary', False)
+                is_plant_prob = is_plant.get('probability', 0) * 100
+                
+                html += '<div style="margin-bottom: 18px; padding: 18px; background: #e3f2fd; border-left: 6px solid #2196F3; border-radius: 7px;">'
+                html += f'<div style="color: #1565c0; font-size: 16px; font-weight: 700;"><strong>Is Plant:</strong> {"✓ Yes" if is_plant_binary else "✗ No"} ({is_plant_prob:.2f}% confidence)</div>'
+                html += '</div>'
+            
+            return format_html('<div>{}</div>', mark_safe(html))
+            
+        except Exception as e:
+            # Fallback to JSON display
+            formatted = json.dumps(obj.response_payload, indent=2)
             return format_html(
-                '{}'
-                '<div style="'
-                'max-height: 500px; '
-                'overflow: auto; '
-                'background: #f8f9fa; '
-                'border: 3px solid #ff6600; '
-                'border-radius: 6px; '
-                'padding: 12px; '
-                'font-family: Consolas, Monaco, monospace; '
-                'font-size: 13px; '
-                'white-space: pre; '
-                'line-height: 1.6;'
-                '">{}</div>'
-                '<style>'
-                'div[style*="border: 3px solid #ff6600"]::-webkit-scrollbar {{ '
-                'width: 14px; height: 14px; '
-                '}} '
-                'div[style*="border: 3px solid #ff6600"]::-webkit-scrollbar-track {{ '
-                'background: #e0e0e0; '
-                '}} '
-                'div[style*="border: 3px solid #ff6600"]::-webkit-scrollbar-thumb {{ '
-                'background: #ff6600; border: 3px solid #e0e0e0; '
-                '}} '
-                '</style>',
-                mark_safe(suggestions_html),
+                '<div style="color: #d32f2f; margin-bottom: 10px;">Error rendering display: {}</div>'
+                '<div style="max-height: 500px; overflow: auto; background: #f8f9fa; border: 3px solid #ff6600; border-radius: 6px; padding: 12px; font-family: Consolas, Monaco, monospace; font-size: 13px; white-space: pre; line-height: 1.6;">{}</div>',
+                str(e),
                 formatted
             )
-        except:
-            return str(obj.response_payload)
     response_payload_display.short_description = 'API Response'
     
     class Media:

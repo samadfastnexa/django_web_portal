@@ -6,10 +6,70 @@
 /* =====================
    Page Header
    ===================== */
+#content {
+    position: relative;
+}
+
 #content h1 {
     color: #ff6600;
     border-bottom: 3px solid #ff6600;
     padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+/* =====================
+   Object Tools (Add Button) - Position after heading
+   ===================== */
+.object-tools {
+    position: absolute;
+    top: 12px;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    z-index: 100;
+}
+
+.object-tools li {
+    margin: 0;
+    display: inline-block;
+}
+
+.object-tools a {
+    padding: 10px 20px;
+    font-size: 14px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ff6600 0%, #ff8533 100%);
+    color: #fff !important;
+    text-decoration: none;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    border: none;
+    box-shadow: 0 2px 4px rgba(255, 102, 0, 0.2);
+}
+
+.object-tools a:hover {
+    background: linear-gradient(135deg, #e55a00 0%, #ff6600 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 102, 0, 0.3);
+}
+
+.object-tools a::before {
+    content: "+";
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+}
+
+/* Make sure content has enough top padding for the absolute positioned button */
+#content {
+    padding-top: 20px;
 }
 
 /* =====================

@@ -783,17 +783,74 @@
   text-align: center;
 }
 
-/* Object tools (action buttons) - make more compact */
+/* Position page heading and action buttons in a single row */
+#content {
+  position: relative;
+}
+
+/* Make the heading area a flex container to hold h1 and object-tools side by side */
+#content > h1 {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--hairline-color);
+}
+
+/* Object tools (action buttons) - position right after heading */
 .object-tools {
-  margin: 8px 0;
+  position: absolute;
+  top: 12px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  z-index: 100;
 }
+
 .object-tools li {
-  margin-left: 8px;
+  margin: 0;
+  display: inline-block;
 }
+
 .object-tools a {
-  padding: 6px 12px;
-  font-size: 13px;
-  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 14px;
+  border-radius: 8px;
+  background: var(--orange);
+  color: #fff !important;
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  border: none;
+  box-shadow: 0 2px 4px rgba(226, 104, 48, 0.2);
+}
+
+.object-tools a:hover {
+  background: var(--orange-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(226, 104, 48, 0.3);
+}
+
+.object-tools a::before {
+  content: "+";
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+/* For changelist pages specifically */
+#changelist {
+  padding-top: 0;
+}
+
+/* Make sure content has enough top padding for the absolute positioned button */
+#content {
+  padding-top: 20px;
 }
 
 /* Search bar - make more compact */
