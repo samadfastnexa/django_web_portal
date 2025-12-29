@@ -107,34 +107,34 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
             crop_data = result.get('crop', {})
             crop_suggestions = crop_data.get('suggestions', [])
             if crop_suggestions:
-                html += '<div style="margin-bottom: 30px; padding: 28px; background: #e8f5e9; border-left: 7px solid #4CAF50; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.06);">'
-                html += '<h3 style="margin: 0 0 22px 0; color: #2e7d32; font-size: 23px; font-weight: 700;">🌾 Crop Identification</h3>'
+                html += '<div style="margin-bottom: 20px; padding: 18px; background: #e8f5e9; border-left: 5px solid #4CAF50; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">''
+                html += '<h3 style="margin: 0 0 15px 0; color: #2e7d32; font-size: 18px; font-weight: 600;">🌾 Crop Identification</h3>'
                 
                 for i, sug in enumerate(crop_suggestions[:3]):  # Top 3
                     name = sug.get('name', 'Unknown')
                     scientific = sug.get('scientific_name', '')
                     prob = sug.get('probability', 0) * 100
                     
-                    html += f'<div style="margin: 18px 0; padding: 22px; background: white; border-radius: 8px; border-left: 5px solid #4CAF50; box-shadow: 0 2px 6px rgba(0,0,0,0.08);">'
-                    html += f'<div style="font-size: 21px; font-weight: 700; color: #333; margin-bottom: 8px;">{i+1}. {name.title()}</div>'
+                    html += f'<div style="margin: 12px 0; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid #4CAF50; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">''
+                    html += f'<div style="font-size: 16px; font-weight: 600; color: #333; margin-bottom: 5px;">{i+1}. {name.title()}</div>'
                     if scientific:
-                        html += f'<div style="color: #666; font-style: italic; font-size: 17px; margin: 8px 0;">{scientific}</div>'
-                    html += f'<div style="margin-top: 12px;"><span style="background: #4CAF50; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 700; font-size: 18px;">{prob:.1f}% Confidence</span></div>'
+                        html += f'<div style="color: #666; font-style: italic; font-size: 14px; margin: 4px 0;">{scientific}</div>'
+                    html += f'<div style="margin-top: 8px;"><span style="background: #4CAF50; color: white; padding: 6px 14px; border-radius: 4px; font-weight: 600; font-size: 14px;">{prob:.1f}% Confidence</span></div>'
                     
                     # Similar images for crop
                     similar = sug.get('similar_images', [])
                     if similar:
-                        html += '<div style="margin-top: 18px;">'
-                        html += '<div style="color: #555; font-size: 16px; font-weight: 700; margin-bottom: 12px;">Similar Images:</div>'
-                        html += '<div style="display: flex; gap: 15px; flex-wrap: wrap;">'
+                        html += '<div style="margin-top: 12px;">'
+                        html += '<div style="color: #555; font-size: 13px; font-weight: 600; margin-bottom: 8px;">Similar Images:</div>'
+                        html += '<div style="display: flex; gap: 10px; flex-wrap: wrap;">'
                         for img in similar[:3]:  # Show first 3 images
                             img_url = img.get('url_small') or img.get('url', '')
                             similarity = img.get('similarity', 0) * 100
                             citation = img.get('citation', 'Unknown')
                             if img_url:
                                 html += f'<div style="position: relative;">'
-                                html += f'<img src="{img_url}" style="width: 210px; height: 210px; object-fit: cover; border-radius: 8px; border: 3px solid #4CAF50; box-shadow: 0 3px 10px rgba(0,0,0,0.12);" title="{citation} - {similarity:.1f}% similar">'
-                                html += f'<div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.82); color: white; padding: 5px 10px; border-radius: 5px; font-size: 14px; font-weight: 700;">{similarity:.0f}%</div>'
+                                html += f'<img src="{img_url}" style="width: 150px; height: 150px; object-fit: cover; border-radius: 5px; border: 2px solid #4CAF50; box-shadow: 0 2px 6px rgba(0,0,0,0.1);" title="{citation} - {similarity:.1f}% similar">'
+                                html += f'<div style="position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.8); color: white; padding: 3px 7px; border-radius: 3px; font-size: 11px; font-weight: 600;">{similarity:.0f}%</div>'
                                 html += '</div>'
                         html += '</div></div>'
                     
@@ -145,8 +145,8 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
             disease_data = result.get('disease', {})
             disease_suggestions = disease_data.get('suggestions', [])
             if disease_suggestions:
-                html += '<div style="margin-bottom: 30px; padding: 28px; background: #fff3e0; border-left: 7px solid #FF9800; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.06);">'
-                html += '<h3 style="margin: 0 0 22px 0; color: #e65100; font-size: 23px; font-weight: 700;">🔬 Disease/Health Analysis</h3>'
+                html += '<div style="margin-bottom: 20px; padding: 18px; background: #fff3e0; border-left: 5px solid #FF9800; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">''
+                html += '<h3 style="margin: 0 0 15px 0; color: #e65100; font-size: 18px; font-weight: 600;">🔬 Disease/Health Analysis</h3>'
                 
                 for i, sug in enumerate(disease_suggestions[:5]):  # Top 5
                     name = sug.get('name', 'Unknown')
@@ -161,26 +161,26 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
                         border_color = '#FF5722' if prob > 50 else '#FFC107'
                         bg_color = '#FF5722' if prob > 50 else '#FFC107'
                     
-                    html += f'<div style="margin: 18px 0; padding: 22px; background: white; border-radius: 8px; border-left: 5px solid {border_color}; box-shadow: 0 2px 6px rgba(0,0,0,0.08);">'
-                    html += f'<div style="font-size: 21px; font-weight: 700; color: #333; margin-bottom: 8px;">{i+1}. {name.title()}</div>'
+                    html += f'<div style="margin: 12px 0; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid {border_color}; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">''
+                    html += f'<div style="font-size: 16px; font-weight: 600; color: #333; margin-bottom: 5px;">{i+1}. {name.title()}</div>'
                     if scientific and scientific.lower() != name.lower() and scientific != 'healthy':
-                        html += f'<div style="color: #666; font-style: italic; font-size: 17px; margin: 8px 0;">{scientific}</div>'
-                    html += f'<div style="margin-top: 12px;"><span style="background: {bg_color}; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 700; font-size: 18px;">{prob:.1f}% Probability</span></div>'
+                        html += f'<div style="color: #666; font-style: italic; font-size: 14px; margin: 4px 0;">{scientific}</div>'
+                    html += f'<div style="margin-top: 8px;"><span style="background: {bg_color}; color: white; padding: 6px 14px; border-radius: 4px; font-weight: 600; font-size: 14px;">{prob:.1f}% Probability</span></div>'
                     
                     # Similar images for disease
                     similar = sug.get('similar_images', [])
                     if similar:
-                        html += '<div style="margin-top: 18px;">'
-                        html += '<div style="color: #555; font-size: 16px; font-weight: 700; margin-bottom: 12px;">Similar Cases:</div>'
-                        html += '<div style="display: flex; gap: 15px; flex-wrap: wrap;">'
+                        html += '<div style="margin-top: 12px;">'
+                        html += '<div style="color: #555; font-size: 13px; font-weight: 600; margin-bottom: 8px;">Similar Cases:</div>'
+                        html += '<div style="display: flex; gap: 10px; flex-wrap: wrap;">'
                         for img in similar[:3]:  # Show first 3 images
                             img_url = img.get('url_small') or img.get('url', '')
                             similarity = img.get('similarity', 0) * 100
                             citation = img.get('citation', 'Unknown')
                             if img_url:
                                 html += f'<div style="position: relative;">'
-                                html += f'<img src="{img_url}" style="width: 210px; height: 210px; object-fit: cover; border-radius: 8px; border: 3px solid {border_color}; box-shadow: 0 3px 10px rgba(0,0,0,0.12);" title="{citation} - {similarity:.1f}% similar">'
-                                html += f'<div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.82); color: white; padding: 5px 10px; border-radius: 5px; font-size: 14px; font-weight: 700;">{similarity:.0f}%</div>'
+                                html += f'<img src="{img_url}" style="width: 150px; height: 150px; object-fit: cover; border-radius: 5px; border: 2px solid {border_color}; box-shadow: 0 2px 6px rgba(0,0,0,0.1);" title="{citation} - {similarity:.1f}% similar">'
+                                html += f'<div style="position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.8); color: white; padding: 3px 7px; border-radius: 3px; font-size: 11px; font-weight: 600;">{similarity:.0f}%</div>'
                                 html += '</div>'
                         html += '</div></div>'
                     
@@ -191,9 +191,9 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
             input_data = response.get('input', {})
             images = input_data.get('images', [])
             if images and images[0]:
-                html += '<div style="margin-bottom: 30px; padding: 28px; background: #f3e5f5; border-left: 7px solid #9C27B0; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.06);">'
-                html += '<h3 style="margin: 0 0 22px 0; color: #6a1b9a; font-size: 23px; font-weight: 700;">📸 Submitted Image</h3>'
-                html += f'<img src="{images[0]}" style="max-width: 600px; max-height: 600px; border-radius: 10px; border: 4px solid #9C27B0; box-shadow: 0 5px 16px rgba(0,0,0,0.18);">'
+                html += '<div style="margin-bottom: 20px; padding: 18px; background: #f3e5f5; border-left: 5px solid #9C27B0; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">''
+                html += '<h3 style="margin: 0 0 15px 0; color: #6a1b9a; font-size: 18px; font-weight: 600;">📸 Submitted Image</h3>'
+                html += f'<img src="{images[0]}" style="max-width: 400px; max-height: 400px; border-radius: 6px; border: 3px solid #9C27B0; box-shadow: 0 3px 10px rgba(0,0,0,0.12);">''
                 html += '</div>'
             
             # Additional Info
@@ -202,8 +202,8 @@ class KindwiseIdentificationAdmin(admin.ModelAdmin):
                 is_plant_binary = is_plant.get('binary', False)
                 is_plant_prob = is_plant.get('probability', 0) * 100
                 
-                html += '<div style="margin-bottom: 18px; padding: 18px; background: #e3f2fd; border-left: 6px solid #2196F3; border-radius: 7px;">'
-                html += f'<div style="color: #1565c0; font-size: 16px; font-weight: 700;"><strong>Is Plant:</strong> {"✓ Yes" if is_plant_binary else "✗ No"} ({is_plant_prob:.2f}% confidence)</div>'
+                html += '<div style="margin-bottom: 12px; padding: 12px; background: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 5px;">'
+                html += f'<div style="color: #1565c0; font-size: 14px; font-weight: 600;"><strong>Is Plant:</strong> {"✓ Yes" if is_plant_binary else "✗ No"} ({is_plant_prob:.2f}% confidence)</div>'
                 html += '</div>'
             
             return format_html('<div>{}</div>', mark_safe(html))
