@@ -4,6 +4,7 @@ import re
 from .models import Company, Region, Zone, Territory
 from rest_framework import viewsets
 from django.contrib.auth import get_user_model
+from drf_yasg.utils import swagger_serializer_method
 User = get_user_model() 
 # class DealerSerializer(serializers.ModelSerializer):
 #     class Meta:
@@ -54,7 +55,7 @@ class FlexibleListField(serializers.ListField):
 
 class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
     farmer_id = serializers.CharField(source='farmer.farmer_id', read_only=True)
-    farmer_full_name = serializers.CharField(source='farmer.get_full_name', read_only=True)
+    farmer_full_name = serializers.CharField(source='farmer.full_name', read_only=True)
     farmer_primary_phone = serializers.CharField(source='farmer.primary_phone', read_only=True)
     farmer_district = serializers.CharField(source='farmer.district', read_only=True)
     farmer_village = serializers.CharField(source='farmer.village', read_only=True)
@@ -66,9 +67,30 @@ class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
             'farmer_district', 'farmer_village', 'farmer_name', 'contact_number',
             'acreage', 'crop'
         ]
+        ref_name = 'MeetingAttendee'
+    
+    def create(self, validated_data):
+        """Auto-populate farmer_name and contact_number from farmer if farmer is provided"""
+        farmer = validated_data.get('farmer')
+        if farmer:
+            if not validated_data.get('farmer_name'):
+                validated_data['farmer_name'] = farmer.name or farmer.full_name
+            if not validated_data.get('contact_number'):
+                validated_data['contact_number'] = farmer.primary_phone or ''
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """Auto-populate farmer_name and contact_number from farmer if farmer is provided"""
+        farmer = validated_data.get('farmer')
+        if farmer:
+            if not validated_data.get('farmer_name'):
+                validated_data['farmer_name'] = farmer.name or farmer.full_name
+            if not validated_data.get('contact_number'):
+                validated_data['contact_number'] = farmer.primary_phone or ''
+        return super().update(instance, validated_data)
 
 class MeetingScheduleSerializer(serializers.ModelSerializer):
-    attendees = serializers.SerializerMethodField(read_only=True)
+    attendees = MeetingScheduleAttendanceSerializer(many=True, read_only=True, help_text="List of meeting attendees")
     fsm_name = serializers.CharField(required=False)
     region_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     zone_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
@@ -93,15 +115,21 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['staff']
 
-    def get_attendees(self, obj):
-        attendees = obj.attendees.all()
-        return MeetingScheduleAttendanceSerializer(attendees, many=True).data
-
     def create(self, validated_data):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Map FK IDs to actual relations if provided
         region_id = validated_data.pop('region_id', None)
         zone_id = validated_data.pop('zone_id', None)
         territory_id = validated_data.pop('territory_id', None)
+        
+        # Get nested attendees from initial_data since field is read_only
+        logger.warning(f"DEBUG initial_data: {self.initial_data if hasattr(self, 'initial_data') else 'NO initial_data'}")
+        attendees_data = self.initial_data.get('attendees', None) if hasattr(self, 'initial_data') else None
+        logger.warning(f"DEBUG attendees_data from initial_data: {attendees_data}")
+        
+        # Handle flat attendee fields
         farmer_ids = validated_data.pop('attendee_farmer_id', [])
         names = validated_data.pop('attendee_name', [])
         contacts = validated_data.pop('attendee_contact', [])
@@ -118,27 +146,79 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         schedule.save()
 
         from farmers.models import Farmer
-        if farmer_ids:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Handle nested attendees array if provided
+        logger.warning(f"DEBUG attendees_data: {attendees_data}")
+        if attendees_data:
+            for attendee_data in attendees_data:
+                # Make a copy to avoid modifying original dict
+                attendee_data = dict(attendee_data)
+                farmer_id = attendee_data.get('farmer')
+                logger.warning(f"DEBUG farmer_id from attendee_data: {farmer_id}, type: {type(farmer_id)}")
+                farmer = None
+                
+                # Look up the Farmer object if farmer ID is provided
+                if farmer_id:
+                    try:
+                        # Convert to int in case it's a string
+                        farmer_id_int = int(farmer_id)
+                        logger.warning(f"DEBUG looking up Farmer with id={farmer_id_int}")
+                        farmer = Farmer.objects.get(id=farmer_id_int)
+                        logger.warning(f"DEBUG found farmer: {farmer}")
+                        # Set the farmer object for the relationship
+                        attendee_data['farmer'] = farmer
+                        # Auto-populate farmer_name and contact_number from farmer
+                        if not attendee_data.get('farmer_name'):
+                            attendee_data['farmer_name'] = farmer.name or farmer.full_name
+                        if not attendee_data.get('contact_number'):
+                            attendee_data['contact_number'] = farmer.primary_phone or ''
+                    except (Farmer.DoesNotExist, ValueError, TypeError):
+                        # If farmer not found or invalid ID, set farmer_name to indicate unknown
+                        attendee_data['farmer'] = None
+                        if not attendee_data.get('farmer_name'):
+                            attendee_data['farmer_name'] = f'Unknown Farmer {farmer_id}'
+                else:
+                    attendee_data['farmer'] = None
+                
+                MeetingScheduleAttendance.objects.create(
+                    schedule=schedule,
+                    **attendee_data
+                )
+        # Handle flat attendee fields if provided
+        elif farmer_ids:
             for i, farmer_id in enumerate(farmer_ids):
+                farmer = None
                 try:
-                    farmer = Farmer.objects.get(farmer_id=farmer_id)
+                    # First try to look up by Django id (numeric)
+                    farmer_id_int = int(farmer_id)
+                    farmer = Farmer.objects.get(id=farmer_id_int)
+                except (ValueError, Farmer.DoesNotExist):
+                    # Fall back to looking up by farmer_id field (like FM01)
+                    try:
+                        farmer = Farmer.objects.get(farmer_id=farmer_id)
+                    except Farmer.DoesNotExist:
+                        farmer = None
+                
+                if farmer:
                     MeetingScheduleAttendance.objects.create(
                         schedule=schedule,
                         farmer=farmer,
-                        farmer_name=farmer.get_full_name(),
+                        farmer_name=farmer.name or farmer.full_name,
                         contact_number=farmer.primary_phone or '',
                         acreage=acreages[i] if i < len(acreages) else 0.0,
                         crop=crops[i] if i < len(crops) else ''
                     )
-                except Farmer.DoesNotExist:
+                else:
                     MeetingScheduleAttendance.objects.create(
                         schedule=schedule,
-                        farmer_name=names[i] if i < len(names) else f'Unknown Farmer {farmer_id}',
-                        contact_number=contacts[i] if i < len(contacts) else '',
-                        acreage=acreages[i] if i < len(acreages) else 0.0,
-                        crop=crops[i] if i < len(crops) else ''
+                        farmer_name=names[i] if names and i < len(names) else f'Unknown Farmer {farmer_id}',
+                        contact_number=contacts[i] if contacts and i < len(contacts) else '',
+                        acreage=acreages[i] if acreages and i < len(acreages) else 0.0,
+                        crop=crops[i] if crops and i < len(crops) else ''
                     )
-        else:
+        elif names:
             for i, name in enumerate(names):
                 MeetingScheduleAttendance.objects.create(
                     schedule=schedule,
@@ -154,6 +234,11 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         region_id = validated_data.pop('region_id', None)
         zone_id = validated_data.pop('zone_id', None)
         territory_id = validated_data.pop('territory_id', None)
+        
+        # Get nested attendees from initial_data since field is read_only
+        attendees_data = self.initial_data.get('attendees', None) if hasattr(self, 'initial_data') else None
+        
+        # Handle flat attendee fields
         farmer_ids = validated_data.pop('attendee_farmer_id', None)
         names = validated_data.pop('attendee_name', None)
         contacts = validated_data.pop('attendee_contact', None)
@@ -170,22 +255,69 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
             instance.territory_id = territory_id
         instance.save()
 
-        if farmer_ids is not None or names is not None:
+        from farmers.models import Farmer
+        
+        # Handle nested attendees array if provided
+        if attendees_data is not None:
             instance.attendees.all().delete()
-            from farmers.models import Farmer
+            for attendee_data in attendees_data:
+                # Make a copy to avoid modifying original dict
+                attendee_data = dict(attendee_data)
+                farmer_id = attendee_data.get('farmer')
+                farmer = None
+                
+                # Look up the Farmer object if farmer ID is provided
+                if farmer_id:
+                    try:
+                        # Convert to int in case it's a string
+                        farmer_id_int = int(farmer_id)
+                        farmer = Farmer.objects.get(id=farmer_id_int)
+                        # Set the farmer object for the relationship
+                        attendee_data['farmer'] = farmer
+                        # Auto-populate farmer_name and contact_number from farmer
+                        if not attendee_data.get('farmer_name'):
+                            attendee_data['farmer_name'] = farmer.name or farmer.full_name
+                        if not attendee_data.get('contact_number'):
+                            attendee_data['contact_number'] = farmer.primary_phone or ''
+                    except (Farmer.DoesNotExist, ValueError, TypeError):
+                        # If farmer not found or invalid ID, set farmer_name to indicate unknown
+                        attendee_data['farmer'] = None
+                        if not attendee_data.get('farmer_name'):
+                            attendee_data['farmer_name'] = f'Unknown Farmer {farmer_id}'
+                else:
+                    attendee_data['farmer'] = None
+                
+                MeetingScheduleAttendance.objects.create(
+                    schedule=instance,
+                    **attendee_data
+                )
+        # Handle flat attendee fields if provided
+        elif farmer_ids is not None or names is not None:
+            instance.attendees.all().delete()
             if farmer_ids:
                 for i, farmer_id in enumerate(farmer_ids):
+                    farmer = None
                     try:
-                        farmer = Farmer.objects.get(farmer_id=farmer_id)
+                        # First try to look up by Django id (numeric)
+                        farmer_id_int = int(farmer_id)
+                        farmer = Farmer.objects.get(id=farmer_id_int)
+                    except (ValueError, Farmer.DoesNotExist):
+                        # Fall back to looking up by farmer_id field (like FM01)
+                        try:
+                            farmer = Farmer.objects.get(farmer_id=farmer_id)
+                        except Farmer.DoesNotExist:
+                            farmer = None
+                    
+                    if farmer:
                         MeetingScheduleAttendance.objects.create(
                             schedule=instance,
                             farmer=farmer,
-                            farmer_name=farmer.get_full_name(),
+                            farmer_name=farmer.name or farmer.full_name,
                             contact_number=farmer.primary_phone or '',
                             acreage=acreages[i] if acreages and i < len(acreages) else 0.0,
                             crop=crops[i] if crops and i < len(crops) else ''
                         )
-                    except Farmer.DoesNotExist:
+                    else:
                         MeetingScheduleAttendance.objects.create(
                             schedule=instance,
                             farmer_name=names[i] if names and i < len(names) else f'Unknown Farmer {farmer_id}',

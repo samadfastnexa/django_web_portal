@@ -1,6 +1,7 @@
 from rest_framework import viewsets,permissions,filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from django.core.paginator import Paginator
 from django.http import JsonResponse
@@ -31,6 +32,7 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
     serializer_class = MeetingScheduleSerializer
     parser_classes = [MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    permission_classes = [IsAuthenticated, HasRolePermission]
     filterset_fields = ["fsm_name", "region", "zone", "territory", "location", "presence_of_zm", "presence_of_rsm", "staff"]
     search_fields = ["fsm_name", "region__name", "zone__name", "territory__name", "location", "key_topics_discussed"]
     ordering_fields = ["date", "fsm_name", "region__name", "zone__name", "territory__name", "total_attendees"]
@@ -160,8 +162,22 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        fsm_name = user.get_full_name() or user.username
-        serializer.save(staff=user, fsm_name=fsm_name)
+        if not user or not user.is_authenticated:
+            raise PermissionDenied("Authentication required to create meeting schedule.")
+
+        if hasattr(user, "get_full_name") and callable(getattr(user, "get_full_name", None)):
+            name = user.get_full_name() or getattr(user, "username", "") or getattr(user, "email", "")
+        elif hasattr(user, "full_name"):
+            name = getattr(user, "full_name") or getattr(user, "username", "") or getattr(user, "email", "")
+        elif hasattr(user, "first_name") or hasattr(user, "last_name"):
+            first = getattr(user, "first_name", "") or ""
+            last = getattr(user, "last_name", "") or ""
+            combined = f"{first} {last}".strip()
+            name = combined or getattr(user, "username", "") or getattr(user, "email", "")
+        else:
+            name = getattr(user, "username", "") or getattr(user, "email", "") or str(getattr(user, "pk", ""))
+
+        serializer.save(staff=user, fsm_name=name)
 
     @swagger_auto_schema(
         operation_description="Update all details of an existing meeting schedule (full update).",
