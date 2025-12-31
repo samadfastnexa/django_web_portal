@@ -103,6 +103,54 @@
       </a>
     </li>
 
+    <!-- SAP Integration Menu -->
+    <li class="menu-item"><span class="menu-text" style="font-weight:700;opacity:.85;">SAP Integration</span></li>
+    
+    <li class="menu-item {% if '/admin/general-ledger/' in request.path %}is-active{% endif %}">
+      <a class="menu-link" href="/admin/general-ledger/">
+        <span class="menu-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+        </span>
+        <span class="menu-text">General Ledger</span>
+      </a>
+    </li>
+    
+    <li class="menu-item {% if '/admin/hana-connect/' in request.path %}is-active{% endif %}">
+      <a class="menu-link" href="/admin/hana-connect/">
+        <span class="menu-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm11 15H4v-2h16v2zm0-5H4V8h5.08L7 10.83 8.62 12 11 8.76l1-1.36 1 1.36L15.38 12 17 10.83 14.92 8H20v6z"/></svg>
+        </span>
+        <span class="menu-text">HANA Connect</span>
+      </a>
+    </li>
+    
+    <li class="menu-item {% if '/admin/sap-bp-lookup/' in request.path %}is-active{% endif %}">
+      <a class="menu-link" href="/admin/sap-bp-lookup/">
+        <span class="menu-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+        </span>
+        <span class="menu-text">BP Lookup</span>
+      </a>
+    </li>
+    
+    <li class="menu-item {% if '/admin/sap-bp-entry/' in request.path %}is-active{% endif %}">
+      <a class="menu-link" href="/admin/sap-bp-entry/">
+        <span class="menu-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+        </span>
+        <span class="menu-text">BP Entry</span>
+      </a>
+    </li>
+    
+    <li class="menu-item {% if '/admin/sap-sales-order/' in request.path %}is-active{% endif %}">
+      <a class="menu-link" href="/admin/sap-sales-order/">
+        <span class="menu-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18h2V4h16v14h2V4c0-1.1-.9-2-2-2zm-2 7h-7v2h7V9zm0 4h-7v2h7v-2z"/></svg>
+        </span>
+        <span class="menu-text">Sales Order</span>
+      </a>
+    </li>
+
     {% if app_list_all %}
       {% for app in app_list_all %}
         {% if app.app_label == 'accounts' %}
@@ -201,7 +249,7 @@
       {% endfor %}
 
       {% for app in app_list_all %}
-        {% if app.app_label != 'accounts' and app.app_label != 'crop_manage' and app.app_label != 'crop_management' and app.app_label != 'FieldAdvisoryService' %}
+        {% if app.app_label != 'accounts' and app.app_label != 'crop_manage' and app.app_label != 'crop_management' and app.app_label != 'FieldAdvisoryService' and app.app_label != 'sap_integration' %}
           <li class="menu-item"><span class="menu-text" style="font-weight:700;opacity:.85;">{{ app.name }}</span></li>
           {% for model in app.models %}
             {% if model.admin_url %}

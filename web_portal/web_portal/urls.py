@@ -13,6 +13,10 @@ from sap_integration.views import (
     select_oitm_api,
     set_database,
 )
+from general_ledger.views import (
+    general_ledger_admin,
+    export_ledger_csv,
+)
 from django.urls import path, include
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -49,6 +53,8 @@ schema_view = get_schema_view(
 urlpatterns = [
     path('', lambda request: redirect('/admin/', permanent=False)), # Redirect root(http://127.0.0.1:8000) URL to admin
     path('admin/set-database/', admin_site.admin_view(set_database), name='set_database'),
+    path('admin/general-ledger/', admin_site.admin_view(general_ledger_admin), name='general_ledger_admin'),
+    path('admin/general-ledger/export-csv/', admin_site.admin_view(export_ledger_csv), name='export_ledger_csv'),
     path('admin/hana-connect/', admin_site.admin_view(hana_connect_admin), name='hana_connect_admin'),
     path('admin/sap-bp-entry/', admin_site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
     path('admin/sap-bp-lookup/', admin_site.admin_view(bp_lookup_admin), name='sap_bp_lookup_admin'),
@@ -80,4 +86,5 @@ urlpatterns = [
      path('api/', include('crop_manage.urls')),  # <-- add this
     path('api/kindwise/', include('kindwise.urls')),  # Kindwise app URLs
     path('api/analytics/', include('analytics.urls')),  # Analytics dashboard APIs
+    path('', include('general_ledger.urls')),  # General Ledger app URLs (includes both API and admin routes)
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

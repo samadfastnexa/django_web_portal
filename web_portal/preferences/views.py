@@ -644,10 +644,21 @@ class UserAnalyticsView(APIView):
                 "last_month_value": total_farmers_last_month
             }
         }
-        if sales_combined is not None:
-            analytics["sales_combined"] = sales_combined
-        if company_options:
-            analytics["company_options"] = company_options
-            analytics["selected_company"] = company_param or ''
+        # Always include sales_combined and company_options
+        if sales_combined is None:
+            sales_combined = {
+                "EMPID": 0,
+                "TERRITORYID": 0,
+                "TERRITORYNAME": "All Territories",
+                "SALES_TARGET": 0,
+                "ACCHIVEMENT": 0,
+                "F_REFDATE": None,
+                "T_REFDATE": None,
+                "SALES_TARGET_LAST_MONTH": 0,
+                "ACCHIVEMENT_LAST_MONTH": 0
+            }
+        analytics["sales_combined"] = sales_combined
+        analytics["company_options"] = company_options  # Will be empty list if not populated
+        analytics["selected_company"] = company_param or ''
         
         return Response(analytics)
