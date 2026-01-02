@@ -887,7 +887,6 @@ class CollectionAnalyticsView(APIView):
                 return Response({
                     'success': True,
                     'count': (paginator.count if paginator else len(final_list or [])),
-                    'totals': grand_total,
                     'data': paged_rows,
                     'pagination': pagination,
                     'filters': {
@@ -895,7 +894,8 @@ class CollectionAnalyticsView(APIView):
                         'region': region,
                         'zone': zone,
                         'territory': territory
-                    }
+                    },
+                    'totals': grand_total
                 }, status=status.HTTP_200_OK)
                 
             finally:
