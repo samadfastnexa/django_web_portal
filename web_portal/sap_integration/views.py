@@ -15,7 +15,7 @@ import os
 import json
 import re
 import logging
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, unit_price_by_policy
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -452,6 +452,29 @@ def hana_connect_admin(request):
                         try:
                             cc = (request.GET.get('card_code') or '').strip()
                             top_param = request.GET.get('top')
+                            db_param = (request.GET.get('database') or '').strip()
+                            
+                            # Handle database parameter for admin view
+                            if db_param:
+                                norm = db_param.strip().upper().replace('-APP', '_APP')
+                                if '4B-BIO' in norm:
+                                    cfg['schema'] = '4B-BIO_APP'
+                                elif '4B-ORANG' in norm:
+                                    cfg['schema'] = '4B-ORANG_APP'
+                                else:
+                                    cfg['schema'] = db_param
+                                # Reconnect with new schema
+                                try:
+                                    conn.close()
+                                except Exception:
+                                    pass
+                                conn = dbapi.connect(**kwargs)
+                                if cfg['schema']:
+                                    sch = cfg['schema']
+                                    cur = conn.cursor()
+                                    cur.execute(f'SET SCHEMA "{sch}"')
+                                    cur.close()
+                            
                             top_val = None
                             if cc:
                                 data = policy_customer_balance(conn, cc)
@@ -1553,6 +1576,29 @@ def hana_connect_admin(request):
                     elif action == 'item_lov':
                         try:
                             search_param = request.GET.get('search')
+                            db_param = (request.GET.get('database') or '').strip()
+                            
+                            # Handle database parameter for admin view
+                            if db_param:
+                                norm = db_param.strip().upper().replace('-APP', '_APP')
+                                if '4B-BIO' in norm:
+                                    cfg['schema'] = '4B-BIO_APP'
+                                elif '4B-ORANG' in norm:
+                                    cfg['schema'] = '4B-ORANG_APP'
+                                else:
+                                    cfg['schema'] = db_param
+                                # Reconnect with new schema
+                                try:
+                                    conn.close()
+                                except Exception:
+                                    pass
+                                conn = dbapi.connect(**kwargs)
+                                if cfg['schema']:
+                                    sch = cfg['schema']
+                                    cur = conn.cursor()
+                                    cur.execute(f'SET SCHEMA "{sch}"')
+                                    cur.close()
+                            
                             data = item_lov(conn, (search_param or '').strip() or None)
                             result = data
                         except Exception as e_il:
@@ -1570,6 +1616,32 @@ def hana_connect_admin(request):
                             result = data
                         except Exception as e_crop:
                             error = str(e_crop)
+                    elif action == 'item_price':
+                        try:
+                            doc_entry = (request.GET.get('doc_entry', '') or '').strip()
+                            item_code = (request.GET.get('item_code', '') or '').strip()
+                            if not doc_entry or not item_code:
+                                error_fields['doc_entry'] = 'doc_entry is required'
+                                error_fields['item_code'] = 'item_code is required'
+                                error = 'doc_entry and item_code are required parameters'
+                            else:
+                                price_row = unit_price_by_policy(conn, doc_entry, item_code)
+                                if price_row:
+                                    price_val = price_row.get('U_frp') if isinstance(price_row, dict) else None
+                                    try:
+                                        price_val = float(price_val) if price_val is not None else price_val
+                                    except Exception:
+                                        pass
+                                    result = [{
+                                        'DocEntry': doc_entry,
+                                        'ItemCode': item_code,
+                                        'Unit_Price': price_val
+                                    }]
+                                else:
+                                    result = []
+                                    error = f'No price found for DocEntry={doc_entry} and ItemCode={item_code}'
+                        except Exception as e_price:
+                            error = str(e_price)
                     elif action == 'contact_person_name':
                         try:
                             card_code = (request.GET.get('card_code', '') or '').strip()
@@ -1881,7 +1953,7 @@ def hana_connect_admin(request):
             'result_rows': paged_rows,
             'result_cols': result_cols,
             'table_rows': table_rows,
-            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_geo','sales_vs_achievement_geo_inv','sales_vs_achievement_geo_profit','collection_vs_achievement','sales_vs_achievement_by_emp','sales_vs_achievement_territory','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses','products_catalog')),
+            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_geo','sales_vs_achievement_geo_inv','sales_vs_achievement_geo_profit','collection_vs_achievement','sales_vs_achievement_by_emp','sales_vs_achievement_territory','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses','products_catalog','item_price')),
             'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
             'customer_options': customer_options,
             'customer_list': customer_list,
@@ -3186,6 +3258,8 @@ def sales_vs_achievement_territory_api(request):
                         scaled.append(row)
                 data = scaled
             hierarchy = {}
+            total_sales = 0.0
+            total_achievement = 0.0
             for row in (data or []):
                 if not isinstance(row, dict):
                     continue
@@ -3208,6 +3282,8 @@ def sales_vs_achievement_territory_api(request):
                     ach = float(v or 0.0)
                 except Exception:
                     pass
+                total_sales += sal
+                total_achievement += ach
                 if reg not in hierarchy:
                     hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
                 hierarchy[reg]['sales'] += sal
@@ -3256,7 +3332,16 @@ def sales_vs_achievement_territory_api(request):
                 paged_rows = list(final_list or [])
                 page_obj = None
             pagination = {'page': (page_obj.number if page_obj else 1), 'num_pages': (paginator.num_pages if paginator else 1), 'has_next': (page_obj.has_next() if page_obj else False), 'has_prev': (page_obj.has_previous() if page_obj else False), 'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)), 'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)), 'count': (paginator.count if paginator else len(final_list or [])), 'page_size': page_size}
-            return Response({'success': True, 'count': (paginator.count if paginator else len(final_list or [])), 'data': paged_rows, 'pagination': pagination}, status=status.HTTP_200_OK)
+            return Response({
+                'success': True,
+                'count': (paginator.count if paginator else len(final_list or [])),
+                'data': paged_rows,
+                'pagination': pagination,
+                'totals': {
+                    'sales': round(total_sales, 2),
+                    'achievement': round(total_achievement, 2),
+                },
+            }, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()
@@ -3657,9 +3742,13 @@ def territory_summary_api(request):
 
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
-    operation_description="Products catalog with images based on database",
+    operation_description="Products catalog with images based on database. Supports search and item group filters.",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP). Uses default from env if not provided.", type=openapi.TYPE_STRING, required=False)
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP). Uses default from env if not provided.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('search', openapi.IN_QUERY, description="Search ItemCode, ItemName, GenericName, or BrandName", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('item_group', openapi.IN_QUERY, description="Filter by item group code", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
     ],
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
 )
@@ -3675,6 +3764,24 @@ def products_catalog_api(request):
     
     # Get database parameter from query string
     db_name = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
+    search = (request.GET.get('search') or '').strip() or None
+    item_group = (request.GET.get('item_group') or '').strip() or None
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 50
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 50) or 50)
+    except Exception:
+        default_page_size = 50
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
     
     cfg = {
         'host': os.environ.get('HANA_HOST') or '',
@@ -3700,8 +3807,10 @@ def products_catalog_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             # Pass the connection and schema name to products_catalog for image URL generation
-            data = products_catalog(conn, cfg['schema'])
-            return Response({'success': True, 'count': len(data or []), 'database': cfg['schema'], 'data': data}, status=status.HTTP_200_OK)
+            data = products_catalog(conn, cfg['schema'], search, item_group)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'database': cfg['schema'], 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()
@@ -3732,6 +3841,26 @@ def get_policy_customer_balance_data(request, card_code=None):
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    db_param = (getattr(request, 'query_params', {}).get('database') if hasattr(request, 'query_params') else None) or request.GET.get('database', '')
+    db_param = (db_param or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    else:
+        try:
+            from preferences.models import Setting
+            s = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+            if s and s.value:
+                cfg['schema'] = str(s.value).strip()
+            else:
+                cfg['schema'] = os.environ.get('SAP_COMPANY_DB') or cfg['schema'] or '4B-BIO_APP'
+        except Exception:
+            cfg['schema'] = os.environ.get('SAP_COMPANY_DB') or cfg['schema'] or '4B-BIO_APP'
     try:
         from hdbcli import dbapi
         pwd = os.environ.get('HANA_PASSWORD','')
@@ -3777,6 +3906,7 @@ def get_policy_customer_balance_data(request, card_code=None):
     operation_summary="List All Policy Customer Balances",
     operation_description="Get policy-wise customer balance for all customers (CardCode NOT required - use this endpoint to get all policy balances). Returns balance grouped by customer and project/policy.",
     manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
         openapi.Parameter('limit', openapi.IN_QUERY, description="Maximum number of records to return (default: 200)", type=openapi.TYPE_INTEGER, required=False)
     ],
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
@@ -3793,6 +3923,9 @@ def policy_customer_balance_list(request):
     method='get',
     operation_summary="Get Policy Customer Balance by CardCode",
     operation_description="Get policy-wise customer balance for a specific customer by CardCode (CardCode IS required in URL path for this endpoint). Returns balance grouped by project/policy for the specified customer.",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False)
+    ],
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
@@ -3975,9 +4108,11 @@ def select_oitm_api(request):
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Warehouse list for item",
-    operation_description="List warehouses for a specific ItemCode; when ItemCode is empty, returns all warehouses. Supports pagination.",
+    operation_description="List warehouses for a specific ItemCode; when ItemCode is empty, returns all warehouses. Supports pagination and search.",
     manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
         openapi.Parameter('item_code', openapi.IN_QUERY, description="ItemCode (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('search', openapi.IN_QUERY, description="Search WhsCode or WhsName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
     ],
@@ -3996,11 +4131,23 @@ def warehouse_for_item_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     item_code = (request.GET.get('item_code') or '').strip()
+    search = (request.GET.get('search') or '').strip() or None
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     try:
@@ -4033,9 +4180,9 @@ def warehouse_for_item_api(request):
                 cur.close()
             from .hana_connect import warehouses_all
             if not item_code:
-                data = warehouses_all(conn)
+                data = warehouses_all(conn, 500, search)
             else:
-                data = warehouse_for_item(conn, item_code)
+                data = warehouse_for_item(conn, item_code, search)
             paginator = Paginator(data or [], page_size)
             page_obj = paginator.get_page(page_num)
             return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
@@ -4073,10 +4220,21 @@ def contact_persons_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     card_code = (request.GET.get('card_code') or '').strip()
     contact_code = (request.GET.get('contact_code') or '').strip()
     show_all = (request.GET.get('show_all') or '').strip().lower() in ('true','1','yes')
@@ -4162,10 +4320,21 @@ def project_balance_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     project_code = (request.GET.get('project_code') or '').strip()
     show_all = (request.GET.get('show_all') or '').strip().lower() in ('true','1','yes')
     page_param = (request.GET.get('page') or '1').strip()
@@ -4242,10 +4411,21 @@ def customer_addresses_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     card_code = (request.GET.get('card_code') or '').strip()
     show_all = (request.GET.get('show_all') or '').strip().lower() in ('true','1','yes')
     page_param = (request.GET.get('page') or '1').strip()
@@ -4319,10 +4499,21 @@ def territories_full_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     status_param = (request.GET.get('status') or '').strip().lower()
     limit_param = (request.GET.get('limit') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
@@ -4400,10 +4591,21 @@ def cwl_full_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     limit_param = (request.GET.get('limit') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
@@ -4480,10 +4682,21 @@ def customer_lov_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
@@ -4540,6 +4753,7 @@ def customer_lov_api(request):
     operation_summary="Item LOV",
     operation_description="List items with optional search and pagination.",
     manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search ItemCode or ItemName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
@@ -4559,10 +4773,21 @@ def item_lov_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
@@ -4607,6 +4832,424 @@ def item_lov_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+@swagger_auto_schema(tags=['SAP'],
+    method='get',
+    operation_summary="Item price by policy",
+    operation_description="Fetch unit price (U_frp) from policy lines (@PL1/@PLR4) by DocEntry and ItemCode.",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Policy DocEntry (e.g., 18)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('item_code', openapi.IN_QUERY, description="ItemCode (e.g., FG00316)", type=openapi.TYPE_STRING, required=True),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def item_price_api(request):
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+
+    doc_entry = (request.GET.get('doc_entry') or '').strip()
+    item_code = (request.GET.get('item_code') or '').strip()
+
+    if not doc_entry or not item_code:
+        return Response({'success': False, 'error': 'doc_entry and item_code are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            price_row = unit_price_by_policy(conn, doc_entry, item_code)
+            if not price_row:
+                return Response({'success': True, 'data': None, 'message': 'No price found for given DocEntry and ItemCode'}, status=status.HTTP_200_OK)
+            price_val = price_row.get('U_frp') if isinstance(price_row, dict) else None
+            try:
+                price_val = float(price_val) if price_val is not None else price_val
+            except Exception:
+                pass
+            return Response({'success': True, 'data': {'doc_entry': doc_entry, 'item_code': item_code, 'unit_price': price_val}}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(tags=['SAP'],
+    method='get',
+    operation_summary="Policy Items for Customer",
+    operation_description="Fetch all items in a specific policy, optionally filtered by customer/Business Partner CardCode.",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Policy DocEntry (e.g., 18)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner CardCode (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def policy_items_for_customer_api(request):
+    """
+    Get all items in a specific policy, optionally filtered by customer CardCode.
+    Query parameters:
+        - database: 4B-BIO-app or 4B-ORANG-app (optional)
+        - doc_entry: Policy DocEntry (required)
+        - card_code: Business Partner CardCode (optional)
+        - page: Page number (optional)
+        - page_size: Items per page (optional)
+    """
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+
+    doc_entry = (request.GET.get('doc_entry') or '').strip()
+    card_code = (request.GET.get('card_code') or '').strip()
+
+    if not doc_entry:
+        return Response({'success': False, 'error': 'doc_entry parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 50
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 50) or 50)
+    except Exception:
+        default_page_size = 50
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'] or '',
+            'password': pwd or ''
+        }
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+
+            cursor = conn.cursor()
+            
+            # Query to get policy items with optional customer filter
+            # @PLR4 uses U_itc for ItemCode, U_frp for price
+            # Join with OITM for item details
+            if card_code:
+                sql_query = """
+                    SELECT 
+                        h."DocEntry" AS policy_doc_entry,
+                        l."U_itc" AS ItemCode,
+                        i."ItemName",
+                        l."U_frp" AS unit_price,
+                        i."SalUnitMsr" AS unit_of_measure,
+                        r."U_bp" AS bp_code
+                    FROM "@PL1" h
+                    INNER JOIN "@PLR4" l ON h."DocEntry" = l."DocEntry"
+                    INNER JOIN "@PLR8" r ON h."DocEntry" = r."DocEntry"
+                    LEFT JOIN OITM i ON i."ItemCode" = l."U_itc"
+                    WHERE h."DocEntry" = ?
+                    AND r."U_bp" = ?
+                    ORDER BY l."U_itc"
+                """
+                params = [doc_entry, card_code]
+            else:
+                sql_query = """
+                    SELECT 
+                        h."DocEntry" AS policy_doc_entry,
+                        l."U_itc" AS ItemCode,
+                        i."ItemName",
+                        l."U_frp" AS unit_price,
+                        i."SalUnitMsr" AS unit_of_measure
+                    FROM "@PL1" h
+                    INNER JOIN "@PLR4" l ON h."DocEntry" = l."DocEntry"
+                    LEFT JOIN OITM i ON i."ItemCode" = l."U_itc"
+                    WHERE h."DocEntry" = ?
+                    ORDER BY l."U_itc"
+                """
+                params = [doc_entry]
+            
+            cursor.execute(sql_query, params)
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            cursor.close()
+
+            # Convert rows to list of dicts
+            data = []
+            for row in rows:
+                item_dict = {}
+                for idx, col in enumerate(columns):
+                    val = row[idx]
+                    # Convert date/datetime to string
+                    if hasattr(val, 'isoformat'):
+                        val = val.isoformat()
+                    item_dict[col] = val
+                data.append(item_dict)
+
+            # Check if no records found
+            if not data:
+                return Response({
+                    'success': True,
+                    'message': 'No items found for the specified policy and customer',
+                    'page': 1,
+                    'page_size': page_size,
+                    'num_pages': 0,
+                    'count': 0,
+                    'data': []
+                }, status=status.HTTP_200_OK)
+
+            # Paginate results
+            from django.core.paginator import Paginator
+            paginator = Paginator(data, page_size)
+            page_obj = paginator.get_page(page_num)
+
+            return Response({
+                'success': True,
+                'page': page_obj.number,
+                'page_size': page_size,
+                'num_pages': paginator.num_pages,
+                'count': paginator.count,
+                'data': list(page_obj.object_list)
+            }, status=status.HTTP_200_OK)
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(tags=['SAP'],
+    method='get',
+    operation_summary="Policy Project Link",
+    operation_description="Get projects linked to policies for a specific Business Partner/Customer. Shows policy-project relationships with project details.",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner CardCode (required)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def policy_project_link_api(request):
+    """
+    Get projects linked to policies for a specific customer.
+    
+    SQL Query:
+    SELECT T1."DocEntry", T1."U_proj", T2."PrjName"
+    FROM "@PLR8" T0
+    INNER JOIN "@PL1" T1 ON T0."DocEntry" = T1."DocEntry"
+    INNER JOIN OPRJ T2 ON T2."PrjCode" = T1."U_proj"
+    WHERE T0."U_bp" = ?
+    AND T2."Active" = 'Y'
+    AND T2."ValidTo" >= CURRENT_DATE
+    """
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+
+    card_code = (request.GET.get('card_code') or '').strip()
+    
+    if not card_code:
+        return Response({'success': False, 'error': 'card_code parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 50
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 50) or 50)
+    except Exception:
+        default_page_size = 50
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'] or '',
+            'password': pwd or ''
+        }
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+
+            cursor = conn.cursor()
+            
+            # Query to get policy-project links for a specific Business Partner
+            sql_query = """
+                SELECT 
+                    T1."DocEntry" AS policy_doc_entry,
+                    T1."U_proj" AS project_code,
+                    T2."PrjName" AS project_name,
+                    T2."Active" AS project_active,
+                    T2."ValidTo" AS project_valid_to,
+                    T0."U_bp" AS bp_code
+                FROM "@PLR8" T0
+                INNER JOIN "@PL1" T1 ON T0."DocEntry" = T1."DocEntry"
+                INNER JOIN OPRJ T2 ON T2."PrjCode" = T1."U_proj"
+                WHERE T0."U_bp" = ?
+                AND T2."Active" = 'Y'
+                AND T2."ValidTo" >= CURRENT_DATE
+                ORDER BY T1."DocEntry", T2."PrjCode"
+            """
+            
+            cursor.execute(sql_query, [card_code])
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            cursor.close()
+
+            # Convert rows to list of dicts
+            data = []
+            for row in rows:
+                item_dict = {}
+                for idx, col in enumerate(columns):
+                    val = row[idx]
+                    # Convert date/datetime to string
+                    if hasattr(val, 'isoformat'):
+                        val = val.isoformat()
+                    item_dict[col] = val
+                data.append(item_dict)
+
+            # Paginate results
+            from django.core.paginator import Paginator
+            paginator = Paginator(data, page_size)
+            page_obj = paginator.get_page(page_num)
+
+            return Response({
+                'success': True,
+                'page': page_obj.number,
+                'page_size': page_size,
+                'num_pages': paginator.num_pages,
+                'count': paginator.count,
+                'data': list(page_obj.object_list)
+            }, status=status.HTTP_200_OK)
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Projects LOV",
@@ -4631,10 +5274,21 @@ def projects_lov_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
@@ -4682,8 +5336,10 @@ def projects_lov_api(request):
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Crop LOV",
-    operation_description="List crops with pagination.",
+    operation_description="List crops with optional search and pagination.",
     manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('search', openapi.IN_QUERY, description="Search Code or Name", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
     ],
@@ -4702,10 +5358,22 @@ def crop_lov_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
+    search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     try:
@@ -4737,7 +5405,7 @@ def crop_lov_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             from .hana_connect import crop_lov
-            data = crop_lov(conn)
+            data = crop_lov(conn, search or None)
             paginator = Paginator(data or [], page_size)
             page_obj = paginator.get_page(page_num)
             return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
@@ -4777,10 +5445,21 @@ def sales_orders_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    # Handle database parameter
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+    
     card_code = (request.GET.get('card_code') or '').strip()
     doc_status = (request.GET.get('doc_status') or '').strip().upper()
     from_date = (request.GET.get('from_date') or '').strip()

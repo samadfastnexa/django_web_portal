@@ -1146,7 +1146,11 @@ admin.site.register(SalesOrderAttachment)
 
 
 
-admin.site.register(Company)
+@admin.register(Company, site=admin_site)
+class CompanyAdmin(admin.ModelAdmin):
+    list_display = ('Company_name', 'name', 'email', 'contact_number', 'is_active')
+    search_fields = ('Company_name', 'name', 'email')
+    list_filter = ('is_active',)
 class _CompanySessionResolver:
     def _get_selected_company(self, request):
         try:

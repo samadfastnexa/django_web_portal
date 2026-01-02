@@ -366,7 +366,69 @@
     <h3>📦 Item & Warehouse</h3>
     <div class="actions-grid">
       <a class="button {% if current_action == 'warehouse_for_item' %}active{% endif %}" href="?action=warehouse_for_item&company_db={{ selected_db_key }}">Warehouse for Item</a>
+      <button type="button" class="button {% if current_action == 'item_price' %}active{% endif %}" onclick="toggleItemPriceFilters()" style="cursor: pointer; border: none;">
+        💵 Item Price (Policy)
+      </button>
     </div>
+    
+    <!-- Item Price Filters (hidden by default) -->
+    <div id="itemPriceFilters" style="display: {% if current_action == 'item_price' %}block{% else %}none{% endif %}; margin-top: 20px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <form method="get" action="" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;">
+        <input type="hidden" name="action" value="item_price">
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}">
+        
+        <div style="flex: 1; min-width: 200px;">
+          <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: #475569;">Policy DocEntry</label>
+          <input type="text" name="doc_entry" value="{{ request.GET.doc_entry }}" placeholder="e.g., 18" 
+                 style="width: 100%; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px;">
+        </div>
+        
+        <div style="flex: 1; min-width: 200px;">
+          <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: #475569;">Item Code</label>
+          <input type="text" name="item_code" value="{{ request.GET.item_code }}" placeholder="e.g., FG00316" 
+                 style="width: 100%; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px;">
+        </div>
+        
+        <button type="submit" style="padding: 10px 24px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); transition: all 0.2s;">
+          🔍 Get Price
+        </button>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Master Data Filters Section -->
+  <div class="actions-section" id="itemLovFilterSection" style="{% if current_action != 'item_lov' %}display: none;{% endif %}">
+    <h3>🔍 Item Master List Filters</h3>
+    {% if current_action == 'item_lov' %}
+      <form method="get" style="margin-top: 16px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+        <input type="hidden" name="action" value="item_lov">
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 16px;">
+          <div>
+            <label class="filter-label">Database</label>
+            <select name="database" class="filter-input">
+              <option value="">Default ({{ selected_db_key }})</option>
+              <option value="4B-BIO-app" {% if request.GET.database == '4B-BIO-app' %}selected{% endif %}>4B-BIO-app</option>
+              <option value="4B-ORANG-app" {% if request.GET.database == '4B-ORANG-app' %}selected{% endif %}>4B-ORANG-app</option>
+            </select>
+          </div>
+          <div>
+            <label class="filter-label">Search Item</label>
+            <input type="text" name="search" class="filter-input" placeholder="Search by item code or name" value="{{ request.GET.search }}">
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply
+          </button>
+          <a class="btn btn-secondary" href="?action=item_lov&company_db={{ selected_db_key }}">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+    {% endif %}
   </div>
   
   <!-- Policy Section -->
@@ -426,11 +488,35 @@
     }
   }
   
+  function toggleItemPriceFilters() {
+    const filtersDiv = document.getElementById('itemPriceFilters');
+    const button = event.target;
+    if (filtersDiv.style.display === 'none') {
+      filtersDiv.style.display = 'block';
+      button.textContent = '🔼 Hide Filters';
+    } else {
+      filtersDiv.style.display = 'none';
+      button.textContent = '💵 Item Price (Policy)';
+    }
+  }
+  
   // Auto-show filters if action is policy_link
   {% if current_action == 'policy_link' %}
   document.addEventListener('DOMContentLoaded', function() {
     const filtersDiv = document.getElementById('policyFilters');
     const button = document.querySelector('button[onclick="togglePolicyFilters()"]');
+    if (filtersDiv && button) {
+      filtersDiv.style.display = 'block';
+      button.textContent = '🔼 Hide Filters';
+    }
+  });
+  {% endif %}
+  
+  // Auto-show filters if action is item_price
+  {% if current_action == 'item_price' %}
+  document.addEventListener('DOMContentLoaded', function() {
+    const filtersDiv = document.getElementById('itemPriceFilters');
+    const button = document.querySelector('button[onclick="toggleItemPriceFilters()"]');
     if (filtersDiv && button) {
       filtersDiv.style.display = 'block';
       button.textContent = '🔼 Hide Filters';
@@ -2087,6 +2173,19 @@ textContent=count+' active'}
             </div>
             <div class="filter-input">
               <input type="number" name="top" min="1" max="1000" placeholder="Default 200" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="database">
+            <div class="filter-label" title="Database/Schema">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 4.24 2 7v10c0 2.76 4.48 5 10 5s10-2.24 10-5V7c0-2.76-4.48-5-10-5zm0 3c4.42 0 8 1.79 8 4s-3.58 4-8 4-8-1.79-8-4 3.58-4 8-4zm0 14c-4.42 0-8-1.79-8-4v-3c0 2.21 3.58 4 8 4s8-1.79 8-4v3c0 2.21-3.58 4-8 4z"/></svg>
+              Database
+            </div>
+            <div class="filter-input">
+              <select name="database" style="width: 100%; padding: 10px 12px; border: 1px solid var(--filter-border); border-radius: 10px; background: #fff; transition: border-color .2s, box-shadow .2s; cursor: pointer;">
+                <option value="">Default ({{ selected_db_key }})</option>
+                <option value="4B-BIO-app" {% if request.GET.database == '4B-BIO-app' %}selected{% endif %}>4B-BIO-app</option>
+                <option value="4B-ORANG-app" {% if request.GET.database == '4B-ORANG-app' %}selected{% endif %}>4B-ORANG-app</option>
+              </select>
             </div>
           </div>
         </div>

@@ -1,0 +1,754 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% load general_ledger_filters %}
+
+{% block title %}General Ledger Report{% endblock %}
+
+{% block extrastyle %}
+<style>
+  /* Loading Overlay */
+  .loading-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .loading-overlay.active {
+    display: flex;
+  }
+  
+  .loading-content {
+    text-align: center;
+    color: #fff;
+  }
+  
+  .loading-spinner {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #3498db;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  .loading-text {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  
+  .loading-subtext {
+    font-size: 14px;
+    color: #ccc;
+  }
+  
+  /* Company Database Selector Card */
+  .db-selector-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+  }
+  
+  .db-selector-card h3 {
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 16px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .db-icon {
+    font-size: 28px;
+  }
+  
+  .db-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    backdrop-filter: blur(10px);
+  }
+  
+  .db-selector-form label {
+    color: #fff;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  
+  .db-select-wrapper select {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.95);
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .db-select-wrapper select:hover {
+    border-color: rgba(255, 255, 255, 0.6);
+    background: #fff;
+  }
+  
+  /* Filter Card */
+  .filter-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  .filter-header {
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 12px;
+  }
+  
+  .filter-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  
+  .filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  
+  .filter-field label {
+    display: block;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  
+  .filter-field input,
+  .filter-field select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.2s;
+  }
+  
+  .filter-field input:focus,
+  .filter-field select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+  
+  .filter-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  
+  .btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: inline-block;
+  }
+  
+  .btn-primary {
+    background: #3b82f6;
+    color: #fff;
+  }
+  
+  .btn-primary:hover {
+    background: #2563eb;
+  }
+  
+  .btn-secondary {
+    background: #6b7280;
+    color: #fff;
+  }
+  
+  .btn-secondary:hover {
+    background: #4b5563;
+  }
+  
+  .btn-success {
+    background: #10b981;
+    color: #fff;
+  }
+  
+  .btn-success:hover {
+    background: #059669;
+  }
+  
+  /* Ledger Table */
+  .table-responsive {
+    overflow-x: auto;
+    margin-bottom: 20px;
+  }
+  
+  .ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .ledger-table thead th {
+    background: #f8fafc;
+    padding: 14px 12px;
+    text-align: left;
+    font-weight: 700;
+    font-size: 13px;
+    color: #0f172a;
+    border-bottom: 2px solid #e5e7eb;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  
+  .ledger-table tbody td {
+    padding: 12px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 13px;
+    color: #334155;
+  }
+  
+  .ledger-table tbody tr:hover {
+    background: #f8fafc;
+  }
+  
+  /* Account Header Row */
+  .account-header {
+    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%) !important;
+    font-weight: 700;
+  }
+  
+  .account-header td {
+    padding: 16px 12px !important;
+    color: #1e293b !important;
+    font-size: 15px !important;
+    border-top: 3px solid #6366f1;
+  }
+  
+  /* Opening Balance Row */
+  .opening-balance-row {
+    background: #fef3c7 !important;
+    font-weight: 600;
+  }
+  
+  .opening-balance-row td {
+    color: #92400e !important;
+  }
+  
+  /* Subtotal Row */
+  .subtotal-row {
+    background: #dbeafe !important;
+    font-weight: 700;
+  }
+  
+  .subtotal-row td {
+    color: #1e40af !important;
+    padding: 14px 12px !important;
+    border-top: 2px solid #60a5fa;
+  }
+  
+  /* Grand Total Row */
+  .grand-total-row {
+    background: #f3e8ff !important;
+    font-weight: 700;
+    font-size: 15px !important;
+  }
+  
+  .grand-total-row td {
+    color: #6b21a8 !important;
+    padding: 16px 12px !important;
+    border-top: 3px solid #a855f7;
+  }
+  
+  /* Number Alignment */
+  .text-right {
+    text-align: right !important;
+  }
+  
+  .text-center {
+    text-align: center !important;
+  }
+  
+  /* Status Badge */
+  .status-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  
+  .status-balanced {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  
+  .status-unbalanced {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  
+  /* Error Alert */
+  .error-alert {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 16px;
+    border-radius: 8px;
+    margin: 16px 0;
+    border-left: 4px solid #dc2626;
+  }
+  
+  /* Empty State */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #94a3b8;
+  }
+  
+  .empty-state-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+  }
+  
+  .empty-state-text {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  
+  .empty-state-subtext {
+    font-size: 14px;
+  }
+  
+  /* Pagination */
+  .pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 24px;
+    padding: 16px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  
+  .pagination-info {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 15px;
+  }
+  
+  .pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .pagination-button {
+    padding: 10px 14px;
+    background: #fff;
+    color: #0f172a;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  
+  .pagination-button:hover {
+    background: #3b82f6;
+    color: #fff;
+    border-color: #3b82f6;
+  }
+  
+  .pagination-button.disabled {
+    background: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  
+  .pagination-current {
+    padding: 10px 16px;
+    background: #fff;
+    border: 2px solid #0ea5e9;
+    border-radius: 8px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  
+  .pagination-size-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .pagination-size-form label {
+    font-weight: 600;
+    color: #334155;
+    white-space: nowrap;
+  }
+  
+  .pagination-size-form input {
+    width: 70px;
+    padding: 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+  }
+  
+  .pagination-size-form button {
+    background: #10b981;
+    color: #fff;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  
+  .pagination-size-form button:hover {
+    background: #059669;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-content">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Loading Ledger Data...</div>
+    <div class="loading-subtext">Please wait while we fetch the data</div>
+  </div>
+</div>
+
+<div class="module">
+  <!-- Company Database Selector -->
+  <div class="db-selector-card">
+    <h3>
+      <div class="db-icon">🗄️</div>
+      Company Database Selector
+      <span class="db-badge">{{ selected_db_key }}</span>
+    </h3>
+    <form method="get" class="db-selector-form">
+      {% for key, value in request.GET.items %}
+        {% if key != 'company' %}
+          <input type="hidden" name="{{ key }}" value="{{ value }}" />
+        {% endif %}
+      {% endfor %}
+      <label for="company">Select Database:</label>
+      <div class="db-select-wrapper">
+        <select name="company" id="company" onchange="this.form.submit()">
+          {% for key, value in db_options.items %}
+            <option value="{{ key }}" {% if key == selected_db_key %}selected{% endif %}>
+              {{ value }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+  </div>
+
+  <h2>📊 SAP B1 General Ledger Report</h2>
+
+  <!-- Filters -->
+  <form method="get" class="filter-card" id="filterForm">
+    <input type="hidden" name="company" value="{{ selected_db_key }}" />
+    
+    <div class="filter-header">
+      <div class="filter-title">📋 Report Filters</div>
+    </div>
+    
+    <div class="filter-grid">
+      <div class="filter-field">
+        <label>Account From</label>
+        <select name="account_from" id="account_from">
+          <option value="">-- Select Account --</option>
+          {% for account in chart_of_accounts %}
+            <option value="{{ account.AcctCode }}" {% if filters.account_from == account.AcctCode %}selected{% endif %}>
+              {{ account.AcctCode }} - {{ account.AcctName }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      
+      <div class="filter-field">
+        <label>Account To</label>
+        <select name="account_to" id="account_to">
+          <option value="">-- Select Account --</option>
+          {% for account in chart_of_accounts %}
+            <option value="{{ account.AcctCode }}" {% if filters.account_to == account.AcctCode %}selected{% endif %}>
+              {{ account.AcctCode }} - {{ account.AcctName }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      
+      <div class="filter-field">
+        <label>From Date</label>
+        <input type="date" name="from_date" value="{{ filters.from_date }}" />
+      </div>
+      
+      <div class="filter-field">
+        <label>To Date</label>
+        <input type="date" name="to_date" value="{{ filters.to_date }}" />
+      </div>
+      
+      <div class="filter-field">
+        <label>Business Partner</label>
+        <select name="bp_code">
+          <option value="">-- All Partners --</option>
+          {% for bp in business_partners %}
+            <option value="{{ bp.CardCode }}" {% if filters.bp_code == bp.CardCode %}selected{% endif %}>
+              {{ bp.CardCode }} - {{ bp.CardName }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      
+      <div class="filter-field">
+        <label>Project</label>
+        <select name="project_code">
+          <option value="">-- All Projects --</option>
+          {% for project in projects %}
+            <option value="{{ project.PrjCode }}" {% if filters.project_code == project.PrjCode %}selected{% endif %}>
+              {{ project.PrjCode }} - {{ project.PrjName }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      
+      <div class="filter-field">
+        <label>Transaction Type</label>
+        <select name="trans_type">
+          <option value="">-- All Types --</option>
+          {% for tt in trans_types %}
+            <option value="{{ tt.Code }}" {% if filters.trans_type == tt.Code %}selected{% endif %}>
+              {{ tt.Code }} - {{ tt.Name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    
+    <div class="filter-actions">
+      <button type="submit" class="btn btn-primary">🔍 Apply Filters</button>
+      <a href="?company={{ selected_db_key }}" class="btn btn-secondary">🔄 Clear Filters</a>
+      {% if accounts_grouped %}
+        <a href="{% url 'export_ledger_csv' %}?{{ request.GET.urlencode }}" class="btn btn-success">📥 Export CSV</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <!-- Error Display -->
+  {% if error %}
+    <div class="error-alert">
+      <strong>❌ Error:</strong> {{ error }}
+    </div>
+  {% endif %}
+
+  <!-- Grand Total Summary (if data exists) -->
+  {% if grand_total %}
+    <div class="filter-card" style="margin-bottom: 20px;">
+      <h3 style="margin: 0 0 16px 0; color: #0f172a; font-size: 18px;">📈 Grand Total Summary</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+        <div style="background: #dbeafe; padding: 16px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #1e40af; font-weight: 600; margin-bottom: 4px;">TOTAL DEBIT</div>
+          <div style="font-size: 24px; font-weight: 700; color: #1e40af;">{{ grand_total.TotalDebit|floatformat:2 }}</div>
+        </div>
+        <div style="background: #fed7aa; padding: 16px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #c2410c; font-weight: 600; margin-bottom: 4px;">TOTAL CREDIT</div>
+          <div style="font-size: 24px; font-weight: 700; color: #c2410c;">{{ grand_total.TotalCredit|floatformat:2 }}</div>
+        </div>
+        <div style="background: {% if grand_total.Difference == 0 %}#d1fae5{% else %}#fee2e2{% endif %}; padding: 16px; border-radius: 8px;">
+          <div style="font-size: 12px; color: {% if grand_total.Difference == 0 %}#065f46{% else %}#991b1b{% endif %}; font-weight: 600; margin-bottom: 4px;">DIFFERENCE</div>
+          <div style="font-size: 24px; font-weight: 700; color: {% if grand_total.Difference == 0 %}#065f46{% else %}#991b1b{% endif %};">
+            {{ grand_total.Difference|floatformat:2 }}
+            {% if grand_total.Difference == 0 %}
+              <span class="status-badge status-balanced">Balanced</span>
+            {% else %}
+              <span class="status-badge status-unbalanced">Unbalanced</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Data Table -->
+  {% if accounts_grouped %}
+    <div class="table-responsive">
+      <table class="ledger-table" id="ledgerTable">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Trans #</th>
+            <th>Account</th>
+            <th>BP Code</th>
+            <th>BP Name</th>
+            <th>Type</th>
+            <th>Reference</th>
+            <th>Description</th>
+            <th class="text-right">Debit</th>
+            <th class="text-right">Credit</th>
+            <th class="text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for account in accounts_grouped %}
+            <!-- Account Header -->
+            <tr class="account-header">
+              <td colspan="11">
+                <strong>{{ account.Account }} - {{ account.AccountName }}</strong>
+              </td>
+            </tr>
+            
+            <!-- Opening Balance -->
+            {% if filters.from_date %}
+              <tr class="opening-balance-row">
+                <td colspan="8"><em>Opening Balance (as of {{ filters.from_date }})</em></td>
+                <td class="text-right">{% if account.OpeningBalance > 0 %}{{ account.OpeningBalance|floatformat:2 }}{% else %}-{% endif %}</td>
+                <td class="text-right">{% if account.OpeningBalance < 0 %}{{ account.OpeningBalance|abs|floatformat:2 }}{% else %}-{% endif %}</td>
+                <td class="text-right"><strong>{{ account.OpeningBalance|floatformat:2 }}</strong></td>
+              </tr>
+            {% endif %}
+            
+            <!-- Transactions -->
+            {% for txn in account.transactions %}
+              <tr>
+                <td>{{ txn.PostingDate|date:"Y-m-d" }}</td>
+                <td>{{ txn.TransId }}</td>
+                <td>{{ txn.Account }}</td>
+                <td>{{ txn.BPCode|default:"-" }}</td>
+                <td>{{ txn.BPName|default:"-" }}</td>
+                <td>{{ txn.TransType|default:"-" }}</td>
+                <td>{{ txn.Reference1|default:"-" }}</td>
+                <td>{{ txn.Description|default:"-" }}</td>
+                <td class="text-right">{{ txn.Debit|floatformat:2 }}</td>
+                <td class="text-right">{{ txn.Credit|floatformat:2 }}</td>
+                <td class="text-right">{{ txn.RunningBalance|floatformat:2 }}</td>
+              </tr>
+            {% endfor %}
+            
+            <!-- Account Subtotal -->
+            <tr class="subtotal-row">
+              <td colspan="8"><strong>Subtotal for {{ account.Account }}</strong></td>
+              <td class="text-right"><strong>{{ account.TotalDebit|floatformat:2 }}</strong></td>
+              <td class="text-right"><strong>{{ account.TotalCredit|floatformat:2 }}</strong></td>
+              <td class="text-right"><strong>{{ account.ClosingBalance|floatformat:2 }}</strong></td>
+            </tr>
+          {% endfor %}
+          
+          <!-- Grand Total -->
+          {% if grand_total %}
+            <tr class="grand-total-row">
+              <td colspan="8"><strong>🏆 GRAND TOTAL</strong></td>
+              <td class="text-right"><strong>{{ grand_total.TotalDebit|floatformat:2 }}</strong></td>
+              <td class="text-right"><strong>{{ grand_total.TotalCredit|floatformat:2 }}</strong></td>
+              <td class="text-right"><strong>{{ grand_total.Difference|floatformat:2 }}</strong></td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination-container">
+      <div class="pagination-info">
+        Page {{ pagination.page }} of {{ pagination.num_pages }} | Total: {{ pagination.count }} accounts
+      </div>
+      
+      <div class="pagination-controls">
+        {% if pagination.has_prev %}
+          <a href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page=1" class="pagination-button">« First</a>
+          <a href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.prev_page }}" class="pagination-button">‹ Previous</a>
+        {% else %}
+          <span class="pagination-button disabled">« First</span>
+          <span class="pagination-button disabled">‹ Previous</span>
+        {% endif %}
+        
+        <span class="pagination-current">{{ pagination.page }}</span>
+        
+        {% if pagination.has_next %}
+          <a href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.next_page }}" class="pagination-button">Next ›</a>
+          <a href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}page={{ pagination.num_pages }}" class="pagination-button">Last »</a>
+        {% else %}
+          <span class="pagination-button disabled">Next ›</span>
+          <span class="pagination-button disabled">Last »</span>
+        {% endif %}
+      </div>
+      
+      <form method="get" class="pagination-size-form">
+        {% for k,v in request.GET.items %}
+          {% if k != 'page_size' and k != 'page' %}
+            <input type="hidden" name="{{ k }}" value="{{ v }}" />
+          {% endif %}
+        {% endfor %}
+        <label>Items per page:</label>
+        <input type="number" name="page_size" min="1" max="200" value="{{ pagination.page_size }}" />
+        <button type="submit">Apply</button>
+      </form>
+    </div>
+  {% else %}
+    <!-- Empty State -->
+    <div class="empty-state">
+      <div class="empty-state-icon">📊</div>
+      <div class="empty-state-text">No Ledger Data Found</div>
+      <div class="empty-state-subtext">Apply filters above and click "Apply Filters" to load data</div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+  // Show loading overlay on form submit
+  document.getElementById('filterForm').addEventListener('submit', function() {
+    document.getElementById('loading-overlay').classList.add('active');
+  });
+  
+  // Company selector also shows loading
+  document.getElementById('company').addEventListener('change', function() {
+    document.getElementById('loading-overlay').classList.add('active');
+  });
+</script>
+{% endblock %}

@@ -797,7 +797,7 @@ def table_columns(db, schema: str, table: str) -> list:
             out.append(v)
     return out
 
-def products_catalog(db, schema_name: str = '') -> list:
+def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None) -> list:
     """
     Fetch products catalog with image URLs based on database name.
     Images are stored in media/product_images/{DB_NAME}/{ItemCode}.jpg
@@ -805,6 +805,8 @@ def products_catalog(db, schema_name: str = '') -> list:
     Args:
         db: Database connection object
         schema_name: Schema name (e.g., '4B-BIO_APP', '4B-ORANG_APP')
+        search: Search ItemCode, ItemName, GenericName, or BrandName
+        item_group: Filter by item group code
     """
     sql = (
         'SELECT '
@@ -824,9 +826,18 @@ def products_catalog(db, schema_name: str = '') -> list:
         'LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."U_IMG_C" = \'Product Description Urdu\' '
         'WHERE T0."Series" = \'72\' '
         'AND T0."validFor" = \'Y\' '
-        'ORDER BY T1."ItmsGrpCod", T0."ItemCode"'
     )
-    results = _fetch_all(db, sql)
+    params = []
+    if item_group:
+        sql += ' AND T0."ItmsGrpCod" = ?'
+        params.append(item_group)
+    if search:
+        sql += ' AND (T0."ItemCode" LIKE ? OR T0."ItemName" LIKE ? OR T0."U_GenericName" LIKE ? OR T0."U_BrandName" LIKE ?)'
+        search_param = f'%{search}%'
+        params.extend([search_param, search_param, search_param, search_param])
+    sql += ' ORDER BY T1."ItmsGrpCod", T0."ItemCode"'
+    
+    results = _fetch_all(db, sql, tuple(params) if params else None)
     
     # Extract database name from schema name string
     # Database names are like: 4B-BIO_APP, 4B-ORANG_APP
@@ -867,8 +878,10 @@ def policy_customer_balance(db, card_code: str) -> list:
         ' T0."PrjName", '
         ' SUM(T0."Sale")+SUM(T0."Tax")-SUM(T0."Return")+SUM(T0."Collection")+SUM(T0."DebitSwitching")-'
         ' SUM(T0."CreditSwitching")+SUM(T0."SwitchingDebit")-SUM(T0."SwitchingCredit")+SUM(T0."SecuredDebit")-'
-        ' SUM(T0."SecuredCredit")+SUM(T0."BulkDebit")-SUM(T0."BulkCredit")+SUM(T0."Opening") AS "Balance" '
+        ' SUM(T0."SecuredCredit")+SUM(T0."BulkDebit")-SUM(T0."BulkCredit")+SUM(T0."Opening") AS "Balance", '
+        ' CAST(MAX(T1."DocEntry") AS NVARCHAR(50)) AS "policy_doc_entry" '
         ' FROM "CUSTLEDG12" T0 '
+        ' LEFT JOIN "@PL1" T1 ON T1."U_proj" = T0."Project" '
         ' WHERE T0."CardCode" = ? '
         ' GROUP BY T0."CardCode", T0."CardName", T0."Project", T0."PrjName"'
     )
@@ -883,8 +896,10 @@ def policy_customer_balance_all(db, limit: int = 200) -> list:
         ' T0."PrjName", '
         ' SUM(T0."Sale")+SUM(T0."Tax")-SUM(T0."Return")+SUM(T0."Collection")+SUM(T0."DebitSwitching")-'
         ' SUM(T0."CreditSwitching")+SUM(T0."SwitchingDebit")-SUM(T0."SwitchingCredit")+SUM(T0."SecuredDebit")-'
-        ' SUM(T0."SecuredCredit")+SUM(T0."BulkDebit")-SUM(T0."BulkCredit")+SUM(T0."Opening") AS "Balance" '
+        ' SUM(T0."SecuredCredit")+SUM(T0."BulkDebit")-SUM(T0."BulkCredit")+SUM(T0."Opening") AS "Balance", '
+        ' CAST(MAX(T1."DocEntry") AS NVARCHAR(50)) AS "policy_doc_entry" '
         ' FROM "CUSTLEDG12" T0 '
+        ' LEFT JOIN "@PL1" T1 ON T1."U_proj" = T0."Project" '
         ' GROUP BY T0."CardCode", T0."CardName", T0."Project", T0."PrjName" '
         ' ORDER BY T0."CardCode" '
         ' LIMIT ' + str(int(limit or 200))
@@ -1482,8 +1497,8 @@ def item_lov(db, search: str | None = None) -> list:
     
     return _fetch_all(db, sql, tuple(params))
 
-def warehouse_for_item(db, item_code: str) -> list:
-    """Get warehouses for an item"""
+def warehouse_for_item(db, item_code: str, search: str | None = None) -> list:
+    """Get warehouses for an item with optional search"""
     sql = (
         'SELECT '
         ' T0."WhsCode", '
@@ -1492,18 +1507,27 @@ def warehouse_for_item(db, item_code: str) -> list:
         'INNER JOIN OWHS T1 ON T0."WhsCode" = T1."WhsCode" '
         'WHERE T0."ItemCode" = ? '
     )
-    return _fetch_all(db, sql, (item_code,))
+    params = [item_code]
+    if search:
+        sql += ' AND (T0."WhsCode" LIKE ? OR T1."WhsName" LIKE ?)'
+        search_param = f'%{search}%'
+        params.extend([search_param, search_param])
+    return _fetch_all(db, sql, tuple(params))
 
-def warehouses_all(db, limit: int = 500) -> list:
+def warehouses_all(db, limit: int = 500, search: str | None = None) -> list:
     sql = (
         'SELECT '
         ' T0."WhsCode", '
         ' T0."WhsName" '
         'FROM OWHS T0 '
-        'ORDER BY T0."WhsCode" '
-        'LIMIT ' + str(int(limit or 500))
     )
-    return _fetch_all(db, sql)
+    params = []
+    if search:
+        sql += ' WHERE T0."WhsCode" LIKE ? OR T0."WhsName" LIKE ? '
+        search_param = f'%{search}%'
+        params.extend([search_param, search_param])
+    sql += ' ORDER BY T0."WhsCode" LIMIT ' + str(int(limit or 500))
+    return _fetch_all(db, sql, tuple(params) if params else None)
 
 def sales_tax_codes(db) -> list:
     """Get sales tax codes"""
@@ -1775,9 +1799,15 @@ def policy_balance_by_customer(db, card_code: str = None) -> list:
         )
         return _fetch_all(db, sql)
 
-def crop_lov(db) -> list:
-    """Crop List of Values"""
+def crop_lov(db, search: str | None = None) -> list:
+    """Crop List of Values with optional search"""
     sql = 'SELECT T1."Code", T1."Name" FROM "@CROP1" T1'
+    
+    if search:
+        sql += ' WHERE T1."Code" LIKE ? OR T1."Name" LIKE ?'
+        search_param = f'%{search}%'
+        return _fetch_all(db, sql, (search_param, search_param))
+    
     return _fetch_all(db, sql)
 
 if __name__ == '__main__':
