@@ -44,8 +44,8 @@ class Command(BaseCommand):
 
         # Map schemas to companies
         schema_company_map = {
-            '4B-BIO_APP': '4B-BIO',
-            '4B-ORANG_APP': '4B-ORANG'
+            '4B-BIO_APP': '4B-BIO_APP',
+            '4B-ORANG_APP': '4B-ORANG_APP'
         }
         
         schemas = [specific_schema] if specific_schema else ['4B-BIO_APP', '4B-ORANG_APP']

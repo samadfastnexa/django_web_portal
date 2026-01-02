@@ -836,6 +836,18 @@ class CollectionAnalyticsView(APIView):
                         z['target'] = round(z['target'], 2)
                         z['achievement'] = round(z['achievement'], 2)
                 
+                # Calculate Grand Total
+                grand_total_target = 0.0
+                grand_total_achievement = 0.0
+                for r in final_list:
+                    grand_total_target += r['target']
+                    grand_total_achievement += r['achievement']
+                
+                grand_total = {
+                    'target': round(grand_total_target, 2),
+                    'achievement': round(grand_total_achievement, 2)
+                }
+                
                 # Pagination
                 page_param = (request.GET.get('page') or '1').strip()
                 page_size_param = (request.GET.get('page_size') or '').strip()
@@ -875,6 +887,7 @@ class CollectionAnalyticsView(APIView):
                 return Response({
                     'success': True,
                     'count': (paginator.count if paginator else len(final_list or [])),
+                    'totals': grand_total,
                     'data': paged_rows,
                     'pagination': pagination,
                     'filters': {
