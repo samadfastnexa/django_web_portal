@@ -42,6 +42,7 @@ from .views import (
     RoleViewSet,
     AdminUserStatusUpdateView,
     PermissionListAPIView,
+    user_territories_emp_api,
 )
 from .UserViewSet import UserViewSet
 
@@ -71,6 +72,15 @@ urlpatterns = [
     # Permission management
     # ----------------------
     path('permissions/', PermissionListAPIView.as_view(), name='permission-list'),
+
+    # ----------------------
+    # Sales staff helpers
+    # ----------------------
+    path(
+        'users/<int:user_id>/territories-emp/',
+        user_territories_emp_api,
+        name='user-territories-emp',
+    ),
 
     # ----------------------
     # Include all router ViewSets (Users, Roles)
