@@ -92,38 +92,118 @@ class DashboardOverviewView(APIView):
         territory_param = request.GET.get('territory', '').strip()
         in_millions = request.GET.get('in_millions', '').strip().lower() in ('true', '1', 'yes', 'y')
         
-        # Initialize response data
-        dashboard_data = {}
+        # Default collection window: 1 Nov 2025 - 30 Nov 2025 when no dates provided
+        if not start_date_param and not end_date_param:
+            start_date_param = '2025-11-01'
+            end_date_param = '2025-11-30'
         
-        # 1. Get Sales vs Achievement from SAP
+        # Fetch SAP sales data (includes company options mapping)
         sales_data = self._get_sales_vs_achievement(
-            emp_id_param, start_date_param, end_date_param, 
+            emp_id_param, start_date_param, end_date_param,
             company_param, region_param, zone_param, territory_param, in_millions
-        )
-        if sales_data:
-            dashboard_data.update(sales_data)
-        
-        # 1b. Get Collection vs Achievement from SAP
+        ) or {}
+        sales_list = sales_data.get('sales_vs_achievement', []) or []
+
+        # Fetch SAP collection data
         collection_data = self._get_collection_vs_achievement(
-            emp_id_param, start_date_param, end_date_param, 
+            emp_id_param, start_date_param, end_date_param,
             company_param, region_param, zone_param, territory_param, in_millions,
             group_by_date=False, ignore_emp_filter=False
-        )
-        if collection_data:
-            dashboard_data.update(collection_data)
-        
-        # 2. Get Farmer Statistics
-        farmer_stats = self._get_farmer_stats(user)
-        dashboard_data['farmer_stats'] = farmer_stats
-        
-        # 3. Get Today's Activities
-        activity_data = self._get_todays_activities(user)
-        dashboard_data.update(activity_data)
-        
-        # 4. Get Pending Sales Orders
-        dashboard_data['pending_sales_orders'] = self._get_pending_sales_orders(user)
-        
-        return Response(dashboard_data, status=status.HTTP_200_OK)
+        ) or {}
+        collection_list = collection_data.get('collection_vs_achievement', []) or []
+
+        # Aggregate sales into combined view
+        total_target = 0.0
+        total_achievement = 0.0
+        min_from = None
+        max_to = None
+        for rec in sales_list:
+            try:
+                total_target += float(rec.get('sales_target', 0) or 0)
+            except Exception:
+                pass
+            try:
+                total_achievement += float(rec.get('achievement', 0) or 0)
+            except Exception:
+                pass
+            f_ref = rec.get('from_date')
+            t_ref = rec.get('to_date')
+            if f_ref and (min_from is None or str(f_ref) < str(min_from)):
+                min_from = f_ref
+            if t_ref and (max_to is None or str(t_ref) > str(max_to)):
+                max_to = t_ref
+
+        # Aggregate collection into combined view
+        col_target = 0.0
+        col_achievement = 0.0
+        col_min_from = None
+        col_max_to = None
+        for rec in collection_list:
+            try:
+                col_target += float(rec.get('collection_target', 0) or 0)
+            except Exception:
+                pass
+            try:
+                col_achievement += float(rec.get('collection_achievement', 0) or 0)
+            except Exception:
+                pass
+            f_ref = rec.get('from_date')
+            t_ref = rec.get('to_date')
+            if f_ref and (col_min_from is None or str(f_ref) < str(col_min_from)):
+                col_min_from = f_ref
+            if t_ref and (col_max_to is None or str(t_ref) > str(col_max_to)):
+                col_max_to = t_ref
+
+        # Farmer statistics
+        farmer_stats = self._get_farmer_stats(user) or {}
+        total_farmers = farmer_stats.get('total_count', 0) or 0
+
+        # Today's activities
+        activity_data = self._get_todays_activities(user) or {}
+        visits_today = activity_data.get('visits_today', 0) or 0
+
+        # Pending sales orders
+        pending_sales = self._get_pending_sales_orders(user) or 0
+
+        # Build response to match requested structure
+        response_data = {
+            'todays_visits': {
+                'current_value': visits_today,
+                'last_month_value': 0
+            },
+            'pending_sales_orders': {
+                'current_value': pending_sales,
+                'last_month_value': 0
+            },
+            'total_farmers': {
+                'current_value': total_farmers,
+                'last_month_value': 0
+            },
+            'sales_combined': {
+                'EMPID': 0,
+                'TERRITORYID': 0,
+                'TERRITORYNAME': 'All Territories',
+                'SALES_TARGET': total_target,
+                'ACCHIVEMENT': total_achievement,
+                'F_REFDATE': min_from,
+                'T_REFDATE': max_to,
+                'SALES_TARGET_LAST_MONTH': 0,
+                'ACCHIVEMENT_LAST_MONTH': 0
+            },
+            'collection_combined': {
+                'TERRITORYNAME': 'All Territories',
+                'COLLECTION_TARGET': col_target,
+                'COLLECTION_ACHIEVEMENT': col_achievement,
+                'F_REFDATE': col_min_from,
+                'T_REFDATE': col_max_to,
+                'COLLECTION_TARGET_LAST_MONTH': 0,
+                'COLLECTION_ACHIEVEMENT_LAST_MONTH': 0
+            },
+            'company_options': sales_data.get('company_options') or collection_data.get('company_options', []),
+            'selected_company': sales_data.get('selected_company', company_param)
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
     
     def _get_sales_vs_achievement(self, emp_id, start_date, end_date, company, region, zone, territory, in_millions):
         """Get sales vs achievement data from SAP"""
@@ -158,20 +238,34 @@ class DashboardOverviewView(APIView):
             password = os.environ.get('HANA_PASSWORD', '')
             schema = os.environ.get('HANA_SCHEMA', '')
             
-            # Get company schema mapping
+            # Get company schema mapping / default schema, prefer SAP_COMPANY_DB over HANA_SCHEMA/FASTAPP
             try:
                 db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                mapping = {}
                 if db_setting:
-                    mapping = db_setting.value if isinstance(db_setting.value, dict) else {}
-                    if mapping:
-                        result['company_options'] = [
-                            {"key": k.strip(), "schema": str(v).strip()}
-                            for k, v in mapping.items()
-                        ]
-                        if company:
-                            schema = mapping.get(company.strip(), schema)
+                    if isinstance(db_setting.value, dict):
+                        mapping = db_setting.value
+                    else:
+                        raw_schema = str(db_setting.value or '').strip()
+                        if raw_schema:
+                            schema = raw_schema
+                if mapping:
+                    result['company_options'] = [
+                        {"key": k.strip(), "schema": str(v).strip()}
+                        for k, v in mapping.items()
+                    ]
+                    if company:
+                        mapped = mapping.get(company.strip())
+                        if mapped:
+                            schema = str(mapped).strip()
+                env_schema = os.environ.get('SAP_COMPANY_DB')
+                if env_schema and not mapping and not db_setting:
+                    schema = str(env_schema).strip()
+                if not schema:
+                    schema = '4B-BIO_APP'
             except Exception:
-                pass
+                if not schema:
+                    schema = '4B-BIO_APP'
             
             # Connect to HANA
             encrypt = str(os.environ.get('HANA_ENCRYPT', '')).strip().lower() in ('true', '1', 'yes')
