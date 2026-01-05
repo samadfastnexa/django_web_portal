@@ -545,6 +545,7 @@ def general_ledger_admin(request):
     Displays ledger with company selector, filters, grouping, and export.
     """
     error = None
+    warning = None
     result_rows = []
     accounts_grouped = []
     grand_total = None
@@ -580,8 +581,9 @@ def general_ledger_admin(request):
         trans_types = hana_queries.transaction_types_lov(conn)
         conn.close()
     except Exception as e:
-        logger.exception("Error loading dropdown data")
-        error = f"Error loading dropdown data: {str(e)}"
+        logger.warning(f"SAP connection unavailable for dropdown data: {str(e)}")
+        # Continue with empty dropdowns - user can still use manual input
+        warning = "⚠️ SAP server is currently unavailable. Dropdown options are disabled, but you can still enter filter values manually."
     
     # Fetch ledger data if filters applied
     if account_from or account_to or from_date or to_date or bp_code or project_code or trans_type:
@@ -661,6 +663,7 @@ def general_ledger_admin(request):
         'accounts_grouped': list(page_obj.object_list),
         'grand_total': grand_total,
         'error': error,
+        'warning': warning,
         'pagination': {
             'page': page_obj.number,
             'num_pages': paginator.num_pages,

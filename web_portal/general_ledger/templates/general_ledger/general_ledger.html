@@ -588,6 +588,13 @@
     </div>
   {% endif %}
 
+  <!-- Warning Display -->
+  {% if warning %}
+    <div class="error-alert" style="background: #fef3c7; border-left-color: #f59e0b;">
+      <strong>⚠️ Warning:</strong> {{ warning }}
+    </div>
+  {% endif %}
+
   <!-- Grand Total Summary (if data exists) -->
   {% if grand_total %}
     <div class="filter-card" style="margin-bottom: 20px;">
