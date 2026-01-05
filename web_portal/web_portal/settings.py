@@ -122,7 +122,7 @@ WSGI_APPLICATION = 'web_portal.wsgi.application'
 
 
 # Admin Site Configuration
-ADMIN_SITE_HEADER = "Agrigenie Tech "
+ADMIN_SITE_HEADER = "Agrigenie Tech"
 ADMIN_SITE_TITLE = "Agrigenie Tech"
 ADMIN_INDEX_TITLE = "Welcome to Agrigenie Tech Portal"
 
