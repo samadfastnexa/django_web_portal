@@ -3,14 +3,15 @@ from django.contrib.admin import AdminSite
 from django.utils import timezone
 from django.db.models import Sum, Count, F, ExpressionWrapper, DecimalField
 from datetime import timedelta
+from django.conf import settings
 import json
 
 
 class AnalyticsAdminSite(AdminSite):
     """Custom Admin Site with Analytics Dashboard"""
-    site_header = "Tarzan Admin Panel by Fastnexa"
-    site_title = "Tarzan Management Admin"
-    index_title = "Dashboard"
+    site_header = settings.ADMIN_SITE_HEADER
+    site_title = settings.ADMIN_SITE_TITLE
+    index_title = settings.ADMIN_INDEX_TITLE
     
     def index(self, request, extra_context=None):
         """

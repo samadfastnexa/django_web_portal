@@ -9,7 +9,8 @@ from .views import (
 
 urlpatterns = [
     # Main dashboard overview - aggregates all data
-    path('dashboard/overview/', DashboardOverviewView.as_view(), name='analytics-dashboard-overview'),
+   # path('dashboard/overview/', DashboardOverviewView.as_view(), name='analytics-dashboard-overview'),
+   path('overview/', DashboardOverviewView.as_view(), name='analytics-dashboard-overview'),
     
     # Detailed analytics endpoints
     path('sales/', SalesAnalyticsView.as_view(), name='analytics-sales'),

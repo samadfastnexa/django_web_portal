@@ -1937,6 +1937,9 @@ def hana_connect_admin(request):
         request,
         'admin/sap_integration/hana_connect.html',
         {
+            'site_header': settings.ADMIN_SITE_HEADER,
+            'site_title': settings.ADMIN_SITE_TITLE,
+            'index_title': settings.ADMIN_INDEX_TITLE,
             'result_json': result_json,
             'error': error,
             'diagnostics_json': diag_json,
