@@ -29,6 +29,17 @@ try:
 except ImportError:
     OPENPYXL_AVAILABLE = False
 
+try:
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
 from . import hana_queries
 from .utils import (
     get_hana_connection,
@@ -753,3 +764,162 @@ def export_ledger_csv(request):
     except Exception as e:
         logger.exception("Error exporting CSV")
         return HttpResponse(f"Error exporting CSV: {str(e)}", status=500)
+
+@staff_member_required
+def export_ledger_pdf(request):
+    """
+    Export general ledger to PDF format.
+    """
+    if not REPORTLAB_AVAILABLE:
+        return HttpResponse(
+            "PDF export requires reportlab. Install it with: pip install reportlab",
+            status=500
+        )
+    
+    try:
+        # Get filter parameters
+        company = request.GET.get('company', '4B-BIO')
+        account_from = (request.GET.get('account_from') or '').strip()
+        account_to = (request.GET.get('account_to') or '').strip()
+        from_date = (request.GET.get('from_date') or '').strip()
+        to_date = (request.GET.get('to_date') or '').strip()
+        bp_code = (request.GET.get('bp_code') or '').strip()
+        project_code = (request.GET.get('project_code') or '').strip()
+        trans_type = (request.GET.get('trans_type') or '').strip()
+        
+        # Fetch all data
+        conn = get_hana_connection(company)
+        transactions = hana_queries.general_ledger_report(
+            conn,
+            account_from=account_from or None,
+            account_to=account_to or None,
+            from_date=from_date or None,
+            to_date=to_date or None,
+            bp_code=bp_code or None,
+            project_code=project_code or None,
+            trans_type=trans_type or None
+        )
+        conn.close()
+        
+        # Create PDF response
+        response = HttpResponse(content_type='application/pdf')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        response['Content-Disposition'] = f'attachment; filename="general_ledger_{company}_{timestamp}.pdf"'
+        
+        # Create PDF document
+        pdf_buffer = BytesIO()
+        doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(letter), topMargin=0.5*inch, bottomMargin=0.5*inch)
+        
+        # Container for the 'Flowable' objects
+        elements = []
+        
+        # Add title
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor=colors.HexColor('#1e293b'),
+            spaceAfter=12,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
+        )
+        title = Paragraph(f'SAP B1 General Ledger Report - {company}', title_style)
+        elements.append(title)
+        
+        # Add filter info
+        filter_text = []
+        if account_from or account_to:
+            filter_text.append(f"Accounts: {account_from or '*'} to {account_to or '*'}")
+        if from_date:
+            filter_text.append(f"From: {from_date}")
+        if to_date:
+            filter_text.append(f"To: {to_date}")
+        if bp_code:
+            filter_text.append(f"BP: {bp_code}")
+        if project_code:
+            filter_text.append(f"Project: {project_code}")
+        
+        if filter_text:
+            filter_info = Paragraph(f"Filters: {', '.join(filter_text)}", styles['Normal'])
+            elements.append(filter_info)
+        
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Prepare table data
+        table_data = [
+            ['Date', 'Trans #', 'Account', 'BP Code', 'BP Name', 'Trans Type', 'Reference', 'Description', 'Debit', 'Credit', 'Project']
+        ]
+        
+        total_debit = 0
+        total_credit = 0
+        
+        for txn in transactions:
+            debit = float(txn.get('Debit', 0))
+            credit = float(txn.get('Credit', 0))
+            total_debit += debit
+            total_credit += credit
+            
+            table_data.append([
+                str(txn.get('PostingDate', ''))[:10],
+                str(txn.get('TransId', '')),
+                str(txn.get('Account', '')),
+                str(txn.get('BPCode', '')),
+                str(txn.get('BPName', '')),
+                str(txn.get('TransType', '')),
+                str(txn.get('Reference1', '')),
+                str(txn.get('Description', '')),
+                f"{debit:.2f}",
+                f"{credit:.2f}",
+                str(txn.get('ProjectCode', '')),
+            ])
+        
+        # Add totals row
+        if table_data:
+            table_data.append([
+                '', '', '', '', '', '', '', 'TOTAL',
+                f"{total_debit:.2f}", f"{total_credit:.2f}", ''
+            ])
+        
+        # Create table
+        table = Table(table_data, colWidths=[0.75*inch]*11)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (8, 1), (9, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#dbeafe')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f8fafc')]),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e5e7eb')),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        
+        elements.append(table)
+        
+        # Add footer with timestamp
+        elements.append(Spacer(1, 0.2*inch))
+        footer = Paragraph(
+            f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            ParagraphStyle('Footer', parent=styles['Normal'], fontSize=9, textColor=colors.grey)
+        )
+        elements.append(footer)
+        
+        # Build PDF
+        doc.build(elements)
+        
+        # Return PDF
+        pdf_buffer.seek(0)
+        response.write(pdf_buffer.getvalue())
+        return response
+        
+    except Exception as e:
+        logger.exception("Error exporting PDF")
+        return HttpResponse(f"Error exporting PDF: {str(e)}", status=500)

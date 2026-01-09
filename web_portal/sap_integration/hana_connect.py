@@ -797,46 +797,95 @@ def table_columns(db, schema: str, table: str) -> list:
             out.append(v)
     return out
 
-def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None) -> list:
+def get_item_groups(db) -> list:
     """
-    Fetch products catalog with image URLs based on database name.
-    Images are stored in media/product_images/{DB_NAME}/{ItemCode}.jpg
+    Fetch all available item groups for filtering.
     
     Args:
         db: Database connection object
-        schema_name: Schema name (e.g., '4B-BIO_APP', '4B-ORANG_APP')
-        search: Search ItemCode, ItemName, GenericName, or BrandName
-        item_group: Filter by item group code
+    
+    Returns:
+        List of dictionaries with ItmsGrpCod, ItmsGrpNam, and product count
     """
     sql = (
         'SELECT '
         ' T1."ItmsGrpCod", '
         ' SUBSTR(T1."ItmsGrpNam", 4) AS "ItmsGrpNam", '
-        ' T0."U_PCN" AS "Product_Catalog_Code", '
-        ' T0."ItemCode", '
-        ' T0."ItemName", '
-        ' T0."U_GenericName", '
-        ' T0."U_BrandName", '
-        ' T0."SalPackMsr", '
-        ' PI."FileName" || \'.\' || PI."FileExt" AS "Product_Image", '
-        ' PU."FileName" || \'.\' || PU."FileExt" AS "Product_Description_Urdu" '
+        ' COUNT(T0."ItemCode") AS "ProductCount" '
         'FROM OITM T0 '
         'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
-        'LEFT JOIN ATC1 PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."U_IMG_C" = \'Product Image\' '
-        'LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."U_IMG_C" = \'Product Description Urdu\' '
+        'WHERE T0."Series" = \'72\' '
+        'AND T0."validFor" = \'Y\' '
+        'GROUP BY T1."ItmsGrpCod", T1."ItmsGrpNam" '
+        'ORDER BY T1."ItmsGrpNam"'
+    )
+    return _fetch_all(db, sql, None)
+
+def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None, item_groups: list | None = None, brand: str | None = None) -> list:
+    """
+    Fetch products catalog with image URLs based on database name.
+    Images are stored in media/product_images/{DB_NAME}/{FileName}.{FileExt}
+    
+    Args:
+        db: Database connection object
+        schema_name: Schema name (e.g., '4B-BIO_APP', '4B-ORANG_APP')
+        search: Search ItemCode, ItemName
+        item_group: Filter by single item group code (deprecated, use item_groups)
+        item_groups: Filter by multiple item group codes (comma-separated or list)
+        brand: Filter by brand name (not available in this schema)
+    """
+    sql = (
+        'SELECT '
+        ' T1."ItmsGrpCod", '
+        ' SUBSTR(T1."ItmsGrpNam", 4) AS "ItmsGrpNam", '
+        ' T0."ItemCode", '
+        ' T0."ItemName", '
+        ' T0."SalPackMsr", '
+        ' T0."InvntryUom", '
+        ' PI."FileName" AS "Product_Image_Name", '
+        ' PI."FileExt" AS "Product_Image_Ext", '
+        ' PU."FileName" AS "Product_Urdu_Name", '
+        ' PU."FileExt" AS "Product_Urdu_Ext" '
+        'FROM OITM T0 '
+        'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
+        'LEFT JOIN ATC1 PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."Line" = 0 '
+        'LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."Line" = 1 '
         'WHERE T0."Series" = \'72\' '
         'AND T0."validFor" = \'Y\' '
     )
     params = []
-    if item_group:
+    
+    # Handle multi-category filtering
+    if item_groups:
+        # Parse item_groups if it's a string (comma-separated)
+        if isinstance(item_groups, str):
+            groups_list = [g.strip() for g in item_groups.split(',') if g.strip()]
+        else:
+            groups_list = item_groups
+        
+        if groups_list:
+            placeholders = ','.join(['?' for _ in groups_list])
+            sql += f' AND T0."ItmsGrpCod" IN ({placeholders})'
+            params.extend(groups_list)
+    elif item_group:
+        # Backward compatibility
         sql += ' AND T0."ItmsGrpCod" = ?'
         params.append(item_group)
+    
+    # Brand filter removed - U_BrandName column may not exist
+    # if brand:
+    #     sql += ' AND T0."U_BrandName" LIKE ?'
+    #     params.append(f'%{brand}%')
+    
+    # Full-text search across standard fields only (ItemCode and ItemName)
     if search:
-        sql += ' AND (T0."ItemCode" LIKE ? OR T0."ItemName" LIKE ? OR T0."U_GenericName" LIKE ? OR T0."U_BrandName" LIKE ?)'
+        sql += ' AND (T0."ItemCode" LIKE ? OR T0."ItemName" LIKE ?)'
         search_param = f'%{search}%'
-        params.extend([search_param, search_param, search_param, search_param])
+        params.extend([search_param, search_param])
+    
     sql += ' ORDER BY T1."ItmsGrpCod", T0."ItemCode"'
     
+    # Execute query
     results = _fetch_all(db, sql, tuple(params) if params else None)
     
     # Extract database name from schema name string
@@ -850,20 +899,22 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     else:
         folder_name = 'default'
     
-    # Add image URLs to each product using the actual filenames from SAP
-    # Note: Full URLs with base domain will be added in the view layer
+    # Add image URLs to each product using actual filenames from SAP attachments
+    # Images stored in media/product_images/{folder_name}/{FileName}.{FileExt}
     for row in results:
-        # Product Image URL (from SAP's Product_Image field)
-        product_image_filename = row.get('Product_Image')
-        if product_image_filename:
-            row['product_image_url'] = f'/media/product_images/{folder_name}/{product_image_filename}'
+        # Product Image URL (from attachment Line 0)
+        img_name = row.get('Product_Image_Name')
+        img_ext = row.get('Product_Image_Ext')
+        if img_name and img_ext:
+            row['product_image_url'] = f'/media/product_images/{folder_name}/{img_name}.{img_ext}'
         else:
             row['product_image_url'] = None
         
-        # Product Description Urdu Image URL (from SAP's Product_Description_Urdu field)
-        urdu_image_filename = row.get('Product_Description_Urdu')
-        if urdu_image_filename:
-            row['product_description_urdu_url'] = f'/media/product_images/{folder_name}/{urdu_image_filename}'
+        # Product Description Urdu URL (from attachment Line 1)
+        urdu_name = row.get('Product_Urdu_Name')
+        urdu_ext = row.get('Product_Urdu_Ext')
+        if urdu_name and urdu_ext:
+            row['product_description_urdu_url'] = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
         else:
             row['product_description_urdu_url'] = None
     

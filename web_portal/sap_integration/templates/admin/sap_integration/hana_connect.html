@@ -2228,7 +2228,7 @@ textContent=count+' active'}
         .product-card{background:white;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;transition:all 0.3s ease;cursor:pointer}
         .product-card:hover{box-shadow:0 10px 30px rgba(0,0,0,0.1);transform:translateY(-4px);border-color:#0ea5e9}
         .product-image-container{width:100%;height:200px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-        .product-image{width:100%;height:100%;object-fit:cover}
+        .product-image{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
         .product-image-placeholder{color:#cbd5e1;font-size:48px}
         .product-badge{position:absolute;top:10px;right:10px;background:rgba(14,165,233,0.9);color:white;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700}
         .product-info{padding:16px}
@@ -2243,6 +2243,10 @@ textContent=count+' active'}
         .no-products{text-align:center;padding:60px 20px;color:#64748b}
         .no-products-icon{font-size:64px;margin-bottom:16px;opacity:0.5}
       </style>
+      
+      <!-- Product Catalog Comprehensive Filters -->
+      {% include "admin/sap_integration/product_catalog_filters.html" %}
+      
       <div class="products-header">
         <h3>🛍️ Product Catalog</h3>
         <div class="products-header-actions">
@@ -2279,22 +2283,16 @@ textContent=count+' active'}
             <div class="product-info">
               <div class="product-code">{{ row.ItemCode }}</div>
               <div class="product-name">{{ row.ItemName }}</div>
-              {% if row.U_GenericName %}
-                <div class="product-generic">{{ row.U_GenericName }}</div>
-              {% endif %}
               <div class="product-details">
                 <div class="product-detail">
                   <span class="product-detail-label">Pack Size</span>
                   <span class="product-detail-value">{{ row.SalPackMsr|default:"N/A" }}</span>
                 </div>
                 <div class="product-detail">
-                  <span class="product-detail-label">Catalog</span>
-                  <span class="product-detail-value">{{ row.Product_Catalog_Name|default:"N/A" }}</span>
+                  <span class="product-detail-label">Unit</span>
+                  <span class="product-detail-value">{{ row.InvntryUom|default:"N/A" }}</span>
                 </div>
               </div>
-              {% if row.U_BrandName %}
-                <div class="product-brand">{{ row.U_BrandName }}</div>
-              {% endif %}
             </div>
           </div>
         {% endfor %}
