@@ -71,12 +71,14 @@ class FarmerFilter(django_filters.FilterSet):
             Q(last_name__icontains=value) |
             Q(father_name__icontains=value) |
             Q(primary_phone__icontains=value) |
+            Q(secondary_phone__icontains=value) |
             Q(email__icontains=value) |
             Q(village__icontains=value) |
             Q(tehsil__icontains=value) |
             Q(district__icontains=value) |
             Q(province__icontains=value) |
-            Q(national_id__icontains=value)
+            Q(cnic__icontains=value) |
+            Q(name__icontains=value)
         )
     
     def filter_created_by(self, queryset, name, value):

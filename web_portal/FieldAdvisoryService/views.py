@@ -9,13 +9,13 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.admin.views.decorators import staff_member_required
 
 from .models import Dealer, MeetingSchedule, SalesOrder
-from .serializers import DealerSerializer, DealerRequestSerializer,MeetingScheduleSerializer, SalesOrderSerializer
+from .serializers import DealerSerializer, DealerRequestSerializer,MeetingScheduleSerializer, SalesOrderSerializer, SalesOrderFormSerializer
 from .serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer,DealerRequestSerializer,CompanyNestedSerializer,RegionNestedSerializer,ZoneNestedSerializer,TerritoryNestedSerializer
 from .models import DealerRequest
 from .models import Company, Region, Zone, Territory
-from drf_yasg.utils import swagger_auto_schema
+from drf_yasg.utils import swagger_auto_schema, no_body
 from .permissions import IsAdminOrReadOnly
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from accounts.permissions import HasRolePermission
 from rest_framework import viewsets
@@ -223,9 +223,17 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing Sales Orders.
     Supports list, retrieve, create, update, partial update, and delete.
+    Accepts form-data format only.
     """
     queryset = SalesOrder.objects.all()
     serializer_class = SalesOrderSerializer
+    parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated, HasRolePermission]
+    
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return SalesOrderFormSerializer
+        return SalesOrderSerializer
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all sales orders with their status, dealer, and meeting schedule information.",
@@ -276,33 +284,105 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="""
-        Create a new sales order linking a dealer with a meeting schedule.
+        Create a new sales order with header fields and line items using form-data.
         
-        **All fields are optional** to make API easy for mobile developers.
-        Provide only the fields you need - the system will handle defaults.
+        **To add multiple line items:**
+        - Provide arrays for item fields (item_code, quantity, unit_price, etc.)
+        - Each array index represents one line item
+        - Example: item_code[0]="SEED-001", quantity[0]=10, item_code[1]="FERT-001", quantity[1]=5
         
-        Common fields for mobile apps:
-        - staff: User ID creating the order
-        - dealer: Dealer ID (optional)
-        - schedule: Meeting schedule ID (optional)
-        - card_code: Customer code (BP Code)
-        - card_name: Customer name
-        - comments: Order remarks
-        
-        All SAP-related fields (doc_date, doc_due_date, series, etc.) are optional.
+        The arrays will be automatically zipped together to create multiple line items.
         """,
-        request_body=SalesOrderSerializer,
+        request_body=no_body,
+        manual_parameters=[
+            # Header fields
+            openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
+            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
+            openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
+            openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
+            openapi.Parameter('series', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='SAP series'),
+            openapi.Parameter('doc_type', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Document type'),
+            openapi.Parameter('doc_date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=False, description='Document date (YYYY-MM-DD)'),
+            openapi.Parameter('doc_due_date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=False, description='Document due date (YYYY-MM-DD)'),
+            openapi.Parameter('tax_date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=False, description='Tax date (YYYY-MM-DD)'),
+            openapi.Parameter('card_code', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Customer card code'),
+            openapi.Parameter('card_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Customer name'),
+            openapi.Parameter('contact_person_code', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Contact person code'),
+            openapi.Parameter('federal_tax_id', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Federal tax ID'),
+            openapi.Parameter('address', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Customer address'),
+            openapi.Parameter('doc_currency', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Document currency'),
+            openapi.Parameter('doc_rate', openapi.IN_FORM, type=openapi.TYPE_NUMBER, required=False, description='Document exchange rate'),
+            openapi.Parameter('comments', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order comments'),
+            openapi.Parameter('u_sotyp', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Sales order type UDF'),
+            openapi.Parameter('u_usid', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='User ID UDF'),
+            openapi.Parameter('u_s_card_code', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Secondary card code UDF'),
+            openapi.Parameter('u_s_card_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Secondary card name UDF'),
+            
+            # Line item array fields - add multiple items
+            openapi.Parameter('item_code', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING), 
+                            required=False, description='Array of item codes. Example: ["SEED-001", "FERT-001"]'),
+            openapi.Parameter('item_description', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of item descriptions. Example: ["Corn Seed", "Fertilizer"]'),
+            openapi.Parameter('quantity', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of quantities. Example: [10, 5]'),
+            openapi.Parameter('unit_price', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of unit prices. Example: [2500, 1500]'),
+            openapi.Parameter('discount_percent', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of discount percentages. Example: [0, 5]'),
+            openapi.Parameter('warehouse_code', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of warehouse codes. Example: ["WH01", "WH01"]'),
+            openapi.Parameter('vat_group', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of VAT groups. Example: ["AT1", "AT1"]'),
+            openapi.Parameter('u_crop', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of crop codes. Example: ["CORN", "WHEAT"]'),
+        ],
         responses={
-            201: 'Sales order created successfully',
+            201: openapi.Response(
+                description='Sales order created successfully',
+                examples={
+                    'application/json': {
+                        'id': 1,
+                        'staff': 1,
+                        'dealer': 2,
+                        'status': 'pending',
+                        'card_code': 'C20000',
+                        'card_name': 'ABC Traders',
+                        'document_lines': [
+                            {
+                                'id': 1,
+                                'item_code': 'ITEM-001',
+                                'quantity': 10,
+                                'unit_price': 2500
+                            }
+                        ]
+                    }
+                }
+            ),
             400: 'Bad Request - Invalid data provided'
         },
         tags=["15. SalesOrders"]
     )
     def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
+        # Use SalesOrderFormSerializer for input validation
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
+        
+        # Use SalesOrderSerializer for output to include document_lines
+        output_serializer = SalesOrderSerializer(instance)
+        headers = self.get_success_headers(output_serializer.data)
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @swagger_auto_schema(
-        operation_description="Update all details of an existing sales order (full update).",
+        operation_description="Update all details of an existing sales order (full update) using form-data.",
+        request_body=no_body,
+        manual_parameters=[
+            openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
+            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
+            openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
+            openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
+            openapi.Parameter('document_lines', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='JSON string array of line items'),
+        ],
         responses={
             200: 'Sales order updated successfully',
             404: 'Sales order not found',
@@ -315,19 +395,19 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="""
-        Update specific fields of a sales order (PATCH method).
+        Update specific fields of a sales order (PATCH method) using form-data.
         
         **All fields are optional** - send only the fields you want to update.
         Typically used for status changes, adding comments, or updating SAP posting information.
-        
-        Example: Update just the status
-        ```json
-        {
-            "status": "entertained"
-        }
-        ```
         """,
-        request_body=SalesOrderSerializer,
+        request_body=no_body,
+        manual_parameters=[
+            openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
+            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
+            openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
+            openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
+            openapi.Parameter('document_lines', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='JSON string array of line items'),
+        ],
         responses={
             200: 'Sales order updated successfully',
             404: 'Sales order not found',

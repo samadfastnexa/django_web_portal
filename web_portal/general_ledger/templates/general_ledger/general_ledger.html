@@ -450,6 +450,16 @@
   .pagination-size-form button:hover {
     background: #059669;
   }
+
+  /* Button Color Variants */
+  .btn-danger {
+    background: #dc2626;
+    color: #fff;
+  }
+
+  .btn-danger:hover {
+    background: #991b1b;
+  }
 </style>
 {% endblock %}
 
@@ -577,6 +587,7 @@
       <a href="?company={{ selected_db_key }}" class="btn btn-secondary">🔄 Clear Filters</a>
       {% if accounts_grouped %}
         <a href="{% url 'export_ledger_csv' %}?{{ request.GET.urlencode }}" class="btn btn-success">📥 Export CSV</a>
+        <a href="{% url 'export_ledger_pdf' %}?{{ request.GET.urlencode }}" class="btn btn-danger">📄 Export PDF</a>
       {% endif %}
     </div>
   </form>

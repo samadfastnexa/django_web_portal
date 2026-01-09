@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Dealer, MeetingSchedule, MeetingScheduleAttendance, SalesOrder, SalesOrderAttachment,DealerRequest
+from .models import Dealer, MeetingSchedule, MeetingScheduleAttendance, SalesOrder, SalesOrderLine, SalesOrderAttachment,DealerRequest
 import re
 from .models import Company, Region, Zone, Territory
 from rest_framework import viewsets
@@ -342,8 +342,142 @@ class SalesOrderAttachmentSerializer(serializers.ModelSerializer):
         model = SalesOrderAttachment
         fields = '__all__'
 
+
+class SalesOrderLineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SalesOrderLine
+        exclude = ('sales_order',)
+
+
+class SalesOrderLineInputSerializer(serializers.Serializer):
+    """Serializer for individual sales order line items in form-data"""
+    line_num = serializers.IntegerField(required=False)
+    item_code = serializers.CharField(required=False, allow_blank=True)
+    item_description = serializers.CharField(required=False, allow_blank=True)
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, default=0)
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, default=0)
+    discount_percent = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, default=0)
+    warehouse_code = serializers.CharField(required=False, allow_blank=True)
+    vat_group = serializers.CharField(required=False, allow_blank=True)
+    tax_percentage_per_row = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, default=0)
+    units_of_measurment = serializers.IntegerField(required=False, default=1)
+    uom_entry = serializers.IntegerField(required=False, default=0)
+    measure_unit = serializers.CharField(required=False, allow_blank=True)
+    uom_code = serializers.CharField(required=False, allow_blank=True)
+    project_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_sd = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, default=0)
+    u_ad = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, default=0)
+    u_exd = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, default=0)
+    u_zerop = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, default=0)
+    u_pl = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_bp = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_policy = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_focitem = serializers.CharField(required=False, allow_blank=True, default='No')
+    u_crop = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class SalesOrderFormSerializer(serializers.ModelSerializer):
+    """Form-data serializer with separate array fields for line items"""
+    
+    # Make all fields optional
+    staff = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    schedule = serializers.PrimaryKeyRelatedField(queryset=MeetingSchedule.objects.all(), required=False, allow_null=True)
+    dealer = serializers.PrimaryKeyRelatedField(queryset=Dealer.objects.all(), required=False, allow_null=True)
+    status = serializers.CharField(required=False, allow_blank=True)
+    
+    # SAP fields - all optional
+    series = serializers.IntegerField(required=False, allow_null=True)
+    doc_type = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    doc_date = serializers.DateField(required=False, allow_null=True)
+    doc_due_date = serializers.DateField(required=False, allow_null=True)
+    tax_date = serializers.DateField(required=False, allow_null=True)
+    
+    card_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    card_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    contact_person_code = serializers.IntegerField(required=False, allow_null=True)
+    federal_tax_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    address = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+    doc_currency = serializers.CharField(required=False, allow_blank=True)
+    doc_rate = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, allow_null=True)
+    
+    comments = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+    # UDF fields
+    u_sotyp = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_usid = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_s_card_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    u_s_card_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+    # Line item array fields - add multiple items by providing arrays
+    item_code = FlexibleListField(child=serializers.CharField(), write_only=True, required=False, help_text='Array of item codes')
+    item_description = FlexibleListField(child=serializers.CharField(), write_only=True, required=False, help_text='Array of item descriptions')
+    quantity = FlexibleListField(child=serializers.DecimalField(max_digits=10, decimal_places=2), write_only=True, required=False, help_text='Array of quantities')
+    unit_price = FlexibleListField(child=serializers.DecimalField(max_digits=10, decimal_places=2), write_only=True, required=False, help_text='Array of unit prices')
+    discount_percent = FlexibleListField(child=serializers.DecimalField(max_digits=5, decimal_places=2), write_only=True, required=False, help_text='Array of discount percentages')
+    warehouse_code = FlexibleListField(child=serializers.CharField(), write_only=True, required=False, help_text='Array of warehouse codes')
+    vat_group = FlexibleListField(child=serializers.CharField(), write_only=True, required=False, help_text='Array of VAT groups')
+    u_crop = FlexibleListField(child=serializers.CharField(), write_only=True, required=False, help_text='Array of crop codes')
+
+    class Meta:
+        model = SalesOrder
+        fields = ['id', 'staff', 'schedule', 'dealer', 'status', 'series', 'doc_type', 
+                  'doc_date', 'doc_due_date', 'tax_date', 'card_code', 'card_name',
+                  'contact_person_code', 'federal_tax_id', 'address', 'doc_currency',
+                  'doc_rate', 'comments', 'u_sotyp', 'u_usid', 'u_s_card_code',
+                  'u_s_card_name', 'created_at',
+                  'item_code', 'item_description', 'quantity', 'unit_price', 
+                  'discount_percent', 'warehouse_code', 'vat_group', 'u_crop']
+        read_only_fields = ['id', 'created_at']
+    
+    def create(self, validated_data):
+        from .models import SalesOrderLine
+        
+        # Extract line item arrays
+        item_codes = validated_data.pop('item_code', [])
+        item_descriptions = validated_data.pop('item_description', [])
+        quantities = validated_data.pop('quantity', [])
+        unit_prices = validated_data.pop('unit_price', [])
+        discount_percents = validated_data.pop('discount_percent', [])
+        warehouse_codes = validated_data.pop('warehouse_code', [])
+        vat_groups = validated_data.pop('vat_group', [])
+        u_crops = validated_data.pop('u_crop', [])
+        
+        # Create sales order
+        order = SalesOrder.objects.create(**validated_data)
+        
+        # Get the maximum length of arrays to handle all items
+        max_length = max(
+            len(item_codes), len(item_descriptions), len(quantities), 
+            len(unit_prices), len(discount_percents), len(warehouse_codes),
+            len(vat_groups), len(u_crops)
+        ) if any([item_codes, item_descriptions, quantities, unit_prices, discount_percents, warehouse_codes, vat_groups, u_crops]) else 0
+        
+        # Create line items by zipping arrays together
+        for idx in range(max_length):
+            SalesOrderLine.objects.create(
+                sales_order=order,
+                line_num=idx,
+                item_code=item_codes[idx] if idx < len(item_codes) else '',
+                item_description=item_descriptions[idx] if idx < len(item_descriptions) else '',
+                quantity=quantities[idx] if idx < len(quantities) else 0,
+                unit_price=unit_prices[idx] if idx < len(unit_prices) else 0,
+                discount_percent=discount_percents[idx] if idx < len(discount_percents) else 0,
+                warehouse_code=warehouse_codes[idx] if idx < len(warehouse_codes) else '',
+                vat_group=vat_groups[idx] if idx < len(vat_groups) else '',
+                u_crop=u_crops[idx] if idx < len(u_crops) else None,
+                tax_percentage_per_row=0,
+                units_of_measurment=1,
+                uom_entry=0,
+                u_focitem='No'
+            )
+        
+        return order
+
+
 class SalesOrderSerializer(serializers.ModelSerializer):
     attachments = SalesOrderAttachmentSerializer(many=True, read_only=True)
+    document_lines = SalesOrderLineSerializer(many=True, required=False)
     
     # Make all fields optional for easier mobile API usage
     staff = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
@@ -384,6 +518,60 @@ class SalesOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = SalesOrder
         fields = '__all__'
+    
+    def to_internal_value(self, data):
+        # Handle document_lines when it comes as JSON string from form data
+        import json
+        if 'document_lines' in data and isinstance(data['document_lines'], str):
+            try:
+                data = data.copy() if hasattr(data, 'copy') else dict(data)
+                data['document_lines'] = json.loads(data['document_lines'])
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return super().to_internal_value(data)
+
+    def create(self, validated_data):
+        lines_data = validated_data.pop('document_lines', [])
+        order = super().create(validated_data)
+        self._create_lines(order, lines_data)
+        return order
+
+    def update(self, instance, validated_data):
+        lines_data = validated_data.pop('document_lines', None)
+        order = super().update(instance, validated_data)
+        if lines_data is not None:
+            order.document_lines.all().delete()
+            self._create_lines(order, lines_data)
+        return order
+
+    def _create_lines(self, order, lines_data):
+        for idx, line in enumerate(lines_data or []):
+            SalesOrderLine.objects.create(
+                sales_order=order,
+                line_num=line.get('line_num', idx),
+                item_code=line.get('item_code', ''),
+                item_description=line.get('item_description', ''),
+                quantity=line.get('quantity', 0),
+                unit_price=line.get('unit_price', 0),
+                discount_percent=line.get('discount_percent', 0),
+                warehouse_code=line.get('warehouse_code', ''),
+                vat_group=line.get('vat_group', ''),
+                tax_percentage_per_row=line.get('tax_percentage_per_row', 0),
+                units_of_measurment=line.get('units_of_measurment', 1),
+                uom_entry=line.get('uom_entry', 0),
+                measure_unit=line.get('measure_unit', ''),
+                uom_code=line.get('uom_code', ''),
+                project_code=line.get('project_code'),
+                u_sd=line.get('u_sd', 0),
+                u_ad=line.get('u_ad', 0),
+                u_exd=line.get('u_exd', 0),
+                u_zerop=line.get('u_zerop', 0),
+                u_pl=line.get('u_pl'),
+                u_bp=line.get('u_bp'),
+                u_policy=line.get('u_policy'),
+                u_focitem=line.get('u_focitem', 'No'),
+                u_crop=line.get('u_crop'),
+            )
 
 
 class DealerRequestSerializer(serializers.ModelSerializer):

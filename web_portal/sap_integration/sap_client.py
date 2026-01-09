@@ -56,6 +56,9 @@ class SAPClient:
     _global_session_time = None
     _lock = threading.Lock()
     _route_id = None
+    _policies_cache = None
+    _policies_cache_time = None
+    _POLICIES_CACHE_TTL = 300  # Cache policies for 5 minutes
 
     def __init__(self, company_db_key=None):
         try:
@@ -157,19 +160,78 @@ class SAPClient:
             self.host = (os.environ.get('SAP_B1S_HOST') or "fourbtest.vdc.services").strip()
             self.port = int((os.environ.get('SAP_B1S_PORT') or 50000))
             self.base_path = (os.environ.get('SAP_B1S_BASE_PATH') or "/b1s/v1").strip()
-
-            self.ssl_context = ssl.create_default_context()
-            self.ssl_context.check_hostname = False
-            self.ssl_context.verify_mode = ssl.CERT_NONE
+            
+            # Check if we should use HTTP instead of HTTPS (to bypass SSL issues)
+            self.use_http = os.environ.get('SAP_USE_HTTP', 'false').lower() in ('true', '1', 'yes')
+            
+            if not self.use_http:
+                # Create SSL context with maximum compatibility for SAP B1 Service Layer
+                # Use _create_unverified_context() instead of create_default_context()
+                # because we need to disable certificate verification for self-signed certs
+                try:
+                    self.ssl_context = ssl._create_unverified_context()
+                except AttributeError:
+                    # Fallback for Python versions without _create_unverified_context
+                    self.ssl_context = ssl.create_default_context()
+                    self.ssl_context.check_hostname = False
+                    self.ssl_context.verify_mode = ssl.CERT_NONE
+                
+                self.ssl_context.check_hostname = False
+                self.ssl_context.verify_mode = ssl.CERT_NONE
+                
+                # Configure TLS version support (SAP may use older TLS)
+                try:
+                    # Try to set minimum TLS version for compatibility with legacy SAP systems
+                    if hasattr(ssl, 'TLSVersion'):
+                        try:
+                            self.ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+                        except:
+                            # Fallback to TLSv1 if TLSv1.2 causes issues
+                            try:
+                                self.ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+                            except:
+                                pass
+                    else:
+                        # Fallback for older Python versions - disable TLS restrictions
+                        self.ssl_context.options &= ~ssl.OP_NO_TLSv1
+                        self.ssl_context.options &= ~ssl.OP_NO_TLSv1_1
+                except (AttributeError, ValueError):
+                    pass
+                
+                # Set cipher suite to support older encryption (required for some SAP systems)
+                try:
+                    # First try a compatible cipher suite
+                    self.ssl_context.set_ciphers('ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-GCM-SHA256')
+                except ssl.SSLError:
+                    try:
+                        # Fallback to broader cipher set
+                        self.ssl_context.set_ciphers('DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK')
+                    except ssl.SSLError:
+                        try:
+                            # Last resort: use all ciphers
+                            self.ssl_context.set_ciphers('ALL')
+                        except ssl.SSLError:
+                            # Give up on cipher configuration
+                            pass
+            else:
+                self.ssl_context = None
         except Exception as e:
             raise ImproperlyConfigured(f'SAP configuration error: {e}')
 
     def _get_connection(self):
-        return http.client.HTTPSConnection(
-            self.host, self.port,
-            context=self.ssl_context,
-            timeout=30
-        )
+        if self.use_http:
+            # Use HTTP without SSL
+            return http.client.HTTPConnection(
+                self.host, self.port,
+                timeout=30
+            )
+        else:
+            # Use HTTPS with SSL
+            return http.client.HTTPSConnection(
+                self.host, self.port,
+                context=self.ssl_context,
+                timeout=30
+            )
 
     def _close_connection(self, conn):
         try:
@@ -199,7 +261,8 @@ class SAPClient:
 
     def _login(self):
         """Perform login and return a new session ID."""
-        self._preflight_route()
+        # Skip preflight to speed up login - SAP will handle routing automatically
+        # self._preflight_route()  # Disabled for performance
         login_data = {
             'UserName': self.username,
             'Password': self.password,
@@ -259,6 +322,36 @@ class SAPClient:
 
         try:
             return do_login(login_data, self.base_path)
+        except ssl.SSLError as ssl_err:
+            import logging
+            logger = logging.getLogger(__name__)
+            error_str = str(ssl_err)
+            
+            logger.error(f"[SAP SSL ERROR during login] {error_str}")
+            
+            # If it's an internal error from SAP, retry with exponential backoff
+            if 'TLSV1_ALERT_INTERNAL_ERROR' in error_str or 'alert internal error' in error_str:
+                max_retries = 3
+                for attempt in range(1, max_retries):
+                    wait_time = 2 ** (attempt - 1)  # 1s, 2s
+                    logger.info(f"[SAP LOGIN] SSL error - retrying in {wait_time}s (attempt {attempt}/{max_retries})...")
+                    time.sleep(wait_time)
+                    try:
+                        return do_login(login_data, self.base_path)
+                    except ssl.SSLError:
+                        if attempt == max_retries - 1:
+                            # Last attempt failed
+                            logger.error(f"[SAP LOGIN] Max SSL retries ({max_retries}) reached. Giving up.")
+                            raise Exception(
+                                f"SAP Server SSL Internal Error - The SAP B1 Service Layer at {self.host}:{self.port} is experiencing persistent SSL issues. "
+                                f"Attempted {max_retries} times with exponential backoff. "
+                                f"Please check if SAP B1 Service Layer is running properly or contact your SAP administrator."
+                            )
+                        continue
+                    except Exception as other_err:
+                        # Non-SSL error, propagate immediately
+                        raise other_err
+            raise ssl_err
         except Exception as e:
             msg = str(e)
             try:
@@ -315,13 +408,14 @@ class SAPClient:
                 self._global_session_time = time.time()
         return self._global_session_id
 
-    def _make_request(self, method, path, body='', retry=True):
+    def _make_request(self, method, path, body='', retry=True, attempt=0, max_ssl_retries=3):
         cookie = f"B1SESSION={self.get_session_id()}"
         if self._route_id:
             cookie = cookie + f"; ROUTEID={self._route_id}"
         headers = {'Cookie': cookie, 'Accept': 'application/json'}
         if method in ('POST', 'PUT', 'PATCH'):
             headers['Content-Type'] = 'application/json'
+        
         conn = self._get_connection()
         try:
             conn.request(method, path, body, headers)
@@ -377,7 +471,7 @@ class SAPClient:
                 with self._lock:
                     self._global_session_id = None
                 time.sleep(random.uniform(0.1, 0.3))
-                return self._make_request(method, path, body, retry=False)
+                return self._make_request(method, path, body, retry=False, attempt=attempt, max_ssl_retries=max_ssl_retries)
 
             try:
                 hdrs = dict(response.getheaders())
@@ -393,6 +487,40 @@ class SAPClient:
             }
 
             raise Exception(json.dumps(detail))
+        
+        except ssl.SSLError as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            error_str = str(e)
+            
+            # Log SSL error details
+            logger.error(f"[SAP SSL ERROR - Attempt {attempt + 1}/{max_ssl_retries}] {error_str}")
+            logger.error(f"[SAP SSL ERROR] Host: {self.host}:{self.port}")
+            
+            # If it's an internal error from SAP, retry with exponential backoff
+            if 'TLSV1_ALERT_INTERNAL_ERROR' in error_str or 'alert internal error' in error_str:
+                if attempt < max_ssl_retries - 1:
+                    # Exponential backoff: 1s, 2s, 4s
+                    wait_time = 2 ** attempt
+                    logger.info(f"[SAP SSL ERROR] Detected SAP internal SSL error - retrying in {wait_time}s (attempt {attempt + 1}/{max_ssl_retries})...")
+                    time.sleep(wait_time)
+                    # Increment attempt counter and retry
+                    return self._make_request(method, path, body, retry=True, attempt=attempt + 1, max_ssl_retries=max_ssl_retries)
+                else:
+                    # After max retries, provide helpful error message
+                    logger.error(f"[SAP SSL ERROR] Max retries ({max_ssl_retries}) reached. Giving up on SSL recovery.")
+                    raise Exception(
+                        f"SAP Server SSL Internal Error - The SAP B1 Service Layer at {self.host}:{self.port} is experiencing persistent SSL issues. "
+                        f"Attempted {max_ssl_retries} times with exponential backoff. "
+                        f"Possible causes: (1) Server is overloaded or restarting, (2) SSL certificate configuration issue on SAP server, "
+                        f"(3) Network connectivity problem, (4) SAP B1 Service Layer is down. "
+                        f"Please check SAP server logs, restart the B1 Service Layer, or contact your SAP administrator."
+                    )
+            
+            # Re-raise other SSL errors
+            logger.error(f"[SAP SSL ERROR] Non-recoverable SSL error: {error_str}")
+            raise e
+        
         finally:
             self._close_connection(conn)
 
@@ -437,8 +565,7 @@ class SAPClient:
         - filter_: OData filter expression
         Returns list of project dicts.
         """
-        # Small jitter to avoid concurrent session conflicts
-        time.sleep(random.uniform(0.05, 0.15))
+        # Removed jitter for performance - SAP handles concurrent session conflicts
         query_parts = []
         if select:
             query_parts.append(f"$select={quote(select)}")
@@ -449,11 +576,26 @@ class SAPClient:
         result = self._make_request("GET", path)
         return result.get('value', [])
 
-    def get_all_policies(self):
+    def get_all_policies(self, use_cache=True):
         """
         List all policies from Projects using UDF `U_pol`.
         Returns a list of policies with basic project context.
+        
+        Args:
+            use_cache: If True, cache policies for 5 minutes to improve performance
         """
+        # Check cache first if enabled
+        if use_cache:
+            with self._lock:
+                if (self._policies_cache is not None and 
+                    self._policies_cache_time is not None and
+                    (time.time() - self._policies_cache_time < self._POLICIES_CACHE_TTL)):
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"[SAP POLICIES] Returning cached policies (age: {time.time() - self._policies_cache_time:.1f}s)")
+                    return self._policies_cache
+        
+        # Fetch fresh from SAP
         projects = self.get_projects(select="Code,Name,ValidFrom,ValidTo,Active,U_pol")
         policies = []
         for p in projects:
@@ -471,6 +613,13 @@ class SAPClient:
                 'active': p.get('Active'),
                 'policy': policy_val
             })
+        
+        # Cache the result
+        if use_cache:
+            with self._lock:
+                self._policies_cache = policies
+                self._policies_cache_time = time.time()
+        
         return policies
 
     def _logout(self):

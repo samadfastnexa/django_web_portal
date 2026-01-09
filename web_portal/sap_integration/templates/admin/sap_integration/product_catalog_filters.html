@@ -1,0 +1,750 @@
+{% comment %}
+Product Catalog Comprehensive Filtering System
+Includes: Multi-category filtering, search with autocomplete, responsive design
+{% endcomment %}
+
+<style>
+  /* Filter Container */
+  .filter-container {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e5e7eb;
+  }
+  
+  .filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  
+  .filter-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .filter-actions {
+    display: flex;
+    gap: 12px;
+  }
+  
+  .filter-reset-btn {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .filter-reset-btn:hover {
+    background: #dc2626;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+  }
+  
+  .filter-reset-btn:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  /* Search Section */
+  .search-section {
+    margin-bottom: 24px;
+  }
+  
+  .search-wrapper {
+    position: relative;
+    max-width: 100%;
+  }
+  
+  .search-input {
+    width: 100%;
+    padding: 14px 50px 14px 50px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    font-size: 15px;
+    transition: all 0.3s ease;
+    background: white;
+  }
+  
+  .search-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+  }
+  
+  .search-icon {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: #94a3b8;
+    pointer-events: none;
+  }
+  
+  .search-clear {
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #e5e7eb;
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: #64748b;
+    transition: all 0.2s ease;
+  }
+  
+  .search-clear:hover {
+    background: #cbd5e1;
+  }
+  
+  .search-clear.active {
+    display: flex;
+  }
+  
+  /* Autocomplete Dropdown */
+  .autocomplete-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    max-height: 300px;
+    overflow-y: auto;
+    display: none;
+    z-index: 1000;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  }
+  
+  .autocomplete-dropdown.active {
+    display: block;
+  }
+  
+  .autocomplete-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  
+  .autocomplete-item:hover, .autocomplete-item.selected {
+    background: #f0f9ff;
+  }
+  
+  .autocomplete-item-code {
+    font-weight: 600;
+    color: #667eea;
+    font-size: 13px;
+  }
+  
+  .autocomplete-item-name {
+    color: #334155;
+    font-size: 14px;
+    margin-top: 2px;
+  }
+  
+  /* Category Filters */
+  .category-section {
+    margin-bottom: 24px;
+  }
+  
+  .section-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .category-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  
+  .category-checkbox {
+    display: none;
+  }
+  
+  .category-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    user-select: none;
+  }
+  
+  .category-label:hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  
+  .category-checkbox:checked + .category-label {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: #667eea;
+    color: white;
+  }
+  
+  .category-checkbox:checked + .category-label .category-count {
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+  }
+  
+  .category-name {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  
+  .category-count {
+    background: #f1f5f9;
+    color: #64748b;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  
+  /* Applied Filters */
+  .applied-filters {
+    margin-bottom: 20px;
+    display: none;
+  }
+  
+  .applied-filters.active {
+    display: block;
+  }
+  
+  .applied-filters-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  
+  .filter-tag {
+    background: #667eea;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: fadeIn 0.3s ease;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  
+  .filter-tag-remove {
+    background: rgba(255, 255, 255, 0.3);
+    border: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: white;
+    transition: all 0.2s ease;
+  }
+  
+  .filter-tag-remove:hover {
+    background: rgba(255, 255, 255, 0.5);
+    transform: rotate(90deg);
+  }
+  
+  /* Results Info */
+  .results-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    color: white;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  }
+  
+  .results-count {
+    font-size: 18px;
+    font-weight: 700;
+  }
+  
+  .results-filtered {
+    font-size: 13px;
+    opacity: 0.9;
+  }
+  
+  /* Loading Indicator */
+  .filter-loading {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  
+  .filter-loading.active {
+    display: flex;
+  }
+  
+  .loading-content {
+    background: white;
+    padding: 30px 40px;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    text-align: center;
+  }
+  
+  .loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #f1f5f9;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  
+  .loading-text {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1e293b;
+  }
+  
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .filter-container {
+      padding: 16px;
+    }
+    
+    .filter-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    
+    .category-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .results-info {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+  }
+  
+  /* Accessibility */
+  .category-label:focus-within {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+  }
+  
+  .search-input:focus {
+    outline: none;
+  }
+  
+  /* Keyboard Navigation Indicator */
+  .autocomplete-item:focus {
+    outline: 2px solid #667eea;
+    outline-offset: -2px;
+  }
+</style>
+
+<div class="filter-container">
+  <!-- Filter Header -->
+  <div class="filter-header">
+    <div class="filter-title">
+      <span>🔍</span>
+      <span>Filter Products</span>
+    </div>
+    <div class="filter-actions">
+      <button class="filter-reset-btn" id="resetFiltersBtn" onclick="resetAllFilters()" disabled>
+        <span>↻</span>
+        <span>Reset Filters</span>
+      </button>
+    </div>
+  </div>
+  
+  <!-- Search Section -->
+  <div class="search-section">
+    <div class="section-label">
+      <span>💬</span>
+      <span>Search Products</span>
+    </div>
+    <div class="search-wrapper">
+      <span class="search-icon">🔎</span>
+      <input 
+        type="text" 
+        id="productSearch" 
+        class="search-input" 
+        placeholder="Search by product code, name, generic name, or brand..."
+        autocomplete="off"
+        aria-label="Search products"
+        oninput="handleSearchInput(this.value)"
+        onkeydown="handleSearchKeydown(event)"
+      >
+      <button class="search-clear" id="searchClearBtn" onclick="clearSearch()" aria-label="Clear search">
+        ✕
+      </button>
+      <div class="autocomplete-dropdown" id="autocompleteDropdown" role="listbox"></div>
+    </div>
+  </div>
+  
+  <!-- Category Filters -->
+  <div class="category-section">
+    <div class="section-label">
+      <span>📂</span>
+      <span>Product Categories</span>
+      <span style="margin-left: auto; font-size: 12px; font-weight: normal;" id="selectedCategoryCount">(0 selected)</span>
+    </div>
+    <div class="category-grid" id="categoryGrid">
+      {% for category in product_categories %}
+      <div>
+        <input 
+          type="checkbox" 
+          id="category_{{ category.ItmsGrpCod }}" 
+          class="category-checkbox" 
+          value="{{ category.ItmsGrpCod }}"
+          onchange="handleCategoryChange()"
+          aria-label="{{ category.ItmsGrpNam }}"
+        >
+        <label for="category_{{ category.ItmsGrpCod }}" class="category-label">
+          <span class="category-name">{{ category.ItmsGrpNam }}</span>
+          <span class="category-count">{{ category.ProductCount }}</span>
+        </label>
+      </div>
+      {% endfor %}
+      
+      {% if not product_categories %}
+      <div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #94a3b8;">
+        <p>No categories available</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  
+  <!-- Applied Filters -->
+  <div class="applied-filters" id="appliedFilters">
+    <div class="section-label">
+      <span>🏷️</span>
+      <span>Active Filters</span>
+    </div>
+    <div class="applied-filters-list" id="appliedFiltersList"></div>
+  </div>
+</div>
+
+<!-- Results Info -->
+<div class="results-info">
+  <div>
+    <div class="results-count" id="resultsCount">{{ result_rows|length }} Product{{ result_rows|length|pluralize }}</div>
+    <div class="results-filtered" id="resultsFiltered"></div>
+  </div>
+  <div style="opacity: 0.9; font-size: 13px;" id="loadingIndicator"></div>
+</div>
+
+<!-- Loading Overlay -->
+<div class="filter-loading" id="filterLoading">
+  <div class="loading-content">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Applying filters...</div>
+  </div>
+</div>
+
+<script>
+// Filter State
+let searchTimeout;
+let currentSearch = '';
+let selectedCategories = [];
+let allProducts = {{ result_rows|safe }};
+let filteredProducts = [...allProducts];
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+  updateResultsInfo();
+  checkFiltersActive();
+  
+  // Parse URL parameters to restore filters
+  const urlParams = new URLSearchParams(window.location.search);
+  const searchParam = urlParams.get('search');
+  const categoriesParam = urlParams.get('item_groups');
+  
+  if (searchParam) {
+    document.getElementById('productSearch').value = searchParam;
+    currentSearch = searchParam;
+    document.getElementById('searchClearBtn').classList.add('active');
+  }
+  
+  if (categoriesParam) {
+    const categories = categoriesParam.split(',');
+    categories.forEach(catId => {
+      const checkbox = document.getElementById('category_' + catId);
+      if (checkbox) {
+        checkbox.checked = true;
+        selectedCategories.push(catId);
+      }
+    });
+  }
+  
+  updateAppliedFilters();
+  updateCategoryCount();
+});
+
+// Search Input Handler with Debouncing
+function handleSearchInput(value) {
+  currentSearch = value;
+  const clearBtn = document.getElementById('searchClearBtn');
+  
+  if (value) {
+    clearBtn.classList.add('active');
+  } else {
+    clearBtn.classList.remove('active');
+  }
+  
+  // Debounce search
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    applyFilters();
+  }, 500); // 500ms debounce
+  
+  checkFiltersActive();
+}
+
+// Clear Search
+function clearSearch() {
+  document.getElementById('productSearch').value = '';
+  document.getElementById('searchClearBtn').classList.remove('active');
+  currentSearch = '';
+  applyFilters();
+  checkFiltersActive();
+}
+
+// Search Keyboard Navigation
+function handleSearchKeydown(event) {
+  // Implement keyboard navigation for autocomplete
+  const dropdown = document.getElementById('autocompleteDropdown');
+  if (event.key === 'Escape') {
+    dropdown.classList.remove('active');
+  }
+}
+
+// Category Change Handler
+function handleCategoryChange() {
+  selectedCategories = [];
+  document.querySelectorAll('.category-checkbox:checked').forEach(checkbox => {
+    selectedCategories.push(checkbox.value);
+  });
+  
+  updateCategoryCount();
+  updateAppliedFilters();
+  applyFilters();
+  checkFiltersActive();
+}
+
+// Update Category Count
+function updateCategoryCount() {
+  const count = selectedCategories.length;
+  document.getElementById('selectedCategoryCount').textContent = `(${count} selected)`;
+}
+
+// Apply Filters
+function applyFilters() {
+  showLoading();
+  
+  // Build query parameters
+  const params = new URLSearchParams(window.location.search);
+  
+  // Keep existing params like action and company_db
+  const action = params.get('action') || 'products_catalog';
+  const companyDb = params.get('company_db');
+  
+  const newParams = new URLSearchParams();
+  newParams.set('action', action);
+  if (companyDb) newParams.set('company_db', companyDb);
+  
+  if (currentSearch) {
+    newParams.set('search', currentSearch);
+  }
+  
+  if (selectedCategories.length > 0) {
+    newParams.set('item_groups', selectedCategories.join(','));
+  }
+  
+  // Reload page with filters
+  window.location.href = '?' + newParams.toString();
+}
+
+// Reset All Filters
+function resetAllFilters() {
+  document.getElementById('productSearch').value = '';
+  document.getElementById('searchClearBtn').classList.remove('active');
+  currentSearch = '';
+  selectedCategories = [];
+  
+  document.querySelectorAll('.category-checkbox').forEach(checkbox => {
+    checkbox.checked = false;
+  });
+  
+  updateCategoryCount();
+  updateAppliedFilters();
+  
+  // Reload without filters
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action') || 'products_catalog';
+  const companyDb = params.get('company_db');
+  
+  const newParams = new URLSearchParams();
+  newParams.set('action', action);
+  if (companyDb) newParams.set('company_db', companyDb);
+  
+  window.location.href = '?' + newParams.toString();
+}
+
+// Update Applied Filters Display
+function updateAppliedFilters() {
+  const container = document.getElementById('appliedFilters');
+  const list = document.getElementById('appliedFiltersList');
+  list.innerHTML = '';
+  
+  let hasFilters = false;
+  
+  // Search filter
+  if (currentSearch) {
+    hasFilters = true;
+    const tag = createFilterTag('Search: ' + currentSearch, () => clearSearch());
+    list.appendChild(tag);
+  }
+  
+  // Category filters
+  selectedCategories.forEach(catId => {
+    hasFilters = true;
+    const checkbox = document.getElementById('category_' + catId);
+    if (checkbox) {
+      const label = checkbox.nextElementSibling.querySelector('.category-name').textContent;
+      const tag = createFilterTag(label, () => {
+        checkbox.checked = false;
+        handleCategoryChange();
+      });
+      list.appendChild(tag);
+    }
+  });
+  
+  if (hasFilters) {
+    container.classList.add('active');
+  } else {
+    container.classList.remove('active');
+  }
+}
+
+// Create Filter Tag
+function createFilterTag(text, onRemove) {
+  const tag = document.createElement('div');
+  tag.className = 'filter-tag';
+  tag.innerHTML = `
+    <span>${text}</span>
+    <button class="filter-tag-remove" aria-label="Remove filter" onclick="event.stopPropagation()">✕</button>
+  `;
+  tag.querySelector('button').onclick = onRemove;
+  return tag;
+}
+
+// Check if Filters Active
+function checkFiltersActive() {
+  const hasFilters = currentSearch || selectedCategories.length > 0;
+  document.getElementById('resetFiltersBtn').disabled = !hasFilters;
+}
+
+// Update Results Info
+function updateResultsInfo() {
+  const count = filteredProducts.length;
+  const total = allProducts.length;
+  const countEl = document.getElementById('resultsCount');
+  const filteredEl = document.getElementById('resultsFiltered');
+  
+  countEl.textContent = `${count} Product${count !== 1 ? 's' : ''}`;
+  
+  if (count < total) {
+    filteredEl.textContent = `Filtered from ${total} total products`;
+  } else {
+    filteredEl.textContent = 'Showing all products';
+  }
+}
+
+// Show/Hide Loading
+function showLoading() {
+  document.getElementById('filterLoading').classList.add('active');
+}
+
+function hideLoading() {
+  document.getElementById('filterLoading').classList.remove('active');
+}
+
+// Accessibility: Announce filter changes to screen readers
+function announceToScreenReader(message) {
+  const announcement = document.createElement('div');
+  announcement.setAttribute('role', 'status');
+  announcement.setAttribute('aria-live', 'polite');
+  announcement.style.position = 'absolute';
+  announcement.style.left = '-10000px';
+  announcement.textContent = message;
+  document.body.appendChild(announcement);
+  setTimeout(() => document.body.removeChild(announcement), 1000);
+}
+</script>

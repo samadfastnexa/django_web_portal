@@ -2243,6 +2243,10 @@ textContent=count+' active'}
         .no-products{text-align:center;padding:60px 20px;color:#64748b}
         .no-products-icon{font-size:64px;margin-bottom:16px;opacity:0.5}
       </style>
+      
+      <!-- Product Catalog Comprehensive Filters -->
+      {% include "admin/sap_integration/product_catalog_filters.html" %}
+      
       <div class="products-header">
         <h3>🛍️ Product Catalog</h3>
         <div class="products-header-actions">
@@ -2279,22 +2283,16 @@ textContent=count+' active'}
             <div class="product-info">
               <div class="product-code">{{ row.ItemCode }}</div>
               <div class="product-name">{{ row.ItemName }}</div>
-              {% if row.U_GenericName %}
-                <div class="product-generic">{{ row.U_GenericName }}</div>
-              {% endif %}
               <div class="product-details">
                 <div class="product-detail">
                   <span class="product-detail-label">Pack Size</span>
                   <span class="product-detail-value">{{ row.SalPackMsr|default:"N/A" }}</span>
                 </div>
                 <div class="product-detail">
-                  <span class="product-detail-label">Catalog</span>
-                  <span class="product-detail-value">{{ row.Product_Catalog_Name|default:"N/A" }}</span>
+                  <span class="product-detail-label">Unit</span>
+                  <span class="product-detail-value">{{ row.InvntryUom|default:"N/A" }}</span>
                 </div>
               </div>
-              {% if row.U_BrandName %}
-                <div class="product-brand">{{ row.U_BrandName }}</div>
-              {% endif %}
             </div>
           </div>
         {% endfor %}

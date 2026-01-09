@@ -15,7 +15,8 @@ import os
 import json
 import re
 import logging
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, unit_price_by_policy
+import ssl
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, get_item_groups, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, unit_price_by_policy
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -29,79 +30,117 @@ logger = logging.getLogger(__name__)
 def sales_order_admin(request):
     error = None
     result = None
-    default_payload = {
-        "Series": 8,
-        "DocType": "dDocument_Items",
-        "DocDate": "2025-11-21",
-        "DocDueDate": "2025-11-21",
-        "TaxDate": "2025-11-21",
-        "CardCode": "BIC01563",
-        "CardName": "Master Agro Traders",
-        "ContactPersonCode": 4804,
-        "FederalTaxID": "32402-7881906-3",
-        "PayToCode": 1,
-        "Address": "Dhandla Road Dajal Tehsil Jampur\r\r\rPAKISTAN",
-        "DocCurrency": "PKR",
-        "DocRate": 1.0,
-        "Comments": "",
-        "SummeryType": "dNoSummary",
-        "DocObjectCode": "oOrders",
-        "U_sotyp": "01",
-        "U_USID": "Dgk01",
-        "U_SWJE": None,
-        "U_SECJE": None,
-        "U_CRJE": None,
-        "U_SCardCode": "BIC01812",
-        "U_SCardName": "Malik Agro Traders",
-        "DocumentLines": [
-            {
-                "LineNum": 0,
-                "ItemCode": "FG00581",
-                "ItemDescription": "Jadogar 25 Od - 360-Mls.",
-                "Quantity": 20.0,
-                "DiscountPercent": 0.0,
-                "WarehouseCode": "WH06",
-                "VatGroup": "SE",
-                "UnitsOfMeasurment": 1.0,
-                "TaxPercentagePerRow": 0.0,
-                "UnitPrice": 1170.0,
-                "UoMEntry": 68,
-                "MeasureUnit": "No",
-                "UoMCode": "No",
-                "ProjectCode": "0223254",
-                "U_SD": 0.0,
-                "U_AD": 0.0,
-                "U_EXD": 0.0,
-                "U_zerop": 0.0,
-                "U_pl": 275,
-                "U_BP": 1322.0,
-                "U_policy": "0223271",
-                "U_focitem": "No",
-                "U_crop": None
-            }
-        ]
-    }
-    payload_text = json.dumps(default_payload, ensure_ascii=False, indent=2)
+    
     if request.method == 'POST':
         try:
-            payload_text = request.POST.get('payload') or payload_text
-            data = json.loads(payload_text)
+            # Build the payload from form data
+            data = {
+                "Series": int(request.POST.get('Series', 8)),
+                "DocType": "dDocument_Items",
+                "DocDate": request.POST.get('DocDate'),
+                "DocDueDate": request.POST.get('DocDueDate'),
+                "TaxDate": request.POST.get('TaxDate'),
+                "CardCode": request.POST.get('CardCode'),
+                "CardName": request.POST.get('CardName'),
+                "DocCurrency": "PKR",
+                "DocRate": 1.0,
+                "SummeryType": "dNoSummary",
+                "DocObjectCode": "oOrders",
+            }
+            
+            # Add optional fields
+            if request.POST.get('ContactPersonCode'):
+                data['ContactPersonCode'] = int(request.POST.get('ContactPersonCode'))
+            if request.POST.get('FederalTaxID'):
+                data['FederalTaxID'] = request.POST.get('FederalTaxID')
+            if request.POST.get('Address'):
+                data['Address'] = request.POST.get('Address')
+            if request.POST.get('Comments'):
+                data['Comments'] = request.POST.get('Comments')
+            if request.POST.get('U_sotyp'):
+                data['U_sotyp'] = request.POST.get('U_sotyp')
+            if request.POST.get('U_USID'):
+                data['U_USID'] = request.POST.get('U_USID')
+            if request.POST.get('U_SCardCode'):
+                data['U_SCardCode'] = request.POST.get('U_SCardCode')
+            if request.POST.get('U_SCardName'):
+                data['U_SCardName'] = request.POST.get('U_SCardName')
+            
+            # Parse line items
+            document_lines = []
+            line_index = 0
+            while True:
+                item_code_key = f'DocumentLines[{line_index}][ItemCode]'
+                if item_code_key not in request.POST:
+                    break
+                
+                line = {
+                    "LineNum": int(request.POST.get(f'DocumentLines[{line_index}][LineNum]', line_index)),
+                    "ItemCode": request.POST.get(f'DocumentLines[{line_index}][ItemCode]'),
+                    "Quantity": float(request.POST.get(f'DocumentLines[{line_index}][Quantity]', 1)),
+                    "UnitPrice": float(request.POST.get(f'DocumentLines[{line_index}][UnitPrice]', 0)),
+                    "DiscountPercent": float(request.POST.get(f'DocumentLines[{line_index}][DiscountPercent]', 0)),
+                    "WarehouseCode": request.POST.get(f'DocumentLines[{line_index}][WarehouseCode]'),
+                    "VatGroup": request.POST.get(f'DocumentLines[{line_index}][VatGroup]', 'SE'),
+                }
+                
+                # Add optional line fields
+                if request.POST.get(f'DocumentLines[{line_index}][ItemDescription]'):
+                    line['ItemDescription'] = request.POST.get(f'DocumentLines[{line_index}][ItemDescription]')
+                if request.POST.get(f'DocumentLines[{line_index}][TaxPercentagePerRow]'):
+                    line['TaxPercentagePerRow'] = float(request.POST.get(f'DocumentLines[{line_index}][TaxPercentagePerRow]'))
+                if request.POST.get(f'DocumentLines[{line_index}][UnitsOfMeasurment]'):
+                    line['UnitsOfMeasurment'] = float(request.POST.get(f'DocumentLines[{line_index}][UnitsOfMeasurment]'))
+                if request.POST.get(f'DocumentLines[{line_index}][UoMEntry]'):
+                    line['UoMEntry'] = int(request.POST.get(f'DocumentLines[{line_index}][UoMEntry]'))
+                if request.POST.get(f'DocumentLines[{line_index}][MeasureUnit]'):
+                    line['MeasureUnit'] = request.POST.get(f'DocumentLines[{line_index}][MeasureUnit]')
+                if request.POST.get(f'DocumentLines[{line_index}][UoMCode]'):
+                    line['UoMCode'] = request.POST.get(f'DocumentLines[{line_index}][UoMCode]')
+                if request.POST.get(f'DocumentLines[{line_index}][ProjectCode]'):
+                    line['ProjectCode'] = request.POST.get(f'DocumentLines[{line_index}][ProjectCode]')
+                if request.POST.get(f'DocumentLines[{line_index}][U_SD]'):
+                    line['U_SD'] = float(request.POST.get(f'DocumentLines[{line_index}][U_SD]'))
+                if request.POST.get(f'DocumentLines[{line_index}][U_AD]'):
+                    line['U_AD'] = float(request.POST.get(f'DocumentLines[{line_index}][U_AD]'))
+                if request.POST.get(f'DocumentLines[{line_index}][U_EXD]'):
+                    line['U_EXD'] = float(request.POST.get(f'DocumentLines[{line_index}][U_EXD]'))
+                if request.POST.get(f'DocumentLines[{line_index}][U_zerop]'):
+                    line['U_zerop'] = float(request.POST.get(f'DocumentLines[{line_index}][U_zerop]'))
+                if request.POST.get(f'DocumentLines[{line_index}][U_pl]'):
+                    line['U_pl'] = int(request.POST.get(f'DocumentLines[{line_index}][U_pl]'))
+                if request.POST.get(f'DocumentLines[{line_index}][U_BP]'):
+                    line['U_BP'] = float(request.POST.get(f'DocumentLines[{line_index}][U_BP]'))
+                if request.POST.get(f'DocumentLines[{line_index}][U_policy]'):
+                    line['U_policy'] = request.POST.get(f'DocumentLines[{line_index}][U_policy]')
+                if request.POST.get(f'DocumentLines[{line_index}][U_focitem]'):
+                    line['U_focitem'] = request.POST.get(f'DocumentLines[{line_index}][U_focitem]')
+                if request.POST.get(f'DocumentLines[{line_index}][U_crop]'):
+                    line['U_crop'] = request.POST.get(f'DocumentLines[{line_index}][U_crop]')
+                
+                document_lines.append(line)
+                line_index += 1
+            
+            data['DocumentLines'] = document_lines
+            
+            # Create sales order
             selected_db = request.session.get('selected_db', '4B-BIO')
             client = SAPClient(company_db_key=selected_db)
             result = client.create_sales_order(data)
         except Exception as e:
             error = str(e)
+    
     result_json = None
     if result is not None:
         try:
             result_json = json.dumps(result, ensure_ascii=False, indent=2)
         except Exception:
             result_json = str(result)
+    
     return render(
         request,
         'admin/sap_integration/sales_order.html',
         {
-            'payload': payload_text,
             'result_json': result_json,
             'error': error,
         }
@@ -344,7 +383,17 @@ def hana_connect_admin(request):
                             error = str(e_ts)
                     elif action == 'products_catalog':
                         try:
-                            data = products_catalog(conn, selected_schema)
+                            # Get filter parameters
+                            search_param = (request.GET.get('search') or '').strip() or None
+                            item_groups_param = (request.GET.get('item_groups') or '').strip() or None
+                            brand_param = (request.GET.get('brand') or '').strip() or None
+                            
+                            # Fetch categories/item groups for filter UI
+                            categories = get_item_groups(conn)
+                            request._product_categories = categories
+                            
+                            # Fetch products with filters
+                            data = products_catalog(conn, selected_schema, search_param, None, item_groups_param, brand_param)
                             result = data
                         except Exception as e_pc:
                             error = str(e_pc)
@@ -1932,6 +1981,7 @@ def hana_connect_admin(request):
                     row['product_description_urdu_url_full'] = base_url + row['product_description_urdu_url']
     
     geo_options = getattr(request, '_geo_options', {'regions': [], 'zones': [], 'territories': []})
+    product_categories = getattr(request, '_product_categories', [])
     
     return render(
         request,
@@ -1945,6 +1995,7 @@ def hana_connect_admin(request):
             'diagnostics_json': diag_json,
             'territory_options': territory_options,
             'geo_options': geo_options,
+            'product_categories': product_categories,
             'selected_territory': selected_territory,
             'current_action': action,
             'current_emp_id': current_emp_id,
@@ -2584,25 +2635,67 @@ def list_policies(request):
     API endpoint to list policies from SAP Projects based on UDF `U_pol`.
     Usage: GET /api/sap/policies/
     Optional: ?active=true|false
+    
+    Performance:
+    - First request: ~2-5 seconds (SAP login + fetch)
+    - Subsequent requests within 5 min: ~200-500ms (cached)
     """
+    import logging
+    import time
+    logger = logging.getLogger(__name__)
+    start_time = time.time()
+    
     try:
         selected_db = request.session.get('selected_db', '4B-BIO')
+        logger.info(f"[SAP POLICIES] Attempting to list policies with company_db={selected_db}")
+        
         sap_client = SAPClient(company_db_key=selected_db)
-        policies = sap_client.get_all_policies()
+        fetch_start = time.time()
+        policies = sap_client.get_all_policies(use_cache=True)
+        fetch_time = time.time() - fetch_start
 
         active_param = request.query_params.get('active')
         if active_param is not None:
             active_val = str(active_param).lower() in ('true', '1', 'yes')
             policies = [p for p in policies if bool(p.get('active')) == active_val]
 
+        total_time = time.time() - start_time
+        logger.info(f"[SAP POLICIES] Successfully retrieved {len(policies)} policies in {total_time:.2f}s (fetch: {fetch_time:.2f}s)")
+        
         return Response({
             "success": True,
             "count": len(policies),
             "data": policies,
-            "message": "Policies retrieved successfully"
+            "message": "Policies retrieved successfully",
+            "_timing": {
+                "total_ms": round(total_time * 1000, 1),
+                "fetch_ms": round(fetch_time * 1000, 1)
+            }
         }, status=status.HTTP_200_OK)
 
+    except ssl.SSLError as e:
+        error_msg = str(e)
+        total_time = time.time() - start_time
+        logger.error(f"[SAP POLICIES SSL ERROR] {error_msg} (took {total_time:.2f}s)", exc_info=True)
+        
+        if 'TLSV1_ALERT_INTERNAL_ERROR' in error_msg or 'alert internal error' in error_msg:
+            return Response({
+                "success": False,
+                "error": "SAP Server SSL Internal Error",
+                "message": "The SAP B1 Service Layer at fourb.vdc.services:5588 is experiencing SSL issues. This may be temporary. Please try again in a moment or check if the SAP server is running properly.",
+                "technical_detail": error_msg,
+                "recommendation": "If this persists, check SAP B1 Service Layer status and logs"
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        return Response({
+            "success": False,
+            "error": "SSL Connection Failed",
+            "message": f"SSL error connecting to SAP: {error_msg}"
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    
     except Exception as e:
+        total_time = time.time() - start_time
+        logger.error(f"[SAP POLICIES API ERROR] {str(e)} (took {total_time:.2f}s)", exc_info=True)
         return Response({
             "success": False,
             "error": "SAP integration failed",
@@ -3769,8 +3862,11 @@ def products_catalog_api(request):
     db_name = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
     search = (request.GET.get('search') or '').strip() or None
     item_group = (request.GET.get('item_group') or '').strip() or None
+    item_groups = (request.GET.get('item_groups') or '').strip() or None
+    brand = (request.GET.get('brand') or '').strip() or None
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
+    get_categories = (request.GET.get('get_categories') or '').strip().lower() == 'true'
     
     try:
         page_num = int(page_param) if page_param else 1
@@ -3809,11 +3905,44 @@ def products_catalog_api(request):
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
+            
+            # If requesting categories/item groups
+            if get_categories:
+                categories = get_item_groups(conn)
+                return Response({
+                    'success': True,
+                    'database': cfg['schema'],
+                    'categories': categories
+                }, status=status.HTTP_200_OK)
+            
             # Pass the connection and schema name to products_catalog for image URL generation
-            data = products_catalog(conn, cfg['schema'], search, item_group)
+            data = products_catalog(conn, cfg['schema'], search, item_group, item_groups, brand)
+            
+            # Add base URL to image paths
+            base_url = getattr(settings, 'BASE_URL', None) or request.build_absolute_uri('/').rstrip('/')
+            for row in data:
+                if row.get('product_image_url'):
+                    row['product_image_url_full'] = base_url + row['product_image_url']
+                if row.get('product_description_urdu_url'):
+                    row['product_description_urdu_url_full'] = base_url + row['product_description_urdu_url']
+            
             paginator = Paginator(data or [], page_size)
             page_obj = paginator.get_page(page_num)
-            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'database': cfg['schema'], 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+            return Response({
+                'success': True,
+                'page': page_obj.number,
+                'page_size': page_size,
+                'num_pages': paginator.num_pages,
+                'count': paginator.count,
+                'total_results': len(data),
+                'database': cfg['schema'],
+                'filters_applied': {
+                    'search': search,
+                    'item_groups': item_groups,
+                    'brand': brand
+                },
+                'data': list(page_obj.object_list)
+            }, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()
