@@ -485,8 +485,8 @@ def export_ledger_excel_api(request):
         
         # Write headers
         headers = [
-            'Posting Date', 'Trans ID', 'Account', 'Account Name', 'BP Code', 'BP Name',
-            'Trans Type', 'Reference', 'Description', 'Debit', 'Credit', 'Project'
+            'VNo.', 'VDate', 'Product Name', 'Qty', 'Price', 'Policy', 
+            'Discount', 'Sale Value', 'Type', 'Debit', 'Credit', 'Balance'
         ]
         for col_num, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col_num, value=header)
@@ -495,19 +495,32 @@ def export_ledger_excel_api(request):
             cell.alignment = header_alignment
         
         # Write data rows with sanitization
+        running_balance = 0
         for row_num, txn in enumerate(transactions, 2):
-            ws.cell(row=row_num, column=1, value=sanitize_for_excel(txn.get('PostingDate', '')))
-            ws.cell(row=row_num, column=2, value=sanitize_for_excel(txn.get('TransId', '')))
-            ws.cell(row=row_num, column=3, value=sanitize_for_excel(txn.get('Account', '')))
-            ws.cell(row=row_num, column=4, value=sanitize_for_excel(txn.get('AccountName', '')))
-            ws.cell(row=row_num, column=5, value=sanitize_for_excel(txn.get('BPCode', '')))
-            ws.cell(row=row_num, column=6, value=sanitize_for_excel(txn.get('BPName', '')))
-            ws.cell(row=row_num, column=7, value=sanitize_for_excel(txn.get('TransType', '')))
-            ws.cell(row=row_num, column=8, value=sanitize_for_excel(txn.get('Reference1', '')))
-            ws.cell(row=row_num, column=9, value=sanitize_for_excel(txn.get('Description', '')))
-            ws.cell(row=row_num, column=10, value=txn.get('Debit', 0))
-            ws.cell(row=row_num, column=11, value=txn.get('Credit', 0))
-            ws.cell(row=row_num, column=12, value=sanitize_for_excel(txn.get('ProjectCode', '')))
+            debit = float(txn.get('Debit', 0))
+            credit = float(txn.get('Credit', 0))
+            running_balance += (debit - credit)
+            
+            # Format date
+            posting_date = txn.get('PostingDate', '')
+            try:
+                date_obj = datetime.strptime(str(posting_date)[:10], '%Y-%m-%d')
+                posting_date = date_obj.strftime('%-m/%-d/%Y').lstrip('0').replace('/-', '/').replace('/0', '/')
+            except:
+                posting_date = str(posting_date)[:10]
+            
+            ws.cell(row=row_num, column=1, value=sanitize_for_excel(txn.get('TransId', '')))  # VNo
+            ws.cell(row=row_num, column=2, value=posting_date)  # VDate
+            ws.cell(row=row_num, column=3, value=sanitize_for_excel(txn.get('Description', '')))  # Product Name
+            ws.cell(row=row_num, column=4, value=txn.get('Qty', 0))  # Qty
+            ws.cell(row=row_num, column=5, value=txn.get('UnitPrice', 0))  # Price
+            ws.cell(row=row_num, column=6, value=sanitize_for_excel(txn.get('ProjectCode', '')))  # Policy
+            ws.cell(row=row_num, column=7, value=txn.get('Discount', 0))  # Discount
+            ws.cell(row=row_num, column=8, value=txn.get('Amount', 0))  # Sale Value
+            ws.cell(row=row_num, column=9, value=sanitize_for_excel(txn.get('TransType', '')))  # Type
+            ws.cell(row=row_num, column=10, value=debit if debit > 0 else 0)  # Debit
+            ws.cell(row=row_num, column=11, value=credit if credit > 0 else 0)  # Credit
+            ws.cell(row=row_num, column=12, value=running_balance)  # Balance
         
         # Auto-adjust column widths
         for col in ws.columns:
@@ -808,109 +821,178 @@ def export_ledger_pdf(request):
         
         # Create PDF document
         pdf_buffer = BytesIO()
-        doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(letter), topMargin=0.5*inch, bottomMargin=0.5*inch)
+        doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(letter), topMargin=0.4*inch, bottomMargin=0.4*inch)
         
         # Container for the 'Flowable' objects
         elements = []
         
-        # Add title
+        # Get styles
         styles = getSampleStyleSheet()
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=16,
-            textColor=colors.HexColor('#1e293b'),
-            spaceAfter=12,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
+        
+        # Create paragraph style for table cells
+        cell_style = ParagraphStyle(
+            'CellStyle',
+            parent=styles['Normal'],
+            fontSize=9,
+            fontName='Helvetica',
+            leading=11,
+            alignment=TA_LEFT
         )
-        title = Paragraph(f'SAP B1 General Ledger Report - {company}', title_style)
-        elements.append(title)
         
-        # Add filter info
-        filter_text = []
-        if account_from or account_to:
-            filter_text.append(f"Accounts: {account_from or '*'} to {account_to or '*'}")
-        if from_date:
-            filter_text.append(f"From: {from_date}")
-        if to_date:
-            filter_text.append(f"To: {to_date}")
-        if bp_code:
-            filter_text.append(f"BP: {bp_code}")
-        if project_code:
-            filter_text.append(f"Project: {project_code}")
+        # Add company name (Four Brothers Group)
+        company_style = ParagraphStyle(
+            'CompanyName',
+            parent=styles['Normal'],
+            fontSize=12,
+            textColor=colors.black,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold',
+            spaceAfter=2
+        )
+        elements.append(Paragraph('Four Brothers Group', company_style))
         
-        if filter_text:
-            filter_info = Paragraph(f"Filters: {', '.join(filter_text)}", styles['Normal'])
-            elements.append(filter_info)
+        # Add title (General Ledger)
+        title_style = ParagraphStyle(
+            'ReportTitle',
+            parent=styles['Heading1'],
+            fontSize=14,
+            textColor=colors.black,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold',
+            spaceAfter=4
+        )
+        elements.append(Paragraph('General Ledger', title_style))
         
-        elements.append(Spacer(1, 0.2*inch))
+        # Get company display name mapping
+        company_names = {
+            '4B-BIO': 'FARMING INPUTS (PVT) LTD',
+            '4B-ORANG': 'ORANGE PROTECTION (PVT) LTD',
+            '4B-KINDWISE': 'KINDWISE (PVT) LTD',
+        }
+        company_display_name = company_names.get(company, company)
+        
+        # Add company name from database
+        comp_name_style = ParagraphStyle(
+            'CompanySubName',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.black,
+            alignment=TA_LEFT,
+            fontName='Helvetica-Bold',
+            spaceAfter=6
+        )
+        elements.append(Paragraph(f'To: {company_display_name}', comp_name_style))
+        
+        # Prepare date range
+        from_date_display = from_date if from_date else '01/01/2000'
+        to_date_display = to_date if to_date else datetime.now().strftime('%m/%d/%Y')
+        
+        # Convert date format from YYYY-MM-DD to M/D/YYYY if needed
+        try:
+            if from_date and len(from_date) == 10:
+                from_date_obj = datetime.strptime(from_date, '%Y-%m-%d')
+                from_date_display = f"{from_date_obj.month}/{from_date_obj.day}/{from_date_obj.year}"
+        except:
+            pass
+        
+        try:
+            if to_date and len(to_date) == 10:
+                to_date_obj = datetime.strptime(to_date, '%Y-%m-%d')
+                to_date_display = f"{to_date_obj.month}/{to_date_obj.day}/{to_date_obj.year}"
+        except:
+            pass
+        
+        # Add date range line
+        date_range_style = ParagraphStyle(
+            'DateRange',
+            parent=styles['Normal'],
+            fontSize=9,
+            textColor=colors.black,
+            alignment=TA_LEFT,
+            spaceAfter=2
+        )
+        elements.append(Paragraph(f'From: {from_date_display}  To: {to_date_display}', date_range_style))
+        
+        # Add print date
+        now = datetime.now()
+        print_date = f"{now.month}/{now.day}/{now.year} {now.strftime('%I:%M:%S%p')}"
+        elements.append(Paragraph(f'Print Date: {print_date}', date_range_style))
+        
+        elements.append(Spacer(1, 0.15*inch))
         
         # Prepare table data
         table_data = [
-            ['Date', 'Trans #', 'Account', 'BP Code', 'BP Name', 'Trans Type', 'Reference', 'Description', 'Debit', 'Credit', 'Project']
+            ['VNo.', 'VDate', 'Narration', 'Type', 'Debit', 'Credit', 'Balance']
         ]
         
         total_debit = 0
         total_credit = 0
+        running_balance = 0
         
         for txn in transactions:
             debit = float(txn.get('Debit', 0))
             credit = float(txn.get('Credit', 0))
             total_debit += debit
             total_credit += credit
+            running_balance += (debit - credit)
+            
+            # Format date
+            posting_date = str(txn.get('PostingDate', ''))[:10]
+            try:
+                date_obj = datetime.strptime(posting_date, '%Y-%m-%d')
+                posting_date = f"{date_obj.month}/{date_obj.day}/{date_obj.year}"
+            except:
+                pass
+            
+            # Get narration text
+            narration_text = str(txn.get('ProjectName', '') or txn.get('ProjectCode', ''))
+            narration_para = Paragraph(narration_text, cell_style) if narration_text else ''
             
             table_data.append([
-                str(txn.get('PostingDate', ''))[:10],
-                str(txn.get('TransId', '')),
-                str(txn.get('Account', '')),
-                str(txn.get('BPCode', '')),
-                str(txn.get('BPName', '')),
-                str(txn.get('TransType', '')),
-                str(txn.get('Reference1', '')),
-                str(txn.get('Description', '')),
-                f"{debit:.2f}",
-                f"{credit:.2f}",
-                str(txn.get('ProjectCode', '')),
+                str(txn.get('TransId', '')),  # VNo
+                posting_date,  # VDate
+                narration_para,  # Narration (Policy Name/Project)
+                str(txn.get('TransType', '')),  # Type
+                f"{debit:.2f}" if debit > 0 else '',  # Debit
+                f"{credit:.2f}" if credit > 0 else '',  # Credit
+                f"{running_balance:.2f}",  # Balance
             ])
         
         # Add totals row
         if table_data:
             table_data.append([
-                '', '', '', '', '', '', '', 'TOTAL',
-                f"{total_debit:.2f}", f"{total_credit:.2f}", ''
+                '', '', '',
+                'TOTAL',
+                f"{total_debit:.2f}", f"{total_credit:.2f}", f"{(total_debit - total_credit):.2f}"
             ])
         
         # Create table
-        table = Table(table_data, colWidths=[0.75*inch]*11)
+        table = Table(table_data, colWidths=[0.65*inch, 0.85*inch, 2.9*inch, 0.9*inch, 1.2*inch, 1.2*inch, 1.2*inch])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b82f6')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#404040')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('ALIGN', (8, 1), (9, -1), 'RIGHT'),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
+            ('ALIGN', (2, 1), (2, -1), 'LEFT'),
+            ('ALIGN', (3, 1), (3, -1), 'CENTER'),
+            ('ALIGN', (4, 1), (-1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#dbeafe')),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#cccccc')),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f8fafc')]),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e5e7eb')),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f5f5f5')]),
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 1), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
         ]))
         
         elements.append(table)
-        
-        # Add footer with timestamp
-        elements.append(Spacer(1, 0.2*inch))
-        footer = Paragraph(
-            f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            ParagraphStyle('Footer', parent=styles['Normal'], fontSize=9, textColor=colors.grey)
-        )
-        elements.append(footer)
         
         # Build PDF
         doc.build(elements)

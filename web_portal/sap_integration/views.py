@@ -16,7 +16,7 @@ import json
 import re
 import logging
 import ssl
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, get_item_groups, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, unit_price_by_policy
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, get_item_groups, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, unit_price_by_policy, item_lov_by_policy
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -5034,6 +5034,107 @@ def item_price_api(request):
             except Exception:
                 pass
             return Response({'success': True, 'data': {'doc_entry': doc_entry, 'item_code': item_code, 'unit_price': price_val}}, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(tags=['SAP'],
+    method='get',
+    operation_summary="Policy Items",
+    operation_description="List items linked to a policy DocEntry using @PL1/@PLR4 joins (OITM for details).",
+    manual_parameters=[
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Policy DocEntry (e.g., 18)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def policy_items_api(request):
+    """
+    Fetch items attached to a policy by DocEntry. Uses item_lov_by_policy helper to return
+    ItemCode, ItemName, SalUnitMsr, IUoMEntry, and U_GenericName. Supports optional schema
+    selection and pagination.
+    """
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+
+    db_param = (request.GET.get('database') or '').strip()
+    if db_param:
+        norm = db_param.strip().upper().replace('-APP', '_APP')
+        if '4B-BIO' in norm:
+            cfg['schema'] = '4B-BIO_APP'
+        elif '4B-ORANG' in norm:
+            cfg['schema'] = '4B-ORANG_APP'
+        else:
+            cfg['schema'] = db_param
+
+    doc_entry = (request.GET.get('doc_entry') or '').strip()
+    if not doc_entry:
+        return Response({'success': False, 'error': 'doc_entry parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 50
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 50) or 50)
+    except Exception:
+        default_page_size = 50
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+
+            data = item_lov_by_policy(conn, doc_entry)
+            paginator = Paginator(data or [], page_size)
+            page_obj = paginator.get_page(page_num)
+            return Response({
+                'success': True,
+                'page': page_obj.number,
+                'page_size': page_size,
+                'num_pages': paginator.num_pages,
+                'count': paginator.count,
+                'data': list(page_obj.object_list)
+            }, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()

@@ -136,7 +136,7 @@
   
   .filter-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 16px;
     margin-bottom: 20px;
   }
@@ -152,7 +152,7 @@
   .filter-field input,
   .filter-field select {
     width: 100%;
-    padding: 10px 12px;
+    padding: 12px 14px;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
     font-size: 14px;
@@ -186,7 +186,7 @@
   
   .btn-primary {
     background: #3b82f6;
-    color: #fff;
+    color: #fff !important;
   }
   
   .btn-primary:hover {
@@ -195,7 +195,7 @@
   
   .btn-secondary {
     background: #6b7280;
-    color: #fff;
+    color: #fff !important;
   }
   
   .btn-secondary:hover {
@@ -204,8 +204,17 @@
   
   .btn-success {
     background: #10b981;
-    color: #fff;
+    color: #fff !important;
   }
+    .btn-danger {
+      background: #ef4444;
+      color: #fff !important;
+    }
+  
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+  
   
   .btn-success:hover {
     background: #059669;
