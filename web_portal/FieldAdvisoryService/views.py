@@ -168,7 +168,7 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or not user.is_authenticated:
             raise PermissionDenied("Authentication required to create meeting schedule.")
-
+        
         if hasattr(user, "get_full_name") and callable(getattr(user, "get_full_name", None)):
             name = user.get_full_name() or getattr(user, "username", "") or getattr(user, "email", "")
         elif hasattr(user, "full_name"):
@@ -1739,3 +1739,4 @@ class UserHierarchyViewSet(viewsets.ModelViewSet):
             'total_created': len(created),
             'total_errors': len(errors)
         })
+        ### End of File ###
