@@ -9,14 +9,26 @@ from FieldAdvisoryService.models import Region, Zone, Territory
 # ✅ Image size validator
 def validate_image_size(image):
     max_size_mb = 2
-    if image.size > max_size_mb * 1024 * 1024:
-        raise ValidationError(f"Image file too large ( > {max_size_mb}MB )") # ✅ size check
+    # Handle cases where file might not exist yet or is being updated
+    try:
+        if hasattr(image, 'size') and image.size:
+            if image.size > max_size_mb * 1024 * 1024:
+                raise ValidationError(f"Image file too large ( > {max_size_mb}MB )")
+    except (OSError, FileNotFoundError):
+        # File doesn't exist yet or path issue - skip validation
+        pass
 
 # ✅ Role Model
 class Role(models.Model):
     name = models.CharField(max_length=50, unique=True)
     permissions = models.ManyToManyField(Permission, blank=True)
     # permissions = models.ManyToManyField(Permission, related_name='roles')
+    
+    class Meta:
+        permissions = [
+            ('manage_roles', 'Can manage roles and permissions'),
+        ]
+    
     def __str__(self):
         return self.name
 class Designation(models.TextChoices):
@@ -121,11 +133,18 @@ class User(AbstractBaseUser, PermissionsMixin):
     
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=False)
-    is_sales_staff = models.BooleanField(default=False)  # ✅ New field
+    is_sales_staff = models.BooleanField(default=False)  # ✅ Sales staff flag
+    is_dealer = models.BooleanField(default=False)  # ✅ Dealer flag
     objects = UserManager()
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
+    
+    class Meta:
+        permissions = [
+            ('manage_users', 'Can add/edit users'),
+            ('view_user_reports', 'Can view user reports'),
+        ]
 
     def __str__(self):
         return self.email
@@ -228,6 +247,11 @@ class SalesStaffProfile(models.Model):
             self.user.save(update_fields=["is_sales_staff"])
 
         super().delete(*args, **kwargs)
+    
+    class Meta:
+        permissions = [
+            ('manage_sales_staff', 'Can manage sales staff profiles'),
+        ]
 
     def __str__(self):
         if self.is_vacant:
@@ -235,4 +259,5 @@ class SalesStaffProfile(models.Model):
         elif self.user:
             return f"{self.user.email} ({self.get_designation_display()})"
         return f"Unassigned ({self.get_designation_display()})"
-    
+
+

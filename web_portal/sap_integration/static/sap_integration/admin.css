@@ -15,6 +15,12 @@
   --orange-contrast: #B64C1E;     /* stronger contrast block */
   --orange-contrast-text: #ffffff;
 
+  /* Branding title (left header) */
+  /* Set to green; change to #ffffff if you prefer white */
+  --brand-title-color: #ffffff;           /* title text color (green) */
+  --brand-title-hover-bg: rgba(255, 255, 255, 0.15);
+  --brand-title-focus-ring: rgba(250, 250, 250, 0.45);
+
   /* Header and user-tools */
   --header-bg: var(--orange);
   --header-text: #ffffff;
@@ -27,6 +33,10 @@
   --accent-orange: #E26830;
   --accent-orange-hover: #EE7A47;
   --accent-orange-active: #C75A2A;
+  --green: #16a34a;
+  --green-dark: #15803d;
+  --breadcrumbs-bg: var(--green);
+  --breadcrumbs-fg: #ffffff;
 
   /* Motion */
   --transition-med: 240ms;
@@ -39,6 +49,8 @@
   --header-text: #ffffff;
   --hover-bg: rgba(0, 0, 0, 0.26); /* slightly stronger for readability */
   --theme-icon-color: #ffffff; /* icon color on dark mode (light glyph) */
+  --breadcrumbs-bg: var(--green-dark);
+  --breadcrumbs-fg: #ffffff;
 }
 
 /* Duplicate root block retained by upstream; reassert provided palette */
@@ -51,6 +63,10 @@
   --text-default: #333333;
   --orange-contrast: #B64C1E;
   --orange-contrast-text: #ffffff;
+  --green: #16a34a;
+  --green-dark: #15803d;
+  --breadcrumbs-bg: var(--green);
+  --breadcrumbs-fg: #ffffff;
 }
 
 /* Header bar */
@@ -60,6 +76,83 @@
 /* Force header color to match theme even if upstream CSS overrides */
 #header {
   background-color: var(--accent-orange) !important;
+}
+
+/* Breadcrumbs bar below header */
+.breadcrumbs { position: relative; background: radial-gradient(900px 300px at 12% -40%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.0) 45%), linear-gradient(90deg, var(--green) 0%, #1aa357 50%, var(--green-dark) 100%) !important; color: #ffffff !important; border-top: 1px solid var(--hairline-color) !important; border-bottom: 1px solid var(--hairline-color) !important; box-shadow: 0 14px 28px rgba(0,0,0,0.20); border-radius: 0 0 16px 16px; padding: 14px 40px !important; font-size: 15px; }
+.breadcrumbs { -webkit-backdrop-filter: saturate(140%) blur(2px); backdrop-filter: saturate(140%) blur(2px); text-shadow: 0 1px 2px rgba(0,0,0,0.28); box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 14px 28px rgba(0,0,0,0.20); }
+.main .breadcrumbs, #content .breadcrumbs { background: radial-gradient(900px 300px at 12% -40%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.0) 45%), linear-gradient(90deg, var(--green) 0%, #1aa357 50%, var(--green-dark) 100%) !important; color: #ffffff !important; }
+.breadcrumbs::after { content: ""; position: absolute; inset: 0; left: -20%; width: 40%; background: linear-gradient(90deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.22) 50%, rgba(255,255,255,0.0) 100%); transform: skewX(-18deg); pointer-events: none; animation: breadcrumbsShine 6s ease-in-out infinite; }
+@keyframes breadcrumbsShine { 0% { transform: translateX(0) skewX(-18deg); opacity: 0.75; } 50% { transform: translateX(220%) skewX(-18deg); opacity: 0.4; } 100% { transform: translateX(0) skewX(-18deg); opacity: 0.75; } }
+.breadcrumbs::before { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 4px; background: linear-gradient(90deg, var(--orange) 0%, #ff9b61 50%, var(--orange-dark) 100%); opacity: 0.92; border-radius: 0 0 12px 12px; }
+.breadcrumbs::before { box-shadow: 0 6px 12px rgba(226,104,48,0.28); }
+@keyframes breadcrumbsShine { 0% { transform: translateX(0) skewX(-18deg); opacity: 0.75; } 50% { transform: translateX(220%) skewX(-18deg); opacity: 0.4; } 100% { transform: translateX(0) skewX(-18deg); opacity: 0.75; } }
+.breadcrumbs a { color: #ffffff !important; text-decoration: none; }
+.breadcrumbs a:hover { text-decoration: none; background-color: rgba(255,255,255,0.16); }
+.breadcrumbs a { display: inline-block; padding: 8px 12px; border-radius: 18px; transition: background-color var(--transition-fast) ease, opacity var(--transition-fast) ease; border: 1px solid rgba(255,255,255,0.25); }
+.breadcrumbs a:first-of-type::before { content: "🏠"; display: inline-block; margin-right: 8px; }
+.breadcrumbs strong { display: inline-block; padding: 6px 12px; border-radius: 18px; background-color: rgba(255,255,255,0.20); font-weight: 700; border: 1px solid rgba(255,255,255,0.28); text-shadow: 0 1px 2px rgba(0,0,0,0.22); }
+[data-theme="dark"] .breadcrumbs strong { text-shadow: 0 1px 2px rgba(0,0,0,0.35); }
+.breadcrumbs strong { text-shadow: 0 1px 2px rgba(0,0,0,0.22); }
+[data-theme="dark"] .breadcrumbs a:hover { background-color: rgba(255,255,255,0.12); }
+.breadcrumbs a + a::before, .breadcrumbs strong + a::before { content: "›"; display: inline-block; margin: 0 6px 0 10px; opacity: 0.9; }
+[data-theme="dark"] .breadcrumbs a + a::before, [data-theme="dark"] .breadcrumbs strong + a::before { opacity: 0.8; }
+[data-theme="dark"] .breadcrumbs strong { background-color: rgba(255,255,255,0.12); }
+[data-theme="dark"] .breadcrumbs { background: radial-gradient(900px 300px at 12% -40%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.0) 45%), linear-gradient(90deg, var(--green-dark) 0%, #116c33 50%, #0e5a2a 100%) !important; color: #ffffff !important; border-color: #1f2937 !important; box-shadow: 0 16px 32px rgba(0,0,0,0.38); }
+@media (max-width: 768px) { .breadcrumbs { padding: 10px 16px !important; border-radius: 0 0 12px 12px; font-size: 14px; } .breadcrumbs a, .breadcrumbs strong { padding: 6px 10px; } }
+[data-theme="dark"] .breadcrumbs { background-color: var(--green-dark) !important; color: #ffffff !important; border-color: #1f2937 !important; }
+
+.breadcrumbs { background: linear-gradient(180deg, var(--green) 0%, var(--green-dark) 100%) !important; box-shadow: 0 6px 12px rgba(0,0,0,0.14); border-radius: 0 0 10px 10px; padding: 12px 28px !important; font-size: 15px; letter-spacing: 0.2px; }
+.breadcrumbs::after, .breadcrumbs::before { display: none !important; }
+.breadcrumbs a { border: none; padding: 6px 12px; border-radius: 12px; background-color: rgba(255,255,255,0.12); }
+.breadcrumbs a:hover { background-color: rgba(255,255,255,0.20); }
+.breadcrumbs strong { background-color: rgba(255,255,255,0.20); border: none; }
+
+/* =====================
+   Branding: Site title
+   ===================== */
+#site-name { margin: 0; }
+#site-name a {
+  display: inline-flex;
+  align-items: center;
+  gap: 60px;
+  color: var(--brand-title-color) !important;
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.2px;
+  text-decoration: none !important;
+  padding: 4px 10px;
+  border-radius: 8px;
+  transition: color var(--transition-med) ease,
+              text-decoration-color var(--transition-med) ease,
+              box-shadow var(--transition-med) ease,
+              filter var(--transition-med) ease,
+              opacity var(--transition-med) ease;
+}
+#site-name a .brand-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-right: 0; margin-left: 8px; position: relative; overflow: visible; }
+#site-name a .brand-icon svg { width: 30px; height: 30px; transform: scale(2.6); transform-origin: center; }
+#site-name a .brand-icon img { width: 30px; height: 30px; object-fit: contain; display: block; transform: scale(2.6); transform-origin: center; }
+#site-name a:hover {
+  color: var(--brand-title-color) !important;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  background-color: transparent;
+  box-shadow: none;
+}
+#site-name a:focus {
+  color: var(--brand-title-color) !important;
+  outline: none;
+  background-color: transparent;
+  box-shadow: 0 0 0 3px var(--brand-title-focus-ring);
+}
+#site-name a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-title-focus-ring);
+}
+
+[data-theme="dark"] #site-name a:hover {
+  background-color: transparent;
 }
 
 /* Header user tools (e.g., Logout, dark-mode icon) */
@@ -243,30 +336,44 @@
   border-color: var(--orange-dark);
 }
 
-/* Sidebar container */
 #nav-sidebar {
-  background: var(--orange-soft);
-  border-right: 1px solid var(--orange-soft-border);
+  background: #ffffff;
+  border-right: 1px solid #e5e7eb;
+  padding: 16px 12px;
 }
 
-/* Sidebar section headings */
-#nav-sidebar h2,
-#nav-sidebar .app-label,
-#nav-sidebar .module caption {
-  background-color: var(--orange-contrast) !important;
-  color: var(--orange-contrast-text) !important;
-  border: 1px solid var(--orange-contrast) !important;
-}
-#nav-sidebar h2 {
-  padding: 8px 12px !important;
-  line-height: 1.2;
-}
-#nav-sidebar h2 a,
-#nav-sidebar h2 a:visited {
-  color: var(--orange-contrast-text) !important;
-  display: block;
-  text-decoration: none;
-}
+.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px; }
+.brand-avatar { width: 40px; height: 40px; border-radius: 50%; background: #f3f4f6; color: #111827; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; }
+.brand-info { line-height: 1.1; }
+.brand-name { font-weight: 800; letter-spacing: .3px; }
+.brand-sub { font-size: 12px; color: #6b7280; }
+
+.sidebar-search { padding: 10px 8px 6px; }
+.search-field { position: relative; display: flex; align-items: center; gap: 8px; border: 1.5px solid #e5e7eb; border-radius: 999px; padding: 8px 12px; background: #ffffff; }
+.search-field .icon { width: 18px; height: 18px; color: #6b7280; flex-shrink: 0; }
+.search-field input { border: 0; outline: none; background: transparent; width: 100%; color: #111827; }
+.search-field:focus-within { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(226, 104, 48, 0.22); background: #ffffff; }
+#nav-filter { border: 0 !important; outline: none !important; box-shadow: none !important; background: transparent !important; }
+#nav-filter::placeholder { color: #9ca3af; opacity: 1; }
+.kbd-pill { display: none; }
+
+.menu-title { margin: 10px 8px 8px; font-weight: 600; color: #6b7280; }
+.menu-list { list-style: none !important; padding: 0 !important; margin: 0; }
+.menu-list li { list-style: none !important; }
+.menu-list li::marker { content: '' !important; }
+.menu-list li::before { content: none !important; }
+.menu-item { margin: 6px 0; }
+.menu-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; color: #111827; text-decoration: none; border: 1px solid transparent; }
+.menu-link:hover { background: #fff7f3; border-color: #fde1d3; }
+.menu-icon { width: 22px; height: 22px; color: #6b7280; display: inline-flex; align-items: center; justify-content: center; }
+.menu-icon svg { width: 20px; height: 20px; }
+.menu-text { font-weight: 600; }
+.menu-item.is-active .menu-link { background: var(--orange); border-color: var(--orange); color: #ffffff; }
+.menu-item.is-active .menu-icon { color: #ffffff; }
+
+.sidebar-footer { padding: 10px 8px; }
+.collapse-btn { border: 0; background: transparent; color: #6b7280; cursor: pointer; }
+
 
 /* Model links */
 #nav-sidebar .model-list li a {
@@ -279,13 +386,7 @@
 }
 
 /* Sidebar filter input */
-#nav-filter {
-  border-color: var(--orange-soft-border);
-}
-#nav-filter:focus {
-  border-color: var(--orange-dark);
-  box-shadow: 0 0 0 3px rgba(231, 111, 81, 0.25);
-}
+
 
 /* Right-side filter header */
 #changelist-filter h2,
@@ -298,6 +399,507 @@
 .results thead th {
   background-color: var(--orange-soft);
   border-bottom: 1px solid var(--hairline-color);
+}
+
+/* Reserve space so filters never overlap table */
+#changelist { 
+  position: relative;
+  display: flex;
+  flex-direction: row;
+}
+#changelist #content-main { 
+  flex: 1;
+  min-width: 0;
+  max-width: calc(100% - 280px);
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 8px;
+}
+#changelist-filter { 
+  width: 260px;
+  flex-shrink: 0;
+}
+
+/* Changelist table: compact layout with horizontal scroll */
+#changelist .results { 
+  table-layout: auto; 
+  position: relative; 
+  z-index: 1; 
+  width: 100%;
+  max-width: 100%;
+  display: table;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+#changelist .results th, #changelist .results td { 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+  padding: 6px 10px !important;
+  max-width: 200px;
+  word-break: break-all;
+  word-wrap: normal;
+}
+
+/* Force all content inside cells to respect boundaries */
+#changelist .results td * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
+}
+/* Slim column widths for common fields */
+#changelist .results th:first-child, #changelist .results td:first-child { 
+  width: 35px; 
+  max-width: 35px;
+  min-width: 35px;
+  padding: 4px !important; 
+}
+#changelist .results th.action-checkbox-column, #changelist .results td.action-checkbox-column { 
+  width: 35px;
+  max-width: 35px;
+  min-width: 35px;
+  padding: 4px !important; 
+}
+/* date column width */
+#changelist .results th:nth-child(7), #changelist .results td:nth-child(7) { 
+  width: 140px; 
+  max-width: 140px;
+  min-width: 100px;
+}
+/* ID columns - make very slim */
+#changelist .results th.field-id, #changelist .results td.field-id { 
+  width: 80px;
+  max-width: 80px;
+  min-width: 60px;
+}
+/* Name/title columns - moderate width */
+#changelist .results th.field-name, #changelist .results td.field-name,
+#changelist .results th.field-title, #changelist .results td.field-title,
+#changelist .results th.field-name_of_fsm, #changelist .results td.field-name_of_fsm { 
+  max-width: 150px;
+  min-width: 100px;
+}
+/* Company/Region/Territory columns */
+#changelist .results th.field-company_fk, #changelist .results td.field-company_fk,
+#changelist .results th.field-territory_fk, #changelist .results td.field-territory_fk,
+#changelist .results th.field-region_fk, #changelist .results td.field-region_fk { 
+  max-width: 180px;
+  min-width: 120px;
+}
+/* Email/long text columns */
+#changelist .results th.field-email, #changelist .results td.field-email { 
+  max-width: 160px;
+  min-width: 120px;
+}
+/* Actions column */
+#changelist .results th.action-column, #changelist .results td.action-column { 
+  width: 80px;
+  max-width: 80px;
+  min-width: 80px;
+  text-align: center; 
+}
+/* Date columns */
+#changelist .results th.field-date_created, #changelist .results td.field-date_created,
+#changelist .results th.field-date_modified, #changelist .results td.field-date_modified,
+#changelist .results th.field-created_at, #changelist .results td.field-created_at,
+#changelist .results th.field-updated_at, #changelist .results td.field-updated_at { 
+  width: 140px;
+  max-width: 140px;
+  min-width: 120px;
+}
+
+/* Ensure filter sits above table and has opaque background */
+#changelist-filter { 
+  position: sticky; 
+  top: 70px; 
+  z-index: 6000; 
+  background: #fff; 
+  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+  float: right;
+  margin-left: 20px;
+}
+#changelist-filter .filter, #changelist-filter .filter ul, #changelist-filter .filter li { background: #fff; }
+
+/* Ensure main content doesn't overlap with filter */
+#changelist #content-main {
+  box-sizing: border-box;
+  padding-right: 0;
+}
+
+/* Horizontal scroll wrapper for table */
+#changelist .results-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  margin: 10px 0;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  background: #fff;
+  position: relative;
+}
+
+/* Pagination styling - make more prominent */
+.paginator {
+  padding: 12px 16px;
+  background: #f9fafb;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  margin: 16px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+}
+.paginator a, .paginator span {
+  padding: 6px 12px;
+  border-radius: 6px;
+  display: inline-block;
+  min-width: 32px;
+  text-align: center;
+}
+.paginator a {
+  background: #fff;
+  border: 1px solid var(--hairline-color);
+  color: var(--orange-dark);
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+.paginator a:hover {
+  background: var(--orange);
+  color: #fff;
+  border-color: var(--orange);
+}
+.paginator .this-page {
+  background: var(--orange);
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid var(--orange);
+}
+.paginator .end {
+  padding: 6px 10px;
+}
+
+/* Constrain filter list height and scroll if too long */
+#changelist-filter .filter ul {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Actions bar - make compact */
+.actions {
+  padding: 8px 12px;
+  background: #f9fafb;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  margin: 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.actions label {
+  font-size: 13px;
+  margin: 0;
+}
+.actions select {
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  height: auto;
+  min-height: 32px;
+}
+.actions button {
+  padding: 4px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  min-height: 32px;
+}
+.actions span.action-counter {
+  font-size: 12px;
+  color: #6b7280;
+  margin-left: auto;
+}
+.actions .question {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: #fff;
+  font-size: 12px;
+  cursor: help;
+  margin-left: 4px;
+}
+
+/* Results count info */
+#changelist .paginator + p,
+#changelist p.paginator {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 8px 0;
+}
+
+/* List display and show all link */
+#changelist .paginator .showall {
+  margin-left: 10px;
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid var(--hairline-color);
+  border-radius: 6px;
+  color: var(--orange-dark);
+  text-decoration: none;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+#changelist .paginator .showall:hover {
+  background: var(--orange-soft);
+  border-color: var(--orange);
+}
+
+/* Compact changelist header */
+#changelist .changelist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Make change list form more compact */
+#changelist-form {
+  margin: 0;
+}
+
+/* Column display toggle hint */
+#changelist .results th[title] {
+  cursor: help;
+}
+#changelist .results th[title]:hover {
+  background-color: var(--orange-dark);
+  color: #fff;
+}
+
+/* Improve table borders */
+#changelist .results {
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+}
+#changelist .results th,
+#changelist .results td {
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #f3f4f6;
+}
+#changelist .results th:last-child,
+#changelist .results td:last-child {
+  border-right: none;
+}
+#changelist .results tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Ensure the entire changelist form respects boundaries */
+#changelist-form {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+}
+
+/* Table container wrapper */
+.results-container {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Compact row styling */
+#changelist .results tbody tr {
+  height: 38px;
+}
+#changelist .results tbody tr:hover {
+  background-color: rgba(226, 104, 48, 0.08);
+}
+
+/* Additional overflow protection for all changelist elements */
+#changelist .form-row,
+#changelist .field-box,
+#changelist .related-widget-wrapper,
+#changelist .readonly {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-wrap: break-word;
+}
+
+/* Ensure long URLs and text in cells wrap properly */
+#changelist .results td a,
+#changelist .results td span,
+#changelist .results td div,
+#changelist .results td strong,
+#changelist .results td em {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* Prevent any text node from overflowing */
+#changelist .results td {
+  position: relative;
+}
+#changelist .results td::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  background: linear-gradient(to right, transparent, white);
+  pointer-events: none;
+}
+
+/* Make links more compact */
+#changelist .results td a {
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+/* Action column should be fixed width */
+#changelist .results th.action-checkbox-column,
+#changelist .results td.action-checkbox-column {
+  width: 35px;
+  max-width: 35px;
+  min-width: 35px;
+  text-align: center;
+}
+
+/* Position page heading and action buttons in a single row */
+#content {
+  position: relative;
+}
+
+/* Make the heading area a flex container to hold h1 and object-tools side by side */
+#content > h1 {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--hairline-color);
+}
+
+/* Object tools (action buttons) - position right after heading */
+.object-tools {
+  position: absolute;
+  top: 12px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  z-index: 100;
+}
+
+.object-tools li {
+  margin: 0;
+  display: inline-block;
+}
+
+.object-tools a {
+  padding: 10px 20px;
+  font-size: 14px;
+  border-radius: 8px;
+  background: var(--orange);
+  color: #fff !important;
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  border: none;
+  box-shadow: 0 2px 4px rgba(226, 104, 48, 0.2);
+}
+
+.object-tools a:hover {
+  background: var(--orange-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(226, 104, 48, 0.3);
+}
+
+.object-tools a::before {
+  content: "+";
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+/* For changelist pages specifically */
+#changelist {
+  padding-top: 0;
+}
+
+/* Make sure content has enough top padding for the absolute positioned button */
+#content {
+  padding-top: 20px;
+}
+
+/* Search bar - make more compact */
+#changelist-search {
+  padding: 10px;
+  background: #f9fafb;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+#changelist-search input[type="text"] {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+#changelist-search input[type="submit"] {
+  padding: 6px 16px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* Narrow screens: stack filter above table */
+@media (max-width: 1024px) {
+  #changelist {
+    flex-direction: column;
+  }
+  #changelist #content-main { 
+    margin-right: 0; 
+    max-width: 100%;
+    padding: 4px;
+    width: 100%;
+  }
+  #changelist-filter { 
+    position: static; 
+    width: 100%;
+    box-shadow: none;
+    margin-bottom: 16px;
+  }
+  #changelist .results {
+    font-size: 12px;
+  }
+  #changelist .results th, #changelist .results td {
+    padding: 4px 6px !important;
+    max-width: 150px;
+  }
+  .paginator {
+    font-size: 12px;
+    padding: 8px;
+  }
 }
 
 /* ==========================
@@ -376,17 +978,38 @@
 /* =============================
    Changelist table enhancements
    ============================= */
-/* Header cells */
+/* Header cells - more compact and sticky */
 #changelist .results thead th {
   background-color: var(--orange-soft);
   color: #2b2b2b;
-  border-bottom: 1px solid var(--orange-soft-border);
+  border-bottom: 2px solid var(--orange-soft-border);
   font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 8px 10px !important;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 [data-theme="dark"] #changelist .results thead th {
   background-color: #1f1f1f;
   color: #f0f0f0;
-  border-bottom: 1px solid #333;
+  border-bottom: 2px solid #333;
+}
+
+/* Sortable column headers */
+#changelist .results thead th.sortable a {
+  padding: 0;
+  display: block;
+  color: inherit;
+}
+#changelist .results thead th.sorted {
+  background-color: var(--orange);
+  color: #fff;
+}
+#changelist .results thead th.sorted a {
+  color: #fff;
 }
 
 /* Row hover */
@@ -467,3 +1090,305 @@
 .password-toggle .icon-eye-off { display: none; }
 .password-toggle[data-state="visible"] .icon-eye { display: none; }
 .password-toggle[data-state="visible"] .icon-eye-off { display: inline; }
+
+/* =============================
+   Admin layout space for charts
+   ============================= */
+/* Preferred approach: app-specific overrides (no venv edits) */
+.app-crop_manage #content {
+  width: auto;
+  max-width: none;
+}
+
+.app-crop_manage #content-related {
+  width: 220px; /* slimmer sidebar */
+  margin-right: -260px; /* 220 + 40 padding on #content */
+}
+
+.app-crop_manage .colMS { /* main content with right sidebar */
+  margin-right: 260px;
+}
+.app-crop_manage .colSM { /* main content with left sidebar */
+  margin-left: 260px;
+}
+.app-crop_manage .colSM #content-related { margin-left: -260px; }
+
+/* Optional: a generic chart container helper for admin pages */
+.chart-container {
+  background: #fff;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* Responsive fallback: let content shrink gracefully on narrower screens */
+@media (max-width: 1280px) {
+  .app-crop_manage #content { width: auto; }
+}
+
+/* Main admin dashboard: widen content and slim sidebar */
+.dashboard #content {
+  width: auto;
+}
+.dashboard #nav-sidebar { left: 0; right: auto; }
+.dashboard #nav-sidebar { flex: 0 0 240px; }
+.dashboard #content-related {
+  width: 220px; /* slimmer sidebar */
+  margin-left: -260px; /* 220 + 40px content padding */
+  float: left;
+}
+.dashboard .colMS { margin-left: 260px; }
+.dashboard .colSM { margin-right: 0; }
+.dashboard .colSM #content-related { margin-right: -260px; }
+
+/* Dashboard main content wrapper */
+.dashboard-main-content { margin-left: 0; padding-right: 0; }
+
+/* Ensure proper sidebar positioning */
+.dashboard #content-related {
+  position: relative;
+  float: left;
+  width: 220px;
+  margin-left: -260px;
+}
+
+/* Content area adjustments */
+.dashboard #content { width: 100% !important; max-width: none !important; }
+
+/* Chart section positioning */
+.dashboard .charts-section {
+  width: 100%;
+  margin-top: 20px;
+}
+
+/* Ensure content sits to the right of the opened left nav */
+.dashboard .main > #nav-sidebar + .content { width: calc(100% - 263px) !important; max-width: none !important; }
+
+@media (max-width: 1280px) {
+  .dashboard #content { width: auto; }
+  .dashboard-main-content { margin-left: 0; padding-right: 0; }
+  .dashboard #content-related { 
+    position: static; 
+    float: none; 
+    width: 100%; 
+    margin-left: 0; 
+    margin-bottom: 20px;
+  }
+}
+
+@media (max-width: 1200px) { .dashboard .chart-grid { grid-template-columns: repeat(2, minmax(280px, 1fr)); } }
+@media (max-width: 768px) { .dashboard .chart-grid { grid-template-columns: 1fr; } }
+
+/* ---------------------------
+   Dashboard charts aesthetics
+   --------------------------- */
+.dashboard .charts-section {
+  margin-top: 24px; /* space beneath default content */
+}
+.dashboard .charts-section h2 {
+  margin: 0 0 12px 0;
+  font-weight: 700;
+  color: #ffffff !important;
+}
+.dashboard .page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0 16px; border-bottom: 1px solid var(--hairline-color); margin-bottom: 12px; }
+.dashboard .page-head-left { display: flex; flex-direction: column; }
+.dashboard .page-title { font-size: 20px; font-weight: 700; color: var(--text-default); }
+.dashboard .page-meta { font-size: 12px; color: var(--body-quiet-color); }
+.dashboard .page-head-right { display: flex; align-items: center; gap: 10px; }
+.dashboard .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--hairline-color); background: #fff; color: var(--text-default); }
+.dashboard .icon-btn:hover { background: #f8f8f8; }
+.dashboard .user-pill { display: inline-flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--hairline-color); border-radius: 18px; background: #fff; }
+.dashboard .user-pill .avatar { width: 28px; height: 28px; border-radius: 50%; background: #f3f4f6; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: var(--body-quiet-color); }
+.dashboard .user-pill .user-info { line-height: 1.1; }
+.dashboard .user-pill .user-name { font-weight: 600; font-size: 12px; }
+.dashboard .user-pill .user-email { font-size: 12px; color: var(--body-quiet-color); }
+.dashboard .dashboard-toolbar { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin: 8px 0 16px; }
+.dashboard .chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--hairline-color); border-radius: 16px; background: #ffffff; color: var(--text-default); font-size: 12px; }
+.dashboard .button-export { display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 16px; background: var(--orange); color: #ffffff; border: 1px solid var(--orange); font-weight: 600; }
+.dashboard .chart-grid { display: grid; grid-template-columns: repeat(3, minmax(280px, 1fr)); gap: 16px; width: 100%; }
+.dashboard .chart-card { background: #ffffff; border: 1px solid var(--hairline-color); border-radius: 14px; padding: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); min-height: 220px; }
+.dashboard .kpi-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.dashboard .kpi-title { font-weight: 600; color: var(--text-default); }
+.dashboard .kpi-info { border: 0; background: transparent; color: var(--body-quiet-color); cursor: pointer; }
+.dashboard .kpi-body { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.dashboard .kpi-value { font-size: 20px; font-weight: 700; color: var(--text-default); }
+.dashboard .kpi-sub { font-size: 12px; color: var(--body-quiet-color); }
+.dashboard .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px; font-weight: 600; font-size: 12px; }
+.dashboard .badge.up { background: #eafff2; color: #16a34a; }
+.dashboard .badge.down { background: #fff0f0; color: #dc2626; }
+.dashboard .kpi-chart canvas { height: 120px !important; }
+
+.dashboard #header {}
+.dashboard #header a, .dashboard #user-tools a, .dashboard #logout-form button {}
+.dashboard #user-tools a, .dashboard #user-tools button {}
+.dashboard #user-tools a:hover, .dashboard #user-tools button:hover {}
+.dashboard #nav-sidebar .module td a { display: block; padding: 10px 12px; border-radius: 12px; }
+.dashboard #nav-sidebar .module td a:hover { background-color: #fff2ee; }
+.dashboard #nav-sidebar .current-model { background: #ffe7db; border-radius: 12px; }
+.dashboard .chart-card:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(0,0,0,0.08); }
+.dashboard .kpi-info { width: 28px; height: 28px; border: 1px solid var(--hairline-color); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.dashboard .chip { border-radius: 18px; }
+.dashboard .button-export { gap: 6px; border-radius: 18px; }
+.dashboard .button-export::before { content: "⤓"; }
+.dashboard .chart-grid { gap: 20px; }
+.dashboard .chart-card canvas {
+  width: 100% !important;
+  height: 180px !important;
+}
+
+#content-main .table-responsive { width: 100%; overflow-x: visible; -webkit-overflow-scrolling: touch; }
+#content-main .result-table { min-width: 640px; }
+@media (max-width: 768px) {
+  #content-main .result-table thead th, #content-main .result-table tbody td { padding: 8px 10px; }
+}
+#recent-actions-module { background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); padding: 16px; border: 1px solid var(--hairline-color); }
+[data-theme="dark"] #recent-actions-module { background-color: #0f172a; border-color: #1f2937; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+#recent-actions-module h2 { font-size: 18px; font-weight: 700; color: var(--text-default); margin: 0 0 12px 0; }
+#recent-actions-module h3 { font-size: 14px; font-weight: 700; color: var(--text-default); margin: 0 0 8px 0; opacity: 0.8; }
+#recent-actions-module .actionlist { list-style: none; padding: 0; margin: 0; }
+#recent-actions-module .actionlist li { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; transition: background-color var(--transition-fast) ease; }
+#recent-actions-module .actionlist li:hover { background-color: var(--orange-soft); }
+[data-theme="dark"] #recent-actions-module .actionlist li:hover { background-color: rgba(255,255,255,0.06); }
+#recent-actions-module .actionlist li::before { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--hairline-color); background: #fff; color: var(--text-default); font-size: 16px; content: ""; }
+[data-theme="dark"] #recent-actions-module .actionlist li::before { background: #0b1224; border-color: #1f2937; color: #e2e8f0; }
+/* ==========================
+   Form dropdown sizing
+   ========================== */
+.form-row select:not([multiple]),
+#content-main select:not([multiple]),
+.inline-group .tabular select:not([multiple]),
+.related-widget-wrapper select:not([multiple]),
+select.sap-customer-lov,
+select.sap-item-lov,
+select.sap-warehouse-lov,
+select.sap-tax-lov,
+select.sap-project-lov,
+select.sap-crop-lov {
+  height: 42px;
+  font-size: 14px;
+  background-color: #fff;
+  cursor: pointer;
+  padding: 6px 30px 6px 10px; /* Adjust padding to avoid click conflicts */
+  appearance: auto; /* Force native appearance */
+  -webkit-appearance: auto;
+  -moz-appearance: auto;
+}
+
+/* Fix for dropdowns in generic result tables (not changelist) */
+.results {
+  overflow: visible !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important; /* Ensure vertical overflow is allowed */
+}
+
+#changelist .results td {
+  overflow: visible !important;
+  position: relative; /* Ensure z-index works contextually */
+}
+
+#changelist .results select {
+  position: relative;
+  z-index: 500; /* Higher z-index */
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Ensure Select2 dropdowns are above everything (branding, sidebar) */
+.select2-container {
+  z-index: 9999 !important;
+}
+.select2-dropdown {
+  z-index: 9999 !important;
+}
+#recent-actions-module .actionlist li.addlink::before { content: "➕"; color: #16a34a; border-color: #22c55e; background: #eafff2; }
+#recent-actions-module .actionlist li.changelink::before { content: "✏️"; color: #ca8a04; border-color: #eab308; background: #fefce8; }
+#recent-actions-module .actionlist li.deletelink::before { content: "✖️"; color: #dc2626; border-color: #ef4444; background: #fef2f2; }
+[data-theme="dark"] #recent-actions-module .actionlist li.addlink::before { background: rgba(22,163,74,0.15); }
+[data-theme="dark"] #recent-actions-module .actionlist li.changelink::before { background: rgba(234,179,8,0.15); }
+[data-theme="dark"] #recent-actions-module .actionlist li.deletelink::before { background: rgba(220,38,38,0.15); }
+#recent-actions-module .actionlist li a { color: var(--orange); font-weight: 600; text-decoration: none; }
+#recent-actions-module .actionlist li a:hover { color: var(--orange-dark); text-decoration: underline; text-underline-offset: 2px; }
+#recent-actions-module .mini.quiet { color: var(--body-quiet-color); font-size: 12px; }
+[data-theme="dark"] #recent-actions-module .mini.quiet { color: #94a3b8; }
+
+@media (prefers-color-scheme: dark) {
+  .dashboard .chart-card {
+    background: #1a1a1a;
+    border-color: #2a2a2a;
+    box-shadow: none;
+  }
+  .dashboard .charts-section h2 { color: #f0f0f0; }
+}
+
+/* Recent actions moved below charts */
+.dashboard .recent-actions-below .module {
+  margin-top: 12px;
+}
+.dashboard .recent-actions-below h2 {
+  font-weight: 600;
+}
+.dashboard .recent-actions-below .actionlist li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline-color, #e9ecef);
+}
+
+/* =====================
+   Fix Inline Form Overlapping Text
+   ===================== */
+
+/* Hide the .original paragraph that shows "Line 0: FG00001 - 20.00" text */
+/* This paragraph contains initial values and overlaps with form fields */
+.inline-group .tabular tbody tr td .original,
+.inline-group .tabular .original,
+.inline-related tbody tr td p.original,
+tbody tr td p.original {
+    display: none !important;
+}
+
+/* Ensure proper spacing for inline table cells */
+.inline-group .tabular tbody tr td {
+    padding: 8px 10px !important;
+    vertical-align: middle !important;
+}
+
+/* Fix table row display */
+.inline-group .tabular tbody tr {
+    display: table-row !important;
+}
+
+/* Ensure form fields are visible and properly styled */
+.inline-group .tabular tbody tr td input,
+.inline-group .tabular tbody tr td select,
+.inline-group .tabular tbody tr td textarea {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+}
+
+/* Style the inline table headers */
+.inline-group .tabular thead th {
+    background-color: var(--orange, #E26830) !important;
+    color: white !important;
+    font-weight: 600 !important;
+    padding: 12px 10px !important;
+    text-align: left !important;
+    border: none !important;
+}
+
+/* Add alternating row colors for better readability */
+.inline-group .tabular tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+.inline-group .tabular tbody tr:nth-child(odd) {
+    background-color: white;
+}
+
+/* Dark mode support */
+[data-theme="dark"] .inline-group .tabular tbody tr:nth-child(even) {
+    background-color: #2a2a2a;
+}
+
+[data-theme="dark"] .inline-group .tabular tbody tr:nth-child(odd) {
+    background-color: #1a1a1a;
+}

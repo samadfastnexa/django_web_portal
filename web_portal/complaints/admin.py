@@ -10,10 +10,11 @@
 
 import uuid
 from django.contrib import admin
+from web_portal.admin import admin_site
 from django.utils.html import format_html
 from .models import Complaint
 
-@admin.register(Complaint)
+@admin.register(Complaint, site=admin_site)
 class ComplaintAdmin(admin.ModelAdmin):
     list_display = [
         'complaint_id', 'user', 'status', 'message', 'created_at', 'image_tag'

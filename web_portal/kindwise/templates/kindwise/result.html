@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Identification Result</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .result-card { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
+        .suggestion { font-weight: bold; font-size: 1.2em; }
+        .probability { color: #666; }
+        .btn { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 20px;}
+        pre { background: #f4f4f4; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Identification Results</h2>
+        
+        {% if result.result.classification.suggestions %}
+            <h3>Suggestions:</h3>
+            {% for suggestion in result.result.classification.suggestions %}
+                <div class="result-card">
+                    <div class="suggestion">{{ suggestion.name }}</div>
+                    <div class="probability">Probability: {{ suggestion.probability|floatformat:2 }}</div>
+                    {% if suggestion.similar_images %}
+                        <div>
+                            <h4>Similar Images:</h4>
+                            {% for img in suggestion.similar_images %}
+                                <img src="{{ img.url }}" style="max-height: 100px; margin: 5px;">
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No clear identification found.</p>
+        {% endif %}
+
+        <h3>Raw Response:</h3>
+        <pre>{{ result|pprint }}</pre>
+
+        <a href="{% url 'kindwise_identify' %}" class="btn">Try Another</a>
+    </div>
+</body>
+</html>

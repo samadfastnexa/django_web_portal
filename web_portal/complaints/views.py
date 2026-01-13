@@ -96,6 +96,10 @@ class ComplaintListCreateView(generics.ListCreateAPIView):
     pagination_class = ComplaintPagination
 
     def get_queryset(self):
+        # Short-circuit for Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Complaint.objects.none()
+        
         user = self.request.user
 
         if not user.is_authenticated:

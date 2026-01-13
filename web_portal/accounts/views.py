@@ -24,11 +24,12 @@ from .serializers import (
 from .models import SalesStaffProfile
 from rest_framework.permissions import IsAuthenticated
 from .permissions import HasRolePermission
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from .token_serializers import MyTokenObtainPairSerializer
 from .permissions import IsOwnerOrAdmin
-from .filters import UserFilter  # ✅ Import your custom filter class
+from .filters import UserFilter
 from django_filters.rest_framework import DjangoFilterBackend
+import re
 
 User = get_user_model()
 
@@ -37,6 +38,125 @@ class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all()
     serializer_class = RoleSerializer
     permission_classes = [IsAuthenticated, HasRolePermission]
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="User territories and SAP empID",
+    operation_description=(
+        "Given a portal user ID, return the user's sales territories from the local DB "
+        "and the SAP empID derived from SalesStaffProfile.employee_code. "
+        "Returns nested structure: Company > Region > Zone > Territories."
+    ),
+    manual_parameters=[
+        openapi.Parameter(
+            'user_id',
+            openapi.IN_PATH,
+            description='Portal user ID (primary key of accounts.User)',
+            type=openapi.TYPE_INTEGER,
+            required=True,
+        ),
+    ],
+    responses={
+        200: openapi.Response(description="Nested territories structure with empID for the given user"),
+        404: openapi.Response(description="User or sales profile not found"),
+        403: openapi.Response(description="Forbidden"),
+    },
+    tags=["02. User Management"],
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_territories_emp_api(request, user_id: int):
+    try:
+        profile = (
+            SalesStaffProfile.objects
+            .select_related('user')
+            .prefetch_related(
+                'companies',
+                'regions__company',
+                'zones__region__company',
+                'territories__zone__region__company'
+            )
+            .get(user_id=user_id)
+        )
+    except SalesStaffProfile.DoesNotExist:
+        return Response(
+            {'success': False, 'error': 'Sales profile not found for this user'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not (request.user.is_staff or request.user.is_superuser) and request.user.id != user_id:
+        raise PermissionDenied("You are not allowed to view territories for this user")
+
+    emp_id = user_id
+
+    # Build nested hierarchy: Company > Region > Zone > Territory
+    companies_dict = {}
+    
+    # Process territories and build hierarchy
+    for territory in profile.territories.all():
+        zone = getattr(territory, 'zone', None)
+        if not zone:
+            continue
+            
+        region = getattr(zone, 'region', None)
+        if not region:
+            continue
+            
+        company = getattr(region, 'company', None)
+        if not company:
+            continue
+        
+        # Initialize company if not exists
+        if company.id not in companies_dict:
+            companies_dict[company.id] = {
+                'id': company.id,
+                'name': company.name,
+                'regions': {}
+            }
+        
+        # Initialize region if not exists
+        if region.id not in companies_dict[company.id]['regions']:
+            companies_dict[company.id]['regions'][region.id] = {
+                'id': region.id,
+                'name': region.name,
+                'zones': {}
+            }
+        
+        # Initialize zone if not exists
+        if zone.id not in companies_dict[company.id]['regions'][region.id]['zones']:
+            companies_dict[company.id]['regions'][region.id]['zones'][zone.id] = {
+                'id': zone.id,
+                'name': zone.name,
+                'territories': []
+            }
+        
+        # Add territory
+        companies_dict[company.id]['regions'][region.id]['zones'][zone.id]['territories'].append({
+            'id': territory.id,
+            'name': territory.name,
+        })
+    
+    # Convert nested dicts to lists
+    companies_list = []
+    for company_data in companies_dict.values():
+        regions_list = []
+        for region_data in company_data['regions'].values():
+            zones_list = []
+            for zone_data in region_data['zones'].values():
+                zones_list.append(zone_data)
+            region_data['zones'] = zones_list
+            regions_list.append(region_data)
+        company_data['regions'] = regions_list
+        companies_list.append(company_data)
+
+    return Response({
+        'success': True,
+        'user_id': user_id,
+        'employee_code': profile.employee_code,
+        'emp_id': emp_id,
+        'companies': companies_list,
+    }, status=status.HTTP_200_OK)
 
 # ✅ Signup View
 class SignupView(generics.CreateAPIView):

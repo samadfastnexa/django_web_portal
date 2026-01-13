@@ -20,13 +20,23 @@ class Setting(models.Model):
         return f"{'Global' if self.user is None else self.user.username} - {self.slug}"
 
     def get_value(self):
-        try:
-            return json.loads(self.value)
-        except (ValueError, TypeError):
-            return self.value
+        """
+        Get the value. Since we're using JSONField, it's already a Python object.
+        For backward compatibility, handle both JSONField (dict/list) and TextField (str) formats.
+        """
+        if isinstance(self.value, str):
+            try:
+                return json.loads(self.value)
+            except (ValueError, TypeError):
+                return self.value
+        return self.value
 
     def set_value(self, data):
-        try:
-            self.value = json.dumps(data)
-        except Exception:
-            raise ValidationError("Value must be JSON-serializable.")
+        """
+        Set the value. Since we're using JSONField, just assign the Python object directly.
+        JSONField handles serialization automatically.
+        """
+        # JSONField accepts dict, list, str, int, float, bool, None
+        if not isinstance(data, (dict, list, str, int, float, bool, type(None))):
+            raise ValidationError("Value must be JSON-serializable (dict, list, str, int, float, bool, or None).")
+        self.value = data

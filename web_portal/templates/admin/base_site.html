@@ -1,146 +1,529 @@
 {% extends "admin/base.html" %}
+{% load i18n %}
+
+{% block extrastyle %}
+<style>
+  /* Header enhancements */
+  #header { background:#E26830; border-bottom:none; }
+  #branding { display:flex; align-items:center; gap:14px; }
+  .brand-title { font-weight:800; font-size:22px; color:#fff; letter-spacing:.3px; }
+  .brand-sub { font-size:12px; color:#ffe8dc; opacity:.9; }
+  #user-tools { display:flex; align-items:center; gap:10px; color:#fff; }
+  #user-tools .role-chip { background:#ffffff; color:#1a56db; padding:6px 12px; border-radius:999px; font-size:12px; font-weight:700; border:1px solid rgba(255,255,255,.6); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  #user-tools .user-welcome { font-weight:700; color:#fff; letter-spacing:.3px; }
+  #user-tools a { color:#fff; opacity:.95; }
+  #user-tools a:hover { text-decoration:underline; opacity:1; }
+  .divider { opacity:.35; margin:0 6px; color:#fff; }
+  #user-tools .logout-btn { background:#ffffff; color:#E26830; padding:8px 14px; border-radius:999px; font-size:12px; font-weight:800; border:1px solid rgba(255,255,255,.7); box-shadow:0 1px 2px rgba(0,0,0,.12); cursor:pointer; }
+  #user-tools .logout-btn:hover { background:#fff; color:#c2512d; border-color:#fff; }
+</style>
+{% endblock %}
+
+{# Do not override branding to avoid duplicate block definitions #}
+
+{% block userlinks %}
+  {% if has_permission %}
+    <span class="role-chip">{{ user.role.name|default:'Admin'|upper }}</span>
+    <span class="user-welcome">{% translate 'WELCOME,' %} {{ user.get_username|upper }}</span>
+    <span class="divider">/</span>
+    <form id="logout-form" method="post" action="{% url 'admin:logout' %}" style="display:inline; margin:0;">
+      {% csrf_token %}
+      <button type="submit" class="logout-btn">{% translate 'LOG OUT' %}</button>
+    </form>
+  {% else %}
+    <a href="{% url 'admin:login' %}">{% translate 'Log in' %}</a>
+  {% endif %}
+{% endblock %}
+{% block welcome-msg %}{% endblock %}
 {% load static %}
 
 {% block extrahead %}
   {{ block.super }}
-  <script>
-    // Apply stored theme ASAP to avoid flash
-    (function(){
-      try {
-        var html = document.documentElement;
-        var key = 'admin_theme_mode';
-        var stored = localStorage.getItem(key);
-        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        html.setAttribute('data-theme', stored ? stored : (prefersDark ? 'dark' : 'light'));
-      } catch(e) {}
-    })();
-  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <link rel="stylesheet" href="{% static 'sap_integration/admin.css' %}">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --font-base: 16px;
+      --font-small: 14px;
+      --tap-height: 44px;
+      --pad: 12px;
+    }
+    html { font-size: var(--font-base); }
+    body { line-height: 1.5; }
+    /* Layout adjustments */
+    #container { padding: 0; }
+    .content { padding: 0; }
+    .breadcrumbs { padding: 8px var(--pad); }
+    /* Forms */
+    input[type="text"], input[type="email"], input[type="number"], input[type="date"],
+    select, textarea { width: 100%; max-width: 100%; padding: 10px; }
+    .submit-row input[type="submit"], .submit-row button[type="submit"] {
+      min-height: 36px;
+      padding: 8px 12px;
+    }
+    /* Tables */
+    .results, .module table { width: 100%; }
+    .module table th, .module table td { padding: 8px; }
+    
+    /* Prevent text overflow in admin changelist */
+    #changelist #content-main {
+      overflow-x: auto;
+      overflow-y: visible;
+      word-wrap: break-word;
+    }
+    #changelist .results {
+      min-width: 100%;
+      width: max-content;
+    }
+    #changelist .results th,
+    #changelist .results td {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    /* Compact styling for all admin pages */
+    #content-main {
+      font-size: 13px;
+    }
+    
+    /* Scrollbar styling for horizontal scroll */
+    #changelist #content-main::-webkit-scrollbar {
+      height: 10px;
+    }
+    #changelist #content-main::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 5px;
+    }
+    #changelist #content-main::-webkit-scrollbar-thumb {
+      background: #c7c7c7;
+      border-radius: 5px;
+    }
+    #changelist #content-main::-webkit-scrollbar-thumb:hover {
+      background: #a8a8a8;
+    }
+    /* avoid overriding default admin button styles */
+    .mobile-nav-toggle { display: none; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; color: #111827; cursor: pointer; }
+    .mobile-nav-toggle:focus { outline: 2px solid #0ea5e9; }
+    /* Breakpoints */
+    @media (max-width: 480px) {
+      html { font-size: var(--font-small); }
+      #header { padding: 8px var(--pad); }
+      .branding h1 { font-size: 1rem; }
+      .mobile-nav-toggle { display: inline-flex; }
+      #nav-sidebar { display: block !important; position: fixed; top: 0; left: 0; height: 100vh; width: 85vw; max-width: 340px; transform: translateX(-100%) !important; transition: transform .2s ease; z-index: 3000; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.15); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 0 !important; margin-right: 0 !important; border-right: 0 !important; box-sizing: border-box; }
+      body.nav-open #nav-sidebar { transform: translateX(0) !important; }
+      body.nav-open { overflow: hidden; }
+      #mobileOverlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(17,24,39,.4); z-index: 2000; }
+      body.nav-open #mobileOverlay { display: block; }
+      body, .content { overflow-x: hidden; }
+      .content { padding: 8px; }
+      .submit-row { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    }
+    @media (min-width: 481px) and (max-width: 768px) {
+      .mobile-nav-toggle { display: inline-flex; }
+      #nav-sidebar { display: block !important; position: fixed; top: 0; left: 0; height: 100vh; width: 85vw; max-width: 340px; transform: translateX(-100%) !important; transition: transform .2s ease; z-index: 3000; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.15); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 0 !important; margin-right: 0 !important; border-right: 0 !important; box-sizing: border-box; }
+      body.nav-open #nav-sidebar { transform: translateX(0) !important; }
+      body.nav-open { overflow: hidden; }
+      #mobileOverlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(17,24,39,.4); z-index: 2000; }
+      body.nav-open #mobileOverlay { display: block; }
+      body, .content { overflow-x: hidden; }
+    }
+    @media (min-width: 481px) and (max-width: 768px) {
+      #container { padding: 16px; }
+      .mobile-nav-toggle { display: inline-flex; }
+      #nav-sidebar { display: block !important; position: fixed; top: 0; left: 0; height: 100vh; width: 70vw; max-width: 360px; transform: translateX(-100%) !important; transition: transform .2s ease; z-index: 3000; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.15); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 0 !important; margin-right: 0 !important; border-right: 0 !important; box-sizing: border-box; }
+      body.nav-open #nav-sidebar { transform: translateX(0) !important; }
+      body.nav-open { overflow: hidden; }
+      #mobileOverlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(17,24,39,.4); z-index: 2000; }
+      body.nav-open #mobileOverlay { display: block; }
+      body, .content { overflow-x: hidden; }
+    }
+    @media (min-width: 1025px) {
+      #container { padding: 0; }
+    }
+    /* Images/media */
+    img, video { max-width: 100%; height: auto; }
+    
+    /* =====================================================
+       MOVE ADD BUTTON OUT OF CONTENT DIV
+       Position object-tools (Add button) after the heading
+       ===================================================== */
+    #content {
+      position: relative;
+    }
+    
+    /* Position object-tools absolute to right side after heading */
+    .object-tools {
+      position: absolute !important;
+      top: 12px !important;
+      right: 0 !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      list-style: none !important;
+      z-index: 100 !important;
+    }
+    
+    .object-tools li {
+      margin: 0 !important;
+      display: inline-block !important;
+    }
+    
+    .object-tools a {
+      padding: 10px 20px !important;
+      font-size: 14px !important;
+      border-radius: 8px !important;
+      background: #E26830 !important;
+      color: #fff !important;
+      text-decoration: none !important;
+      font-weight: 600 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      transition: all 0.2s ease !important;
+      border: none !important;
+      box-shadow: 0 2px 4px rgba(226, 104, 48, 0.2) !important;
+    }
+    
+    .object-tools a:hover {
+      background: #C75A2A !important;
+      transform: translateY(-2px) !important;
+      box-shadow: 0 4px 12px rgba(226, 104, 48, 0.3) !important;
+    }
+    
+    .object-tools a::before {
+      content: "+" !important;
+      font-size: 18px !important;
+      font-weight: bold !important;
+      line-height: 1 !important;
+    }
+    
+    /* Adjust page heading to make room for button */
+    #content > h1 {
+      margin-bottom: 20px !important;
+      padding-bottom: 12px !important;
+      padding-right: 150px !important; /* Make room for button */
+      border-bottom: 2px solid #F3C7B4 !important;
+    }
+    
+    /* Make sure content has enough top padding */
+    #content {
+      padding-top: 20px !important;
+    }
+    
+    /* For changelist pages */
+    #changelist {
+      padding-top: 0 !important;
+    }
+    
+    /* Theme toggle button styling */
+    .theme-toggle {
+      background: transparent !important;
+      border: 1px solid rgba(255, 255, 255, 0.3) !important;
+      color: #ffffff !important;
+      padding: 8px !important;
+      border-radius: 6px !important;
+      cursor: pointer !important;
+      transition: all 0.2s ease !important;
+      width: 40px !important;
+      height: 40px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    .theme-toggle:hover {
+      background: rgba(255, 255, 255, 0.1) !important;
+      border-color: rgba(255, 255, 255, 0.5) !important;
+    }
+    .theme-toggle svg,
+    .theme-toggle svg path {
+      fill: #ffffff !important;
+      stroke: #ffffff !important;
+      color: #ffffff !important;
+    }
+    /* Force icon visibility */
+    button[class*="theme"] svg,
+    button[aria-label*="theme" i] svg,
+    button[aria-label*="color" i] svg {
+      fill: #ffffff !important;
+      width: 20px !important;
+      height: 20px !important;
+      display: block !important;
+    }
+  </style>
   <script>
-    (function() {
-      function ready(fn){ if(document.readyState !== 'loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
+    (function(){
+      function ready(fn){ if(document.readyState!=='loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
       ready(function(){
-        // Theme toggle
+        // Keep sidebar open by default
         try {
-          var userTools = document.getElementById('user-tools');
-          var html = document.documentElement;
-          var STORAGE_KEY = 'admin_theme_mode';
-          if (userTools) {
-            // Clean up stray icon-only boxes from plugins
-            try {
-              Array.prototype.slice.call(userTools.querySelectorAll('button, a')).forEach(function(el){
-                var isTheme = el.classList && el.classList.contains('theme-toggle');
-                var isPwd = el.classList && el.classList.contains('password-toggle');
-                var hasIconOnly = (!el.textContent || el.textContent.trim() === '') && !!el.querySelector('svg, img, span');
-                var sizeBox = (el.offsetWidth && el.offsetWidth <= 36) && (el.offsetHeight && el.offsetHeight <= 36);
-                if (!isTheme && !isPwd && hasIconOnly && sizeBox) { el.remove(); }
-              });
-            } catch(e) {}
-
-            var toggle = userTools.querySelector('.theme-toggle');
-            if (!toggle) {
-              toggle = document.createElement('button');
-              toggle.type = 'button';
-              toggle.className = 'theme-toggle';
-              userTools.appendChild(toggle);
+          var main = document.getElementById('main');
+          var nav = document.getElementById('nav-sidebar');
+          if (main && nav) {
+            localStorage.setItem('django.admin.navSidebarIsOpen', 'true');
+            if (!main.classList.contains('shifted')) {
+              main.classList.add('shifted');
+              nav.setAttribute('aria-expanded', 'true');
             }
-            // Ensure semantics and clean styles even if pre-existing button was injected by a plugin
-            toggle.setAttribute('role', 'switch');
-            toggle.setAttribute('aria-checked', 'false');
-            toggle.setAttribute('aria-label', 'Switch to dark mode');
-            toggle.style.background = 'transparent';
-            toggle.style.backgroundColor = 'transparent';
-            toggle.style.backgroundImage = 'none';
-            toggle.style.border = '0';
-            // Always (re)inject our icon markup to avoid empty boxes
-            toggle.innerHTML = (
-              '<svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
-              + '<g fill="currentColor">'
-              + '<circle cx="12" cy="12" r="5"/>'
-              + '<rect x="11" y="1" width="2" height="4" rx="1"/>'
-              + '<rect x="11" y="19" width="2" height="4" rx="1"/>'
-              + '<rect x="1" y="11" width="4" height="2" rx="1"/>'
-              + '<rect x="19" y="11" width="4" height="2" rx="1"/>'
-              + '<rect x="3.5" y="3.5" width="2.5" height="2.5" rx="1" transform="rotate(-45 4.75 4.75)"/>'
-              + '<rect x="18" y="18" width="2.5" height="2.5" rx="1" transform="rotate(-45 19.25 19.25)"/>'
-              + '<rect x="18" y="3.5" width="2.5" height="2.5" rx="1" transform="rotate(45 19.25 4.75)"/>'
-              + '<rect x="3.5" y="18" width="2.5" height="2.5" rx="1" transform="rotate(45 4.75 19.25)"/>'
-              + '</g>'
-              + '</svg>'
-              + '<svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
-              + '<path fill="currentColor" d="M21 12.5A9 9 0 0 1 9.5 3c-.3 0-.6 0-.9.1a1 1 0 0 0-.2 1.8A7 7 0 0 0 12 21a9 9 0 0 0 9-8.5 1 1 0 0 0-1-.9z"/>'
-              + '</svg>'
-            );
-            // Marker for CSS to disable pseudo-element fallbacks
-            toggle.classList.add('has-svg');
-            // Fallback to emoji if SVGs do not render
-            try {
-              if (!toggle.querySelector('.icon-sun') || !toggle.querySelector('.icon-moon')) {
-                toggle.innerHTML = '<span class="icon-sun" aria-hidden="true">☀</span>' + '<span class="icon-moon" aria-hidden="true">🌙</span>';
-                toggle.classList.remove('has-svg');
+          }
+        } catch(e) {}
+
+        // Mobile nav toggle (robust, wrapped in try/catch)
+        try {
+          var btn = document.getElementById('mobileNavToggle');
+          var nav = document.getElementById('nav-sidebar');
+          var mainEl = document.getElementById('main');
+          var overlay = document.getElementById('mobileOverlay');
+          if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'mobileOverlay';
+            document.body.appendChild(overlay);
+          }
+
+          function setNavOpen(open){
+            if (open) {
+              document.body.classList.add('nav-open');
+              if (nav) {
+                nav.setAttribute('aria-expanded','true');
               }
-            } catch(err) {
-              toggle.innerHTML = '<span class="icon-sun" aria-hidden="true">☀</span>' + '<span class="icon-moon" aria-hidden="true">🌙</span>';
-              toggle.classList.remove('has-svg');
+              if (mainEl && !mainEl.classList.contains('shifted')) {
+                mainEl.classList.add('shifted');
+              }
+              try {
+                var navWidth = nav ? (nav.offsetWidth || 0) : 0;
+                if (!navWidth) {
+                  var bp = window.innerWidth;
+                  if (bp <= 480 || (bp >= 481 && bp <= 768)) {
+                    navWidth = Math.min(window.innerWidth * 0.85, 340);
+                  } else if (bp >= 769 && bp <= 1024) {
+                    navWidth = Math.min(window.innerWidth * 0.70, 360);
+                  }
+                }
+                overlay.style.left = (navWidth || 0) + 'px';
+              } catch(e) {}
+              try { localStorage.setItem('django.admin.navSidebarIsOpen', 'true'); } catch(e) {}
+            } else {
+              document.body.classList.remove('nav-open');
+              if (nav) {
+                nav.setAttribute('aria-expanded','false');
+              }
+              if (mainEl && mainEl.classList.contains('shifted')) {
+                mainEl.classList.remove('shifted');
+              }
+              try { overlay.style.left = '0px'; } catch(e) {}
+              try { localStorage.setItem('django.admin.navSidebarIsOpen', 'false'); } catch(e) {}
             }
+          }
 
-            function applyTheme(mode){
-              html.setAttribute('data-theme', mode);
-              var dark = mode === 'dark';
-              toggle.setAttribute('aria-checked', dark ? 'true' : 'false');
-              toggle.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
-            }
-            var stored = localStorage.getItem(STORAGE_KEY);
-            var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-            var initial = stored ? stored : (prefersDark ? 'dark' : 'light');
-            applyTheme(initial);
-
-            toggle.addEventListener('click', function(){
-              var next = (html.getAttribute('data-theme') === 'dark') ? 'light' : 'dark';
-              localStorage.setItem(STORAGE_KEY, next);
-              applyTheme(next);
-              try { toggle.setAttribute('aria-live', 'polite'); } catch(e) {}
+          if (btn) {
+            btn.addEventListener('click', function(e){
+              e.preventDefault();
+              var open = !document.body.classList.contains('nav-open');
+              setNavOpen(open);
             });
           }
-        } catch(e) { /* silent */ }
 
-        // Login: show/hide password eye icon
-        var pwd = document.getElementById('id_password');
-        if(!pwd) return; // only on login page
+          if (overlay) {
+            overlay.addEventListener('click', function(){
+              setNavOpen(false);
+            });
+          }
 
-        var wrapper = document.createElement('span');
-        wrapper.className = 'password-field-wrapper';
-        pwd.parentNode.insertBefore(wrapper, pwd);
-        wrapper.appendChild(pwd);
-        try { pwd.style.paddingRight = '40px'; } catch(e) {}
+          if (nav) {
+            nav.addEventListener('click', function(ev){
+              ev.stopPropagation();
+            });
+          }
 
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'password-toggle';
-        btn.setAttribute('aria-label', 'Show password');
-        btn.setAttribute('aria-controls', 'id_password');
-        btn.setAttribute('data-state', 'hidden');
-        btn.innerHTML = (
-          '<svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
-          + '<path fill="currentColor" d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/>'
-          + '</svg>'
-          + '<svg class="icon-eye-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
-          + '<path fill="currentColor" d="M2 4.27L3.28 3 21 20.72 19.73 22l-3.88-3.88A11.86 11.86 0 0112 19c-5 0-9.27-3.11-11-7a12.7 12.7 0 013.44-4.53L2 4.27z"/>'
-          + '<path fill="currentColor" d="M12 5c5 0 9.27 3.11 11 7-.93 2.1-2.55 3.93-4.53 5.15l-1.42-1.42A8.03 8.03 0 0020 12c-1.73-3.89-6-7-8-7-1.18 0-2.3.21-3.33.59L7.7 4.9A10.2 10.2 0 0112 5z"/>'
-          + '</svg>'
-        );
-        btn.addEventListener('click', function(){
-          var isHidden = pwd.type === 'password';
-          pwd.type = isHidden ? 'text' : 'password';
-          btn.setAttribute('data-state', isHidden ? 'visible' : 'hidden');
-          btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
-        });
-        wrapper.appendChild(btn);
+          function handleResize(){
+            try {
+              if (window.innerWidth > 768) {
+                document.body.classList.remove('nav-open');
+                if (overlay) {
+                  overlay.style.left = '0px';
+                }
+                if (nav) {
+                  nav.setAttribute('aria-expanded','true');
+                }
+                if (mainEl && !mainEl.classList.contains('shifted')) {
+                  mainEl.classList.add('shifted');
+                }
+                try { localStorage.setItem('django.admin.navSidebarIsOpen', 'true'); } catch(e) {}
+              } else if (document.body.classList.contains('nav-open') && overlay) {
+                var w = nav ? (nav.offsetWidth || 0) : 0;
+                if (!w) {
+                  var bp2 = window.innerWidth;
+                  if (bp2 <= 480 || (bp2 >= 481 && bp2 <= 768)) {
+                    w = Math.min(window.innerWidth * 0.85, 340);
+                  } else if (bp2 >= 769 && bp2 <= 1024) {
+                    w = Math.min(window.innerWidth * 0.70, 360);
+                  }
+                }
+                overlay.style.left = (w || 0) + 'px';
+              }
+            } catch(e) {}
+          }
+
+          window.addEventListener('resize', handleResize);
+          handleResize();
+        } catch(e) {}
+
+        // Login password eye toggle (login page only)
+        try {
+          var pwd = document.getElementById('id_password');
+          if(pwd){
+            var wrapper = document.createElement('span');
+            wrapper.className = 'password-field-wrapper';
+            pwd.parentNode.insertBefore(wrapper, pwd);
+            wrapper.appendChild(pwd);
+            pwd.style.paddingRight = '40px';
+            var toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'password-toggle';
+            toggle.setAttribute('aria-label', 'Show password');
+            toggle.setAttribute('aria-controls', 'id_password');
+            toggle.setAttribute('data-state', 'hidden');
+            toggle.innerHTML = (
+              '<svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
+              + '<path fill="currentColor" d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/>'
+              + '</svg>'
+              + '<svg class="icon-eye-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">'
+              + '<path fill="currentColor" d="M2 4.27L3.28 3 21 20.72 19.73 22l-3.88-3.88A11.86 11.86 0 0112 19c-5 0-9.27-3.11-11-7a12.7 12.7 0 013.44-4.53L2 4.27z"/>'
+              + '<path fill="currentColor" d="M12 5c5 0 9.27 3.11 11 7-.93 2.1-2.55 3.93-4.53 5.15l-1.42-1.42A8.03 8.03 0 0020 12c-1.73-3.89-6-7-8-7-1.18 0-2.3.21-3.33.59L7.7 4.9A10.2 10.2 0 0112 5z"/>'
+              + '</svg>'
+            );
+            toggle.addEventListener('click', function(){
+              var isHidden = pwd.type === 'password';
+              pwd.type = isHidden ? 'text' : 'password';
+              toggle.setAttribute('data-state', isHidden ? 'visible' : 'hidden');
+              toggle.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+            });
+            wrapper.appendChild(toggle);
+          }
+        } catch(e) {}
       });
     })();
   </script>
 {% endblock %}
 
 {% block branding %}
-  <h1 id="site-name"><a href="{% url 'admin:index' %}">Tarzan Administration</a></h1>
+  <div class="branding" style="display:flex;align-items:center;gap:12px;position:relative;z-index:4000;">
+    <button id="mobileNavToggle" class="mobile-nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="nav-sidebar" role="button" tabindex="0" style="background: transparent; border: 1px solid rgba(255, 255, 255, 0.3); color: #ffffff; padding: 8px 12px; border-radius: 6px; font-size: 14px; cursor: pointer;">☰ Menu</button>
+    <h1 id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a></h1>
+  </div>
 {% endblock %}
+
+{% block nav-breadcrumbs %}
+{{ block.super }}
+<script>
+(function() {
+  function addDatabaseSelector() {
+    var breadcrumbs = document.querySelector('.breadcrumbs');
+    if (breadcrumbs && !breadcrumbs.querySelector('.db-selector-inline')) {
+      var dbSelector = document.createElement('span');
+      dbSelector.className = 'db-selector-inline';
+      dbSelector.style.marginLeft = 'auto';
+      dbSelector.innerHTML = `
+        <span style="display: inline-flex; align-items: center; gap: 5px; color: #ffffff; font-size: 12px; font-weight: 700; letter-spacing: 0.3px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
+          DB
+        </span>
+        <form method="post" action="{% url 'set_database' %}" style="display: inline-flex; margin: 0;">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <select name="database" id="db-selector" onchange="this.form.submit()" style="padding: 6px 32px 6px 12px; border: 2px solid rgba(255, 255, 255, 0.9); border-radius: 6px; background: #ffffff; color: #047857; font-size: 13px; font-weight: 700; cursor: pointer; appearance: none; background-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22%3E%3Cpath fill=%22%23047857%22 d=%22M6 9L1 4h10z%22/%3E%3C/svg%3E'); background-repeat: no-repeat; background-position: right 10px center; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12); transition: all 0.2s ease;">
+            {% for key, value in db_selector_options.items %}
+              <option value="{{ key }}" {% if key == selected_db %}selected{% endif %}>{{ value }}</option>
+            {% endfor %}
+          </select>
+        </form>
+      `;
+      breadcrumbs.appendChild(dbSelector);
+    }
+  }
+  
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', addDatabaseSelector);
+  } else {
+    addDatabaseSelector();
+  }
+})();
+</script>
+<style>
+  .breadcrumbs {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  #db-selector:hover {
+    border-color: #ffffff !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+    transform: translateY(-1px);
+  }
+  #db-selector:focus {
+    outline: none !important;
+    border-color: #ffffff !important;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4) !important;
+  }
+  @media (max-width: 768px) {
+    .breadcrumbs {
+      flex-direction: column !important;
+      align-items: flex-start !important;
+    }
+    .db-selector-inline {
+      margin-left: 0 !important;
+      width: 100%;
+    }
+  }
+</style>
+<style>
+  #db-selector:hover {
+    border-color: #ffffff !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+    transform: translateY(-1px);
+  }
+  #db-selector:focus {
+    outline: none !important;
+    border-color: #ffffff !important;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4) !important;
+  }
+  @media (max-width: 1200px) {
+    .breadcrumbs > div:first-child {
+      max-width: 60% !important;
+    }
+  }
+  @media (max-width: 768px) {
+    .breadcrumbs { 
+      flex-direction: column !important; 
+      align-items: flex-start !important; 
+      gap: 12px !important;
+    }
+    .breadcrumbs > div:first-child {
+      max-width: 100% !important;
+      white-space: normal !important;
+    }
+    .db-selector-wrapper { 
+      width: 100% !important;
+      justify-content: space-between !important;
+      margin-left: 0 !important;
+    }
+    #db-selector {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block footer %}
+  {{ block.super }}
+{% endblock %}
+

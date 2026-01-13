@@ -12,7 +12,7 @@ from accounts.permissions import HasRolePermission
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 from .services import mark_attendance
-from django.utils.timezone import now
+from django.utils.timezone import now, localdate
 from datetime import timedelta
 from .models import LeaveRequest
 from .serializers import LeaveRequestSerializer
@@ -35,62 +35,41 @@ User = get_user_model()
 
 
 
-# ✅ Individual Attendance Record with Filters
+# ✅ List All Attendance Records
+class AttendanceListView(generics.ListAPIView):
+    queryset = Attendance.objects.all()
+    serializer_class = AttendanceSerializer
+    permission_classes = [IsAuthenticated, HasRolePermission]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['attendee', 'user', 'source']
+    search_fields = ['attendee__username', 'attendee__email', 'user__username']
+    ordering_fields = ['created_at', 'check_in_time', 'check_out_time']
+
+    @swagger_auto_schema(
+        operation_description="Get a list of all attendance records with optional filtering.",
+        responses={
+            200: openapi.Response(
+                description='List of attendance records',
+                schema=AttendanceSerializer(many=True),
+            )
+        },
+        tags=["08. Attendance"]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+# ✅ Individual Attendance Record
 class AttendanceIndividualView(generics.RetrieveAPIView):
+    queryset = Attendance.objects.all()
     serializer_class = AttendanceSerializer
     permission_classes = [IsAuthenticated, HasRolePermission]
     lookup_field = 'pk'
-    
-    def get_queryset(self):
-        if getattr(self, 'swagger_fake_view', False):
-            return Attendance.objects.none()
-            
-        attendance_id = self.kwargs.get('pk')
-        filter_type = self.request.query_params.get('filter', 'daily')
-        
-        # Get the base attendance record
-        base_attendance = Attendance.objects.filter(id=attendance_id).first()
-        if not base_attendance:
-            return Attendance.objects.none()
-            
-        attendee = base_attendance.attendee
-        base_date = base_attendance.check_in_time.date() if base_attendance.check_in_time else base_attendance.check_out_time.date()
-        
-        from datetime import timedelta
-        
-        if filter_type == 'weekly':
-            # Get start of week (Monday)
-            start_date = base_date - timedelta(days=base_date.weekday())
-            end_date = start_date + timedelta(days=6)
-        elif filter_type == 'monthly':
-            # Get start and end of month
-            start_date = base_date.replace(day=1)
-            next_month = start_date.replace(month=start_date.month + 1) if start_date.month < 12 else start_date.replace(year=start_date.year + 1, month=1)
-            end_date = next_month - timedelta(days=1)
-        else:  # daily
-            start_date = end_date = base_date
-            
-        return Attendance.objects.filter(
-            attendee=attendee,
-            check_in_time__date__gte=start_date,
-            check_in_time__date__lte=end_date
-        ).order_by('-check_in_time')
-    
+
     @swagger_auto_schema(
-        operation_description="Get a single attendance record by ID with optional filtering. Use /attendances/by-attendee/{attendee_id}/ for all records of an attendee.",
-        manual_parameters=[
-            openapi.Parameter(
-                'filter',
-                openapi.IN_QUERY,
-                description='Filter type: daily, weekly, or monthly',
-                type=openapi.TYPE_STRING,
-                enum=['daily', 'weekly', 'monthly'],
-                default='daily'
-            )
-        ],
+        operation_description="Get a single attendance record by ID.",
         responses={
             200: openapi.Response(
-                description='Attendance record(s) based on filter',
+                description='Attendance record',
                 examples={
                     'application/json': {
                         'id': 1,
@@ -110,16 +89,7 @@ class AttendanceIndividualView(generics.RetrieveAPIView):
         tags=["08. Attendance"]
     )
     def get(self, request, *args, **kwargs):
-        filter_type = request.query_params.get('filter', 'daily')
-        
-        if filter_type == 'daily':
-            # Return single record for daily filter
-            return super().get(request, *args, **kwargs)
-        else:
-            # Return multiple records for weekly/monthly filters
-            queryset = self.get_queryset()
-            serializer = self.get_serializer(queryset, many=True)
-            return Response(serializer.data)
+        return super().get(request, *args, **kwargs) 
 
 # ✅ Check-in Endpoint (POST)
 class AttendanceCheckInView(generics.CreateAPIView):
@@ -292,39 +262,74 @@ class AttendanceByAttendeeView(generics.ListAPIView):
         if getattr(self, 'swagger_fake_view', False):
             return Attendance.objects.none()
         
-        attendee_id = self.request.query_params.get('attendee_id')
+        attendee_id_param = self.request.query_params.get('attendee_id')
         filter_type = self.request.query_params.get('filter', 'daily')
         
-        # If attendee_id is None (not provided), return all records; otherwise filter by attendee_id
-        if attendee_id is None:
-            queryset = Attendance.objects.all()
-        else:
-            queryset = Attendance.objects.filter(attendee_id=attendee_id)
+        # Base queryset
+        base_qs = Attendance.objects.all()
         
+        # Filter by attendee_id when provided.
+        # Also include records where `user_id` matches, to cover cases where attendance
+        # was marked using the `user` field instead of `attendee`.
+        from django.db.models import Q
+        if attendee_id_param not in (None, ''):
+            try:
+                attendee_id = int(attendee_id_param)
+                base_qs = base_qs.filter(
+                    Q(attendee_id=attendee_id) | Q(user_id=attendee_id)
+                )
+            except (TypeError, ValueError):
+                # If invalid attendee_id, return empty
+                return Attendance.objects.none()
+        
+        # Time-range filtering
         from django.utils import timezone
-        from datetime import timedelta
+        from datetime import datetime, time, timedelta
+        today = timezone.localdate()
         
-        today = timezone.now().date()
+        # Build daily start/end as timezone-aware datetimes
+        def aware_dt(d: datetime.date, t: time):
+            dt = datetime.combine(d, t)
+            # Make aware using current timezone
+            return timezone.make_aware(dt, timezone.get_current_timezone())
         
         if filter_type == 'daily':
-            # Get today's attendance records
-            queryset = queryset.filter(check_in_time__date=today)
+            start_dt = aware_dt(today, time.min)
+            end_dt = aware_dt(today, time.max)
+            base_qs = base_qs.filter(
+                Q(check_in_time__gte=start_dt, check_in_time__lte=end_dt) |
+                Q(check_out_time__gte=start_dt, check_out_time__lte=end_dt) |
+                Q(created_at__gte=start_dt, created_at__lte=end_dt)
+            )
         elif filter_type == 'weekly':
-            # Get this week's attendance records (Monday to Sunday)
+            # Monday (0) to Sunday (6)
             start_of_week = today - timedelta(days=today.weekday())
             end_of_week = start_of_week + timedelta(days=6)
-            queryset = queryset.filter(
-                check_in_time__date__gte=start_of_week,
-                check_in_time__date__lte=end_of_week
+            start_dt = aware_dt(start_of_week, time.min)
+            end_dt = aware_dt(end_of_week, time.max)
+            base_qs = base_qs.filter(
+                Q(check_in_time__gte=start_dt, check_in_time__lte=end_dt) |
+                Q(check_out_time__gte=start_dt, check_out_time__lte=end_dt) |
+                Q(created_at__gte=start_dt, created_at__lte=end_dt)
             )
         elif filter_type == 'monthly':
-            # Get this month's attendance records
-            queryset = queryset.filter(
-                check_in_time__year=today.year,
-                check_in_time__month=today.month
+            # First day of month to last day of month
+            start_of_month = today.replace(day=1)
+            # Next month first day minus one day
+            if start_of_month.month == 12:
+                next_month_start = start_of_month.replace(year=start_of_month.year + 1, month=1, day=1)
+            else:
+                next_month_start = start_of_month.replace(month=start_of_month.month + 1, day=1)
+            end_of_month = next_month_start - timedelta(days=1)
+            start_dt = aware_dt(start_of_month, time.min)
+            end_dt = aware_dt(end_of_month, time.max)
+            base_qs = base_qs.filter(
+                Q(check_in_time__gte=start_dt, check_in_time__lte=end_dt) |
+                Q(check_out_time__gte=start_dt, check_out_time__lte=end_dt) |
+                Q(created_at__gte=start_dt, created_at__lte=end_dt)
             )
         
-        return queryset.order_by('-check_in_time')
+        return base_qs.order_by('-created_at')
     
     @swagger_auto_schema(
         operation_description="Get attendance records with time-based filtering (daily, weekly, monthly). If attendee_id is provided as a query parameter, returns records for that specific user. If attendee_id is not provided, returns all attendance records for all users.",
@@ -417,7 +422,7 @@ class AttendanceStatusView(APIView):
             return Response({'error': 'Authentication required'}, status=401)
         
         attendee_id = request.query_params.get('attendee_id')
-        today = timezone.now().date()
+        today = timezone.localdate()
         
         # Determine which user to check attendance for
         if attendee_id:
@@ -785,7 +790,7 @@ class AttendanceReportView(APIView):
         start_date_param = request.query_params.get("start_date")
         end_date_param = request.query_params.get("end_date")
 
-        today = now().date()
+        today = localdate()
 
         # 🔹 Handle date ranges
         if report_type == "daily":

@@ -2,13 +2,30 @@ from rest_framework import viewsets
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .models import Crop, CropStage, Trial, TrialTreatment, TrialImage
-from .serializers import CropSerializer, CropStageSerializer
+from .models import Crop, CropStage, Trial, TrialTreatment, TrialImage, Product
+from .serializers import CropSerializer, CropStageSerializer, TrialSerializer, TrialTreatmentSerializer, ProductSerializer
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.contrib import messages
 from django.utils.text import slugify
 from datetime import date
+from django.http import HttpResponse
+from io import BytesIO
+from .exports import build_trials_workbook, build_trials_pdf
+
+# Optional dependencies for exports
+try:
+    from openpyxl import Workbook
+except Exception:
+    Workbook = None
+
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+except Exception:
+    SimpleDocTemplate = None
 
 
 class CropViewSet(viewsets.ModelViewSet):
@@ -28,7 +45,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all crops with their stages",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="List of crops retrieved successfully",
@@ -41,7 +58,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Create a new crop with stages using form data format. Use nested notation for stages: stages[0][stage_name], stages[0][days_after_sowing], etc. Example form data: name=Rice, variety=Basmati-385, season=Kharif, stages[0][stage_name]=Transplanting, stages[0][days_after_sowing]=25, stages[0][brand]=Syngenta, stages[0][active_ingredient]=Chlorpyrifos, stages[0][dose_per_acre]=500ml, stages[0][purpose]=Pest control and nutrient management",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             201: openapi.Response(
@@ -56,7 +73,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a specific crop by ID",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Crop retrieved successfully",
@@ -70,7 +87,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Update a crop and its stages using form data format. Use nested notation for stages: stages[0][stage_name], stages[0][days_after_sowing], etc.",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             200: openapi.Response(
@@ -86,7 +103,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Partially update a crop using form data format",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             200: openapi.Response(
@@ -102,7 +119,7 @@ class CropViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Delete a crop and all its stages",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             204: openapi.Response(description="Crop deleted successfully"),
             404: openapi.Response(description="Crop not found")
@@ -129,7 +146,7 @@ class CropStageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all crop stages",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="List of crop stages retrieved successfully",
@@ -142,7 +159,7 @@ class CropStageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Create a new crop stage using form data format. Example form data: crop=1, stage_name=Germination, days_after_sowing=7, brand=Mahyco, active_ingredient=Thiamethoxam, dose_per_acre=100g, purpose=Seed treatment for early pest protection",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             201: openapi.Response(
@@ -157,7 +174,7 @@ class CropStageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a specific crop stage by ID",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             200: openapi.Response(
                 description="Crop stage retrieved successfully",
@@ -171,7 +188,7 @@ class CropStageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Update a crop stage using form data format",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             200: openapi.Response(
@@ -184,6 +201,276 @@ class CropStageViewSet(viewsets.ModelViewSet):
     )
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
+
+
+class TrialViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing field trials.
+    """
+    queryset = Trial.objects.all()
+    serializer_class = TrialSerializer
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a list of all trials with their treatments",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="List of trials retrieved successfully",
+                schema=TrialSerializer(many=True)
+            )
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Create a new trial",
+        tags=['Crop manage'],
+        responses={
+            201: openapi.Response(
+                description="Trial created successfully",
+                schema=TrialSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors")
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a specific trial by ID with all treatments",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Trial retrieved successfully",
+                schema=TrialSerializer
+            ),
+            404: openapi.Response(description="Trial not found")
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Update a trial",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Trial updated successfully",
+                schema=TrialSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Trial not found")
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Partially update a trial",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Trial partially updated successfully",
+                schema=TrialSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Trial not found")
+        }
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Delete a trial and all its treatments",
+        tags=['Crop manage'],
+        responses={
+            204: openapi.Response(description="Trial deleted successfully"),
+            404: openapi.Response(description="Trial not found")
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+
+class TrialTreatmentViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing trial treatments.
+    """
+    queryset = TrialTreatment.objects.all()
+    serializer_class = TrialTreatmentSerializer
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a list of all trial treatments",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="List of treatments retrieved successfully",
+                schema=TrialTreatmentSerializer(many=True)
+            )
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Create a new trial treatment",
+        tags=['Crop manage'],
+        responses={
+            201: openapi.Response(
+                description="Treatment created successfully",
+                schema=TrialTreatmentSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors")
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a specific trial treatment by ID",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Treatment retrieved successfully",
+                schema=TrialTreatmentSerializer
+            ),
+            404: openapi.Response(description="Treatment not found")
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Update a trial treatment",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Treatment updated successfully",
+                schema=TrialTreatmentSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Treatment not found")
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Partially update a trial treatment",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Treatment partially updated successfully",
+                schema=TrialTreatmentSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Treatment not found")
+        }
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Delete a trial treatment",
+        tags=['Crop manage'],
+        responses={
+            204: openapi.Response(description="Treatment deleted successfully"),
+            404: openapi.Response(description="Treatment not found")
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+
+class ProductViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing products used in trials.
+    """
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a list of all products",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="List of products retrieved successfully",
+                schema=ProductSerializer(many=True)
+            )
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Create a new product",
+        tags=['Crop manage'],
+        responses={
+            201: openapi.Response(
+                description="Product created successfully",
+                schema=ProductSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors")
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a specific product by ID",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Product retrieved successfully",
+                schema=ProductSerializer
+            ),
+            404: openapi.Response(description="Product not found")
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Update a product",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Product updated successfully",
+                schema=ProductSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Product not found")
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Partially update a product",
+        tags=['Crop manage'],
+        responses={
+            200: openapi.Response(
+                description="Product partially updated successfully",
+                schema=ProductSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Product not found")
+        }
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Delete a product",
+        tags=['Crop manage'],
+        responses={
+            204: openapi.Response(description="Product deleted successfully"),
+            404: openapi.Response(description="Product not found")
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
 
 
 def station_trials(request, station_slug: str):
@@ -289,9 +576,38 @@ def station_trials(request, station_slug: str):
     }
     return render(request, 'crop_manage/trials_station.html', context)
 
+
+def export_trials_xlsx(request):
+    """Export all Trials and Treatments to a styled, sized XLSX."""
+    try:
+        trials_qs = Trial.objects.all()
+        treatments_qs = TrialTreatment.objects.select_related('trial', 'product').all()
+        output = build_trials_workbook(trials_qs, treatments_qs)
+        resp = HttpResponse(
+            output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        resp['Content-Disposition'] = 'attachment; filename="trials_report.xlsx"'
+        return resp
+    except Exception as e:
+        return HttpResponse(f'Failed to build XLSX: {e}', status=500)
+
+
+def export_trials_pdf(request):
+    """Export all Trials and Treatments to a styled, page-safe PDF."""
+    try:
+        trials_qs = Trial.objects.all()
+        treatments_qs = TrialTreatment.objects.select_related('trial', 'product').all()
+        buffer = build_trials_pdf(trials_qs, treatments_qs)
+        resp = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+        resp['Content-Disposition'] = 'attachment; filename="trials_report.pdf"'
+        return resp
+    except Exception as e:
+        return HttpResponse(f'Failed to build PDF: {e}', status=500)
+
     @swagger_auto_schema(
         operation_description="Partially update a crop stage using form data format",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         consumes=['application/x-www-form-urlencoded', 'multipart/form-data'],
         responses={
             200: openapi.Response(
@@ -307,7 +623,7 @@ def station_trials(request, station_slug: str):
 
     @swagger_auto_schema(
         operation_description="Delete a crop stage",
-        tags=['crop_manage'],
+        tags=['Crop manage'],
         responses={
             204: openapi.Response(description="Crop stage deleted successfully"),
             404: openapi.Response(description="Crop stage not found")
@@ -315,3 +631,16 @@ def station_trials(request, station_slug: str):
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
+
+
+# =====================
+# Reports pages (simple templates)
+# =====================
+def reports_index(request):
+    """Landing page for Crop_Manage reports."""
+    return render(request, 'crop_manage/reports/index.html')
+
+
+def weed_efficacy_report(request):
+    """Render weed efficacy charts for Wheat based on provided datasets."""
+    return render(request, 'crop_manage/reports/weed_efficacy.html')

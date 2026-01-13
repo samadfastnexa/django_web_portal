@@ -67,3 +67,138 @@ class PolicyListAndSyncTests(TestCase):
         self.assertEqual(p1.policy, 'A1')
         p3 = Policy.objects.get(code='P003')
         self.assertEqual(p3.name, 'Policy C')
+
+
+class SalesVsAchievementApiTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        import types, sys
+        os.environ['HANA_HOST'] = 'localhost'
+        os.environ['HANA_PORT'] = '30015'
+        os.environ['HANA_USER'] = 'tester'
+        os.environ['HANA_PASSWORD'] = 'secret'
+        os.environ['HANA_SCHEMA'] = '4B-ORANG_APP'
+
+        class FakeCursor:
+            def execute(self, sql):
+                return None
+            def close(self):
+                return None
+
+        class FakeConn:
+            def cursor(self):
+                return FakeCursor()
+            def close(self):
+                return None
+
+        fake_hdbcli = types.ModuleType('hdbcli')
+        fake_hdbcli.dbapi = types.SimpleNamespace(connect=lambda **kwargs: FakeConn())
+        self._orig_hdbcli = sys.modules.get('hdbcli')
+        sys.modules['hdbcli'] = fake_hdbcli
+
+    def tearDown(self):
+        import sys
+        if self._orig_hdbcli is not None:
+            sys.modules['hdbcli'] = self._orig_hdbcli
+        else:
+            sys.modules.pop('hdbcli', None)
+
+    @patch('sap_integration.views.sales_vs_achievement')
+    def test_territory_dg_khan_unscaled_by_default(self, mock_sales):
+        mock_sales.return_value = [
+            {
+                'TERRITORYID': 45,
+                'TERRITORYNAME': 'D.G Khan Territory',
+                'SALES_TARGET': 5000000.0,
+                'ACCHIVEMENT': 3500000.0,
+                'F_REFDATE': '2025-10-01',
+                'T_REFDATE': '2025-10-30',
+            }
+        ]
+        url = reverse('sales_vs_achievement_api')
+        resp = self.client.get(url, {'territory': 'D.G Khan Territory'})
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload.get('success'))
+        self.assertEqual(payload.get('count'), 1)
+        row = payload['data'][0]
+        self.assertEqual(row.get('TERRITORYNAME'), 'D.G Khan Territory')
+        self.assertEqual(row.get('SALES_TARGET'), 5000000.0)
+        self.assertEqual(row.get('ACCHIVEMENT'), 3500000.0)
+        self.assertNotIn('Sales_Target', row)
+        self.assertNotIn('Achievement', row)
+
+    @patch('sap_integration.views.sales_vs_achievement')
+    def test_in_millions_true_scales_values(self, mock_sales):
+        mock_sales.return_value = [
+            {
+                'TERRITORYID': 45,
+                'TERRITORYNAME': 'D.G Khan Territory',
+                'SALES_TARGET': 5000000.0,
+                'ACCHIVEMENT': 3500000.0,
+                'F_REFDATE': '2025-10-01',
+                'T_REFDATE': '2025-10-30',
+            }
+        ]
+        url = reverse('sales_vs_achievement_api')
+        resp = self.client.get(url, {'territory': 'D.G Khan Territory', 'in_millions': 'true'})
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload.get('success'))
+        self.assertEqual(payload.get('count'), 1)
+        row = payload['data'][0]
+        self.assertEqual(row.get('TERRITORYNAME'), 'D.G Khan Territory')
+        self.assertEqual(row.get('SALES_TARGET'), 5.0)
+        self.assertEqual(row.get('ACCHIVEMENT'), 3.5)
+
+    @patch('sap_integration.views.sales_vs_achievement')
+    def test_in_millions_false_keeps_raw_values(self, mock_sales):
+        mock_sales.return_value = [
+            {
+                'TERRITORYID': 45,
+                'TERRITORYNAME': 'D.G Khan Territory',
+                'SALES_TARGET': 12000000.0,
+                'ACCHIVEMENT': 9000000.0,
+                'F_REFDATE': '2025-01-01',
+                'T_REFDATE': '2025-12-31',
+            }
+        ]
+        url = reverse('sales_vs_achievement_api')
+        resp = self.client.get(url, {'territory': 'D.G Khan Territory', 'in_millions': 'false'})
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload.get('success'))
+        row = payload['data'][0]
+        self.assertEqual(row.get('SALES_TARGET'), 12000000.0)
+        self.assertEqual(row.get('ACCHIVEMENT'), 9000000.0)
+
+    @patch('sap_integration.views.sales_vs_achievement')
+    def test_group_by_territory_aggregates_rows(self, mock_sales):
+        mock_sales.return_value = [
+            {
+                'TERRITORYID': 45,
+                'TERRITORYNAME': 'D.G Khan Territory',
+                'SALES_TARGET': 1000000.0,
+                'ACCHIVEMENT': 500000.0,
+                'F_REFDATE': '2025-10-01',
+                'T_REFDATE': '2025-10-30',
+            },
+            {
+                'TERRITORYID': 45,
+                'TERRITORYNAME': 'D.G Khan Territory',
+                'SALES_TARGET': 2000000.0,
+                'ACCHIVEMENT': 1000000.0,
+                'F_REFDATE': '2025-11-01',
+                'T_REFDATE': '2025-11-30',
+            }
+        ]
+        url = reverse('sales_vs_achievement_api')
+        resp = self.client.get(url, {'group_by': 'territory'})
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload.get('success'))
+        self.assertEqual(payload.get('count'), 1)
+        row = payload['data'][0]
+        self.assertEqual(row.get('TERRITORYNAME'), 'D.G Khan Territory')
+        self.assertEqual(row.get('SALES_TARGET'), 3000000.0)
+        self.assertEqual(row.get('ACCHIVEMENT'), 1500000.0)

@@ -1,0 +1,70 @@
+<div style="padding:16px;">
+  <h2>SAP Business Partner Entry</h2>
+  {% if error %}
+    <div style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:8px;margin-bottom:12px;">{{ error }}</div>
+  {% endif %}
+  
+  <div style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;padding:10px;border-radius:8px;margin-bottom:12px;">
+    <strong>Required Fields:</strong> CardName is required. Other fields marked with * are recommended for successful SAP integration.
+  </div>
+  
+  <form method="post" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start;">
+    {% csrf_token %}
+    <label>Series<input type="number" name="Series" value="{{ fields.Series }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.Series %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.Series %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.Series }}</div>{% endif %}
+    
+    <label>CardName *<input type="text" name="CardName" value="{{ fields.CardName }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.CardName %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Enter business partner name"></label>
+    {% if error_fields.CardName %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.CardName }}</div>{% endif %}
+    <label>CardType<input type="text" name="CardType" value="{{ fields.CardType }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.CardType %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.CardType %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.CardType }}</div>{% endif %}
+    <label>GroupCode<input type="number" name="GroupCode" value="{{ fields.GroupCode }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.GroupCode %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.GroupCode %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.GroupCode }}</div>{% endif %}
+    <label>Address *<textarea name="Address" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;min-height:60px;{% if error_fields.Address %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Enter business address">{{ fields.Address }}</textarea></label>
+    {% if error_fields.Address %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.Address }}</div>{% endif %}
+    <label>Phone1<input type="text" name="Phone1" value="{{ fields.Phone1 }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.Phone1 %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Primary phone number"></label>
+    {% if error_fields.Phone1 %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.Phone1 }}</div>{% endif %}
+    <label>MobilePhone<input type="text" name="MobilePhone" value="{{ fields.MobilePhone }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.MobilePhone %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Mobile phone number"></label>
+    {% if error_fields.MobilePhone %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.MobilePhone }}</div>{% endif %}
+    <label>ContactPerson *<input type="text" name="ContactPerson" value="{{ fields.ContactPerson }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.ContactPerson %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}" placeholder="Contact person name"></label>
+    {% if error_fields.ContactPerson %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.ContactPerson }}</div>{% endif %}
+    <label>FederalTaxID<input type="text" name="FederalTaxID" value="{{ fields.FederalTaxID }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.FederalTaxID %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.FederalTaxID %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.FederalTaxID }}</div>{% endif %}
+    <label>AdditionalID<input type="text" name="AdditionalID" value="{{ fields.AdditionalID }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.AdditionalID %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.AdditionalID %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.AdditionalID }}</div>{% endif %}
+    <label>OwnerIDNumber<input type="text" name="OwnerIDNumber" value="{{ fields.OwnerIDNumber }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.OwnerIDNumber %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.OwnerIDNumber %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.OwnerIDNumber }}</div>{% endif %}
+    <label>UnifiedFederalTaxID<input type="text" name="UnifiedFederalTaxID" value="{{ fields.UnifiedFederalTaxID }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.UnifiedFederalTaxID %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.UnifiedFederalTaxID %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.UnifiedFederalTaxID }}</div>{% endif %}
+    <label>Territory<input type="number" name="Territory" value="{{ fields.Territory }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.Territory %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.Territory %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.Territory }}</div>{% endif %}
+    <label>DebitorAccount<input type="text" name="DebitorAccount" value="{{ fields.DebitorAccount }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.DebitorAccount %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.DebitorAccount %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.DebitorAccount }}</div>{% endif %}
+    <label>U_leg<input type="text" name="U_leg" value="{{ fields.U_leg }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.U_leg %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.U_leg %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.U_leg }}</div>{% endif %}
+    <label>U_gov<input type="date" name="U_gov" value="{{ fields.U_gov }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.U_gov %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.U_gov %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.U_gov }}</div>{% endif %}
+    <label>U_fil<input type="text" name="U_fil" value="{{ fields.U_fil }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.U_fil %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.U_fil %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.U_fil }}</div>{% endif %}
+    <label>U_lic<input type="text" name="U_lic" value="{{ fields.U_lic }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.U_lic %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.U_lic %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.U_lic }}</div>{% endif %}
+    <label>U_region<input type="text" name="U_region" value="{{ fields.U_region }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.U_region %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.U_region %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.U_region }}</div>{% endif %}
+    <label>U_zone<input type="text" name="U_zone" value="{{ fields.U_zone }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.U_zone %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.U_zone %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.U_zone }}</div>{% endif %}
+    <label>U_WhatsappMessages<input type="text" name="U_WhatsappMessages" value="{{ fields.U_WhatsappMessages }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.U_WhatsappMessages %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.U_WhatsappMessages %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.U_WhatsappMessages }}</div>{% endif %}
+    <label>VatGroup<input type="text" name="VatGroup" value="{{ fields.VatGroup }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.VatGroup %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.VatGroup %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.VatGroup }}</div>{% endif %}
+    <label>VatLiable<input type="text" name="VatLiable" value="{{ fields.VatLiable }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;{% if error_fields.VatLiable %}border-color:#ef4444;box-shadow:0 0 0 1px #fecaca inset;{% endif %}"></label>
+    {% if error_fields.VatLiable %}<div style="color:#b91c1c;font-size:12px;">{{ error_fields.VatLiable }}</div>{% endif %}
+    
+    <div style="grid-column:1/-1;display:flex;gap:8px;">
+      <button type="submit" style="background:#0ea5e9;color:#fff;border:none;padding:10px 14px;border-radius:8px;">Add to SAP</button>
+      <a href="/admin/" style="background:#f1f5f9;color:#111827;border:1px solid #e5e7eb;padding:10px 14px;border-radius:8px;text-decoration:none;">Back to Admin</a>
+    </div>
+  </form>
+  {% if result_json %}
+    <h3 style="margin-top:16px;">Response</h3>
+    <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:420px;overflow:auto;">{{ result_json }}</pre>
+  {% endif %}
+</div>

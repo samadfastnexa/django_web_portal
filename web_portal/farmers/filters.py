@@ -8,6 +8,9 @@ class FarmerFilter(django_filters.FilterSet):
     
     # Text search across multiple fields
     search = django_filters.CharFilter(method='filter_search', label='Search')
+    # Creator filters
+    registered_by = django_filters.NumberFilter(field_name='registered_by')
+    created_by = django_filters.NumberFilter(method='filter_created_by')
     
     # Personal information filters
     first_name = django_filters.CharFilter(lookup_expr='icontains')
@@ -54,6 +57,7 @@ class FarmerFilter(django_filters.FilterSet):
             'education_level': ['exact'],
 
             'registration_date': ['exact', 'gte', 'lte'],
+            'registered_by': ['exact'],
         }
     
     def filter_search(self, queryset, name, value):
@@ -67,13 +71,21 @@ class FarmerFilter(django_filters.FilterSet):
             Q(last_name__icontains=value) |
             Q(father_name__icontains=value) |
             Q(primary_phone__icontains=value) |
+            Q(secondary_phone__icontains=value) |
             Q(email__icontains=value) |
             Q(village__icontains=value) |
             Q(tehsil__icontains=value) |
             Q(district__icontains=value) |
             Q(province__icontains=value) |
-            Q(national_id__icontains=value)
+            Q(cnic__icontains=value) |
+            Q(name__icontains=value)
         )
+    
+    def filter_created_by(self, queryset, name, value):
+        """Alias filter to map created_by -> registered_by"""
+        if not value:
+            return queryset
+        return queryset.filter(registered_by=value)
     
     def filter_age_min(self, queryset, name, value):
         """Filter by minimum age"""

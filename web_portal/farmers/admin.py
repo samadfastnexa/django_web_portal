@@ -1,6 +1,7 @@
 from django.contrib import admin
 from attendance.models import Attendance
 from .models import Farmer, FarmingHistory
+from web_portal.admin import admin_site
 
 class AttendanceAdmin(admin.ModelAdmin):
     list_display = ['id', 'user_id', 'attendee_id', 'check_in_time', 'check_out_time', 'location', 'created_at']
@@ -20,7 +21,7 @@ class FarmingHistoryInline(admin.TabularInline):
     readonly_fields = ('created_at', 'updated_at')
     ordering = ['-year', '-created_at']
 
-@admin.register(Farmer)
+@admin.register(Farmer, site=admin_site)
 class FarmerAdmin(admin.ModelAdmin):
     list_display = (
         'farmer_id', 'full_name', 'primary_phone', 'village', 'district', 
@@ -71,7 +72,7 @@ class FarmerAdmin(admin.ModelAdmin):
         return obj.age
     age.short_description = 'Age'
 
-@admin.register(FarmingHistory)
+@admin.register(FarmingHistory, site=admin_site)
 class FarmingHistoryAdmin(admin.ModelAdmin):
     list_display = (
         'farmer', 'year', 'season', 'crop_name', 'area_cultivated',

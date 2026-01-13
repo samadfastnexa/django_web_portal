@@ -20,6 +20,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Base URL for generating full image URLs
+# Change this to your production domain when deploying
+# Examples:
+#   Development: 'http://localhost:8000'
+#   Production: 'https://yourdomain.com'
+#   Environment variable: config('BASE_URL', default='http://localhost:8000')
+BASE_URL = config('BASE_URL', default='http://localhost:8000')
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -28,6 +36,7 @@ SECRET_KEY = 'django-insecure-nxhfgb@1)cee-3+^2h^v747%+n(63fbxa0bug@^%1vn!6+(3=3
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv(), default='localhost,127.0.0.1')
 
 # ALLOWED_HOSTS = ['*']
 # ALLOWED_HOSTS = ['localhost', '127.0.0.1']
@@ -62,6 +71,9 @@ INSTALLED_APPS = [
     'sap_integration', # app for SAP integration
     'crop_management',  # app for crop management - R&D & MIS
     'crop_manage',
+    'kindwise',  # app for Kindwise crop identification
+    'analytics',  # app for analytics and dashboard
+    'general_ledger',  # app for SAP General Ledger reports
 ]
 
 MIDDLEWARE = [
@@ -98,6 +110,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'sap_integration.context_processors.db_selector',
             ],
         },
     },
@@ -106,17 +119,24 @@ TEMPLATES = [
 WSGI_APPLICATION = 'web_portal.wsgi.application'
 
 
+
+
+# Admin Site Configuration
+ADMIN_SITE_HEADER = "Agrigenie Tech"
+ADMIN_SITE_TITLE = "Agrigenie Tech"
+ADMIN_INDEX_TITLE = "Welcome to Agrigenie Tech Portal"
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'agrigenie',
-        'USER': 'root',
-        'PASSWORD': 'samad',
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
+        'NAME': config('DB_NAME', default='agrigenie'),
+        'USER': config('DB_USER', default='root'),
+        'PASSWORD': config('DB_PASSWORD', default='samad'),
+        'HOST': config('DB_HOST', default='127.0.0.1'),
+        'PORT': config('DB_PORT', default='3306'),
     }
 }
 
@@ -151,7 +171,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Karachi'
 
 USE_I18N = True
 
@@ -162,6 +182,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+# Serve project-level static files (e.g., custom admin CSS) in development
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
 # STATIC_ROOT = os.path.join(BASE_DIR, 'static')  # collects static files here
 # STATICFILES_DIRS = [
 #     os.path.join(BASE_DIR, '', 'static'),  # if you have app-level static files
@@ -183,8 +207,53 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.OrderingFilter',  # ✅ must be inside the list
     ],
+    'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%S%z',
 }
 
+# Logging Configuration for HANA Reports and Debugging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} - {name} - {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'simple': {
+            'format': '{levelname} - {name} - {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs' / 'django.log',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'hana': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+# Ensure logs directory exists
+LOG_DIR = BASE_DIR / 'logs'
+if not LOG_DIR.exists():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # change as needed
@@ -219,7 +288,7 @@ SWAGGER_SETTINGS = {
         'drf_yasg.inspectors.SimpleFieldInspector',
         'drf_yasg.inspectors.StringDefaultFieldInspector',
     ],
-    'DEFAULT_AUTO_SCHEMA_CLASS': 'drf_yasg.inspectors.SwaggerAutoSchema',
+    'DEFAULT_AUTO_SCHEMA_CLASS': 'web_portal.swagger.CustomAutoSchema',
     'SUPPORTED_SUBMIT_METHODS': ['get', 'post', 'put', 'delete', 'patch'],
     'OPERATIONS_SORTER': 'alpha',
     'TAGS_SORTER': 'alpha',
@@ -229,3 +298,9 @@ SWAGGER_SETTINGS = {
     'DEFAULT_MODEL_DEPTH': 3,
 }
 WEATHER_API_KEY = "36c4dcfbb24443b18b2112951252507"
+
+# Kindwise API Configuration (from .env)
+# KINDWISE_API_ENABLED=true|false; KINDWISE_API_KEY=<your key>
+KINDWISE_API_ENABLED = config('KINDWISE_API_ENABLED', cast=bool, default=True)
+KINDWISE_API_KEY = config('KINDWISE_API_KEY', default='m1Rx5M1cCciIUYbNaCpDH4gOKwBItDTeciJ1aSg01x5A3lUUQz')
+

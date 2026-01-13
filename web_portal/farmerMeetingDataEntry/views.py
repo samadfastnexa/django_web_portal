@@ -22,7 +22,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     # Filters, search, ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["fsm_name", "region_fk", "zone_fk", "territory_fk", "company_fk", "presence_of_zm", "presence_of_rsm", "location"]
+    filterset_fields = ["fsm_name", "region_fk", "zone_fk", "territory_fk", "company_fk", "presence_of_zm", "presence_of_rsm", "location", "user_id"]
     search_fields = [
         'fsm_name',
         'region_fk__name',
@@ -147,6 +147,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
                              description='Filter by presence of Zone Manager (ZM)'),
             openapi.Parameter('presence_of_rsm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False,
                              description='Filter by presence of Regional Sales Manager (RSM)'),
+            openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                             description='Filter by User ID (Created By) - Use to see specific user records.'),
         ]
     )
     def list(self, request, *args, **kwargs):
@@ -315,7 +317,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
 
     # Filters, search, ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location", "total_participants"]
+    filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location", "total_participants", "user"]
     search_fields = ["title", "region_fk__name", "zone_fk__name", "territory_fk__name", "company_fk__Company_name", "location", "feedback"]
     ordering_fields = ["date", "title", "region_fk__name", "zone_fk__name", "territory_fk__name"]
      # ---------------- Global Extra Data ----------------
@@ -384,7 +386,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                             'zone_name': 'Lahore',
                             'territory_id': 1,
                             'territory_name': 'Model Town',
-                            'date': '2024-02-15',
+                            'date': '2024-02-15T10:00:00Z',
                             'location': 'Agricultural Research Center',
                             'total_participants': 15,
                             'demonstrations_conducted': 3,
@@ -424,6 +426,10 @@ class FieldDayViewSet(viewsets.ModelViewSet):
             )
         },
         manual_parameters=[
+            openapi.Parameter('user', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                             description='Filter by User ID (Created By) - Use to see specific user records.'),
+            openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
+                              description='Filter by Name of FSM'),
             openapi.Parameter('company_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
                               description='Filter by company ID'),
             openapi.Parameter('region_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
@@ -460,7 +466,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                         'zone_name': 'Lahore',
                         'territory_id': 1,
                         'territory_name': 'Model Town',
-                        'date': '2024-02-15',
+                        'date': '2024-02-15T10:00:00Z',
                         'location': 'Agricultural Research Center, Lahore',
                         'total_participants': 25,
                         'demonstrations_conducted': 5,

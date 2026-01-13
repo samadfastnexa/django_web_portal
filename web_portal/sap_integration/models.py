@@ -13,9 +13,30 @@ class Policy(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        verbose_name = 'Policy'
+        verbose_name_plural = 'Policies'
         ordering = ['-updated_at']
+        permissions = [
+            ('manage_policies', 'Can manage policy records'),
+        ]
 
     def __str__(self):
         return f"{self.code} - {self.policy or 'N/A'}"
 
-# Create your models here.
+class HanaConnect(models.Model):
+    class Meta:
+        managed = False
+        verbose_name = 'HANA Connect'
+        verbose_name_plural = 'HANA Connect'
+        permissions = [
+            ('access_hana_connect', 'Can access HANA Connect dashboard'),
+            ('view_policy_balance', 'Can view policy balance reports'),
+            ('view_customer_data', 'Can view customer data'),
+            ('view_item_master', 'Can view item master list'),
+            ('view_sales_reports', 'Can view sales vs achievement reports'),
+            ('sync_policies', 'Can sync policies from SAP'),
+            ('post_to_sap', 'Can post data to SAP'),
+        ]
+
+    def __str__(self):
+        return 'HANA Connect'
