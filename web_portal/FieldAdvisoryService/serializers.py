@@ -15,9 +15,11 @@ User = get_user_model()
 #         fields = '__all__'
 class DealerSerializer(serializers.ModelSerializer):
     # read-only fields that come from User
-    email        = serializers.EmailField(source='user.email', read_only=True)
-    first_name   = serializers.CharField(source='user.first_name', read_only=True)
-    last_name    = serializers.CharField(source='user.last_name', read_only=True)
+    email        = serializers.EmailField(source='user.email', read_only=False, required=False)
+    first_name   = serializers.CharField(source='user.first_name', read_only=False, required=False)
+    last_name    = serializers.CharField(source='user.last_name', read_only=False, required=False)
+    username     = serializers.CharField(source='user.username', read_only=False, required=False)
+    password     = serializers.CharField(source='user.password', write_only=True, required=False, min_length=6)
 
     # optional: allow choosing an existing user when creating a dealer
     user         = serializers.PrimaryKeyRelatedField(
@@ -27,11 +29,98 @@ class DealerSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Dealer
         fields = [
-            'id','user','email','first_name','last_name','name','cnic_number',
+            'id','user','username','email','first_name','last_name','password',
+            'name','cnic_number',
             'contact_number','company','region','zone','territory',
             'address','latitude','longitude','remarks','is_active',
-            'cnic_front_image','cnic_back_image'
+            'cnic_front_image','cnic_back_image','card_code','created_at','updated_at'
         ]
+        read_only_fields = ['id', 'card_code', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        """Create or link a user when creating a dealer"""
+        user_data = {}
+        
+        # Extract user fields
+        if 'user' in validated_data:
+            user = validated_data.pop('user')
+        else:
+            user = None
+            
+        # Collect user data from nested serializer
+        username = validated_data.pop('username', None) if 'username' in validated_data else None
+        email = validated_data.pop('email', None) if 'email' in validated_data else None
+        first_name = validated_data.pop('first_name', None) if 'first_name' in validated_data else None
+        last_name = validated_data.pop('last_name', None) if 'last_name' in validated_data else None
+        password = validated_data.pop('password', None) if 'password' in validated_data else None
+        
+        # If user data provided but no user FK, create new user
+        if not user and (username or email):
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            
+            user_create_data = {
+                'username': username or email.split('@')[0] if email else f"dealer_{validated_data.get('name', 'new')}",
+                'email': email or '',
+                'first_name': first_name or '',
+                'last_name': last_name or ''
+            }
+            
+            user = User.objects.create_user(**user_create_data)
+            if password:
+                user.set_password(password)
+                user.save()
+        
+        # Create dealer with user if available
+        validated_data['user'] = user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        """Update user fields when updating a dealer"""
+        user_data = {}
+        user = instance.user
+        
+        # Extract user-related fields
+        username = validated_data.pop('username', None) if 'username' in validated_data else None
+        email = validated_data.pop('email', None) if 'email' in validated_data else None
+        first_name = validated_data.pop('first_name', None) if 'first_name' in validated_data else None
+        last_name = validated_data.pop('last_name', None) if 'last_name' in validated_data else None
+        password = validated_data.pop('password', None) if 'password' in validated_data else None
+        new_user = validated_data.pop('user', None) if 'user' in validated_data else None
+        
+        # Update or create user
+        if new_user:
+            validated_data['user'] = new_user
+            user = new_user
+        elif username or email or first_name or last_name or password:
+            if not user:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                user = User.objects.create_user(
+                    username=username or email.split('@')[0] if email else f"dealer_{instance.name}",
+                    email=email or '',
+                    first_name=first_name or '',
+                    last_name=last_name or ''
+                )
+                if password:
+                    user.set_password(password)
+                    user.save()
+                validated_data['user'] = user
+            else:
+                # Update existing user
+                if username:
+                    user.username = username
+                if email:
+                    user.email = email
+                if first_name:
+                    user.first_name = first_name
+                if last_name:
+                    user.last_name = last_name
+                if password:
+                    user.set_password(password)
+                user.save()
+        
+        return super().update(instance, validated_data)
 
 class FlexibleListField(serializers.ListField):
     def to_internal_value(self, data):
@@ -349,7 +438,32 @@ class SalesOrderAttachmentSerializer(serializers.ModelSerializer):
 class SalesOrderLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = SalesOrderLine
-        exclude = ('sales_order',)
+        fields = [
+            'id',
+            'line_num',
+            'item_code',
+            'item_description',
+            'quantity',
+            'unit_price',
+            'discount_percent',
+            'warehouse_code',
+            'vat_group',
+            'tax_percentage_per_row',
+            'units_of_measurment',
+            'uom_entry',
+            'measure_unit',
+            'uom_code',
+            'project_code',
+            'u_sd',
+            'u_ad',
+            'u_exd',
+            'u_zerop',
+            'u_pl',  # Policy Link
+            'u_bp',  # Project Balance
+            'u_policy',  # Policy Code
+            'u_focitem',  # FOC Item
+            'u_crop',  # Crop Code
+        ]
 
 
 class SalesOrderLineInputSerializer(serializers.Serializer):

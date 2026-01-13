@@ -35,16 +35,46 @@ def email_validator(value):
     return value
 
 def validate_image(image):
-    # Check file type by content type if available
-    if hasattr(image, 'file') and hasattr(image.file, 'content_type'):
-        content_type = image.file.content_type
-        if content_type not in ['image/jpeg', 'image/png']:
-            raise ValidationError("Only JPEG and PNG images are allowed.")
-    else:
-        # Fallback: check based on extension or content (less reliable)
-        try:
-            img = Image.open(image)
-            if img.format not in ['JPEG', 'PNG']:
-                raise ValidationError("Uploaded file is not a valid image (JPEG or PNG).")
-        except Exception:
-            raise ValidationError("Uploaded file is not a valid image.")
+    """
+    Validate uploaded image format.
+    Accepts JPEG and PNG formats only.
+    Simple validation - just checks if PIL can open it.
+    """
+    if not image:
+        return
+
+    # Get the file name to check extension
+    filename = getattr(image, 'name', '')
+    if not filename:
+        return
+
+    # Check file extension
+    allowed_extensions = ['jpg', 'jpeg', 'png']
+    file_extension = filename.lower().split('.')[-1]
+    
+    if file_extension not in allowed_extensions:
+        raise ValidationError(f"Only JPEG (.jpg, .jpeg) and PNG (.png) images are allowed. Your file: .{file_extension}")
+
+    # Try to open with PIL to verify it's a valid image
+    try:
+        # Reset file pointer to beginning if possible
+        if hasattr(image, 'seek'):
+            try:
+                image.seek(0)
+            except:
+                pass
+        
+        # Try to open the image
+        img = Image.open(image)
+        # Just load to verify it's valid
+        img.load()
+            
+    except FileNotFoundError:
+        # File doesn't exist yet, skip validation
+        return
+    except (IOError, OSError) as e:
+        # Not a valid image file
+        raise ValidationError(f"The uploaded file is not a valid image: {str(e)}")
+    except Exception as e:
+        # For any other PIL errors
+        raise ValidationError(f"Could not validate image file: {str(e)}")

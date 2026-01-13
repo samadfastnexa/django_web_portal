@@ -15,8 +15,7 @@ import os
 import json
 import re
 import logging
-import ssl
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, get_item_groups, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, unit_price_by_policy, item_lov_by_policy
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, unit_price_by_policy
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -26,121 +25,158 @@ from FieldAdvisoryService.models import Company, Region, Zone, Territory
 
 logger = logging.getLogger(__name__)
 
+
+def get_hana_schema_from_request(request):
+    """
+    Resolve HANA schema from query param, session, or first active company.
+    Returns Company_name (e.g., '4B-BIO_APP').
+    """
+    db_param = request.GET.get('database', '').strip()
+    if db_param:
+        token = db_param.upper().strip()
+        # Build robust candidate variants
+        variants = set()
+        variants.add(db_param)
+        variants.add(token)
+        # Dash/underscore toggles
+        variants.add(token.replace('-', '_'))
+        variants.add(token.replace('_', '-'))
+        # Ensure APP suffix when missing
+        if not token.endswith('_APP') and not token.endswith('-APP'):
+            variants.add(f"{token}_APP")
+            variants.add(f"{token}-APP")
+        # Try exact/case-insensitive matches against active companies
+        for candidate in list(variants):
+            try:
+                company = Company.objects.get(Company_name=candidate, is_active=True)
+                logger.info(f"[DB RESOLVER] Matched exact company: {company.Company_name} from '{db_param}'")
+                return company.Company_name
+            except Company.DoesNotExist:
+                pass
+            try:
+                company = Company.objects.get(Company_name__iexact=candidate, is_active=True)
+                logger.info(f"[DB RESOLVER] Matched iexact company: {company.Company_name} from '{db_param}'")
+                return company.Company_name
+            except Company.DoesNotExist:
+                pass
+
+        # If still not found, map common keys like '4B-ORANG'/'4B-BIO' to active companies
+        if 'ORANG' in token:
+            company = Company.objects.filter(is_active=True, Company_name__icontains='ORANG').first()
+            if company:
+                logger.info(f"[DB RESOLVER] Fallback mapped to ORANG company: {company.Company_name}")
+                return company.Company_name
+        if 'BIO' in token:
+            company = Company.objects.filter(is_active=True, Company_name__icontains='BIO').first()
+            if company:
+                logger.info(f"[DB RESOLVER] Fallback mapped to BIO company: {company.Company_name}")
+                return company.Company_name
+
+    session_db = request.session.get('selected_db', '').strip()
+    if session_db:
+        try:
+            company = Company.objects.get(Company_name=session_db, is_active=True)
+            return company.Company_name
+        except Company.DoesNotExist:
+            pass
+
+    try:
+        company = Company.objects.filter(is_active=True).first()
+        if company:
+            return company.Company_name
+    except Exception:
+        pass
+
+    return '4B-BIO_APP'
+
+
+def get_valid_company_schemas():
+    """Return list of active company schemas for documentation."""
+    try:
+        schemas = list(Company.objects.filter(is_active=True).values_list('Company_name', flat=True))
+        if schemas:
+            return schemas
+    except Exception:
+        pass
+    return ['4B-BIO_APP', '4B-ORANG_APP']
+
 @staff_member_required
 def sales_order_admin(request):
     error = None
     result = None
-    
+    default_payload = {
+        "Series": 8,
+        "DocType": "dDocument_Items",
+        "DocDate": "2025-11-21",
+        "DocDueDate": "2025-11-21",
+        "TaxDate": "2025-11-21",
+        "CardCode": "BIC01563",
+        "CardName": "Master Agro Traders",
+        "ContactPersonCode": 4804,
+        "FederalTaxID": "32402-7881906-3",
+        "PayToCode": 1,
+        "Address": "Dhandla Road Dajal Tehsil Jampur\r\r\rPAKISTAN",
+        "DocCurrency": "PKR",
+        "DocRate": 1.0,
+        "Comments": "",
+        "SummeryType": "dNoSummary",
+        "DocObjectCode": "oOrders",
+        "U_sotyp": "01",
+        "U_USID": "Dgk01",
+        "U_SWJE": None,
+        "U_SECJE": None,
+        "U_CRJE": None,
+        "U_SCardCode": "BIC01812",
+        "U_SCardName": "Malik Agro Traders",
+        "DocumentLines": [
+            {
+                "LineNum": 0,
+                "ItemCode": "FG00581",
+                "ItemDescription": "Jadogar 25 Od - 360-Mls.",
+                "Quantity": 20.0,
+                "DiscountPercent": 0.0,
+                "WarehouseCode": "WH06",
+                "VatGroup": "SE",
+                "UnitsOfMeasurment": 1.0,
+                "TaxPercentagePerRow": 0.0,
+                "UnitPrice": 1170.0,
+                "UoMEntry": 68,
+                "MeasureUnit": "No",
+                "UoMCode": "No",
+                "ProjectCode": "0223254",
+                "U_SD": 0.0,
+                "U_AD": 0.0,
+                "U_EXD": 0.0,
+                "U_zerop": 0.0,
+                "U_pl": 275,
+                "U_BP": 1322.0,
+                "U_policy": "0223271",
+                "U_focitem": "No",
+                "U_crop": None
+            }
+        ]
+    }
+    payload_text = json.dumps(default_payload, ensure_ascii=False, indent=2)
     if request.method == 'POST':
         try:
-            # Build the payload from form data
-            data = {
-                "Series": int(request.POST.get('Series', 8)),
-                "DocType": "dDocument_Items",
-                "DocDate": request.POST.get('DocDate'),
-                "DocDueDate": request.POST.get('DocDueDate'),
-                "TaxDate": request.POST.get('TaxDate'),
-                "CardCode": request.POST.get('CardCode'),
-                "CardName": request.POST.get('CardName'),
-                "DocCurrency": "PKR",
-                "DocRate": 1.0,
-                "SummeryType": "dNoSummary",
-                "DocObjectCode": "oOrders",
-            }
-            
-            # Add optional fields
-            if request.POST.get('ContactPersonCode'):
-                data['ContactPersonCode'] = int(request.POST.get('ContactPersonCode'))
-            if request.POST.get('FederalTaxID'):
-                data['FederalTaxID'] = request.POST.get('FederalTaxID')
-            if request.POST.get('Address'):
-                data['Address'] = request.POST.get('Address')
-            if request.POST.get('Comments'):
-                data['Comments'] = request.POST.get('Comments')
-            if request.POST.get('U_sotyp'):
-                data['U_sotyp'] = request.POST.get('U_sotyp')
-            if request.POST.get('U_USID'):
-                data['U_USID'] = request.POST.get('U_USID')
-            if request.POST.get('U_SCardCode'):
-                data['U_SCardCode'] = request.POST.get('U_SCardCode')
-            if request.POST.get('U_SCardName'):
-                data['U_SCardName'] = request.POST.get('U_SCardName')
-            
-            # Parse line items
-            document_lines = []
-            line_index = 0
-            while True:
-                item_code_key = f'DocumentLines[{line_index}][ItemCode]'
-                if item_code_key not in request.POST:
-                    break
-                
-                line = {
-                    "LineNum": int(request.POST.get(f'DocumentLines[{line_index}][LineNum]', line_index)),
-                    "ItemCode": request.POST.get(f'DocumentLines[{line_index}][ItemCode]'),
-                    "Quantity": float(request.POST.get(f'DocumentLines[{line_index}][Quantity]', 1)),
-                    "UnitPrice": float(request.POST.get(f'DocumentLines[{line_index}][UnitPrice]', 0)),
-                    "DiscountPercent": float(request.POST.get(f'DocumentLines[{line_index}][DiscountPercent]', 0)),
-                    "WarehouseCode": request.POST.get(f'DocumentLines[{line_index}][WarehouseCode]'),
-                    "VatGroup": request.POST.get(f'DocumentLines[{line_index}][VatGroup]', 'SE'),
-                }
-                
-                # Add optional line fields
-                if request.POST.get(f'DocumentLines[{line_index}][ItemDescription]'):
-                    line['ItemDescription'] = request.POST.get(f'DocumentLines[{line_index}][ItemDescription]')
-                if request.POST.get(f'DocumentLines[{line_index}][TaxPercentagePerRow]'):
-                    line['TaxPercentagePerRow'] = float(request.POST.get(f'DocumentLines[{line_index}][TaxPercentagePerRow]'))
-                if request.POST.get(f'DocumentLines[{line_index}][UnitsOfMeasurment]'):
-                    line['UnitsOfMeasurment'] = float(request.POST.get(f'DocumentLines[{line_index}][UnitsOfMeasurment]'))
-                if request.POST.get(f'DocumentLines[{line_index}][UoMEntry]'):
-                    line['UoMEntry'] = int(request.POST.get(f'DocumentLines[{line_index}][UoMEntry]'))
-                if request.POST.get(f'DocumentLines[{line_index}][MeasureUnit]'):
-                    line['MeasureUnit'] = request.POST.get(f'DocumentLines[{line_index}][MeasureUnit]')
-                if request.POST.get(f'DocumentLines[{line_index}][UoMCode]'):
-                    line['UoMCode'] = request.POST.get(f'DocumentLines[{line_index}][UoMCode]')
-                if request.POST.get(f'DocumentLines[{line_index}][ProjectCode]'):
-                    line['ProjectCode'] = request.POST.get(f'DocumentLines[{line_index}][ProjectCode]')
-                if request.POST.get(f'DocumentLines[{line_index}][U_SD]'):
-                    line['U_SD'] = float(request.POST.get(f'DocumentLines[{line_index}][U_SD]'))
-                if request.POST.get(f'DocumentLines[{line_index}][U_AD]'):
-                    line['U_AD'] = float(request.POST.get(f'DocumentLines[{line_index}][U_AD]'))
-                if request.POST.get(f'DocumentLines[{line_index}][U_EXD]'):
-                    line['U_EXD'] = float(request.POST.get(f'DocumentLines[{line_index}][U_EXD]'))
-                if request.POST.get(f'DocumentLines[{line_index}][U_zerop]'):
-                    line['U_zerop'] = float(request.POST.get(f'DocumentLines[{line_index}][U_zerop]'))
-                if request.POST.get(f'DocumentLines[{line_index}][U_pl]'):
-                    line['U_pl'] = int(request.POST.get(f'DocumentLines[{line_index}][U_pl]'))
-                if request.POST.get(f'DocumentLines[{line_index}][U_BP]'):
-                    line['U_BP'] = float(request.POST.get(f'DocumentLines[{line_index}][U_BP]'))
-                if request.POST.get(f'DocumentLines[{line_index}][U_policy]'):
-                    line['U_policy'] = request.POST.get(f'DocumentLines[{line_index}][U_policy]')
-                if request.POST.get(f'DocumentLines[{line_index}][U_focitem]'):
-                    line['U_focitem'] = request.POST.get(f'DocumentLines[{line_index}][U_focitem]')
-                if request.POST.get(f'DocumentLines[{line_index}][U_crop]'):
-                    line['U_crop'] = request.POST.get(f'DocumentLines[{line_index}][U_crop]')
-                
-                document_lines.append(line)
-                line_index += 1
-            
-            data['DocumentLines'] = document_lines
-            
-            # Create sales order
+            payload_text = request.POST.get('payload') or payload_text
+            data = json.loads(payload_text)
             selected_db = request.session.get('selected_db', '4B-BIO')
             client = SAPClient(company_db_key=selected_db)
             result = client.create_sales_order(data)
         except Exception as e:
             error = str(e)
-    
     result_json = None
     if result is not None:
         try:
             result_json = json.dumps(result, ensure_ascii=False, indent=2)
         except Exception:
             result_json = str(result)
-    
     return render(
         request,
         'admin/sap_integration/sales_order.html',
         {
+            'payload': payload_text,
             'result_json': result_json,
             'error': error,
         }
@@ -383,17 +419,7 @@ def hana_connect_admin(request):
                             error = str(e_ts)
                     elif action == 'products_catalog':
                         try:
-                            # Get filter parameters
-                            search_param = (request.GET.get('search') or '').strip() or None
-                            item_groups_param = (request.GET.get('item_groups') or '').strip() or None
-                            brand_param = (request.GET.get('brand') or '').strip() or None
-                            
-                            # Fetch categories/item groups for filter UI
-                            categories = get_item_groups(conn)
-                            request._product_categories = categories
-                            
-                            # Fetch products with filters
-                            data = products_catalog(conn, selected_schema, search_param, None, item_groups_param, brand_param)
+                            data = products_catalog(conn, selected_schema)
                             result = data
                         except Exception as e_pc:
                             error = str(e_pc)
@@ -1981,21 +2007,16 @@ def hana_connect_admin(request):
                     row['product_description_urdu_url_full'] = base_url + row['product_description_urdu_url']
     
     geo_options = getattr(request, '_geo_options', {'regions': [], 'zones': [], 'territories': []})
-    product_categories = getattr(request, '_product_categories', [])
     
     return render(
         request,
         'admin/sap_integration/hana_connect.html',
         {
-            'site_header': settings.ADMIN_SITE_HEADER,
-            'site_title': settings.ADMIN_SITE_TITLE,
-            'index_title': settings.ADMIN_INDEX_TITLE,
             'result_json': result_json,
             'error': error,
             'diagnostics_json': diag_json,
             'territory_options': territory_options,
             'geo_options': geo_options,
-            'product_categories': product_categories,
             'selected_territory': selected_territory,
             'current_action': action,
             'current_emp_id': current_emp_id,
@@ -2399,12 +2420,36 @@ def get_business_partner_data(request, card_code=None):
         GET /api/sap/business-partner/
         GET /api/sap/business-partner/BIC00001/
         GET /api/sap/business-partner/?top=50
+        GET /api/sap/business-partner/?database=4B-BIO_APP
+        GET /api/sap/business-partner/?database=4B-ORANG_APP
     """
     
     try:
-        # Initialize SAP client
-        selected_db = request.session.get('selected_db', '4B-BIO')
-        sap_client = SAPClient(company_db_key=selected_db)
+        # Get HANA schema from database parameter, session, or company model
+        db_param_received = request.GET.get('database', 'NOT PROVIDED')
+        logger.info(f"[BUSINESS_PARTNER] Received database parameter: {db_param_received}")
+        
+        hana_schema = get_hana_schema_from_request(request)
+        logger.info(f"[BUSINESS_PARTNER] Using HANA schema: {hana_schema}")
+        
+        # Map HANA schema to company_db_key for SAPClient
+        # Extract the key from company name (e.g., 4B-BIO_APP -> 4B-BIO)
+        if 'BIO' in hana_schema.upper():
+            company_db_key = '4B-BIO'
+        elif 'ORANG' in hana_schema.upper():
+            company_db_key = '4B-ORANG'
+        else:
+            company_db_key = '4B-BIO'  # Default fallback
+        
+        logger.info(f"[BUSINESS_PARTNER] Using company_db_key: {company_db_key}")
+        
+        # Create SAP client with logging
+        try:
+            sap_client = SAPClient(company_db_key=company_db_key)
+            logger.info(f"[BUSINESS_PARTNER] SAPClient created successfully with CompanyDB: {sap_client.company_db}")
+        except Exception as e:
+            logger.error(f"[BUSINESS_PARTNER] Failed to create SAPClient: {str(e)}")
+            raise
         
         # If card_code is provided, get specific business partner
         if card_code and card_code.strip():
@@ -2420,15 +2465,71 @@ def get_business_partner_data(request, card_code=None):
         
         # Otherwise, list all business partners
         else:
+            # Get parameters
             top_param = request.query_params.get('top')
-            top_val = 100
+            card_type_param = request.query_params.get('card_type', 'C')  # Default to Customers only (ORC*)
+            
+            # Set default limit to 500 for reasonable loading time
+            # User can request more with ?top=10000 or ?top=0 (unlimited)
+            max_records = 500
             if top_param is not None:
                 try:
-                    top_val = int(top_param)
+                    max_records = int(top_param)
+                    if max_records == 0:
+                        max_records = 10000  # 0 means "all", cap at 10k
                 except Exception:
-                    top_val = 100
+                    max_records = 500
             
-            rows = sap_client.list_business_partners(top=top_val, select='CardCode,CardName,GroupCode,VatGroup') or []
+            # Include CardType in select to enable filtering
+            logger.info(f"[BUSINESS_PARTNER] Fetching business partners (limit: {max_records})")
+            
+            # Fetch records using pagination (SAP returns 20 per request)
+            all_rows = []
+            batch_size = 20  # SAP's default limit
+            skip = 0
+            batch_count = 0
+            
+            while len(all_rows) < max_records:
+                batch = sap_client.list_business_partners(
+                    top=batch_size, 
+                    skip=skip,
+                    select='CardCode,CardName,CardType,GroupCode,VatGroup'
+                ) or []
+                
+                if not batch or len(batch) == 0:
+                    logger.info(f"[BUSINESS_PARTNER] End of records reached at skip={skip}")
+                    break
+                    
+                all_rows.extend(batch)
+                batch_count += 1
+                
+                # Log every 10 batches to reduce spam
+                if batch_count % 10 == 0 or len(batch) < batch_size:
+                    logger.info(f"[BUSINESS_PARTNER] Fetched {batch_count} batches, total: {len(all_rows)} records")
+                
+                skip += batch_size
+                
+                # Safety check
+                if batch_count > 500:
+                    logger.warning(f"[BUSINESS_PARTNER] Reached max batch limit (500)")
+                    break
+            
+            rows = all_rows
+            logger.info(f"[BUSINESS_PARTNER] Total retrieved: {len(rows)} records from SAP in {batch_count} batches")
+            
+            # Filter by CardType only if specified (C=Customer, S=Supplier/Vendor)
+            # SAP returns "cCustomer" and "cSupplier", so we need to map our parameter
+            original_count = len(rows)
+            if card_type_param and card_type_param.strip():
+                card_type_upper = card_type_param.upper()
+                if card_type_upper == 'C':
+                    # Filter for Customers only (ORC*)
+                    rows = [bp for bp in rows if 'customer' in bp.get('CardType', '').lower()]
+                elif card_type_upper == 'S':
+                    # Filter for Suppliers/Vendors only (ORV*)
+                    rows = [bp for bp in rows if 'supplier' in bp.get('CardType', '').lower()]
+                logger.info(f"[BUSINESS_PARTNER] After CardType={card_type_param} filter: {len(rows)} of {original_count} records")
+            
             return Response({
                 "success": True,
                 "count": len(rows),
@@ -2469,11 +2570,27 @@ def get_business_partner_data(request, card_code=None):
     operation_summary="List All Business Partners",
     manual_parameters=[
         openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="HANA database/schema to query. Accepts Company name values (e.g., 4B-BIO_APP, 4B-ORANG_APP) or company keys (e.g., 4B-BIO, 4B-ORANG). If not provided, falls back to session or first active company.",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter(
             'top',
             openapi.IN_QUERY,
-            description="Maximum number of items to return (default 100)",
+            description="Maximum number of items to return (default 500, use 0 or 10000 for all records)",
             type=openapi.TYPE_INTEGER,
             required=False
+        ),
+        openapi.Parameter(
+            'card_type',
+            openapi.IN_QUERY,
+            description="Filter by CardType: C (Customer/Dealer - default, shows only ORC*), S (Supplier/Vendor - shows ORV*). Omit or use empty string to show all.",
+            type=openapi.TYPE_STRING,
+            enum=['C', 'S', ''],
+            required=False,
+            default='C'
         )
     ],
     responses={
@@ -2531,6 +2648,13 @@ def get_business_partners_list(request):
             description="Business Partner Card Code (e.g., BIC00001)",
             type=openapi.TYPE_STRING,
             required=True
+        ),
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="HANA database/schema to query. Accepts Company name values (e.g., 4B-BIO_APP, 4B-ORANG_APP) or company keys (e.g., 4B-BIO, 4B-ORANG). If not provided, falls back to session or first active company.",
+            type=openapi.TYPE_STRING,
+            required=False
         )
     ],
     responses={
@@ -2635,67 +2759,25 @@ def list_policies(request):
     API endpoint to list policies from SAP Projects based on UDF `U_pol`.
     Usage: GET /api/sap/policies/
     Optional: ?active=true|false
-    
-    Performance:
-    - First request: ~2-5 seconds (SAP login + fetch)
-    - Subsequent requests within 5 min: ~200-500ms (cached)
     """
-    import logging
-    import time
-    logger = logging.getLogger(__name__)
-    start_time = time.time()
-    
     try:
         selected_db = request.session.get('selected_db', '4B-BIO')
-        logger.info(f"[SAP POLICIES] Attempting to list policies with company_db={selected_db}")
-        
         sap_client = SAPClient(company_db_key=selected_db)
-        fetch_start = time.time()
-        policies = sap_client.get_all_policies(use_cache=True)
-        fetch_time = time.time() - fetch_start
+        policies = sap_client.get_all_policies()
 
         active_param = request.query_params.get('active')
         if active_param is not None:
             active_val = str(active_param).lower() in ('true', '1', 'yes')
             policies = [p for p in policies if bool(p.get('active')) == active_val]
 
-        total_time = time.time() - start_time
-        logger.info(f"[SAP POLICIES] Successfully retrieved {len(policies)} policies in {total_time:.2f}s (fetch: {fetch_time:.2f}s)")
-        
         return Response({
             "success": True,
             "count": len(policies),
             "data": policies,
-            "message": "Policies retrieved successfully",
-            "_timing": {
-                "total_ms": round(total_time * 1000, 1),
-                "fetch_ms": round(fetch_time * 1000, 1)
-            }
+            "message": "Policies retrieved successfully"
         }, status=status.HTTP_200_OK)
 
-    except ssl.SSLError as e:
-        error_msg = str(e)
-        total_time = time.time() - start_time
-        logger.error(f"[SAP POLICIES SSL ERROR] {error_msg} (took {total_time:.2f}s)", exc_info=True)
-        
-        if 'TLSV1_ALERT_INTERNAL_ERROR' in error_msg or 'alert internal error' in error_msg:
-            return Response({
-                "success": False,
-                "error": "SAP Server SSL Internal Error",
-                "message": "The SAP B1 Service Layer at fourb.vdc.services:5588 is experiencing SSL issues. This may be temporary. Please try again in a moment or check if the SAP server is running properly.",
-                "technical_detail": error_msg,
-                "recommendation": "If this persists, check SAP B1 Service Layer status and logs"
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        
-        return Response({
-            "success": False,
-            "error": "SSL Connection Failed",
-            "message": f"SSL error connecting to SAP: {error_msg}"
-        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-    
     except Exception as e:
-        total_time = time.time() - start_time
-        logger.error(f"[SAP POLICIES API ERROR] {str(e)} (took {total_time:.2f}s)", exc_info=True)
         return Response({
             "success": False,
             "error": "SAP integration failed",
@@ -3088,7 +3170,12 @@ def sales_vs_achievement_api(request):
             except Exception:
                 pass
     except Exception as e:
-        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({
+            'success': False,
+            'error': str(e),
+            'schema': cfg.get('schema'),
+            'host': cfg.get('host'),
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
@@ -3862,11 +3949,8 @@ def products_catalog_api(request):
     db_name = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
     search = (request.GET.get('search') or '').strip() or None
     item_group = (request.GET.get('item_group') or '').strip() or None
-    item_groups = (request.GET.get('item_groups') or '').strip() or None
-    brand = (request.GET.get('brand') or '').strip() or None
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
-    get_categories = (request.GET.get('get_categories') or '').strip().lower() == 'true'
     
     try:
         page_num = int(page_param) if page_param else 1
@@ -3905,44 +3989,11 @@ def products_catalog_api(request):
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
-            
-            # If requesting categories/item groups
-            if get_categories:
-                categories = get_item_groups(conn)
-                return Response({
-                    'success': True,
-                    'database': cfg['schema'],
-                    'categories': categories
-                }, status=status.HTTP_200_OK)
-            
             # Pass the connection and schema name to products_catalog for image URL generation
-            data = products_catalog(conn, cfg['schema'], search, item_group, item_groups, brand)
-            
-            # Add base URL to image paths
-            base_url = getattr(settings, 'BASE_URL', None) or request.build_absolute_uri('/').rstrip('/')
-            for row in data:
-                if row.get('product_image_url'):
-                    row['product_image_url_full'] = base_url + row['product_image_url']
-                if row.get('product_description_urdu_url'):
-                    row['product_description_urdu_url_full'] = base_url + row['product_description_urdu_url']
-            
+            data = products_catalog(conn, cfg['schema'], search, item_group)
             paginator = Paginator(data or [], page_size)
             page_obj = paginator.get_page(page_num)
-            return Response({
-                'success': True,
-                'page': page_obj.number,
-                'page_size': page_size,
-                'num_pages': paginator.num_pages,
-                'count': paginator.count,
-                'total_results': len(data),
-                'database': cfg['schema'],
-                'filters_applied': {
-                    'search': search,
-                    'item_groups': item_groups,
-                    'brand': brand
-                },
-                'data': list(page_obj.object_list)
-            }, status=status.HTTP_200_OK)
+            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'database': cfg['schema'], 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()
@@ -4331,6 +4382,13 @@ def warehouse_for_item_api(request):
     operation_summary="Contact persons",
     operation_description="List contact persons. When both CardCode and ContactCode are empty or show_all=true, returns all. When CardCode only is provided, returns contacts for that BP. When both are provided, returns a single record.",
     manual_parameters=[
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="HANA database/schema to query. Accepts Company name values (e.g., 4B-BIO_APP, 4B-ORANG_APP) or company keys (e.g., 4B-BIO, 4B-ORANG). If not provided, falls back to session or first active company.",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
         openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner code (optional)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('contact_code', openapi.IN_QUERY, description="Contact code (optional)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('show_all', openapi.IN_QUERY, description="Show all contacts", type=openapi.TYPE_BOOLEAN, required=False),
@@ -4356,16 +4414,10 @@ def contact_persons_api(request):
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Resolve HANA schema using shared helper for consistency
+    hana_schema = get_hana_schema_from_request(request)
+    cfg['schema'] = hana_schema
     
     card_code = (request.GET.get('card_code') or '').strip()
     contact_code = (request.GET.get('contact_code') or '').strip()
@@ -4964,16 +5016,52 @@ def item_lov_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(tags=['SAP'],
+@swagger_auto_schema(tags=['SAP Sales Order Form'],
     method='get',
-    operation_summary="Item price by policy",
-    operation_description="Fetch unit price (U_frp) from policy lines (@PL1/@PLR4) by DocEntry and ItemCode.",
+    operation_summary="Item Price by Policy",
+    operation_description="""Get unit price (U_frp) for a specific item in a policy. Use this when item is selected to auto-fill unit price in sales order form.
+    
+    **Response Structure:**
+    ```json
+    {
+        "success": true,
+        "data": {
+            "doc_entry": "37",
+            "item_code": "FG00319",
+            "unit_price": 1250.50
+        }
+    }
+    ```
+    
+    **If no price found:**
+    ```json
+    {
+        "success": true,
+        "data": null,
+        "message": "No price found for given DocEntry and ItemCode"
+    }
+    ```
+    
+    **Usage in Form:**
+    - Called automatically when user selects an item from dropdown
+    - Auto-fills the unit_price field with returned value
+    - Quantity * unit_price calculates line total
+    - Price is policy-specific (different policies may have different prices for same item)
+    
+    **Price Source:** Queries @PLR4 table joining with policy and item data to get U_frp (Final Rate Price).
+    """,
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
-        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Policy DocEntry (e.g., 18)", type=openapi.TYPE_STRING, required=True),
-        openapi.Parameter('item_code', openapi.IN_QUERY, description="ItemCode (e.g., FG00316)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="HANA database/schema to query. Accepts Company name values (e.g., 4B-BIO_APP, 4B-ORANG_APP) or company keys (e.g., 4B-BIO, 4B-ORANG). If not provided, falls back to session or first active company.",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Policy DocEntry (required, e.g., 37)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('item_code', openapi.IN_QUERY, description="ItemCode (required, e.g., FG00319)", type=openapi.TYPE_STRING, required=True),
     ],
-    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+    responses={200: openapi.Response(description="OK - price found or null"), 400: openapi.Response(description="Bad Request - missing doc_entry or item_code"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
 def item_price_api(request):
@@ -4994,15 +5082,11 @@ def item_price_api(request):
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
 
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    # Resolve HANA schema using shared helper
+    hana_schema = get_hana_schema_from_request(request)
+    cfg['schema'] = hana_schema
+    
+    logger.info(f"[ITEM_PRICE] Using HANA schema: {hana_schema}")
 
     doc_entry = (request.GET.get('doc_entry') or '').strip()
     item_code = (request.GET.get('item_code') or '').strip()
@@ -5042,126 +5126,61 @@ def item_price_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(tags=['SAP'],
+@swagger_auto_schema(tags=['SAP Sales Order Form'],
     method='get',
-    operation_summary="Policy Items",
-    operation_description="List items linked to a policy DocEntry using @PL1/@PLR4 joins (OITM for details).",
-    manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
-        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Policy DocEntry (e.g., 18)", type=openapi.TYPE_STRING, required=True),
-        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
-        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
-    ],
-    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
-)
-@api_view(['GET'])
-def policy_items_api(request):
-    """
-    Fetch items attached to a policy by DocEntry. Uses item_lov_by_policy helper to return
-    ItemCode, ItemName, SalUnitMsr, IUoMEntry, and U_GenericName. Supports optional schema
-    selection and pagination.
-    """
-    try:
-        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
-        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
-        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
-        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
-    except Exception:
-        pass
-
-    cfg = {
-        'host': os.environ.get('HANA_HOST') or '',
-        'port': os.environ.get('HANA_PORT') or '30015',
-        'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
-        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
-        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    operation_summary="Policy Items (LOV)",
+    operation_description="""Get all items in a specific policy. Use this when policy is selected to populate item dropdown in sales order form.
+    
+    **Response Structure:**
+    ```json
+    {
+        "success": true,
+        "page": 1,
+        "page_size": 10,
+        "num_pages": 1,
+        "count": 1,
+        "data": [
+            {
+                "POLICY_DOC_ENTRY": 37,
+                "ITEMCODE": "FG00319",
+                "ItemName": "Dhamaka 0.4G - 4Kg",
+                "UNIT_PRICE": -1.0,
+                "UNIT_OF_MEASURE": "No"
+            }
+        ]
     }
-
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
-
-    doc_entry = (request.GET.get('doc_entry') or '').strip()
-    if not doc_entry:
-        return Response({'success': False, 'error': 'doc_entry parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-    page_param = (request.GET.get('page') or '1').strip()
-    page_size_param = (request.GET.get('page_size') or '').strip()
-    try:
-        page_num = int(page_param) if page_param else 1
-    except Exception:
-        page_num = 1
-    default_page_size = 50
-    try:
-        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 50) or 50)
-    except Exception:
-        default_page_size = 50
-    try:
-        page_size = int(page_size_param) if page_size_param else default_page_size
-    except Exception:
-        page_size = default_page_size
-
-    try:
-        from hdbcli import dbapi
-        pwd = os.environ.get('HANA_PASSWORD','')
-        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
-        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
-            kwargs['encrypt'] = True
-            if cfg['ssl_validate']:
-                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
-        conn = dbapi.connect(**kwargs)
-        try:
-            if cfg['schema']:
-                sch = cfg['schema']
-                cur = conn.cursor()
-                cur.execute(f'SET SCHEMA "{sch}"')
-                cur.close()
-
-            data = item_lov_by_policy(conn, doc_entry)
-            paginator = Paginator(data or [], page_size)
-            page_obj = paginator.get_page(page_num)
-            return Response({
-                'success': True,
-                'page': page_obj.number,
-                'page_size': page_size,
-                'num_pages': paginator.num_pages,
-                'count': paginator.count,
-                'data': list(page_obj.object_list)
-            }, status=status.HTTP_200_OK)
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    except Exception as e:
-        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-@swagger_auto_schema(tags=['SAP'],
-    method='get',
-    operation_summary="Policy Items for Customer",
-    operation_description="Fetch all items in a specific policy, optionally filtered by customer/Business Partner CardCode.",
+    ```
+    
+    **Usage in Form:**
+    - Use ITEMCODE as dropdown value
+    - Display "ITEMCODE - ItemName" in dropdown
+    - Auto-fill ItemName to description field
+    - Auto-fill UNIT_OF_MEASURE to measure_unit field
+    - Use UNIT_PRICE or fetch via item-price endpoint for accurate pricing
+    
+    **Note:** If ITEMCODE is null, the policy has no items configured.
+    """,
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
-        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Policy DocEntry (e.g., 18)", type=openapi.TYPE_STRING, required=True),
-        openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner CardCode (optional)", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
-        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="HANA database/schema to query. Accepts Company name values (e.g., 4B-BIO_APP, 4B-ORANG_APP) or company keys (e.g., 4B-BIO, 4B-ORANG). If not provided, falls back to session or first active company.",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Policy DocEntry (required, e.g., 37)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner CardCode (optional, for future filtering)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number (default 1)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page (default 10)", type=openapi.TYPE_INTEGER, required=False),
     ],
-    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request - missing doc_entry"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
 def policy_items_for_customer_api(request):
     """
     Get all items in a specific policy, optionally filtered by customer CardCode.
     Query parameters:
-        - database: 4B-BIO-app or 4B-ORANG-app (optional)
+        - database: Company database schema (accepts variants like 4B-ORANG, 4B-ORANG_APP, etc.)
         - doc_entry: Policy DocEntry (required)
         - card_code: Business Partner CardCode (optional)
         - page: Page number (optional)
@@ -5184,15 +5203,11 @@ def policy_items_for_customer_api(request):
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
 
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    # Resolve HANA schema using shared helper
+    hana_schema = get_hana_schema_from_request(request)
+    cfg['schema'] = hana_schema
+    
+    logger.info(f"[POLICY_ITEMS] Using HANA schema: {hana_schema}")
 
     doc_entry = (request.GET.get('doc_entry') or '').strip()
     card_code = (request.GET.get('card_code') or '').strip()
@@ -5333,7 +5348,13 @@ def policy_items_for_customer_api(request):
     operation_summary="Policy Project Link",
     operation_description="Get projects linked to policies for a specific Business Partner/Customer. Shows policy-project relationships with project details.",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="HANA database/schema to query. Accepts Company name values (e.g., 4B-BIO_APP, 4B-ORANG_APP) or company keys (e.g., 4B-BIO, 4B-ORANG). If not provided, falls back to session or first active company.",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
         openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner CardCode (required)", type=openapi.TYPE_STRING, required=True),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
@@ -5371,15 +5392,9 @@ def policy_project_link_api(request):
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
 
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    # Resolve HANA schema using shared helper for consistency across endpoints
+    hana_schema = get_hana_schema_from_request(request)
+    cfg['schema'] = hana_schema
 
     card_code = (request.GET.get('card_code') or '').strip()
     
@@ -5653,8 +5668,15 @@ def crop_lov_api(request):
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Sales orders",
-    operation_description="List sales orders with optional filters and pagination.",
+    operation_description="List sales orders with optional filters and pagination. Returns order header with customer contact, policies, and crops.",
     manual_parameters=[
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="HANA database/schema to query. Accepts Company name values (e.g., 4B-BIO_APP, 4B-ORANG_APP) or company keys (e.g., 4B-BIO, 4B-ORANG). If not provided, falls back to session or first active company.",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
         openapi.Parameter('card_code', openapi.IN_QUERY, description="Customer CardCode", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('doc_status', openapi.IN_QUERY, description="Document Status: O (Open) or C (Closed)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('from_date', openapi.IN_QUERY, description="From date YYYY-MM-DD", type=openapi.TYPE_STRING, required=False),
@@ -5682,16 +5704,10 @@ def sales_orders_api(request):
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Resolve HANA schema using shared helper for consistency
+    hana_schema = get_hana_schema_from_request(request)
+    cfg['schema'] = hana_schema
     
     card_code = (request.GET.get('card_code') or '').strip()
     doc_status = (request.GET.get('doc_status') or '').strip().upper()
@@ -5792,4 +5808,194 @@ def set_database(request):
         
         return redirect(new_url)
     return redirect('/admin/')
+
+
+@swagger_auto_schema(tags=['SAP Sales Order Form'],
+    method='get',
+    operation_summary="Customer Policies",
+    operation_description="""Get all policies linked to a specific customer. Use this when customer is selected to populate policy dropdown in sales order form.
+    
+    **Response Structure:**
+    ```json
+    {
+        "success": true,
+        "page": 1,
+        "page_size": 10,
+        "num_pages": 1,
+        "count": 3,
+        "data": [
+            {
+                "POLICY_DOC_ENTRY": 27,
+                "PROJECT_CODE": "0323040",
+                "PROJECT_NAME": "Orange Protection Policy",
+                "CUSTOMER_CODE": "ORC00004"
+            }
+        ]
+    }
+    ```
+    
+    **Usage in Form:**
+    - Use POLICY_DOC_ENTRY as the key identifier
+    - Display PROJECT_NAME (DocEntry: POLICY_DOC_ENTRY) in dropdown
+    - Pass POLICY_DOC_ENTRY to policy-items-lov endpoint to get items
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="HANA database/schema to query. Accepts Company name values (e.g., 4B-BIO_APP, 4B-ORANG_APP) or company keys (e.g., 4B-BIO, 4B-ORANG). If not provided, falls back to session or first active company.",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Customer CardCode (required, e.g., ORC00001)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number (default 1)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page (default 10)", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request - missing card_code"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def customer_policies_api(request):
+    """
+    Get all policies for a specific customer from @PLR8 and @PL1 tables.
+    Returns DocEntry and project code (U_proj) for each policy.
+    
+    Example: /api/sap/customer-policies/?card_code=ORC00001&database=4B-ORANG
+    """
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+
+    # Resolve HANA schema using shared helper
+    hana_schema = get_hana_schema_from_request(request)
+    cfg['schema'] = hana_schema
+    
+    logger.info(f"[CUSTOMER_POLICIES] Using HANA schema: {hana_schema}")
+
+    card_code = (request.GET.get('card_code') or '').strip()
+    
+    if not card_code:
+        return Response({'success': False, 'error': 'card_code parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '').strip()
+    try:
+        page_num = int(page_param) if page_param else 1
+    except Exception:
+        page_num = 1
+    default_page_size = 50
+    try:
+        default_page_size = int(getattr(settings, 'REST_FRAMEWORK', {}).get('PAGE_SIZE', 50) or 50)
+    except Exception:
+        default_page_size = 50
+    try:
+        page_size = int(page_size_param) if page_size_param else default_page_size
+    except Exception:
+        page_size = default_page_size
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'] or '',
+            'password': pwd or ''
+        }
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+
+            cursor = conn.cursor()
+            
+            # Query to get all policies linked to a customer
+            sql_query = """
+                SELECT DISTINCT
+                    T1."DocEntry" AS policy_doc_entry,
+                    T1."U_proj" AS project_code,
+                    T2."PrjName" AS project_name,
+                    T0."U_bp" AS customer_code
+                FROM "@PLR8" T0
+                INNER JOIN "@PL1" T1 ON T0."DocEntry" = T1."DocEntry"
+                LEFT JOIN OPRJ T2 ON T2."PrjCode" = T1."U_proj"
+                WHERE T0."U_bp" = ?
+                ORDER BY T1."DocEntry"
+            """
+            
+            logger.info(f"[CUSTOMER_POLICIES] Querying policies for CardCode: {card_code}")
+            
+            cursor.execute(sql_query, [card_code])
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            cursor.close()
+
+            # Convert rows to list of dicts
+            data = []
+            for row in rows:
+                item_dict = {}
+                for idx, col in enumerate(columns):
+                    val = row[idx]
+                    # Convert date/datetime to string
+                    if hasattr(val, 'isoformat'):
+                        val = val.isoformat()
+                    item_dict[col] = val
+                data.append(item_dict)
+
+            logger.info(f"[CUSTOMER_POLICIES] Found {len(data)} policies for {card_code}")
+
+            # Check if no records found
+            if not data:
+                return Response({
+                    'success': True,
+                    'message': f'No policies found for customer {card_code}',
+                    'page': 1,
+                    'page_size': page_size,
+                    'num_pages': 0,
+                    'count': 0,
+                    'data': []
+                }, status=status.HTTP_200_OK)
+
+            # Paginate results
+            from django.core.paginator import Paginator
+            paginator = Paginator(data, page_size)
+            page_obj = paginator.get_page(page_num)
+
+            return Response({
+                'success': True,
+                'page': page_obj.number,
+                'page_size': page_size,
+                'num_pages': paginator.num_pages,
+                'count': paginator.count,
+                'data': list(page_obj.object_list)
+            }, status=status.HTTP_200_OK)
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"[CUSTOMER_POLICIES] Error: {str(e)}")
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

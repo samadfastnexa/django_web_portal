@@ -203,6 +203,35 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
         v = r.get('TerritoryName')
         if v and isinstance(v, str) and v.endswith(' Territory'):
             r['TerritoryName'] = v[:-10]
+    
+    # Log collection vs achievement summary
+    output = "\n" + "="*80 + "\n"
+    output += "COLLECTION VS ACHIEVEMENT REPORT\n"
+    output += "="*80 + "\n"
+    
+    for r in rows:
+        collection_target = float(r.get('Collection_Target') or 0)
+        collection_achievement = float(r.get('Collection_Achievement') or 0)
+        variance = collection_achievement - collection_target
+        variance_pct = (variance / collection_target * 100) if collection_target > 0 else 0
+        
+        output += f"\nRegion: {r.get('Region', 'N/A')}\n"
+        output += f"Zone: {r.get('Zone', 'N/A')}\n"
+        output += f"Territory: {r.get('TerritoryName', 'N/A')}\n"
+        output += f"   Target:      {collection_target:,.2f}\n"
+        output += f"   Achievement: {collection_achievement:,.2f}\n"
+        output += f"   Variance:    {variance:,.2f} ({variance_pct:+.1f}%)\n"
+        output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
+    
+    output += "="*80 + "\n"
+    
+    # Print to stdout and log (handle Unicode encoding for Windows console)
+    try:
+        print(output)
+    except UnicodeEncodeError:
+        # Fallback for Windows console - encode to ASCII with fallback
+        print(output.encode('ascii', errors='replace').decode('ascii'))
+    logger.info(output)
             
     return rows
 
@@ -301,6 +330,7 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         order_by_sql += ', 7, 8'
 
     full_sql = select_clause + from_clause + where_sql + group_by_sql + order_by_sql
+    print("this is print:", full_sql)
     
     rows = _fetch_all(db, full_sql, tuple(params))
     
@@ -309,6 +339,52 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         v = r.get('TerritoryName')
         if v and isinstance(v, str) and v.endswith(' Territory'):
             r['TerritoryName'] = v[:-10]
+    
+    # Log collection vs achievement summary
+    output = "\n" + "="*80 + "\n"
+    output += "COLLECTION VS ACHIEVEMENT REPORT (collection_vs_achievement)\n"
+    output += "="*80 + "\n"
+    
+    total_target = 0
+    total_achievement = 0
+    
+    for r in rows:
+        collection_target = float(r.get('Collection_Target') or 0)
+        collection_achievement = float(r.get('Collection_Achievement') or 0)
+        variance = collection_achievement - collection_target
+        variance_pct = (variance / collection_target * 100) if collection_target > 0 else 0
+        
+        total_target += collection_target
+        total_achievement += collection_achievement
+        
+        output += f"\nRegion: {r.get('Region', 'N/A')}\n"
+        output += f"Zone: {r.get('Zone', 'N/A')}\n"
+        output += f"Territory: {r.get('TerritoryName', 'N/A')}\n"
+        output += f"   Target:      PKR {collection_target:,.2f}\n"
+        output += f"   Achievement: PKR {collection_achievement:,.2f}\n"
+        output += f"   Variance:    PKR {variance:,.2f} ({variance_pct:+.1f}%)\n"
+        output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
+    
+    # Print totals
+    if rows:
+        total_variance = total_achievement - total_target
+        total_variance_pct = (total_variance / total_target * 100) if total_target > 0 else 0
+        output += f"\n{'-'*80}\n"
+        output += f"TOTAL:\n"
+        output += f"   Target:      PKR {total_target:,.2f}\n"
+        output += f"   Achievement: PKR {total_achievement:,.2f}\n"
+        output += f"   Variance:    PKR {total_variance:,.2f} ({total_variance_pct:+.1f}%)\n"
+        output += f"{'-'*80}\n"
+    
+    output += "="*80 + "\n"
+    
+    # Print to stdout and log (handle Unicode encoding for Windows console)
+    try:
+        print(output)
+    except UnicodeEncodeError:
+        # Fallback for Windows console - encode to ASCII with fallback
+        print(output.encode('ascii', errors='replace').decode('ascii'))
+    logger.info(output)
             
     return rows
 
@@ -1358,10 +1434,10 @@ def main():
 def sales_orders_all(db, limit: int = 100, card_code: str | None = None, doc_status: str | None = None, 
                      from_date: str | None = None, to_date: str | None = None) -> list:
     """
-    Fetch sales orders with optional filters
+    Fetch sales orders with optional filters, including customer contact, policies, and crops
     """
     sql = (
-        'SELECT '
+        'SELECT DISTINCT '
         ' T0."DocEntry", '
         ' T0."DocNum", '
         ' T0."DocDate", '
@@ -1373,8 +1449,14 @@ def sales_orders_all(db, limit: int = 100, card_code: str | None = None, doc_sta
         ' T0."DocStatus", '
         ' T0."CANCELED", '
         ' T0."Project", '
-        ' T0."Comments" '
+        ' T0."Comments", '
+        ' T2."Name" AS "ContactPerson", '
+        ' T2."Tel1" AS "ContactPhone", '
+        ' STRING_AGG(DISTINCT T1."U_policy", \', \') AS "Policies", '
+        ' STRING_AGG(DISTINCT T1."U_crop", \', \') AS "Crops" '
         ' FROM "ORDR" T0 '
+        ' LEFT JOIN "RDR1" T1 ON T0."DocEntry" = T1."DocEntry" '
+        ' LEFT JOIN "OCPR" T2 ON T0."CardCode" = T2."CardCode" AND T0."CntctCode" = T2."CntctCode" '
     )
     
     where_clauses = []
@@ -1399,7 +1481,12 @@ def sales_orders_all(db, limit: int = 100, card_code: str | None = None, doc_sta
     if where_clauses:
         sql += ' WHERE ' + ' AND '.join(where_clauses)
     
-    sql += ' ORDER BY T0."DocEntry" DESC'
+    sql += (
+        ' GROUP BY T0."DocEntry", T0."DocNum", T0."DocDate", T0."DocDueDate", '
+        ' T0."CardCode", T0."CardName", T0."DocTotal", T0."DocCur", T0."DocStatus", '
+        ' T0."CANCELED", T0."Project", T0."Comments", T2."Name", T2."Tel1" '
+        ' ORDER BY T0."DocEntry" DESC'
+    )
     
     if limit > 0:
         sql += f' LIMIT {limit}'

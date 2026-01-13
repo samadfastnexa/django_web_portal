@@ -5,12 +5,19 @@ from django.db.models import Q
 from .models import User, Role, SalesStaffProfile
 from web_portal.admin import admin_site
 
+# Import Dealer model for the inline
+try:
+    from FieldAdvisoryService.models import Dealer
+    HAS_DEALER = True
+except ImportError:
+    HAS_DEALER = False
+
 # Inline for Sales Staff profile
 class SalesProfileInline(admin.StackedInline):
     model = SalesStaffProfile
     can_delete = False
     verbose_name_plural = 'Sales Profile'
-    extra = 0  # ✅ Don't create empty inline forms by default
+    extra = 1  # ✅ Show one empty form so users can create profile directly from user edit
     fieldsets = (
         ('Basic Info', {
             'fields': ('employee_code', 'phone_number', 'designation', 'address')
@@ -28,31 +35,68 @@ class SalesProfileInline(admin.StackedInline):
     filter_horizontal = ('companies', 'regions', 'zones', 'territories')  # ✅ better M2M UI
     
     def has_add_permission(self, request, obj=None):
-        """Prevent adding profiles directly from User edit (go to SalesStaffProfile admin instead)"""
-        return False
+        """Allow adding profiles from User edit if user is marked as sales_staff"""
+        return True
+
+
+# Inline for Dealer profile - imported dynamically to avoid circular imports
+if HAS_DEALER:
+    class DealerInline(admin.StackedInline):
+        model = Dealer
+        fk_name = 'user'  # ✅ Specify which ForeignKey to use (user, not created_by)
+        verbose_name_plural = 'Dealer Profile'
+        can_delete = True  # ✅ Allow deletion
+        extra = 1  # ✅ Show one empty form so users can create dealer profile directly from user edit
+        fieldsets = (
+            ('Basic Info', {
+                'fields': ('card_code', 'cnic_number', 'contact_number', 'address')  # name derived from user
+            }),
+            ('Location', {
+                'fields': ('company', 'region', 'zone', 'territory')
+            }),
+            ('Contact Details', {
+                'fields': ('latitude', 'longitude', 'remarks')
+            }),
+            ('CNIC Images', {
+                'fields': ('cnic_front_image', 'cnic_back_image'),
+                'classes': ('collapse',)
+            }),
+            ('Status', {
+                'fields': ('is_active',)
+            }),
+        )
+        raw_id_fields = ('company', 'region', 'zone', 'territory')
+        readonly_fields = ('created_at', 'updated_at', 'created_by')
+        
+        def has_add_permission(self, request, obj=None):
+            """Allow adding dealer profiles from User edit if user is marked as is_dealer"""
+            return True
 
 
 @admin.register(User, site=admin_site)
 class CustomUserAdmin(BaseUserAdmin):
     list_display = [
-        'id', 'username', 'email', 'role', 'is_active', 'is_sales_staff'
+        'id', 'username', 'email', 'role', 'is_active', 'is_sales_staff', 'is_dealer'
     ]
-    list_filter = ['role', 'is_active', 'is_staff', 'is_sales_staff']
+    list_filter = ['role', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer']
     search_fields = ['username', 'email', 'first_name', 'last_name']
     ordering = ['id']
 
-    # ✅ Allow quick edits for role & is_active
-    list_editable = ['role', 'is_active']
+    # ✅ Allow quick edits for role & is_active & is_dealer
+    list_editable = ['role', 'is_active', 'is_dealer']
 
     fieldsets = BaseUserAdmin.fieldsets + (
-        ('Custom Fields', {'fields': ('role', 'profile_image', 'is_sales_staff')}),
+        ('Custom Fields', {'fields': ('role', 'profile_image', 'is_sales_staff', 'is_dealer')}),
     )
 
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
-        (None, {'fields': ('email', 'role', 'profile_image', 'is_sales_staff')}),
+        (None, {'fields': ('email', 'role', 'profile_image', 'is_sales_staff', 'is_dealer')}),
     )
 
-    inlines = [SalesProfileInline]  # Attach inline here (read-only display only)
+    # Add DealerInline only if Dealer model is available
+    inlines = [SalesProfileInline]
+    if HAS_DEALER:
+        inlines.append(DealerInline)
     
     class Media:
         css = {
@@ -78,9 +122,6 @@ class CustomUserAdmin(BaseUserAdmin):
                     f'⚠️ Warning: Database error - {error_msg[:80]}',
                     messages.WARNING
                 )
-            # Re-raise to show error on page, but message is now displayed
-            raise
-    
     def delete_model(self, request, obj):
         """Prevent deletion if user has SalesStaffProfile"""
         try:
@@ -106,6 +147,35 @@ class CustomUserAdmin(BaseUserAdmin):
             except Exception:
                 pass
         return True
+    
+    def save_formset(self, request, form, formset, change):
+        """Handle dealer inline: set created_by, sync is_dealer, derive name from user"""
+        instances = formset.save(commit=False)
+        
+        for instance in instances:
+            # Handle Dealer inline - set created_by and is_dealer flag
+            if hasattr(instance, 'created_by') and hasattr(instance, 'user'):
+                # Set created_by if not already set
+                if not instance.created_by:
+                    instance.created_by = request.user
+                
+                # Ensure is_dealer flag is set on user
+                if instance.user and not instance.user.is_dealer:
+                    instance.user.is_dealer = True
+                    instance.user.save(update_fields=["is_dealer"])
+
+                # Derive dealer.name from linked user's name
+                if instance.user:
+                    first = getattr(instance.user, 'first_name', '') or ''
+                    last = getattr(instance.user, 'last_name', '') or ''
+                    full = (first + ' ' + last).strip()
+                    if not full:
+                        full = getattr(instance.user, 'username', None) or getattr(instance.user, 'email', '')
+                    instance.name = full
+            
+            instance.save()
+        
+        formset.save_m2m()
 
 
 @admin.register(Role, site=admin_site)
@@ -199,3 +269,5 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
                     f'❌ Error saving: {error_msg[:100]}',
                     messages.ERROR
                 )
+
+

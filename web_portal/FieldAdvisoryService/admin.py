@@ -317,17 +317,46 @@ class SalesOrderForm(forms.ModelForm):
         print(f"\n=== FINAL FORM FIELDS ===")
         print(f"Total fields in form: {len(self.fields)}")
         print(f"Field names: {list(self.fields.keys())}")
-        
-        
-        # Add help text and readonly attributes only for fields that exist in the form
+        # Add help text for fields - NO styling, NO readonly - let JavaScript handle it
         if 'card_code' in self.fields:
             self.fields['card_code'].help_text = "Select customer from SAP"
         if 'card_name' in self.fields:
-            self.fields['card_name'].widget.attrs['readonly'] = True
+            self.fields['card_name'].help_text = "Auto-filled from customer (editable if needed)"
         if 'contact_person_code' in self.fields:
             self.fields['contact_person_code'].help_text = "Auto-filled from customer"
         if 'federal_tax_id' in self.fields:
             self.fields['federal_tax_id'].help_text = "Auto-filled from customer (NTN)"
+    
+    def clean(self):
+        """Override clean to ensure all customer fields are captured"""
+        cleaned_data = super().clean()
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Log all customer-related fields
+        card_code = cleaned_data.get('card_code')
+        card_name = cleaned_data.get('card_name')
+        contact_person = cleaned_data.get('contact_person_code')
+        federal_tax = cleaned_data.get('federal_tax_id')
+        pay_to = cleaned_data.get('pay_to_code')
+        address = cleaned_data.get('address')
+        
+        logger.info(f"[FORM CLEAN] === Customer Fields ===")
+        logger.info(f"[FORM CLEAN] card_code: '{card_code}' (type: {type(card_code)})")
+        logger.info(f"[FORM CLEAN] card_name: '{card_name}' (type: {type(card_name)})")
+        logger.info(f"[FORM CLEAN] contact_person_code: '{contact_person}'")
+        logger.info(f"[FORM CLEAN] federal_tax_id: '{federal_tax}'")
+        logger.info(f"[FORM CLEAN] pay_to_code: '{pay_to}'")
+        logger.info(f"[FORM CLEAN] address: '{address}'")
+        logger.info(f"[FORM CLEAN] All cleaned_data keys: {list(cleaned_data.keys())}")
+        
+        # CRITICAL: Ensure empty strings are preserved (not converted to None)
+        if card_code == '':
+            logger.warning("[FORM CLEAN] ⚠️ card_code is empty string!")
+        if card_name == '':
+            logger.warning("[FORM CLEAN] ⚠️ card_name is empty string!")
+        
+        return cleaned_data
 
 
 class SalesOrderLineInlineForm(forms.ModelForm):
@@ -368,16 +397,52 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                     print(f"DEBUG: Item LOV loaded with {len(item_choices)} items")
                 
                 # Populate tax group dropdown
-                tax_codes = hana_connect.sales_tax_codes(db)
-                tax_choices = [('', '--- Select Tax ---')] + [
-                    (tax['Code'], f"{tax['Code']} - {tax['Name']} ({tax['Rate']}%)") 
-                    for tax in tax_codes
-                ]
-                if 'vat_group' in self.fields:
-                    self.fields['vat_group'].widget = forms.Select(choices=tax_choices, attrs={'class': 'sap-tax-lov', 'style': 'width: 300px;'})
-                    print(f"DEBUG: Tax LOV loaded with {len(tax_choices)} tax codes")
-                else:
-                    print("DEBUG: vat_group field not in form fields (expected for inline forms)")
+                try:
+                    tax_codes = hana_connect.sales_tax_codes(db)
+                    
+                    # Validate tax codes to prevent corruption
+                    valid_tax_choices = []
+                    for tax in tax_codes:
+                        try:
+                            code = str(tax.get('Code', '')).strip()
+                            name = str(tax.get('Name', '')).strip()
+                            rate = tax.get('Rate', 0)
+                            
+                            # Skip if code is empty or contains invalid characters
+                            if code and '\ufffd' not in code and '\xff' not in code:
+                                valid_tax_choices.append((code, f"{code} - {name} ({rate}%)"))
+                        except Exception as e:
+                            print(f"WARNING: Skipping corrupted tax code: {e}")
+                            continue
+                    
+                    # Use default 'SE' if no valid codes found
+                    if not valid_tax_choices:
+                        print("WARNING: No valid tax codes loaded from SAP, using defaults")
+                        valid_tax_choices = [
+                            ('SE', 'SE - Standard Exempted (0%)'),
+                            ('AT1', 'AT1 - Taxable (17%)'),
+                        ]
+                    
+                    tax_choices = [('', '--- Select Tax Code ---')] + valid_tax_choices
+                    
+                    if 'vat_group' in self.fields:
+                        self.fields['vat_group'].widget = forms.Select(choices=tax_choices, attrs={'class': 'sap-tax-lov', 'style': 'width: 300px;'})
+                        self.fields['vat_group'].initial = 'SE'  # Default to Standard Exempted
+                        print(f"DEBUG: Tax LOV loaded with {len(valid_tax_choices)} valid tax codes (set default to 'SE')")
+                    else:
+                        print("DEBUG: vat_group field not in form fields (expected for inline forms)")
+                
+                except Exception as e:
+                    print(f"ERROR loading tax codes: {e}")
+                    # Fallback to safe defaults
+                    if 'vat_group' in self.fields:
+                        tax_choices = [
+                            ('', '--- Select Tax Code ---'),
+                            ('SE', 'SE - Standard Exempted'),
+                            ('AT1', 'AT1 - Standard Taxable (17%)'),
+                        ]
+                        self.fields['vat_group'].widget = forms.Select(choices=tax_choices, attrs={'class': 'sap-tax-lov', 'style': 'width: 300px;'})
+                        self.fields['vat_group'].initial = 'SE'
                 
                 # Populate project dropdown
                 projects = hana_connect.projects_lov(db)
@@ -434,81 +499,15 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                 except Exception as e:
                     print(f"Error loading warehouses: {e}")
                 
-                # Populate policy dropdown based on customer card_code
-                try:
-                    # Get card_code from parent SalesOrder instance
-                    card_code = None
-                    if self.instance and self.instance.pk and hasattr(self.instance, 'sales_order'):
-                        card_code = self.instance.sales_order.card_code
-                    elif self.instance and hasattr(self.instance, 'sales_order'):
-                        # For new lines, try to get from the parent form data
-                        card_code = getattr(self.instance.sales_order, 'card_code', None)
-                    
-                    # Try to get from initial data or request
-                    if not card_code and self.request and self.request.method == 'GET':
-                        # Try to extract from URL or query params
-                        sales_order_id = self.request.resolver_match.kwargs.get('object_id')
-                        if sales_order_id:
-                            try:
-                                from .models import SalesOrder
-                                sales_order = SalesOrder.objects.get(pk=sales_order_id)
-                                card_code = sales_order.card_code
-                            except:
-                                pass
-                    
-                    print(f"DEBUG: Loading policies for card_code: {card_code}")
-                    
-                    if card_code:
-                        # First, try to get all policies to see if any exist
-                        all_policies = hana_connect.policy_link(db, show_all=True)
-                        print(f"DEBUG: Total policies in system: {len(all_policies) if all_policies else 0}")
-                        if all_policies and len(all_policies) > 0:
-                            print(f"DEBUG: Sample policy: {all_policies[0]}")
-                        
-                        # Fetch policies for this customer
-                        policies = hana_connect.policy_link(db, bp_code=card_code, show_all=False)
-                        print(f"DEBUG: Found {len(policies) if policies else 0} policies for {card_code}")
-                        
-                        if policies:
-                            policy_choices = [('', '--- Select Policy ---')] + [
-                                (
-                                    str(policy.get('U_proj', '')),
-                                    f"{policy.get('U_proj', '')} - {policy.get('PrjName', 'N/A')} (DocEntry: {policy.get('DocEntry', 'N/A')})"
-                                )
-                                for policy in policies
-                            ]
-                        else:
-                            # If no policies found for specific customer, show all available policies
-                            print(f"DEBUG: No policies found for {card_code}, showing all available policies")
-                            if all_policies:
-                                policy_choices = [('', f'--- All Policies (No specific for {card_code}) ---')] + [
-                                    (
-                                        str(policy.get('U_proj', '')),
-                                        f"{policy.get('U_proj', '')} - {policy.get('PrjName', 'N/A')} (BP: {policy.get('U_bp', 'N/A')}, DocEntry: {policy.get('DocEntry', 'N/A')})"
-                                    )
-                                    for policy in all_policies[:100]  # Limit to first 100
-                                ]
-                            else:
-                                policy_choices = [('', f'--- No Policies Available in System ---')]
-                    else:
-                        # No card_code available, show generic message
-                        policy_choices = [('', '--- Select Customer First ---')]
-                    
-                    if 'u_policy' in self.fields:
-                        self.fields['u_policy'].widget = forms.Select(
-                            choices=policy_choices,
-                            attrs={'class': 'sap-policy-lov', 'style': 'width: 400px;'}
-                        )
-                        print(f"DEBUG: Policy dropdown loaded with {len(policy_choices)} options")
-                except Exception as e:
-                    print(f"ERROR loading policies: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    if 'u_policy' in self.fields:
-                        self.fields['u_policy'].widget = forms.Select(
-                            choices=[('', '--- Error Loading Policies ---')],
-                            attrs={'class': 'sap-policy-lov', 'style': 'width: 400px;'}
-                        )
+                # Policy dropdown will be populated entirely by JavaScript
+                # This allows dynamic loading when customer changes
+                # Initialize with placeholder that indicates JS will handle it
+                if 'u_policy' in self.fields:
+                    self.fields['u_policy'].widget = forms.Select(
+                        choices=[('', '--- Select Policy ---')],
+                        attrs={'class': 'sap-policy-lov', 'style': 'width: 400px;'}
+                    )
+                    print(f"DEBUG: Policy dropdown initialized with placeholder (JS will populate)")
                 
                 db.close()
                 print(f"Loaded {len(item_choices)-1} items, {len(tax_choices)-1} tax codes, {len(project_choices)-1} projects, {len(crop_choices)-1} crops")
@@ -594,11 +593,15 @@ class SalesOrderAdmin(admin.ModelAdmin):
     list_display = ('id', 'card_code', 'card_name', 'doc_date', 'status', 'is_posted_to_sap', 'sap_doc_num', 'created_at')
     list_filter = ('status', 'is_posted_to_sap', 'doc_date', 'created_at')
     search_fields = ('card_code', 'card_name', 'federal_tax_id', 'u_s_card_code')
-    readonly_fields = ('created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_display', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code', 'card_name', 'contact_person_code', 'federal_tax_id', 'pay_to_code', 'address')
+    readonly_fields = ('current_database', 'created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_display', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code')
     
     fieldsets = (
+        ('Database Selection', {
+            'fields': ('current_database',),
+            'description': 'Current active database. Use the global DB selector at the top-right to switch between companies (4B-BIO / 4B-ORANG).'
+        }),
         ('Basic Information', {
-            'fields': ('staff', 'dealer', 'schedule', 'status', 'created_at')
+            'fields': ('staff', 'dealer', 'status', 'created_at')
         }),
         ('Document Dates', {
             'fields': ('doc_date', 'doc_due_date', 'tax_date'),
@@ -639,11 +642,101 @@ class SalesOrderAdmin(admin.ModelAdmin):
         js = (
             'admin/salesorder_loading.js',
             'FieldAdvisoryService/js/sap_json_scroll.js',
+            'FieldAdvisoryService/salesorder_customer.js',
+            'FieldAdvisoryService/salesorder_policy.js',
         )
     
     def get_form(self, request, obj=None, **kwargs):
         base_form = super().get_form(request, obj, **kwargs)
+        # Wrap form to inject request so dropdown data respects the selected DB
+        class RequestAwareSalesOrderForm(base_form):
+            def __init__(self2, *args, **kw):
+                kw['request'] = request
+                # Explicitly pass selected_db_key so form always knows the intended company
+                kw['selected_db_key'] = request.GET.get('company_db') or request.session.get('selected_db')
+                super().__init__(*args, **kw)
 
+        form = RequestAwareSalesOrderForm
+
+        # Update field labels (only for fields that are editable)
+        if 'doc_date' in form.base_fields:
+            form.base_fields['doc_date'].label = 'Posting Date'
+        if 'doc_due_date' in form.base_fields:
+            form.base_fields['doc_due_date'].label = 'Delivery Date'
+        if 'tax_date' in form.base_fields:
+            form.base_fields['tax_date'].label = 'Document Date'
+        if 'card_code' in form.base_fields:
+            form.base_fields['card_code'].label = 'Customer Code'
+        if 'u_sotyp' in form.base_fields:
+            form.base_fields['u_sotyp'].label = 'Sales Type'
+        if 'u_usid' in form.base_fields:
+            form.base_fields['u_usid'].label = 'Portal User ID'
+        if 'u_s_card_code' in form.base_fields:
+            form.base_fields['u_s_card_code'].label = 'Child Card Code'
+        if 'u_s_card_name' in form.base_fields:
+            form.base_fields['u_s_card_name'].label = 'Child Card Name'
+        
+        # Set initial values for dates to current date (only for new objects)
+        if not obj:
+            from django.utils import timezone
+            today = timezone.now().date()
+            if 'doc_date' in form.base_fields:
+                form.base_fields['doc_date'].initial = today
+            if 'doc_due_date' in form.base_fields:
+                form.base_fields['doc_due_date'].initial = today
+            if 'tax_date' in form.base_fields:
+                form.base_fields['tax_date'].initial = today
+            if 'u_sotyp' in form.base_fields:
+                form.base_fields['u_sotyp'].initial = '01'
+        
+        return form
+    
+    def current_database(self, obj):
+        """Display currently selected database/company"""
+        from django.utils.html import format_html
+        from django.contrib.admin.templatetags.admin_urls import admin_urlname
+        from django.urls import reverse
+        
+        # Get selected database from various sources
+        request = getattr(self, '_current_request', None)
+        selected_db = '4B-BIO'  # Default
+        
+        if request:
+            # Try session first
+            if hasattr(request, 'session'):
+                selected_db = request.session.get('selected_db', '4B-BIO')
+            # Try GET param
+            if request.GET.get('company_db'):
+                selected_db = request.GET.get('company_db')
+        
+        # Get display name from settings
+        db_options = {'4B-BIO': '4B-BIO (Bio Company)', '4B-ORANG': '4B-ORANG (Orang Company)'}
+        display_name = db_options.get(selected_db, selected_db)
+        
+        return format_html(
+            '<div style=\"padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); '
+            'border-radius: 8px; color: white; font-weight: 600; font-size: 14px; '
+            'box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: inline-block;\">'
+            '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" '
+            'fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" style=\"vertical-align: middle; margin-right: 8px;\">'
+            '<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"></ellipse>'
+            '<path d=\"M21 12c0 1.66-4 3-9 3s-9-1.34-9-3\"></path>'
+            '<path d=\"M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5\"></path>'
+            '</svg>'
+            '{}'
+            '</div>'
+            '<p style=\"margin-top: 8px; color: #666; font-size: 12px;\">'
+            '💡 To change database, use the <strong>DB selector</strong> at the top of the page.'
+            '</p>',
+            display_name
+        )
+    current_database.short_description = 'Active Company Database'
+    
+    def get_form(self, request, obj=None, **kwargs):
+        # Store request for use in current_database method
+        self._current_request = request
+        
+        base_form = super().get_form(request, obj, **kwargs)
         # Wrap form to inject request so dropdown data respects the selected DB
         class RequestAwareSalesOrderForm(base_form):
             def __init__(self2, *args, **kw):
@@ -703,10 +796,24 @@ class SalesOrderAdmin(admin.ModelAdmin):
                     obj.sap_doc_entry, obj.sap_doc_num
                 )
             else:
+                # Check if customer is selected
+                if not obj.card_code:
+                    return format_html(
+                        '<div style="padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; color: #856404;">'
+                        '<strong>⚠️ Customer Not Selected</strong><br>'
+                        'Please select a <strong>Customer Code</strong> from the dropdown above and click <strong>SAVE</strong> before posting to SAP.'
+                        '</div>'
+                    )
+                
                 # Build SAP payload preview - COMPLETE structure
                 try:
                     payload_lines = []
                     for line in obj.document_lines.all().order_by('line_num'):
+                        # Sanitize tax code the same way as in actual SAP posting
+                        import re
+                        vat_group_preview = (line.vat_group or "SE").strip()
+                        vat_group_preview = re.sub(r'[^A-Za-z0-9\-_]', '', vat_group_preview) or "SE"
+                        
                         payload_lines.append({
                             "LineNum": line.line_num,
                             "ItemCode": line.item_code,
@@ -714,7 +821,8 @@ class SalesOrderAdmin(admin.ModelAdmin):
                             "Quantity": float(line.quantity),
                             "DiscountPercent": float(line.discount_percent),
                             "WarehouseCode": line.warehouse_code,
-                            "VatGroup": line.vat_group,
+                            # Service Layer expects TaxCode on document lines (sanitized)
+                            "TaxCode": vat_group_preview,
                             "UnitsOfMeasurment": float(line.units_of_measurment),
                             "TaxPercentagePerRow": float(line.tax_percentage_per_row),
                             "UnitPrice": float(line.unit_price),
@@ -910,7 +1018,8 @@ class SalesOrderAdmin(admin.ModelAdmin):
                         "Quantity": float(line.quantity),
                         "DiscountPercent": float(line.discount_percent),
                         "WarehouseCode": line.warehouse_code,
-                        "VatGroup": line.vat_group,
+                        # Service Layer expects TaxCode on document lines
+                        "TaxCode": line.vat_group,
                         "UnitsOfMeasurment": float(line.units_of_measurment),
                         "TaxPercentagePerRow": float(line.tax_percentage_per_row),
                         "UnitPrice": float(line.unit_price),
@@ -966,6 +1075,56 @@ class SalesOrderAdmin(admin.ModelAdmin):
     
     post_to_sap.short_description = "Post selected orders to SAP"
     
+    def save_model(self, request, obj, form, change):
+        """Override save_model to ensure all customer fields are saved"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"[SAVE_MODEL] Saving SalesOrder #{obj.pk if obj.pk else 'NEW'}")
+        logger.info(f"[SAVE_MODEL] card_code from form.cleaned_data: {form.cleaned_data.get('card_code')}")
+        logger.info(f"[SAVE_MODEL] card_name from form.cleaned_data: {form.cleaned_data.get('card_name')}")
+        logger.info(f"[SAVE_MODEL] address from form.cleaned_data: {form.cleaned_data.get('address')}")
+        logger.info(f"[SAVE_MODEL] card_code from obj BEFORE save: {obj.card_code}")
+        logger.info(f"[SAVE_MODEL] card_name from obj BEFORE save: {obj.card_name}")
+        
+        # Explicitly ensure all customer fields are set from form data
+        # CRITICAL: Preserve values even if they're empty strings (don't convert to None)
+        if 'card_code' in form.cleaned_data and form.cleaned_data['card_code'] is not None:
+            obj.card_code = form.cleaned_data['card_code']
+            logger.info(f"[SAVE_MODEL] Set obj.card_code = '{obj.card_code}'")
+        if 'card_name' in form.cleaned_data and form.cleaned_data['card_name'] is not None:
+            obj.card_name = form.cleaned_data['card_name']
+            logger.info(f"[SAVE_MODEL] Set obj.card_name = '{obj.card_name}'")
+        if 'contact_person_code' in form.cleaned_data and form.cleaned_data['contact_person_code'] is not None:
+            obj.contact_person_code = form.cleaned_data['contact_person_code']
+        if 'federal_tax_id' in form.cleaned_data and form.cleaned_data['federal_tax_id'] is not None:
+            obj.federal_tax_id = form.cleaned_data['federal_tax_id']
+        if 'pay_to_code' in form.cleaned_data and form.cleaned_data['pay_to_code'] is not None:
+            obj.pay_to_code = form.cleaned_data['pay_to_code']
+        if 'address' in form.cleaned_data and form.cleaned_data['address'] is not None:
+            obj.address = form.cleaned_data['address']
+        
+        # Also ensure child customer fields are saved
+        if 'u_s_card_code' in form.cleaned_data and form.cleaned_data['u_s_card_code'] is not None:
+            obj.u_s_card_code = form.cleaned_data['u_s_card_code']
+            logger.info(f"[SAVE_MODEL] Set obj.u_s_card_code = '{obj.u_s_card_code}'")
+        if 'u_s_card_name' in form.cleaned_data and form.cleaned_data['u_s_card_name'] is not None:
+            obj.u_s_card_name = form.cleaned_data['u_s_card_name']
+            logger.info(f"[SAVE_MODEL] Set obj.u_s_card_name = '{obj.u_s_card_name}'")
+        
+        # Call parent save_model
+        super().save_model(request, obj, form, change)
+        
+        # Log after save
+        obj.refresh_from_db()
+        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - card_code in DB: '{obj.card_code}'")
+        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - card_name in DB: '{obj.card_name}'")
+        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - address in DB: '{obj.address}'")
+        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - contact_person_code in DB: {obj.contact_person_code}")
+        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - federal_tax_id in DB: '{obj.federal_tax_id}'")
+        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - u_s_card_code in DB: '{obj.u_s_card_code}'")
+        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - u_s_card_name in DB: '{obj.u_s_card_name}'")
+    
     def get_urls(self):
         """Add custom URL for individual order posting"""
         from django.urls import path
@@ -979,20 +1138,38 @@ class SalesOrderAdmin(admin.ModelAdmin):
     
     def post_single_order_to_sap(self, request, order_id):
         """Handle posting a single order to SAP with async JSON response"""
+        import logging
+        import re
         from django.shortcuts import redirect
         from django.urls import reverse
         from django.http import JsonResponse
         
-        order = SalesOrder.objects.get(pk=order_id)
+        # Entry log and safe order fetch (handles 404s gracefully)
+        logger = logging.getLogger(__name__)
+        try:
+            logger.info(f"[POST_TO_SAP] Entry: method={request.method}, ajax={request.headers.get('X-Requested-With') == 'XMLHttpRequest'}, order_id={order_id}")
+            # Fetch order and refresh from database to ensure we have latest data
+            order = SalesOrder.objects.select_related('staff', 'dealer').get(pk=order_id)
+            order.refresh_from_db()
+        except SalesOrder.DoesNotExist:
+            err = f"Order #{order_id} not found"
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'error': err}, status=404)
+            else:
+                self.message_user(request, err, messages.ERROR)
+                return redirect(reverse('admin:FieldAdvisoryService_salesorder_changelist'))
         
         # Log the order data from database
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"[ORDER DATA] Order #{order_id} from database:")
-        logger.info(f"  CardCode: {order.card_code}")
-        logger.info(f"  CardName: {order.card_name}")
-        logger.info(f"  U_SCardCode: {order.u_s_card_code}")
-        logger.info(f"  U_SCardName: {order.u_s_card_name}")
+        logger.info(f"[ORDER DATA] Order #{order_id} from database (refreshed):")
+        logger.info(f"  CardCode: '{order.card_code}'")
+        logger.info(f"  CardCode type: {type(order.card_code)}")
+        logger.info(f"  CardCode is None: {order.card_code is None}")
+        logger.info(f"  CardCode is empty string: {order.card_code == ''}")
+        logger.info(f"  CardName: '{order.card_name}'")
+        logger.info(f"  U_SCardCode: '{order.u_s_card_code}'")
+        logger.info(f"  U_SCardName: '{order.u_s_card_name}'")
         logger.info(f"  DocumentLines: {order.document_lines.count()}")
         if order.is_posted_to_sap:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -1035,18 +1212,44 @@ class SalesOrderAdmin(admin.ModelAdmin):
             
             # Validate required fields
             if not payload["CardCode"]:
-                raise ValueError("CardCode is required but is empty")
+                raise ValueError(
+                    "Customer Code (CardCode) is required but is empty. "
+                    "Please select a customer from the 'Customer Code' dropdown and SAVE the form before clicking 'Add to SAP'."
+                )
             if not payload["CardName"]:
-                raise ValueError("CardName is required but is empty")
+                raise ValueError(
+                    "Customer Name (CardName) is required but is empty. "
+                    "Please select a customer from the 'Customer Code' dropdown and SAVE the form before clicking 'Add to SAP'."
+                )
             
             # Log the complete payload before posting
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info(f"[SAP PAYLOAD] Order #{order.id} payload:")
             logger.info(json.dumps(payload, indent=2, ensure_ascii=False))
             
             # Add document lines
             for line in order.document_lines.all().order_by('line_num'):
+                # CRITICAL: Clean vat_group to prevent SAP validation errors
+                vat_group = (line.vat_group or "SE").strip()
+                
+                # Aggressively sanitize: keep only alphanumeric, dash, underscore
+                # This catches any corruption, non-ASCII, or invalid characters
+                vat_group_clean = re.sub(r'[^A-Za-z0-9\-_]', '', vat_group)
+                
+                if not vat_group_clean or vat_group_clean != vat_group:
+                    logger.warning(f"[SAP PAYLOAD] Line {line.line_num}: Invalid/corrupted vat_group {repr(vat_group)} → sanitized to {repr(vat_group_clean)}")
+                    if not vat_group_clean:
+                        vat_group = "SE"
+                    else:
+                        vat_group = vat_group_clean
+                else:
+                    vat_group = vat_group_clean
+                
+                # Final safety: validate it's a known SAP tax code (fallback list)
+                VALID_TAX_CODES = {'SE', 'AT1', 'ST', 'VAT0', 'VAT5', 'VAT17', 'VAT20'}
+                if vat_group not in VALID_TAX_CODES:
+                    logger.warning(f"[SAP PAYLOAD] Line {line.line_num}: Unknown tax code {repr(vat_group)}, using default 'SE'")
+                    vat_group = "SE"
+                
                 line_data = {
                     "LineNum": line.line_num,
                     "ItemCode": line.item_code or "",
@@ -1054,7 +1257,8 @@ class SalesOrderAdmin(admin.ModelAdmin):
                     "Quantity": float(line.quantity) if line.quantity else 0.0,
                     "DiscountPercent": float(line.discount_percent) if line.discount_percent else 0.0,
                     "WarehouseCode": line.warehouse_code or "",
-                    "VatGroup": line.vat_group or "SE",
+                    # Service Layer expects TaxCode on document lines
+                    "TaxCode": vat_group,
                     "UnitsOfMeasurment": float(line.units_of_measurment) if line.units_of_measurment else 1.0,
                     "TaxPercentagePerRow": float(line.tax_percentage_per_row) if line.tax_percentage_per_row else 0.0,
                     "UnitPrice": float(line.unit_price) if line.unit_price else 0.0,
@@ -1196,13 +1400,71 @@ class TerritoryAdmin(admin.ModelAdmin, _CompanySessionResolver):
 
 @admin.register(Dealer, site=admin_site)
 class DealerAdmin(admin.ModelAdmin):
-    list_display = ('name', 'user', 'user_email', 'contact_number', 'company', 'is_active')
-    list_select_related = ('user',)
-    raw_id_fields = ('user',)
+    list_display = ('name', 'user_link', 'user_email', 'contact_number', 'company', 'is_active', 'created_at')
+    list_select_related = ('user', 'company')
+    list_filter = ('is_active', 'company', 'created_at')
+    search_fields = ('name', 'contact_number', 'user__username', 'user__email', 'cnic_number')
+    raw_id_fields = ('user', 'company', 'region', 'zone', 'territory')
+    readonly_fields = ('created_at', 'updated_at', 'card_code')
+    
+    fieldsets = (
+        ('User Account', {
+            'fields': ('user', 'card_code'),
+            'description': 'Link or create a user account for dealer login'
+        }),
+        ('Dealer Information', {
+            'fields': ('name', 'cnic_number', 'contact_number', 'address', 'remarks')
+        }),
+        ('Geographic Assignment', {
+            'fields': ('company', 'region', 'zone', 'territory')
+        }),
+        ('Location Coordinates', {
+            'fields': ('latitude', 'longitude')
+        }),
+        ('CNIC Images', {
+            'fields': ('cnic_front_image', 'cnic_back_image'),
+            'classes': ('collapse',)
+        }),
+        ('Status & Audit', {
+            'fields': ('is_active', 'created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def user_link(self, obj):
+        """Display user with link to user admin"""
+        if obj.user:
+            from django.urls import reverse
+            from django.utils.html import format_html
+            url = reverse('admin:accounts_user_change', args=[obj.user.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.user.username)
+        return format_html('<span style="color: #999;">No user assigned</span>')
+    user_link.short_description = 'User Account'
 
     def user_email(self, obj):
         return obj.user.email if obj.user else '-'
     user_email.short_description = 'Email'
+    
+    def save_model(self, request, obj, form, change):
+        """Set created_by, sync is_dealer flag, and derive name from user"""
+        if not change:  # Creating new object
+            obj.created_by = request.user
+        
+        # Sync is_dealer flag with user
+        if obj.user and not obj.user.is_dealer:
+            obj.user.is_dealer = True
+            obj.user.save(update_fields=["is_dealer"])
+
+        # Derive name from linked user's name if not provided or to keep in sync
+        if obj.user:
+            first = getattr(obj.user, 'first_name', '') or ''
+            last = getattr(obj.user, 'last_name', '') or ''
+            full = (first + ' ' + last).strip()
+            if not full:
+                full = getattr(obj.user, 'username', None) or getattr(obj.user, 'email', '')
+            obj.name = full
+        
+        super().save_model(request, obj, form, change)
     
 @admin.register(DealerRequest, site=admin_site)
 class DealerRequestAdmin(admin.ModelAdmin):

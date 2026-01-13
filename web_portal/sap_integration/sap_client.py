@@ -48,19 +48,19 @@ def _normalize_mapping(obj):
 
 class SAPClient:
     """
-    SAP Client with global session storage across all requests.
-    Ensures only one login happens per 5 minutes (or when session expires).
+    SAP Client - each instance manages its own session for a specific company database.
+    Uses instance-level session storage to ensure database parameter works correctly.
     """
 
-    _global_session_id = None
-    _global_session_time = None
-    _lock = threading.Lock()
-    _route_id = None
     _policies_cache = None
     _policies_cache_time = None
     _POLICIES_CACHE_TTL = 300  # Cache policies for 5 minutes
 
     def __init__(self, company_db_key=None):
+        # Instance-level session management
+        self._session_id = None
+        self._session_time = None
+        self._route_id = None
         try:
             try:
                 _load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
@@ -215,6 +215,7 @@ class SAPClient:
                             pass
             else:
                 self.ssl_context = None
+            
         except Exception as e:
             raise ImproperlyConfigured(f'SAP configuration error: {e}')
 
@@ -397,16 +398,15 @@ class SAPClient:
             raise Exception(msg)
 
     def get_session_id(self):
-        """Return a global session ID, refreshing if needed."""
-        with self._lock:
-            if (
-                not self._global_session_id or
-                not self._global_session_time or
-                (time.time() - self._global_session_time > 300)
-            ):
-                self._global_session_id = self._login()
-                self._global_session_time = time.time()
-        return self._global_session_id
+        """Return a session ID for this instance, refreshing if needed."""
+        if (
+            not self._session_id or
+            not self._session_time or
+            (time.time() - self._session_time > 300)
+        ):
+            self._session_id = self._login()
+            self._session_time = time.time()
+        return self._session_id
 
     def _make_request(self, method, path, body='', retry=True, attempt=0, max_ssl_retries=3):
         cookie = f"B1SESSION={self.get_session_id()}"
@@ -468,8 +468,9 @@ class SAPClient:
                 error_code in [-2001, -1101, -1001, 301]
             )
             if retry and (cache_failure or session_invalid or internal_error):
-                with self._lock:
-                    self._global_session_id = None
+                # Invalidate this instance's session
+                self._session_id = None
+                self._session_time = None
                 time.sleep(random.uniform(0.1, 0.3))
                 return self._make_request(method, path, body, retry=False, attempt=attempt, max_ssl_retries=max_ssl_retries)
 
@@ -623,10 +624,10 @@ class SAPClient:
         return policies
 
     def _logout(self):
-        """Invalidate global session."""
-        if not self._global_session_id:
+        """Invalidate session for this instance."""
+        if not self._session_id:
             return
-        headers = {'Cookie': f'B1SESSION={self._global_session_id}'}
+        headers = {'Cookie': f'B1SESSION={self._session_id}'}
         conn = self._get_connection()
         try:
             conn.request("POST", f"{self.base_path}/Logout", '', headers)
@@ -635,8 +636,8 @@ class SAPClient:
             pass
         finally:
             self._close_connection(conn)
-            self._global_session_id = None
-            self._global_session_time = None
+            self._session_id = None
+            self._session_time = None
 
     def get_territory_id_by_name(self, name: str):
         try:

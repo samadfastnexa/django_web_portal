@@ -301,7 +301,6 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         manual_parameters=[
             # Header fields
             openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
-            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
             openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
             openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
             openapi.Parameter('series', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='SAP series'),
@@ -339,6 +338,34 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                             required=False, description='Array of VAT groups. Example: ["AT1", "AT1"]'),
             openapi.Parameter('u_crop', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
                             required=False, description='Array of crop codes. Example: ["CORN", "WHEAT"]'),
+            openapi.Parameter('tax_percentage_per_row', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of tax percentages per line. Example: [0, 17]'),
+            openapi.Parameter('units_of_measurment', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of UoM conversion factors. Example: [1, 1]'),
+            openapi.Parameter('uom_entry', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER),
+                            required=False, description='Array of UoM entry IDs'),
+            openapi.Parameter('measure_unit', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of measure unit names'),
+            openapi.Parameter('uom_code', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of UoM codes'),
+            openapi.Parameter('project_code', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of project codes'),
+            openapi.Parameter('u_sd', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of special discount percentages'),
+            openapi.Parameter('u_ad', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of additional discount percentages'),
+            openapi.Parameter('u_exd', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of extra discount percentages'),
+            openapi.Parameter('u_zerop', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of phase discount percentages'),
+            openapi.Parameter('u_pl', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER),
+                            required=False, description='Array of Policy Link IDs'),
+            openapi.Parameter('u_bp', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of Project Balance values'),
+            openapi.Parameter('u_policy', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of Policy Codes'),
+            openapi.Parameter('u_focitem', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of FOC flags (Yes/No). Example: ["No", "Yes"]'),
         ],
         responses={
             201: openapi.Response(
@@ -354,9 +381,29 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                         'document_lines': [
                             {
                                 'id': 1,
+                                'line_num': 1,
                                 'item_code': 'ITEM-001',
+                                'item_description': 'Hybrid Seed',
                                 'quantity': 10,
-                                'unit_price': 2500
+                                'unit_price': 2500,
+                                'discount_percent': 0,
+                                'warehouse_code': 'WH01',
+                                'vat_group': 'SE',
+                                'tax_percentage_per_row': 0,
+                                'units_of_measurment': 1,
+                                'uom_entry': 1,
+                                'measure_unit': 'KG',
+                                'uom_code': 'KG',
+                                'project_code': None,
+                                'u_sd': 0,
+                                'u_ad': 0,
+                                'u_exd': 0,
+                                'u_zerop': 0,
+                                'u_pl': 123,
+                                'u_bp': 5000.0,
+                                'u_policy': 'POL-001',
+                                'u_focitem': 'No',
+                                'u_crop': 'CORN'
                             }
                         ]
                     }
@@ -382,7 +429,6 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         request_body=no_body,
         manual_parameters=[
             openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
-            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
             openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
             openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
             openapi.Parameter('document_lines', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='JSON string array of line items'),
@@ -407,7 +453,6 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         request_body=no_body,
         manual_parameters=[
             openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
-            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
             openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
             openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
             openapi.Parameter('document_lines', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='JSON string array of line items'),
@@ -543,7 +588,7 @@ class DealerViewSet(viewsets.ModelViewSet):
     serializer_class = DealerSerializer
 
     @swagger_auto_schema(
-        operation_description="List all dealers",
+        operation_description="List all dealers with their user credentials",
         responses={200: DealerSerializer(many=True)},
         tags=["16. Dealers"]
     )
@@ -551,7 +596,7 @@ class DealerViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Retrieve a single dealer by ID",
+        operation_description="Retrieve a single dealer by ID with user account details",
         responses={200: DealerSerializer},
         tags=["16. Dealers"]
     )
@@ -559,7 +604,8 @@ class DealerViewSet(viewsets.ModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Create a new dealer",
+        operation_description="Create a new dealer with user login credentials. Either provide an existing user_id or provide username/email/password to create a new user account for the dealer. CNIC images (cnic_front_image, cnic_back_image) are optional and can be uploaded later.",
+        request_body=DealerSerializer,
         responses={201: DealerSerializer},
         tags=["16. Dealers"]
     )
@@ -567,7 +613,7 @@ class DealerViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Update an existing dealer",
+        operation_description="Update an existing dealer and optionally update user account credentials",
         responses={200: DealerSerializer},
         tags=["16. Dealers"]
     )
@@ -583,7 +629,7 @@ class DealerViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Delete a dealer",
+        operation_description="Delete a dealer (also deletes associated user account if not used elsewhere)",
         responses={204: 'No Content'},
         tags=["16. Dealers"]
     )
@@ -1377,12 +1423,25 @@ def api_child_customers(request):
         return JsonResponse({'error': 'father_card parameter required'}, status=400)
     
     try:
+        # Get selected database from session for logging
+        selected_db = request.session.get('selected_db') if hasattr(request, 'session') else None
+        logger.info(f"Selected DB from session: {selected_db}")
+        
         db = get_hana_connection(request)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed - HANA service unavailable', 'children': []}, status=200)
         
-        logger.info(f"Database connected, fetching child customers for {father_card}")
+        # Verify current schema
+        try:
+            cursor = db.cursor()
+            cursor.execute('SELECT CURRENT_SCHEMA FROM DUMMY')
+            current_schema = cursor.fetchone()[0]
+            cursor.close()
+            logger.info(f"Connected to HANA schema: {current_schema}, fetching child customers for {father_card}")
+        except Exception as e:
+            logger.warning(f"Could not verify current schema: {e}")
+            logger.info(f"Database connected, fetching child customers for {father_card}")
         
         # Get child customers with optional search
         try:
@@ -1455,15 +1514,26 @@ def api_customer_details(request):
         return JsonResponse({'error': 'card_code parameter required'}, status=400)
     
     try:
+        # Get selected database from session for logging
+        selected_db = request.session.get('selected_db') if hasattr(request, 'session') else None
+        logger.info(f"Selected DB from session: {selected_db}")
+        
         db = get_hana_connection(request)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
-        logger.info(f"Database connected, fetching details for {card_code}")
+        # Verify current schema
+        cursor = db.cursor()
+        try:
+            cursor.execute('SELECT CURRENT_SCHEMA FROM DUMMY')
+            current_schema = cursor.fetchone()[0]
+            logger.info(f"Connected to HANA schema: {current_schema}, fetching details for {card_code}")
+        except Exception as e:
+            logger.warning(f"Could not verify current schema: {e}")
+            logger.info(f"Database connected, fetching details for {card_code}")
         
         # Get customer basic info
-        cursor = db.cursor()
         customer_query = """
         SELECT 
             T0."CardName", 

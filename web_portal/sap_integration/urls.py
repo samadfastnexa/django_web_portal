@@ -17,7 +17,6 @@ from .views import (
     customer_lov_api,
     item_lov_api,
     item_price_api,
-    policy_items_api,
     policy_items_for_customer_api,
     policy_project_link_api,
     projects_lov_api,
@@ -25,6 +24,7 @@ from .views import (
     sales_orders_api,
     sales_vs_achievement_geo_inv_api,
     sales_vs_achievement_territory_api,
+    customer_policies_api,
 )
 
 urlpatterns = [
@@ -48,8 +48,9 @@ urlpatterns = [
     path('customer-lov/', customer_lov_api, name='customer_lov_api'),
     path('item-lov/', item_lov_api, name='item_lov_api'),
     path('item-price/', item_price_api, name='item_price_api'),
-    path('policy-items-lov/', policy_items_api, name='policy_items_api'),
+    path('customer-policies/', customer_policies_api, name='customer_policies_api'),
     path('policy-items/', policy_items_for_customer_api, name='policy_items_for_customer_api'),
+    path('policy-items-lov/', policy_items_for_customer_api, name='policy_items_lov_api'),
     path('policy-project-link/', policy_project_link_api, name='policy_project_link_api'),
     path('projects-lov/', projects_lov_api, name='projects_lov_api'),
     path('crop-lov/', crop_lov_api, name='crop_lov_api'),

@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models import UniqueConstraint
+from django.core.validators import FileExtensionValidator
 from FieldAdvisoryService.validators import (
     cnic_validator, phone_number_validator,
     validate_latitude, validate_longitude,email_validator,validate_image  ,
@@ -148,20 +149,56 @@ class Dealer(models.Model):
     is_active = models.BooleanField(default=True)
     cnic_front_image = models.ImageField(
         upload_to='dealers/cnic_front/',
-        validators=[validate_image],
-        # default='dealers/cnic_front/default.jpg'
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png'])],
+        blank=True,
+        null=True,
     )
     cnic_back_image = models.ImageField(
         upload_to='dealers/cnic_back/',
-        validators=[validate_image],
-        # default='dealers/cnic_back/default.jpg'
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png'])],
+        blank=True,
+        null=True,
     )
     class Meta:
-     constraints = [
-        UniqueConstraint(fields=['user'], name='unique_user_dealer')
-    ]
+        constraints = [
+            UniqueConstraint(fields=['user'], name='unique_user_dealer')
+        ]
+        permissions = [
+            ('manage_dealers', 'Can add/edit/delete dealers'),
+            ('view_dealer_reports', 'Can view dealer reports'),
+            ('approve_dealer_requests', 'Can approve dealer requests'),
+        ]
+        
     def __str__(self):
         return f"{self.name} - {self.company.name}"
+    
+    def save(self, *args, **kwargs):
+        """Auto-sync user flags and keep name derived from linked User"""
+        # If user is assigned and is_dealer is False, set it to True
+        if self.user and not self.user.is_dealer:
+            self.user.is_dealer = True
+            self.user.save(update_fields=["is_dealer"])
+
+        # Derive dealer.name from User's first/last name (fallback to username/email)
+        if self.user:
+            first = getattr(self.user, 'first_name', '') or ''
+            last = getattr(self.user, 'last_name', '') or ''
+            full = (first + ' ' + last).strip()
+            if not full:
+                full = getattr(self.user, 'username', None) or getattr(self.user, 'email', '')
+            self.name = full
+        
+        super().save(*args, **kwargs)
+    
+    def delete(self, *args, **kwargs):
+        """Auto-unset is_dealer flag when dealer is deleted"""
+        user = self.user
+        super().delete(*args, **kwargs)
+        
+        # If user exists and this was their only dealer, unset is_dealer
+        if user:
+            user.is_dealer = False
+            user.save(update_fields=["is_dealer"])
 
 class DealerRequest(models.Model):
     STATUS_CHOICES = [
@@ -358,8 +395,13 @@ class SalesOrder(models.Model):
     )
 
     # Existing fields
-    schedule = models.ForeignKey(MeetingSchedule, on_delete=models.CASCADE, null=True, blank=True)
-    staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Optional staff user; defaults to current user if omitted",
+    )
     dealer = models.ForeignKey(Dealer, on_delete=models.CASCADE, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')

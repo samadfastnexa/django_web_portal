@@ -13,10 +13,10 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RemoveField(
-            model_name='dealerrequest',
-            name='sap_response_at',
-        ),
+        # migrations.RemoveField(
+        #     model_name='dealerrequest',
+        #     name='sap_response_at',
+        # ),
         migrations.CreateModel(
             name='HierarchyLevel',
             fields=[

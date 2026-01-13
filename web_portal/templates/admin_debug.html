@@ -1,0 +1,32 @@
+<script>
+// Debug script to verify policy loading
+console.log('=== SALES ORDER FORM DEBUG ===');
+console.log('[DEBUG] Page loaded');
+
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(function(){
+    var custDropdown = document.querySelector('select.sap-customer-lov');
+    console.log('[DEBUG] Customer dropdown found:', !!custDropdown);
+    if(custDropdown){
+      console.log('[DEBUG] Customer value:', custDropdown.value);
+      console.log('[DEBUG] Customer text:', custDropdown.options[custDropdown.selectedIndex]?.text);
+    }
+    
+    var policyDropdowns = document.querySelectorAll('select.sap-policy-lov');
+    console.log('[DEBUG] Found', policyDropdowns.length, 'policy dropdowns');
+    policyDropdowns.forEach(function(sel, idx){
+      console.log('[DEBUG] Policy dropdown', idx, 'has', sel.options.length, 'options');
+      if(sel.options.length > 0){
+        console.log('[DEBUG]   First option:', sel.options[0].text);
+        console.log('[DEBUG]   Last option:', sel.options[sel.options.length - 1].text);
+      }
+    });
+    
+    // Try to manually trigger policy load if window function exists
+    if(window.__loadPoliciesForCustomer && custDropdown && custDropdown.value){
+      console.log('[DEBUG] Manually triggering policy load for:', custDropdown.value);
+      window.__loadPoliciesForCustomer(custDropdown.value);
+    }
+  }, 1000);
+});
+</script>

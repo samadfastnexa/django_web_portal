@@ -89,6 +89,10 @@ class PolicyAdmin(admin.ModelAdmin):
 @admin.register(HanaConnect, site=admin_site)
 class HanaConnectAdmin(admin.ModelAdmin):
     def changelist_view(self, request, extra_context=None):
+        # Check permission: only staff members with specific permission can access
+        if not request.user.is_staff or not request.user.has_perm('sap_integration.access_hana_connect'):
+            from django.contrib.admin import site
+            return site.index(request)
         return redirect('hana_connect_admin')
 
     def has_add_permission(self, request):
