@@ -31,8 +31,9 @@ urlpatterns = [
     # Unified API for Frontend - card_code is optional via two endpoints
     path('business-partner/', get_business_partners_list, name='unified_bp_api_list'),
     path('business-partner/<str:card_code>/', get_business_partner_detail, name='unified_bp_api'),
-    # Policy Customer Balance - card_code is optional via two endpoints
+    # Policy Customer Balance - main endpoint (no card_code required)
     path('policy-customer-balance/', policy_customer_balance_list, name='policy_customer_balance_list'),
+    # Legacy endpoint - card_code in path (kept for backward compatibility)
     path('policy-customer-balance/<str:card_code>/', policy_customer_balance_detail, name='policy_customer_balance_detail'),
     path('policies/', list_policies, name='sap_policies'),
     # DB-backed policies APIs and page

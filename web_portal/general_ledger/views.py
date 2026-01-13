@@ -60,19 +60,20 @@ logger = logging.getLogger("general_ledger")
     method='get',
     tags=['General Ledger'],
     operation_summary='Get General Ledger Report',
-    operation_description='Fetch general ledger transactions with filters for account range, date range, business partner, and project',
+    operation_description='Fetch general ledger transactions. **NO REQUIRED FIELDS**. All parameters are optional filters for account range, date range, business partner, and project. Use user parameter to filter by user\'s assigned customers.',
     manual_parameters=[
-        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Company database key (e.g., 4B-BIO, 4B-ORANG)', default='4B-BIO'),
-        openapi.Parameter('account_from', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Start of account range'),
-        openapi.Parameter('account_to', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='End of account range'),
-        openapi.Parameter('from_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Start date (YYYY-MM-DD)'),
-        openapi.Parameter('to_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='End date (YYYY-MM-DD)'),
-        openapi.Parameter('bp_code', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Business Partner CardCode'),
-        openapi.Parameter('project_code', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Project Code'),
-        openapi.Parameter('trans_type', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Transaction Type (e.g., 13, 30)'),
-        openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Page number', default=1),
-        openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Records per page', default=50),
-        openapi.Parameter('group_by_account', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, description='Group results by account with opening/closing balances', default=False),
+        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key (e.g., 4B-BIO, 4B-ORANG)', default='4B-BIO', required=False),
+        openapi.Parameter('account_from', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Start of account range', required=False),
+        openapi.Parameter('account_to', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: End of account range', required=False),
+        openapi.Parameter('from_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Start date (YYYY-MM-DD)', required=False),
+        openapi.Parameter('to_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: End date (YYYY-MM-DD)', required=False),
+        openapi.Parameter('bp_code', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Business Partner CardCode. If user parameter is provided, validates that bp_code belongs to that user.', required=False),
+        openapi.Parameter('user', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: User ID or username. Filters transactions to only user\'s assigned customers. Can be combined with bp_code for validation.', required=False),
+        openapi.Parameter('project_code', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Project Code', required=False),
+        openapi.Parameter('trans_type', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Transaction Type (e.g., 13, 30)', required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Optional: Page number', default=1, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Optional: Records per page', default=50, required=False),
+        openapi.Parameter('group_by_account', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, description='Optional: Group results by account with opening/closing balances', default=False, required=False),
     ],
     responses={
         200: openapi.Response(
@@ -117,6 +118,7 @@ def general_ledger_api(request):
     
     Fetch general ledger transactions with optional filters.
     Supports grouping by account with opening/closing balances.
+    Supports user-based filtering to show only user's assigned customers.
     """
     try:
         # Extract query parameters
@@ -126,11 +128,49 @@ def general_ledger_api(request):
         from_date = request.GET.get('from_date', '').strip()
         to_date = request.GET.get('to_date', '').strip()
         bp_code = request.GET.get('bp_code', '').strip()
+        user_param = request.GET.get('user', '').strip()
         project_code = request.GET.get('project_code', '').strip()
         trans_type = request.GET.get('trans_type', '').strip()
         page = int(request.GET.get('page', 1))
         page_size = int(request.GET.get('page_size', 50))
         group_by_account_flag = request.GET.get('group_by_account', 'false').lower() == 'true'
+        
+        # Handle user-based filtering
+        if user_param:
+            try:
+                from accounts.models import User
+                from FieldAdvisoryService.models import Dealer
+                
+                # Get user object
+                user_obj = None
+                try:
+                    user_id = int(user_param)
+                    user_obj = User.objects.get(id=user_id)
+                except (ValueError, User.DoesNotExist):
+                    user_obj = User.objects.filter(username=user_param).first()
+                
+                if not user_obj:
+                    return Response({'success': False, 'error': f'User "{user_param}" not found'}, status=404)
+                
+                # Get dealer card codes for this user
+                dealers = Dealer.objects.filter(user=user_obj).values_list('card_code', flat=True).exclude(card_code__isnull=True).exclude(card_code='')
+                dealer_card_codes = list(dealers)
+                
+                if not dealer_card_codes:
+                    return Response({'success': True, 'data': {'transactions': [], 'grand_total': {'TotalDebit': 0, 'TotalCredit': 0, 'Balance': 0}}, 'pagination': {'page': page, 'page_size': page_size, 'total_records': 0, 'total_pages': 0}})
+                
+                # If bp_code is provided, validate it belongs to user
+                if bp_code:
+                    if bp_code not in dealer_card_codes:
+                        return Response({'success': False, 'error': f'Business Partner "{bp_code}" does not belong to user "{user_param}"'}, status=403)
+                    # Use only the specified bp_code
+                    bp_code = bp_code
+                else:
+                    # Use all dealer card codes as a list
+                    bp_code = dealer_card_codes
+                    
+            except Exception as e:
+                return Response({'success': False, 'error': f'Error processing user filter: {str(e)}'}, status=500)
         
         # Connect to HANA
         conn = get_hana_connection(company)

@@ -239,8 +239,15 @@ def general_ledger_report(
     
     # Business Partner filter
     if bp_code:
-        sql += ' AND T1."ShortName" = ?'
-        params.append(bp_code.strip())
+        if isinstance(bp_code, list):
+            # Multiple BP codes
+            placeholders = ','.join(['?' for _ in bp_code])
+            sql += f' AND T1."ShortName" IN ({placeholders})'
+            params.extend([code.strip() for code in bp_code])
+        else:
+            # Single BP code
+            sql += ' AND T1."ShortName" = ?'
+            params.append(bp_code.strip())
     
     # Project filter
     if project_code:
@@ -305,8 +312,15 @@ def general_ledger_count(
         params.append(to_date.strip())
     
     if bp_code:
-        sql += ' AND T1."ShortName" = ?'
-        params.append(bp_code.strip())
+        if isinstance(bp_code, list):
+            # Multiple BP codes
+            placeholders = ','.join(['?' for _ in bp_code])
+            sql += f' AND T1."ShortName" IN ({placeholders})'
+            params.extend([code.strip() for code in bp_code])
+        else:
+            # Single BP code
+            sql += ' AND T1."ShortName" = ?'
+            params.append(bp_code.strip())
     
     if project_code:
         sql += ' AND T1."Project" = ?'

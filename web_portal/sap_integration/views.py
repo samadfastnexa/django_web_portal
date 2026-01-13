@@ -4006,8 +4006,9 @@ def products_catalog_api(request):
 def get_policy_customer_balance_data(request, card_code=None):
     """
     Core function to fetch policy customer balance.
-    If card_code is None, returns all policies.
+    If card_code is None, returns all policies or filtered by user if user parameter is provided.
     If card_code is provided, returns balance for that specific customer.
+    If user parameter is provided, returns balance for customers assigned to that user.
     """
     try:
         _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
@@ -4068,10 +4069,51 @@ def get_policy_customer_balance_data(request, card_code=None):
             except:
                 limit = 200
             
-            # Call appropriate function based on whether card_code is provided
+            # Check for user parameter to filter by user's customers
+            user_param = (getattr(request, 'query_params', {}).get('user') if hasattr(request, 'query_params') else None) or request.GET.get('user', '')
+            user_param = (user_param or '').strip()
+            
+            # Call appropriate function based on parameters
             if card_code:
+                # Specific card code requested
                 data = policy_customer_balance(conn, card_code)
+            elif user_param:
+                # Filter by user's assigned customers
+                try:
+                    from accounts.models import User
+                    from FieldAdvisoryService.models import Dealer
+                    
+                    # Try to get user by ID or username
+                    user_obj = None
+                    try:
+                        user_id = int(user_param)
+                        user_obj = User.objects.get(id=user_id)
+                    except (ValueError, User.DoesNotExist):
+                        user_obj = User.objects.filter(username=user_param).first()
+                    
+                    if user_obj:
+                        # Get dealer card codes for this user
+                        dealers = Dealer.objects.filter(user=user_obj).values_list('card_code', flat=True).exclude(card_code__isnull=True).exclude(card_code='')
+                        dealer_card_codes = list(dealers)
+                        
+                        if dealer_card_codes:
+                            # Fetch balance for each dealer's card code
+                            data = []
+                            for cc in dealer_card_codes:
+                                try:
+                                    balance = policy_customer_balance(conn, cc)
+                                    if balance:
+                                        data.extend(balance)
+                                except Exception:
+                                    pass
+                        else:
+                            data = []
+                    else:
+                        return Response({'success': False, 'error': f'User "{user_param}" not found'}, status=status.HTTP_404_NOT_FOUND)
+                except Exception as e:
+                    return Response({'success': False, 'error': f'Error fetching user customers: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             else:
+                # Get all customers
                 data = policy_customer_balance_all(conn, limit)
             
             return Response({'success': True, 'count': len(data or []), 'data': data}, status=status.HTTP_200_OK)
@@ -4086,36 +4128,115 @@ def get_policy_customer_balance_data(request, card_code=None):
 # Wrapper for list all policies customer balance (no card_code required)
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
-    operation_summary="List All Policy Customer Balances",
-    operation_description="Get policy-wise customer balance for all customers (CardCode NOT required - use this endpoint to get all policy balances). Returns balance grouped by customer and project/policy.",
+    operation_summary="Policy Customer Balance",
+    operation_description="Get policy-wise customer balance. **NO REQUIRED FIELDS**. Flexible filtering options: (1) All balances - send no parameters, (2) By card_code - use card_code query parameter, (3) By user - use user parameter to get user's customers, (4) Combinations - use multiple filters together. Also see legacy path-based endpoint /policy-customer-balance/{card_code}/ for backward compatibility.",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
-        openapi.Parameter('limit', openapi.IN_QUERY, description="Maximum number of records to return (default: 200)", type=openapi.TYPE_INTEGER, required=False)
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Optional: Filter by customer card code (e.g., ORC00002)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (4B-BIO_APP or 4B-ORANG_APP). If not provided, uses default from settings.", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('user', openapi.IN_QUERY, description="Optional: User ID or username. Returns customers assigned to this user.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('limit', openapi.IN_QUERY, description="Optional: Max records (default: 200). Only applies when not filtering by specific card_code.", type=openapi.TYPE_INTEGER, required=False)
     ],
-    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+    responses={200: openapi.Response(description="OK"), 404: openapi.Response(description="User not found"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
 def policy_customer_balance_list(request):
     """
-    List all policy customer balances without requiring card_code.
+    Flexible policy customer balance endpoint with no required fields.
+    Supports multiple filtering options:
+    - No parameters: returns all balances
+    - card_code: returns balance for specific customer
+    - user: returns balances for user's assigned customers
+    - Combinations: card_code + user validates that user owns the card_code
     """
-    return get_policy_customer_balance_data(request, card_code=None)
+    # Check for optional card_code query parameter
+    card_code_param = (getattr(request, 'query_params', {}).get('card_code') if hasattr(request, 'query_params') else None) or request.GET.get('card_code', '')
+    card_code_param = (card_code_param or '').strip()
+    
+    if card_code_param:
+        # If card_code is provided as query param, validate user if provided
+        user_param = (getattr(request, 'query_params', {}).get('user') if hasattr(request, 'query_params') else None) or request.GET.get('user', '')
+        user_param = (user_param or '').strip()
+        
+        if user_param:
+            # Validate that card_code belongs to user
+            try:
+                from accounts.models import User
+                from FieldAdvisoryService.models import Dealer
+                
+                user_obj = None
+                try:
+                    user_id = int(user_param)
+                    user_obj = User.objects.get(id=user_id)
+                except (ValueError, User.DoesNotExist):
+                    user_obj = User.objects.filter(username=user_param).first()
+                
+                if not user_obj:
+                    return Response({'success': False, 'error': f'User "{user_param}" not found'}, status=status.HTTP_404_NOT_FOUND)
+                
+                dealer = Dealer.objects.filter(user=user_obj, card_code=card_code_param).first()
+                
+                if not dealer:
+                    return Response(
+                        {'success': False, 'error': f'Card code "{card_code_param}" does not belong to user "{user_param}"'}, 
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            except Exception as e:
+                return Response({'success': False, 'error': f'Error validating user: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Fetch balance for the card_code
+        return get_policy_customer_balance_data(request, card_code=card_code_param)
+    else:
+        # No card_code provided, use list logic
+        return get_policy_customer_balance_data(request, card_code=None)
 
-# Wrapper for specific customer balance (card_code required in path)
+# Path-based endpoint with user validation
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
-    operation_summary="Get Policy Customer Balance by CardCode",
-    operation_description="Get policy-wise customer balance for a specific customer by CardCode (CardCode IS required in URL path for this endpoint). Returns balance grouped by project/policy for the specified customer.",
+    operation_summary="Policy Customer Balance by CardCode",
+    operation_description="Get policy-wise customer balance for a specific customer. Provide user parameter to validate that the card_code belongs to that user. Returns 403 if card_code doesn't belong to the specified user.",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False)
+        openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (4B-BIO_APP or 4B-ORANG_APP)", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('user', openapi.IN_QUERY, description="Optional: User ID or username to validate card_code belongs to this user. Returns 403 if validation fails.", type=openapi.TYPE_STRING, required=False)
     ],
-    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+    responses={200: openapi.Response(description="OK"), 403: openapi.Response(description="Forbidden - Card code does not belong to user"), 404: openapi.Response(description="User not found"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
 def policy_customer_balance_detail(request, card_code):
     """
-    Get policy customer balance for a specific card_code.
+    Get policy customer balance for a specific card_code (legacy route).
+    Kept for backward compatibility.
+    Optionally validates that the card_code belongs to a specified user.
     """
+    # Validate user if provided
+    user_param = (getattr(request, 'query_params', {}).get('user') if hasattr(request, 'query_params') else None) or request.GET.get('user', '')
+    user_param = (user_param or '').strip()
+    
+    if user_param:
+        try:
+            from accounts.models import User
+            from FieldAdvisoryService.models import Dealer
+            
+            user_obj = None
+            try:
+                user_id = int(user_param)
+                user_obj = User.objects.get(id=user_id)
+            except (ValueError, User.DoesNotExist):
+                user_obj = User.objects.filter(username=user_param).first()
+            
+            if not user_obj:
+                return Response({'success': False, 'error': f'User "{user_param}" not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            dealer = Dealer.objects.filter(user=user_obj, card_code=card_code).first()
+            
+            if not dealer:
+                return Response(
+                    {'success': False, 'error': f'Card code "{card_code}" does not belong to user "{user_param}"'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Exception as e:
+            return Response({'success': False, 'error': f'Error validating user: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # Delegate to get_policy_customer_balance_data with the card_code
     return get_policy_customer_balance_data(request, card_code=card_code)
 
 @swagger_auto_schema(tags=['SAP'], 
