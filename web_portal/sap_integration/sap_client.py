@@ -55,6 +55,7 @@ class SAPClient:
     _policies_cache = None
     _policies_cache_time = None
     _POLICIES_CACHE_TTL = 300  # Cache policies for 5 minutes
+    _lock = threading.Lock()  # Class-level lock for cache thread safety
 
     def __init__(self, company_db_key=None):
         # Instance-level session management
