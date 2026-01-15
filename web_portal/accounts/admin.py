@@ -49,16 +49,39 @@ if HAS_DEALER:
         extra = 1  # ✅ Show one empty form so users can create dealer profile directly from user edit
         fieldsets = (
             ('Basic Info', {
-                'fields': ('card_code', 'cnic_number', 'contact_number', 'address')  # name derived from user
+                'fields': ('card_code', 'business_name', 'cnic_number')  # name derived from user
             }),
-            ('Location', {
+            ('Contact Information', {
+                'fields': ('email', 'contact_number', 'mobile_phone')
+            }),
+            ('Address', {
+                'fields': ('address', 'city', 'state', 'country', 'latitude', 'longitude')
+            }),
+            ('Location Assignment', {
                 'fields': ('company', 'region', 'zone', 'territory')
             }),
-            ('Contact Details', {
-                'fields': ('latitude', 'longitude', 'remarks')
+            ('Tax & Legal Information', {
+                'fields': ('federal_tax_id', 'additional_id', 'unified_federal_tax_id', 'filer_status'),
+                'classes': ('collapse',)
+            }),
+            ('License Information', {
+                'fields': ('govt_license_number', 'license_expiry', 'u_leg'),
+                'classes': ('collapse',)
+            }),
+            ('SAP Configuration', {
+                'fields': ('sap_series', 'card_type', 'group_code', 'debitor_account', 'vat_group', 'vat_liable', 'whatsapp_messages'),
+                'classes': ('collapse',)
+            }),
+            ('Financial', {
+                'fields': ('minimum_investment',),
+                'classes': ('collapse',)
             }),
             ('CNIC Images', {
                 'fields': ('cnic_front_image', 'cnic_back_image'),
+                'classes': ('collapse',)
+            }),
+            ('Additional Information', {
+                'fields': ('remarks',),
                 'classes': ('collapse',)
             }),
             ('Status', {
@@ -95,6 +118,31 @@ class CustomUserAdmin(BaseUserAdmin):
 
     # Add DealerInline only if Dealer model is available
     inlines = [SalesProfileInline]
+    if HAS_DEALER:
+        inlines.append(DealerInline)
+    
+    def has_delete_permission(self, request, obj=None):
+        """Prevent deletion of protected superuser"""
+        if obj and obj.email == 'superuser@gmail.com':
+            return False
+        return super().has_delete_permission(request, obj)
+    
+    def delete_model(self, request, obj):
+        """Prevent deletion of protected superuser"""
+        if obj.email == 'superuser@gmail.com':
+            from django.contrib import messages
+            messages.error(request, f'Cannot delete protected superuser: {obj.email}')
+            return
+        super().delete_model(request, obj)
+    
+    def delete_queryset(self, request, queryset):
+        """Prevent bulk deletion of protected superuser"""
+        protected = queryset.filter(email='superuser@gmail.com')
+        if protected.exists():
+            from django.contrib import messages
+            messages.error(request, 'Cannot delete protected superuser: superuser@gmail.com')
+            queryset = queryset.exclude(email='superuser@gmail.com')
+        super().delete_queryset(request, queryset)
     if HAS_DEALER:
         inlines.append(DealerInline)
     
@@ -182,6 +230,33 @@ class CustomUserAdmin(BaseUserAdmin):
 class RoleAdmin(admin.ModelAdmin):
     list_display = ['id', 'name']
     filter_horizontal = ['permissions']
+    
+    # Protected roles that cannot be deleted
+    PROTECTED_ROLES = ['Admin', 'Dealer', 'Sales Staff', 'Farmer']
+    
+    def has_delete_permission(self, request, obj=None):
+        """Prevent deletion of protected roles"""
+        if obj and obj.name in self.PROTECTED_ROLES:
+            return False
+        return super().has_delete_permission(request, obj)
+    
+    def delete_model(self, request, obj):
+        """Prevent deletion of protected roles"""
+        if obj.name in self.PROTECTED_ROLES:
+            from django.contrib import messages
+            messages.error(request, f'Cannot delete protected role: {obj.name}')
+            return
+        super().delete_model(request, obj)
+    
+    def delete_queryset(self, request, queryset):
+        """Prevent bulk deletion of protected roles"""
+        protected = queryset.filter(name__in=self.PROTECTED_ROLES)
+        if protected.exists():
+            from django.contrib import messages
+            protected_names = ', '.join(protected.values_list('name', flat=True))
+            messages.error(request, f'Cannot delete protected roles: {protected_names}')
+            queryset = queryset.exclude(name__in=self.PROTECTED_ROLES)
+        super().delete_queryset(request, queryset)
 
 
 @admin.register(SalesStaffProfile, site=admin_site)

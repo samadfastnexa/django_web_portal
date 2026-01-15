@@ -68,7 +68,7 @@ class FieldDayAttachmentSerializer(serializers.ModelSerializer):
 class FarmerAttendanceSerializer(serializers.ModelSerializer):
     # Include farmer information if linked
     farmer_id = serializers.CharField(source='farmer.farmer_id', read_only=True)
-    farmer_full_name = serializers.CharField(source='farmer.get_full_name', read_only=True)
+    farmer_full_name = serializers.CharField(source='farmer.full_name', read_only=True)
     farmer_primary_phone = serializers.CharField(source='farmer.primary_phone', read_only=True)
     farmer_district = serializers.CharField(source='farmer.district', read_only=True)
     farmer_village = serializers.CharField(source='farmer.village', read_only=True)
@@ -80,6 +80,17 @@ class FarmerAttendanceSerializer(serializers.ModelSerializer):
             'farmer_district', 'farmer_village', 'farmer_name', 'contact_number', 
             'acreage', 'crop'
         ]
+    
+    def to_representation(self, instance):
+        """Ensure farmer_name and contact_number are populated from linked farmer"""
+        representation = super().to_representation(instance)
+        
+        # If farmer is linked, populate farmer_name and contact_number from farmer data
+        if instance.farmer:
+            representation['farmer_name'] = instance.farmer.full_name or ''
+            representation['contact_number'] = instance.farmer.primary_phone or ''
+        
+        return representation
 
 
 # ✅ Farmer Attendance Input Serializer (for form input)
@@ -179,11 +190,12 @@ class MeetingSerializer(serializers.ModelSerializer):
         if farmer_ids:
             for i, farmer_id in enumerate(farmer_ids):
                 try:
-                    farmer = Farmer.objects.get(farmer_id=farmer_id)
+                    # Use pk (primary key/id) instead of farmer_id field
+                    farmer = Farmer.objects.get(pk=farmer_id)
                     FarmerAttendance.objects.create(
                         meeting=meeting,
                         farmer=farmer,
-                        farmer_name=farmer.get_full_name(),
+                        farmer_name=farmer.name or f"{farmer.first_name} {farmer.last_name}".strip(),
                         contact_number=farmer.primary_phone or '',
                         acreage=acreages[i] if i < len(acreages) else 0.0,
                         crop=crops[i] if i < len(crops) else ''
@@ -239,11 +251,12 @@ class MeetingSerializer(serializers.ModelSerializer):
             if farmer_ids:
                 for i, farmer_id in enumerate(farmer_ids):
                     try:
-                        farmer = Farmer.objects.get(farmer_id=farmer_id)
+                        # Use pk (primary key/id) instead of farmer_id field
+                        farmer = Farmer.objects.get(pk=farmer_id)
                         FarmerAttendance.objects.create(
                             meeting=instance,
                             farmer=farmer,
-                            farmer_name=farmer.get_full_name(),
+                            farmer_name=farmer.name or f"{farmer.first_name} {farmer.last_name}".strip(),
                             contact_number=farmer.primary_phone or '',
                             acreage=acreages[i] if acreages and i < len(acreages) else 0.0,
                             crop=crops[i] if crops and i < len(crops) else ''
@@ -286,7 +299,7 @@ class FieldDayAttendanceCropSerializer(serializers.ModelSerializer):
 class FieldDayAttendanceSerializer(serializers.ModelSerializer):
     # ✅ Farmer information fields (read-only, auto-populated)
     farmer_id = serializers.CharField(source='farmer.farmer_id', read_only=True)
-    farmer_full_name = serializers.CharField(source='farmer.get_full_name', read_only=True)
+    farmer_full_name = serializers.CharField(source='farmer.full_name', read_only=True)
     farmer_primary_phone = serializers.CharField(source='farmer.primary_phone', read_only=True)
     farmer_district = serializers.CharField(source='farmer.district', read_only=True)
     farmer_village = serializers.CharField(source='farmer.village', read_only=True)
@@ -301,12 +314,23 @@ class FieldDayAttendanceSerializer(serializers.ModelSerializer):
             'farmer_district', 'farmer_village', 'farmer_name', 'contact_number', 
             'acreage', 'crops'
         ]
+    
+    def to_representation(self, instance):
+        """Ensure farmer_name and contact_number are populated from linked farmer"""
+        representation = super().to_representation(instance)
+        
+        # If farmer is linked, populate farmer_name and contact_number from farmer data
+        if instance.farmer:
+            representation['farmer_name'] = instance.farmer.full_name or ''
+            representation['contact_number'] = instance.farmer.primary_phone or ''
+        
+        return representation
         
     def create(self, validated_data):
         # ✅ Auto-populate farmer information if farmer is linked
         attendance = super().create(validated_data)
         if attendance.farmer:
-            attendance.farmer_name = attendance.farmer.get_full_name()
+            attendance.farmer_name = attendance.farmer.full_name
             attendance.contact_number = attendance.farmer.primary_phone
             attendance.save()
             
@@ -316,7 +340,7 @@ class FieldDayAttendanceSerializer(serializers.ModelSerializer):
         # ✅ Auto-populate farmer information if farmer is changed
         attendance = super().update(instance, validated_data)
         if attendance.farmer:
-            attendance.farmer_name = attendance.farmer.get_full_name()
+            attendance.farmer_name = attendance.farmer.full_name
             attendance.contact_number = attendance.farmer.primary_phone
             attendance.save()
             
@@ -444,8 +468,8 @@ class FieldDaySerializer(serializers.ModelSerializer):
                 'farmer_primary_phone': primary_attendee.farmer.primary_phone if primary_attendee.farmer else '',
                 'farmer_district': primary_attendee.farmer.district if primary_attendee.farmer else '',
                 'farmer_village': primary_attendee.farmer.village if primary_attendee.farmer else '',
-                'farmer_name': primary_attendee.farmer_name or '',
-                'contact_number': primary_attendee.contact_number or '',
+                'farmer_name': primary_attendee.farmer.full_name if primary_attendee.farmer else (primary_attendee.farmer_name or ''),
+                'contact_number': primary_attendee.farmer.primary_phone if primary_attendee.farmer else (primary_attendee.contact_number or ''),
                 'acreage': total_acreage,
                 'crop': all_crops[0]['crop_name'] if all_crops else primary_attendee.crop,  # Primary crop
                 'crops': all_crops

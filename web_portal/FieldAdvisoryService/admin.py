@@ -50,7 +50,7 @@ class MeetingScheduleAdmin(admin.ModelAdmin):
         'presence_of_zm',
         'presence_of_rsm'
     ]
-    ordering = ['-date']
+    ordering = ['-id']
 
 
 def _load_env_file(path: str) -> None:
@@ -590,10 +590,10 @@ class SalesOrderLineInline(admin.TabularInline):
 @admin.register(SalesOrder, site=admin_site)
 class SalesOrderAdmin(admin.ModelAdmin):
     form = SalesOrderForm
-    list_display = ('id', 'card_code', 'card_name', 'doc_date', 'status', 'is_posted_to_sap', 'sap_doc_num', 'created_at')
+    list_display = ('id', 'portal_order_id', 'card_code', 'card_name', 'doc_date', 'status', 'is_posted_to_sap', 'sap_doc_num', 'created_at')
     list_filter = ('status', 'is_posted_to_sap', 'doc_date', 'created_at')
-    search_fields = ('card_code', 'card_name', 'federal_tax_id', 'u_s_card_code')
-    readonly_fields = ('current_database', 'created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_display', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code')
+    search_fields = ('card_code', 'card_name', 'federal_tax_id', 'u_s_card_code', 'portal_order_id')
+    readonly_fields = ('portal_order_id', 'current_database', 'created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_display', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code')
     
     fieldsets = (
         ('Database Selection', {
@@ -601,7 +601,7 @@ class SalesOrderAdmin(admin.ModelAdmin):
             'description': 'Current active database. Use the global DB selector at the top-right to switch between companies (4B-BIO / 4B-ORANG).'
         }),
         ('Basic Information', {
-            'fields': ('staff', 'dealer', 'status', 'created_at')
+            'fields': ('portal_order_id', 'staff', 'dealer', 'status', 'created_at')
         }),
         ('Document Dates', {
             'fields': ('doc_date', 'doc_due_date', 'tax_date'),
@@ -1400,10 +1400,10 @@ class TerritoryAdmin(admin.ModelAdmin, _CompanySessionResolver):
 
 @admin.register(Dealer, site=admin_site)
 class DealerAdmin(admin.ModelAdmin):
-    list_display = ('name', 'user_link', 'user_email', 'contact_number', 'company', 'is_active', 'created_at')
+    list_display = ('name', 'business_name', 'user_link', 'user_email', 'contact_number', 'company', 'filer_status', 'is_active', 'created_at')
     list_select_related = ('user', 'company')
-    list_filter = ('is_active', 'company', 'created_at')
-    search_fields = ('name', 'contact_number', 'user__username', 'user__email', 'cnic_number')
+    list_filter = ('is_active', 'company', 'filer_status', 'card_type', 'vat_liable', 'created_at')
+    search_fields = ('name', 'business_name', 'contact_number', 'mobile_phone', 'email', 'user__username', 'user__email', 'cnic_number', 'card_code')
     raw_id_fields = ('user', 'company', 'region', 'zone', 'territory')
     readonly_fields = ('created_at', 'updated_at', 'card_code')
     
@@ -1413,16 +1413,39 @@ class DealerAdmin(admin.ModelAdmin):
             'description': 'Link or create a user account for dealer login'
         }),
         ('Dealer Information', {
-            'fields': ('name', 'cnic_number', 'contact_number', 'address', 'remarks')
+            'fields': ('name', 'business_name', 'cnic_number')
+        }),
+        ('Contact Information', {
+            'fields': ('email', 'contact_number', 'mobile_phone')
+        }),
+        ('Address Information', {
+            'fields': ('address', 'city', 'state', 'country', 'latitude', 'longitude')
         }),
         ('Geographic Assignment', {
             'fields': ('company', 'region', 'zone', 'territory')
         }),
-        ('Location Coordinates', {
-            'fields': ('latitude', 'longitude')
+        ('Tax & Legal Information', {
+            'fields': ('federal_tax_id', 'additional_id', 'unified_federal_tax_id', 'filer_status'),
+            'classes': ('collapse',)
+        }),
+        ('License Information', {
+            'fields': ('govt_license_number', 'license_expiry', 'u_leg'),
+            'classes': ('collapse',)
+        }),
+        ('SAP Configuration', {
+            'fields': ('sap_series', 'card_type', 'group_code', 'debitor_account', 'vat_group', 'vat_liable', 'whatsapp_messages'),
+            'classes': ('collapse',)
+        }),
+        ('Financial', {
+            'fields': ('minimum_investment',),
+            'classes': ('collapse',)
         }),
         ('CNIC Images', {
             'fields': ('cnic_front_image', 'cnic_back_image'),
+            'classes': ('collapse',)
+        }),
+        ('Additional Information', {
+            'fields': ('remarks',),
             'classes': ('collapse',)
         }),
         ('Status & Audit', {

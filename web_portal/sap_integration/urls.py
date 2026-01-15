@@ -25,6 +25,10 @@ from .views import (
     sales_vs_achievement_geo_inv_api,
     sales_vs_achievement_territory_api,
     customer_policies_api,
+    # Disease Management endpoints
+    disease_list_api,
+    disease_detail_api,
+    recommended_products_api,
 )
 
 urlpatterns = [
@@ -58,4 +62,9 @@ urlpatterns = [
     path('sales-orders/', sales_orders_api, name='sales_orders_api'),
     path('sales-vs-achievement-geo-inv/', sales_vs_achievement_geo_inv_api, name='sales_vs_achievement_geo_inv_api'),
     path('sales-vs-achievement-territory/', sales_vs_achievement_territory_api, name='sales_vs_achievement_territory_api'),
+    
+    # Disease Management endpoints
+    path('diseases/', disease_list_api, name='disease_list_api'),
+    path('diseases/<int:disease_id>/', disease_detail_api, name='disease_detail_api'),
+    path('recommended-products/', recommended_products_api, name='recommended_products_api'),
 ]

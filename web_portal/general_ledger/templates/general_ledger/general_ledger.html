@@ -656,6 +656,7 @@
             <th>BP Name</th>
             <th>Type</th>
             <th>Reference</th>
+            <th>Project</th>
             <th>Description</th>
             <th class="text-right">Debit</th>
             <th class="text-right">Credit</th>
@@ -666,7 +667,7 @@
           {% for account in accounts_grouped %}
             <!-- Account Header -->
             <tr class="account-header">
-              <td colspan="11">
+              <td colspan="12">
                 <strong>{{ account.Account }} - {{ account.AccountName }}</strong>
               </td>
             </tr>
@@ -674,7 +675,7 @@
             <!-- Opening Balance -->
             {% if filters.from_date %}
               <tr class="opening-balance-row">
-                <td colspan="8"><em>Opening Balance (as of {{ filters.from_date }})</em></td>
+                <td colspan="9"><em>Opening Balance (as of {{ filters.from_date }})</em></td>
                 <td class="text-right">{% if account.OpeningBalance > 0 %}{{ account.OpeningBalance|floatformat:2 }}{% else %}-{% endif %}</td>
                 <td class="text-right">{% if account.OpeningBalance < 0 %}{{ account.OpeningBalance|abs|floatformat:2 }}{% else %}-{% endif %}</td>
                 <td class="text-right"><strong>{{ account.OpeningBalance|floatformat:2 }}</strong></td>
@@ -689,8 +690,9 @@
                 <td>{{ txn.Account }}</td>
                 <td>{{ txn.BPCode|default:"-" }}</td>
                 <td>{{ txn.BPName|default:"-" }}</td>
-                <td>{{ txn.TransType|default:"-" }}</td>
+                <td>{{ txn.TransTypeName|default:txn.TransType|default:"-" }}</td>
                 <td>{{ txn.Reference1|default:"-" }}</td>
+                <td>{{ txn.ExtractedProject|default:txn.ProjectCode|default:"-" }}</td>
                 <td>{{ txn.Description|default:"-" }}</td>
                 <td class="text-right">{{ txn.Debit|floatformat:2 }}</td>
                 <td class="text-right">{{ txn.Credit|floatformat:2 }}</td>
@@ -700,7 +702,7 @@
             
             <!-- Account Subtotal -->
             <tr class="subtotal-row">
-              <td colspan="8"><strong>Subtotal for {{ account.Account }}</strong></td>
+              <td colspan="9"><strong>Subtotal for {{ account.Account }}</strong></td>
               <td class="text-right"><strong>{{ account.TotalDebit|floatformat:2 }}</strong></td>
               <td class="text-right"><strong>{{ account.TotalCredit|floatformat:2 }}</strong></td>
               <td class="text-right"><strong>{{ account.ClosingBalance|floatformat:2 }}</strong></td>
@@ -710,7 +712,7 @@
           <!-- Grand Total -->
           {% if grand_total %}
             <tr class="grand-total-row">
-              <td colspan="8"><strong>🏆 GRAND TOTAL</strong></td>
+              <td colspan="9"><strong>🏆 GRAND TOTAL</strong></td>
               <td class="text-right"><strong>{{ grand_total.TotalDebit|floatformat:2 }}</strong></td>
               <td class="text-right"><strong>{{ grand_total.TotalCredit|floatformat:2 }}</strong></td>
               <td class="text-right"><strong>{{ grand_total.Difference|floatformat:2 }}</strong></td>
