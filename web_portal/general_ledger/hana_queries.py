@@ -2,8 +2,10 @@
 HANA SQL queries for SAP B1 General Ledger Reports
 """
 import logging
+import re
 from typing import Optional, List, Dict, Any
 from decimal import Decimal
+from .transaction_types import get_transaction_type_name
 
 logger = logging.getLogger("general_ledger")
 
@@ -195,18 +197,25 @@ def general_ledger_report(
         T1."FCCredit" AS "FCCredit",
         T1."FCCurrency",
         T1."ShortName" AS "BPCode",
-        T3."CardName" AS "BPName",
+        COALESCE(T3."CardName", T6."firstName" || ' ' || T6."lastName") AS "BPName",
         T1."LineMemo" AS "Description",
         T1."Project" AS "ProjectCode",
         T4."PrjName" AS "ProjectName",
         T1."Ref1" AS "LineRef1",
-        T1."Ref2" AS "LineRef2"
+        T1."Ref2" AS "LineRef2",
+        
+        COALESCE(T5."Quantity", 0) AS "Qty",
+        COALESCE(T5."Price", 0) AS "UnitPrice",
+        COALESCE(T5."DiscPrcnt", 0) AS "Discount",
+        COALESCE(T5."GTotal", ABS(T1."Debit" + T1."Credit")) AS "Amount"
         
     FROM "OJDT" T0
     INNER JOIN "JDT1" T1 ON T0."TransId" = T1."TransId"
     LEFT JOIN "OACT" T2 ON T1."Account" = T2."AcctCode"
     LEFT JOIN "OCRD" T3 ON T1."ShortName" = T3."CardCode"
     LEFT JOIN "OPRJ" T4 ON T1."Project" = T4."PrjCode"
+    LEFT JOIN "INV1" T5 ON T0."BaseRef" = CAST(T5."DocEntry" AS VARCHAR) AND T1."Line_ID" = T5."LineNum"
+    LEFT JOIN "OHEM" T6 ON T1."ShortName" = CAST(T6."empID" AS VARCHAR)
     WHERE 1=1
     """
     
@@ -232,8 +241,15 @@ def general_ledger_report(
     
     # Business Partner filter
     if bp_code:
-        sql += ' AND T1."ShortName" = ?'
-        params.append(bp_code.strip())
+        if isinstance(bp_code, list):
+            # Multiple BP codes
+            placeholders = ','.join(['?' for _ in bp_code])
+            sql += f' AND T1."ShortName" IN ({placeholders})'
+            params.extend([code.strip() for code in bp_code])
+        else:
+            # Single BP code
+            sql += ' AND T1."ShortName" = ?'
+            params.append(bp_code.strip())
     
     # Project filter
     if project_code:
@@ -254,7 +270,28 @@ def general_ledger_report(
     if offset:
         sql += f' OFFSET {int(offset)}'
     
-    return _fetch_all(db, sql, tuple(params))
+    # Fetch results
+    results = _fetch_all(db, sql, tuple(params))
+    
+    # Post-process results to add transaction type name and extract project from description
+    for row in results:
+        # Add transaction type name
+        trans_type_code = row.get('TransType')
+        row['TransTypeName'] = get_transaction_type_name(trans_type_code)
+        
+        # Extract project from description if it contains "PR: xxxxx | IN: xxxxxx" pattern
+        description = row.get('Description', '')
+        if description and 'PR:' in description:
+            # Pattern: "PR: 232687 | IN: 5700817"
+            match = re.search(r'PR:\s*(\d+)', description)
+            if match:
+                row['ExtractedProject'] = match.group(1)
+            else:
+                row['ExtractedProject'] = None
+        else:
+            row['ExtractedProject'] = None
+    
+    return results
 
 
 def general_ledger_count(
@@ -298,8 +335,15 @@ def general_ledger_count(
         params.append(to_date.strip())
     
     if bp_code:
-        sql += ' AND T1."ShortName" = ?'
-        params.append(bp_code.strip())
+        if isinstance(bp_code, list):
+            # Multiple BP codes
+            placeholders = ','.join(['?' for _ in bp_code])
+            sql += f' AND T1."ShortName" IN ({placeholders})'
+            params.extend([code.strip() for code in bp_code])
+        else:
+            # Single BP code
+            sql += ' AND T1."ShortName" = ?'
+            params.append(bp_code.strip())
     
     if project_code:
         sql += ' AND T1."Project" = ?'
@@ -342,9 +386,11 @@ def transaction_types_lov(db) -> List[Dict[str, Any]]:
     return transaction_types
 
 
-def business_partner_lov(db, bp_type: Optional[str] = None, limit: int = 1000) -> List[Dict[str, Any]]:
+def business_partner_lov(db, bp_type: Optional[str] = 'C', limit: int = 1000) -> List[Dict[str, Any]]:
     """
     Get Business Partner list for dropdown filter.
+    Only returns valid business partners used in journal entries.
+    Defaults to customers (CardType='C') to avoid employees and contracts.
     
     Args:
         db: HANA database connection
@@ -355,21 +401,25 @@ def business_partner_lov(db, bp_type: Optional[str] = None, limit: int = 1000) -
         List of business partners with CardCode and CardName
     """
     sql = """
-    SELECT 
-        "CardCode",
-        "CardName",
-        "CardType"
-    FROM "OCRD"
-    WHERE 1=1
+    SELECT DISTINCT
+        T0."CardCode",
+        T0."CardName",
+        T0."CardType"
+    FROM "OCRD" T0
+    INNER JOIN "JDT1" T1 ON T0."CardCode" = T1."ShortName"
+    WHERE T0."CardCode" IS NOT NULL
+    AND T0."CardName" IS NOT NULL
+    AND T0."CardCode" NOT LIKE 'LS%'
+    AND NOT EXISTS (SELECT 1 FROM "OHEM" E WHERE CAST(E."empID" AS VARCHAR) = T0."CardCode")
     """
     
     params = []
     
     if bp_type:
-        sql += ' AND "CardType" = ?'
+        sql += ' AND T0."CardType" = ?'
         params.append(bp_type.strip().upper())
     
-    sql += ' ORDER BY "CardCode"'
+    sql += ' ORDER BY T0."CardCode"'
     sql += f' LIMIT {int(limit)}'
     
     return _fetch_all(db, sql, tuple(params))

@@ -24,14 +24,20 @@ from .views import (
     sales_orders_api,
     sales_vs_achievement_geo_inv_api,
     sales_vs_achievement_territory_api,
+    customer_policies_api,
+    # Disease Management endpoints
+    disease_list_api,
+    disease_detail_api,
+    recommended_products_api,
 )
 
 urlpatterns = [
     # Unified API for Frontend - card_code is optional via two endpoints
     path('business-partner/', get_business_partners_list, name='unified_bp_api_list'),
     path('business-partner/<str:card_code>/', get_business_partner_detail, name='unified_bp_api'),
-    # Policy Customer Balance - card_code is optional via two endpoints
+    # Policy Customer Balance - main endpoint (no card_code required)
     path('policy-customer-balance/', policy_customer_balance_list, name='policy_customer_balance_list'),
+    # Legacy endpoint - card_code in path (kept for backward compatibility)
     path('policy-customer-balance/<str:card_code>/', policy_customer_balance_detail, name='policy_customer_balance_detail'),
     path('policies/', list_policies, name='sap_policies'),
     # DB-backed policies APIs and page
@@ -47,11 +53,18 @@ urlpatterns = [
     path('customer-lov/', customer_lov_api, name='customer_lov_api'),
     path('item-lov/', item_lov_api, name='item_lov_api'),
     path('item-price/', item_price_api, name='item_price_api'),
+    path('customer-policies/', customer_policies_api, name='customer_policies_api'),
     path('policy-items/', policy_items_for_customer_api, name='policy_items_for_customer_api'),
+    path('policy-items-lov/', policy_items_for_customer_api, name='policy_items_lov_api'),
     path('policy-project-link/', policy_project_link_api, name='policy_project_link_api'),
     path('projects-lov/', projects_lov_api, name='projects_lov_api'),
     path('crop-lov/', crop_lov_api, name='crop_lov_api'),
     path('sales-orders/', sales_orders_api, name='sales_orders_api'),
     path('sales-vs-achievement-geo-inv/', sales_vs_achievement_geo_inv_api, name='sales_vs_achievement_geo_inv_api'),
     path('sales-vs-achievement-territory/', sales_vs_achievement_territory_api, name='sales_vs_achievement_territory_api'),
+    
+    # Disease Management endpoints
+    path('diseases/', disease_list_api, name='disease_list_api'),
+    path('diseases/<int:disease_id>/', disease_detail_api, name='disease_detail_api'),
+    path('recommended-products/', recommended_products_api, name='recommended_products_api'),
 ]

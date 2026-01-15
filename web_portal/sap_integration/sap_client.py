@@ -48,19 +48,20 @@ def _normalize_mapping(obj):
 
 class SAPClient:
     """
-    SAP Client with global session storage across all requests.
-    Ensures only one login happens per 5 minutes (or when session expires).
+    SAP Client - each instance manages its own session for a specific company database.
+    Uses instance-level session storage to ensure database parameter works correctly.
     """
 
-    _global_session_id = None
-    _global_session_time = None
-    _lock = threading.Lock()
-    _route_id = None
     _policies_cache = None
     _policies_cache_time = None
     _POLICIES_CACHE_TTL = 300  # Cache policies for 5 minutes
+    _lock = threading.Lock()  # Class-level lock for cache thread safety
 
     def __init__(self, company_db_key=None):
+        # Instance-level session management
+        self._session_id = None
+        self._session_time = None
+        self._route_id = None
         try:
             try:
                 _load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
@@ -215,6 +216,7 @@ class SAPClient:
                             pass
             else:
                 self.ssl_context = None
+            
         except Exception as e:
             raise ImproperlyConfigured(f'SAP configuration error: {e}')
 
@@ -223,14 +225,14 @@ class SAPClient:
             # Use HTTP without SSL
             return http.client.HTTPConnection(
                 self.host, self.port,
-                timeout=30
+                timeout=60
             )
         else:
             # Use HTTPS with SSL
             return http.client.HTTPSConnection(
                 self.host, self.port,
                 context=self.ssl_context,
-                timeout=30
+                timeout=60
             )
 
     def _close_connection(self, conn):
@@ -397,16 +399,15 @@ class SAPClient:
             raise Exception(msg)
 
     def get_session_id(self):
-        """Return a global session ID, refreshing if needed."""
-        with self._lock:
-            if (
-                not self._global_session_id or
-                not self._global_session_time or
-                (time.time() - self._global_session_time > 300)
-            ):
-                self._global_session_id = self._login()
-                self._global_session_time = time.time()
-        return self._global_session_id
+        """Return a session ID for this instance, refreshing if needed."""
+        if (
+            not self._session_id or
+            not self._session_time or
+            (time.time() - self._session_time > 300)
+        ):
+            self._session_id = self._login()
+            self._session_time = time.time()
+        return self._session_id
 
     def _make_request(self, method, path, body='', retry=True, attempt=0, max_ssl_retries=3):
         cookie = f"B1SESSION={self.get_session_id()}"
@@ -468,8 +469,9 @@ class SAPClient:
                 error_code in [-2001, -1101, -1001, 301]
             )
             if retry and (cache_failure or session_invalid or internal_error):
-                with self._lock:
-                    self._global_session_id = None
+                # Invalidate this instance's session
+                self._session_id = None
+                self._session_time = None
                 time.sleep(random.uniform(0.1, 0.3))
                 return self._make_request(method, path, body, retry=False, attempt=attempt, max_ssl_retries=max_ssl_retries)
 
@@ -623,10 +625,10 @@ class SAPClient:
         return policies
 
     def _logout(self):
-        """Invalidate global session."""
-        if not self._global_session_id:
+        """Invalidate session for this instance."""
+        if not self._session_id:
             return
-        headers = {'Cookie': f'B1SESSION={self._global_session_id}'}
+        headers = {'Cookie': f'B1SESSION={self._session_id}'}
         conn = self._get_connection()
         try:
             conn.request("POST", f"{self.base_path}/Logout", '', headers)
@@ -635,8 +637,8 @@ class SAPClient:
             pass
         finally:
             self._close_connection(conn)
-            self._global_session_id = None
-            self._global_session_time = None
+            self._session_id = None
+            self._session_time = None
 
     def get_territory_id_by_name(self, name: str):
         try:
@@ -708,6 +710,21 @@ class SAPClient:
             path = f"{self.base_path}/{resource}"
         return self._make_request("POST", path, body)
 
+    def get(self, resource: str, query_params: str = None):
+        """Generic GET helper for Service Layer resources.
+        Example: get('U_ODID') -> GET /b1s/v2/U_ODID
+        """
+        if not resource or not isinstance(resource, str):
+            raise ValueError("resource must be a non-empty string")
+        # Allow callers to pass either 'U_ODID' or '/U_ODID'
+        if resource.startswith('/'):
+            path = f"{self.base_path}{resource}"
+        else:
+            path = f"{self.base_path}/{resource}"
+        if query_params:
+            path += f"?{query_params}"
+        return self._make_request("GET", path)
+
     def get_dealer_bp_info(self, dealer_id: int):
         try:
             dealer = Dealer.objects.get(id=dealer_id)
@@ -723,3 +740,94 @@ class SAPClient:
             }
         except Dealer.DoesNotExist:
             raise ValueError(f"Dealer with ID {dealer_id} not found")
+
+    def get_diseases(self):
+        """
+        Fetch all diseases from SAP @ODID user-defined table via HANA connection.
+        Returns list of disease dictionaries.
+        """
+        try:
+            from hdbcli import dbapi
+            from .hana_connect import _load_env_file as _hana_load_env_file
+            import os
+            from pathlib import Path
+            from django.conf import settings
+            
+            # Load HANA environment variables
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            
+            # Map company_db to HANA schema
+            schema_map = {
+                '4B-BIO': '4B-BIO_APP',
+                '4B-ORANG': '4B-ORANG_APP',
+                '4B-BIO_APP': '4B-BIO_APP',
+                '4B-ORANG_APP': '4B-ORANG_APP',
+            }
+            schema = schema_map.get(self.company_db, self.company_db if '_APP' in self.company_db else self.company_db + '_APP')
+            
+            # Connect to HANA
+            cfg = {
+                'host': os.environ.get('HANA_HOST', ''),
+                'port': os.environ.get('HANA_PORT', ''),
+                'user': os.environ.get('HANA_USER', ''),
+                'encrypt': os.environ.get('HANA_ENCRYPT', ''),
+                'schema': schema
+            }
+            
+            pwd = os.environ.get('HANA_PASSWORD', '')
+            kwargs = {
+                'address': cfg['host'],
+                'port': int(cfg['port']),
+                'user': cfg['user'],
+                'password': pwd
+            }
+            
+            if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+                kwargs['encrypt'] = True
+                kwargs['sslValidateCertificate'] = False
+            
+            conn = dbapi.connect(**kwargs)
+            
+            try:
+                # Set schema
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                
+                # Query @ODID table
+                sql = '''
+                SELECT 
+                    "DocEntry",
+                    "U_ItemCode",
+                    "U_ItemName",
+                    "U_Description",
+                    "U_Disease"
+                FROM "@ODID"
+                '''
+                
+                cur.execute(sql)
+                rows = cur.fetchall()
+                
+                diseases = []
+                for row in rows:
+                    disease = {
+                        'doc_entry': row[0] or '',
+                        'item_code': row[1] or '',
+                        'item_name': row[2] or '',
+                        'description': row[3] or '',
+                        'disease_name': row[4] or '',
+                    }
+                    diseases.append(disease)
+                
+                cur.close()
+                return diseases
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            print(f"Error fetching diseases from SAP: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []

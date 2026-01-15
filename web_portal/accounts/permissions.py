@@ -58,3 +58,254 @@ class HasRolePermission(BasePermission):
 
         # ❌ Denied
         raise PermissionDenied(f"You do not have permission: '{required_codename}'")
+
+
+# ==================== Hierarchy-based Permissions ====================
+
+from .hierarchy_utils import get_user_subordinates, user_can_access_data
+
+
+class HierarchyBasedPermission(BasePermission):
+    """
+    Permission class that allows users to access their own data and their subordinates' data.
+    Superusers can access all data.
+    """
+    
+    def has_permission(self, request, view):
+        """Check if user has permission to perform the action."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        # For safe methods, allow access
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return True  # Will be further checked in has_object_permission
+    
+    def has_object_permission(self, request, view, obj):
+        """Check if user has permission to access a specific object."""
+        if request.user.is_superuser:
+            return True
+        
+        # Determine the owner of the object
+        owner = self.get_object_owner(obj)
+        if not owner:
+            return request.method in permissions.SAFE_METHODS
+        
+        # Check if user can access this data
+        return user_can_access_data(request.user, owner)
+    
+    def get_object_owner(self, obj):
+        """
+        Determine who owns the object. Override this in subclasses if needed.
+        Tries common patterns: user, created_by, owner fields.
+        """
+        for field_name in ['user', 'created_by', 'owner', 'assigned_to']:
+            if hasattr(obj, field_name):
+                owner = getattr(obj, field_name)
+                if owner:
+                    return owner
+        return None
+
+
+class CanManageUsers(BasePermission):
+    """Permission for managing users."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return (request.user.is_superuser or request.user.has_perm('accounts.manage_users'))
+
+
+class CanManageRoles(BasePermission):
+    """Permission for managing roles and permissions."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return (request.user.is_superuser or request.user.has_perm('accounts.manage_roles'))
+
+
+class CanManageSalesStaff(BasePermission):
+    """Permission for managing sales staff profiles."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return (request.user.is_superuser or request.user.has_perm('accounts.manage_sales_staff'))
+
+
+class CanManageDealers(BasePermission):
+    """Permission for managing dealers."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return (request.user.is_superuser or request.user.has_perm('FieldAdvisoryService.manage_dealers'))
+
+
+class CanApproveDealerRequests(BasePermission):
+    """Permission for approving dealer requests."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return (request.user.is_superuser or request.user.has_perm('FieldAdvisoryService.approve_dealer_requests'))
+
+
+class CanManageFarmers(BasePermission):
+    """Permission for managing farmer records."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return (request.user.is_superuser or request.user.has_perm('farmers.manage_farmers'))
+
+
+class CanManageMeetings(BasePermission):
+    """Permission for managing farmer meetings."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return (request.user.is_superuser or request.user.has_perm('farmerMeetingDataEntry.manage_meetings'))
+
+
+class CanAccessSAPData(BasePermission):
+    """Permission for accessing SAP integration data."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Basic SAP permissions
+        sap_permissions = [
+            'sap_integration.access_hana_connect',
+            'sap_integration.view_policy_balance',
+            'sap_integration.view_customer_list',
+            'sap_integration.view_sales_orders',
+        ]
+        
+        if request.user.is_superuser:
+            return True
+        
+        return any(request.user.has_perm(perm) for perm in sap_permissions)
+
+
+class CanViewSalesReports(BasePermission):
+    """Permission for viewing sales achievement reports."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        # Check for any sales report permission
+        return (
+            request.user.has_perm('sap_integration.view_sales_vs_achievement_geo') or
+            request.user.has_perm('sap_integration.view_sales_vs_achievement_territory') or
+            request.user.has_perm('sap_integration.view_sales_vs_achievement_profit')
+        )
+
+
+class CanViewMasterData(BasePermission):
+    """Permission for viewing master data (LOV)."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        # Check for any master data permission
+        return (
+            request.user.has_perm('sap_integration.view_customer_list') or
+            request.user.has_perm('sap_integration.view_item_master') or
+            request.user.has_perm('sap_integration.view_project_list') or
+            request.user.has_perm('sap_integration.view_crop_master') or
+            request.user.has_perm('sap_integration.view_tax_codes')
+        )
+
+
+class CanViewCustomerDetails(BasePermission):
+    """Permission for viewing customer & contact details."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        # Check for any customer detail permission
+        return (
+            request.user.has_perm('sap_integration.view_customer_address') or
+            request.user.has_perm('sap_integration.view_contact_person') or
+            request.user.has_perm('sap_integration.view_child_customers')
+        )
+
+
+class CanManageSalesOrders(BasePermission):
+    """Permission for managing sales orders."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        # Read access
+        if request.method in permissions.SAFE_METHODS:
+            return request.user.has_perm('sap_integration.view_sales_orders')
+        
+        # Write access
+        if request.method == 'POST':
+            return request.user.has_perm('sap_integration.create_sales_orders')
+        
+        # Edit/Delete access
+        return request.user.has_perm('sap_integration.edit_sales_orders')
+
+
+class CanPostToSAP(BasePermission):
+    """Permission for posting data to SAP."""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        return (request.user.is_superuser or request.user.has_perm('sap_integration.post_to_sap'))

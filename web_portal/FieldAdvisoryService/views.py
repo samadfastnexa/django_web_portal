@@ -8,9 +8,13 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.admin.views.decorators import staff_member_required
 
-from .models import Dealer, MeetingSchedule, SalesOrder
-from .serializers import DealerSerializer, DealerRequestSerializer,MeetingScheduleSerializer, SalesOrderSerializer, SalesOrderFormSerializer
-from .serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer,DealerRequestSerializer,CompanyNestedSerializer,RegionNestedSerializer,ZoneNestedSerializer,TerritoryNestedSerializer
+from .models import Dealer, MeetingSchedule, SalesOrder, HierarchyLevel, UserHierarchy
+from .serializers import (
+    DealerSerializer, DealerRequestSerializer, MeetingScheduleSerializer, SalesOrderSerializer, SalesOrderFormSerializer,
+    CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer, DealerRequestSerializer,
+    CompanyNestedSerializer, RegionNestedSerializer, ZoneNestedSerializer, TerritoryNestedSerializer,
+    HierarchyLevelSerializer, UserHierarchyListSerializer, UserHierarchyDetailSerializer, UserHierarchyCreateUpdateSerializer
+)
 from .models import DealerRequest
 from .models import Company, Region, Zone, Territory
 from drf_yasg.utils import swagger_auto_schema, no_body
@@ -36,6 +40,7 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
     filterset_fields = ["fsm_name", "region", "zone", "territory", "location", "presence_of_zm", "presence_of_rsm", "staff"]
     search_fields = ["fsm_name", "region__name", "zone__name", "territory__name", "location", "key_topics_discussed"]
     ordering_fields = ["date", "fsm_name", "region__name", "zone__name", "territory__name", "total_attendees"]
+    ordering = ["-id"]
     common_parameters = [
         openapi.Parameter('fsm_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='Field Sales Manager name'),
         openapi.Parameter('territory_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Territory ID'),
@@ -164,20 +169,25 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or not user.is_authenticated:
             raise PermissionDenied("Authentication required to create meeting schedule.")
+        
+        # Use fsm_name from request if provided, otherwise fallback to user's name
+        fsm_name = serializer.validated_data.get('fsm_name')
+        
+        if not fsm_name:
+            # Fallback to logged-in user's name if fsm_name not provided
+            if hasattr(user, "get_full_name") and callable(getattr(user, "get_full_name", None)):
+                fsm_name = user.get_full_name() or getattr(user, "username", "") or getattr(user, "email", "")
+            elif hasattr(user, "full_name"):
+                fsm_name = getattr(user, "full_name") or getattr(user, "username", "") or getattr(user, "email", "")
+            elif hasattr(user, "first_name") or hasattr(user, "last_name"):
+                first = getattr(user, "first_name", "") or ""
+                last = getattr(user, "last_name", "") or ""
+                combined = f"{first} {last}".strip()
+                fsm_name = combined or getattr(user, "username", "") or getattr(user, "email", "")
+            else:
+                fsm_name = getattr(user, "username", "") or getattr(user, "email", "") or str(getattr(user, "pk", ""))
 
-        if hasattr(user, "get_full_name") and callable(getattr(user, "get_full_name", None)):
-            name = user.get_full_name() or getattr(user, "username", "") or getattr(user, "email", "")
-        elif hasattr(user, "full_name"):
-            name = getattr(user, "full_name") or getattr(user, "username", "") or getattr(user, "email", "")
-        elif hasattr(user, "first_name") or hasattr(user, "last_name"):
-            first = getattr(user, "first_name", "") or ""
-            last = getattr(user, "last_name", "") or ""
-            combined = f"{first} {last}".strip()
-            name = combined or getattr(user, "username", "") or getattr(user, "email", "")
-        else:
-            name = getattr(user, "username", "") or getattr(user, "email", "") or str(getattr(user, "pk", ""))
-
-        serializer.save(staff=user, fsm_name=name)
+        serializer.save(staff=user, fsm_name=fsm_name)
 
     @swagger_auto_schema(
         operation_description="Update all details of an existing meeting schedule (full update).",
@@ -229,6 +239,7 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
     serializer_class = SalesOrderSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [IsAuthenticated, HasRolePermission]
+    ordering = ['-id']
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -244,11 +255,25 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                     'application/json': [
                         {
                             'id': 1,
+                            'portal_order_id': 'SO001',
                             'schedule': 1,
                             'staff': 1,
                             'dealer': 1,
                             'status': 'pending',
+                            'card_code': 'C001',
+                            'card_name': 'ABC Company',
                             'created_at': '2024-01-15T10:30:00Z'
+                        },
+                        {
+                            'id': 2,
+                            'portal_order_id': 'SA002',
+                            'schedule': 2,
+                            'staff': 1,
+                            'dealer': 2,
+                            'status': 'entertained',
+                            'card_code': 'C002',
+                            'card_name': 'XYZ Company',
+                            'created_at': '2024-01-16T14:20:00Z'
                         }
                     ]
                 }
@@ -267,10 +292,13 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                 examples={
                     'application/json': {
                         'id': 1,
+                        'portal_order_id': 'SO001',
                         'schedule': 1,
                         'staff': 1,
                         'dealer': 1,
                         'status': 'entertained',
+                        'card_code': 'C001',
+                        'card_name': 'ABC Company',
                         'created_at': '2024-01-15T10:30:00Z'
                     }
                 }
@@ -297,7 +325,6 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         manual_parameters=[
             # Header fields
             openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
-            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
             openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
             openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
             openapi.Parameter('series', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='SAP series'),
@@ -335,6 +362,34 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                             required=False, description='Array of VAT groups. Example: ["AT1", "AT1"]'),
             openapi.Parameter('u_crop', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
                             required=False, description='Array of crop codes. Example: ["CORN", "WHEAT"]'),
+            openapi.Parameter('tax_percentage_per_row', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of tax percentages per line. Example: [0, 17]'),
+            openapi.Parameter('units_of_measurment', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of UoM conversion factors. Example: [1, 1]'),
+            openapi.Parameter('uom_entry', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER),
+                            required=False, description='Array of UoM entry IDs'),
+            openapi.Parameter('measure_unit', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of measure unit names'),
+            openapi.Parameter('uom_code', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of UoM codes'),
+            openapi.Parameter('project_code', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of project codes'),
+            openapi.Parameter('u_sd', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of special discount percentages'),
+            openapi.Parameter('u_ad', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of additional discount percentages'),
+            openapi.Parameter('u_exd', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of extra discount percentages'),
+            openapi.Parameter('u_zerop', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of phase discount percentages'),
+            openapi.Parameter('u_pl', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER),
+                            required=False, description='Array of Policy Link IDs'),
+            openapi.Parameter('u_bp', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_NUMBER),
+                            required=False, description='Array of Project Balance values'),
+            openapi.Parameter('u_policy', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of Policy Codes'),
+            openapi.Parameter('u_focitem', openapi.IN_FORM, type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING),
+                            required=False, description='Array of FOC flags (Yes/No). Example: ["No", "Yes"]'),
         ],
         responses={
             201: openapi.Response(
@@ -342,17 +397,39 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                 examples={
                     'application/json': {
                         'id': 1,
+                        'portal_order_id': 'SO001',
                         'staff': 1,
                         'dealer': 2,
                         'status': 'pending',
                         'card_code': 'C20000',
                         'card_name': 'ABC Traders',
+                        'created_at': '2024-01-15T10:30:00Z',
                         'document_lines': [
                             {
                                 'id': 1,
+                                'line_num': 1,
                                 'item_code': 'ITEM-001',
+                                'item_description': 'Hybrid Seed',
                                 'quantity': 10,
-                                'unit_price': 2500
+                                'unit_price': 2500,
+                                'discount_percent': 0,
+                                'warehouse_code': 'WH01',
+                                'vat_group': 'SE',
+                                'tax_percentage_per_row': 0,
+                                'units_of_measurment': 1,
+                                'uom_entry': 1,
+                                'measure_unit': 'KG',
+                                'uom_code': 'KG',
+                                'project_code': None,
+                                'u_sd': 0,
+                                'u_ad': 0,
+                                'u_exd': 0,
+                                'u_zerop': 0,
+                                'u_pl': 123,
+                                'u_bp': 5000.0,
+                                'u_policy': 'POL-001',
+                                'u_focitem': 'No',
+                                'u_crop': 'CORN'
                             }
                         ]
                     }
@@ -378,7 +455,6 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         request_body=no_body,
         manual_parameters=[
             openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
-            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
             openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
             openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
             openapi.Parameter('document_lines', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='JSON string array of line items'),
@@ -403,7 +479,6 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         request_body=no_body,
         manual_parameters=[
             openapi.Parameter('staff', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Staff user ID'),
-            openapi.Parameter('schedule', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Meeting schedule ID'),
             openapi.Parameter('dealer', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Dealer ID'),
             openapi.Parameter('status', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Order status'),
             openapi.Parameter('document_lines', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='JSON string array of line items'),
@@ -537,9 +612,10 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
 class DealerViewSet(viewsets.ModelViewSet):
     queryset = Dealer.objects.all()
     serializer_class = DealerSerializer
+    ordering = ['-id']
 
     @swagger_auto_schema(
-        operation_description="List all dealers",
+        operation_description="List all dealers with their user credentials",
         responses={200: DealerSerializer(many=True)},
         tags=["16. Dealers"]
     )
@@ -547,7 +623,7 @@ class DealerViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Retrieve a single dealer by ID",
+        operation_description="Retrieve a single dealer by ID with user account details",
         responses={200: DealerSerializer},
         tags=["16. Dealers"]
     )
@@ -555,7 +631,8 @@ class DealerViewSet(viewsets.ModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Create a new dealer",
+        operation_description="Create a new dealer with user login credentials. Either provide an existing user_id or provide username/email/password to create a new user account for the dealer. CNIC images (cnic_front_image, cnic_back_image) are optional and can be uploaded later.",
+        request_body=DealerSerializer,
         responses={201: DealerSerializer},
         tags=["16. Dealers"]
     )
@@ -563,7 +640,7 @@ class DealerViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Update an existing dealer",
+        operation_description="Update an existing dealer and optionally update user account credentials",
         responses={200: DealerSerializer},
         tags=["16. Dealers"]
     )
@@ -579,7 +656,7 @@ class DealerViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Delete a dealer",
+        operation_description="Delete a dealer (also deletes associated user account if not used elsewhere)",
         responses={204: 'No Content'},
         tags=["16. Dealers"]
     )
@@ -592,6 +669,7 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]  # Accept form-data
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status', 'filer_status', 'card_type', 'is_posted_to_sap', 'requested_by']
+    ordering = ['-id']
 
     def get_queryset(self):
         user = self.request.user
@@ -1373,12 +1451,25 @@ def api_child_customers(request):
         return JsonResponse({'error': 'father_card parameter required'}, status=400)
     
     try:
+        # Get selected database from session for logging
+        selected_db = request.session.get('selected_db') if hasattr(request, 'session') else None
+        logger.info(f"Selected DB from session: {selected_db}")
+        
         db = get_hana_connection(request)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed - HANA service unavailable', 'children': []}, status=200)
         
-        logger.info(f"Database connected, fetching child customers for {father_card}")
+        # Verify current schema
+        try:
+            cursor = db.cursor()
+            cursor.execute('SELECT CURRENT_SCHEMA FROM DUMMY')
+            current_schema = cursor.fetchone()[0]
+            cursor.close()
+            logger.info(f"Connected to HANA schema: {current_schema}, fetching child customers for {father_card}")
+        except Exception as e:
+            logger.warning(f"Could not verify current schema: {e}")
+            logger.info(f"Database connected, fetching child customers for {father_card}")
         
         # Get child customers with optional search
         try:
@@ -1451,15 +1542,26 @@ def api_customer_details(request):
         return JsonResponse({'error': 'card_code parameter required'}, status=400)
     
     try:
+        # Get selected database from session for logging
+        selected_db = request.session.get('selected_db') if hasattr(request, 'session') else None
+        logger.info(f"Selected DB from session: {selected_db}")
+        
         db = get_hana_connection(request)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
-        logger.info(f"Database connected, fetching details for {card_code}")
+        # Verify current schema
+        cursor = db.cursor()
+        try:
+            cursor.execute('SELECT CURRENT_SCHEMA FROM DUMMY')
+            current_schema = cursor.fetchone()[0]
+            logger.info(f"Connected to HANA schema: {current_schema}, fetching details for {card_code}")
+        except Exception as e:
+            logger.warning(f"Could not verify current schema: {e}")
+            logger.info(f"Database connected, fetching details for {card_code}")
         
         # Get customer basic info
-        cursor = db.cursor()
         customer_query = """
         SELECT 
             T0."CardName", 
@@ -1545,3 +1647,194 @@ def api_customer_details(request):
         error_trace = traceback.format_exc()
         logger.error(f"Error in api_customer_details: {str(e)}\n{error_trace}")
         return JsonResponse({'error': str(e), 'trace': error_trace}, status=500)
+
+# ==================== Hierarchy ViewSets ====================
+
+class HierarchyLevelViewSet(viewsets.ModelViewSet):
+    """
+    CRUD operations for organizational hierarchy levels.
+    Supports dynamic level creation, update, and management.
+    
+    Endpoints:
+    - GET /api/hierarchy-levels/ - List all levels
+    - POST /api/hierarchy-levels/ - Create new level
+    - GET /api/hierarchy-levels/{id}/ - Retrieve specific level
+    - PUT /api/hierarchy-levels/{id}/ - Update level
+    - PATCH /api/hierarchy-levels/{id}/ - Partial update
+    - DELETE /api/hierarchy-levels/{id}/ - Delete level
+    """
+    queryset = HierarchyLevel.objects.select_related('company', 'created_by').all()
+    serializer_class = HierarchyLevelSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['company', 'level_code', 'is_active']
+    search_fields = ['level_name', 'level_code', 'company__Company_name']
+    ordering_fields = ['level_order', 'created_at', 'level_name']
+    ordering = ['level_order']
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def by_company(self, request):
+        """Get hierarchy levels for a specific company"""
+        company_id = request.query_params.get('company_id')
+        if not company_id:
+            return Response({'error': 'company_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        levels = HierarchyLevel.objects.filter(
+            company_id=company_id,
+            is_active=True
+        ).order_by('level_order')
+        serializer = self.get_serializer(levels, many=True)
+        return Response(serializer.data)
+
+
+class UserHierarchyViewSet(viewsets.ModelViewSet):
+    """
+    CRUD operations for user hierarchy assignments.
+    Manages reporting structure, hierarchy levels, and geo assignments.
+    
+    Endpoints:
+    - GET /api/user-hierarchies/ - List all assignments
+    - POST /api/user-hierarchies/ - Create new assignment
+    - GET /api/user-hierarchies/{id}/ - Retrieve specific assignment
+    - PUT /api/user-hierarchies/{id}/ - Update assignment
+    - PATCH /api/user-hierarchies/{id}/ - Partial update
+    - DELETE /api/user-hierarchies/{id}/ - Delete assignment
+    """
+    queryset = UserHierarchy.objects.select_related(
+        'user', 'company', 'hierarchy_level', 'reports_to',
+        'region', 'zone', 'territory', 'assigned_by'
+    ).all()
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['company', 'hierarchy_level', 'region', 'zone', 'territory', 'is_active']
+    search_fields = ['user__username', 'user__first_name', 'user__last_name', 'user__email']
+    ordering_fields = ['hierarchy_level__level_order', 'assigned_at', 'user__username']
+    ordering = ['hierarchy_level__level_order']
+    
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action"""
+        if self.action == 'list':
+            return UserHierarchyListSerializer
+        elif self.action == 'retrieve':
+            return UserHierarchyDetailSerializer
+        else:
+            return UserHierarchyCreateUpdateSerializer
+    
+    def perform_create(self, serializer):
+        serializer.save(assigned_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        serializer.save(assigned_by=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def by_company(self, request):
+        """Get all users' hierarchy assignments in a company"""
+        company_id = request.query_params.get('company_id')
+        if not company_id:
+            return Response({'error': 'company_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        hierarchies = UserHierarchy.objects.filter(
+            company_id=company_id, is_active=True
+        ).select_related('user', 'hierarchy_level', 'reports_to').order_by('hierarchy_level__level_order')
+        
+        serializer = UserHierarchyListSerializer(hierarchies, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def by_hierarchy_level(self, request):
+        """Get users at a specific hierarchy level"""
+        level_id = request.query_params.get('level_id')
+        if not level_id:
+            return Response({'error': 'level_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        hierarchies = UserHierarchy.objects.filter(
+            hierarchy_level_id=level_id, is_active=True
+        ).select_related('user', 'hierarchy_level', 'company')
+        
+        serializer = UserHierarchyListSerializer(hierarchies, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def direct_reports(self, request, pk=None):
+        """Get all direct reports for a specific user"""
+        hierarchy = self.get_object()
+        direct_reports = UserHierarchy.objects.filter(
+            reports_to=hierarchy.user, company=hierarchy.company, is_active=True
+        ).select_related('user', 'hierarchy_level', 'region', 'zone', 'territory')
+        
+        serializer = UserHierarchyListSerializer(direct_reports, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def reporting_chain(self, request, pk=None):
+        """Get full reporting chain (all managers above) for a specific user"""
+        hierarchy = self.get_object()
+        chain = []
+        
+        current = hierarchy
+        while current.reports_to:
+            try:
+                current = UserHierarchy.objects.get(
+                    user=current.reports_to, company=current.company
+                )
+                serializer = UserHierarchyListSerializer(current)
+                chain.append(serializer.data)
+            except UserHierarchy.DoesNotExist:
+                break
+        
+        return Response({'reporting_chain': chain})
+    
+    @action(detail=False, methods=['get'])
+    def by_geo(self, request):
+        """Filter by geographic assignment"""
+        region_id = request.query_params.get('region_id')
+        zone_id = request.query_params.get('zone_id')
+        territory_id = request.query_params.get('territory_id')
+        
+        queryset = UserHierarchy.objects.filter(is_active=True)
+        
+        if region_id:
+            queryset = queryset.filter(region_id=region_id)
+        if zone_id:
+            queryset = queryset.filter(zone_id=zone_id)
+        if territory_id:
+            queryset = queryset.filter(territory_id=territory_id)
+        
+        queryset = queryset.select_related('user', 'hierarchy_level')
+        serializer = UserHierarchyListSerializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'])
+    def bulk_assign(self, request):
+        """Bulk assign multiple users to hierarchy levels"""
+        assignments = request.data.get('assignments', [])
+        if not assignments:
+            return Response(
+                {'error': 'assignments list is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        created = []
+        errors = []
+        
+        for assignment in assignments:
+            serializer = UserHierarchyCreateUpdateSerializer(data=assignment)
+            if serializer.is_valid():
+                try:
+                    serializer.save(assigned_by=request.user)
+                    created.append(serializer.data)
+                except Exception as e:
+                    errors.append({'assignment': assignment, 'error': str(e)})
+            else:
+                errors.append({'assignment': assignment, 'errors': serializer.errors})
+        
+        return Response({
+            'created': created,
+            'errors': errors,
+            'total_created': len(created),
+            'total_errors': len(errors)
+        })
+        ### End of File ###

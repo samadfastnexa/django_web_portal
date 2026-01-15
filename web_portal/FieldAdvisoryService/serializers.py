@@ -2,6 +2,9 @@ from rest_framework import serializers
 from .models import Dealer, MeetingSchedule, MeetingScheduleAttendance, SalesOrder, SalesOrderLine, SalesOrderAttachment,DealerRequest
 import re
 from .models import Company, Region, Zone, Territory
+from .models import HierarchyLevel, UserHierarchy
+
+
 from rest_framework import viewsets
 from django.contrib.auth import get_user_model
 from drf_yasg.utils import swagger_serializer_method
@@ -12,9 +15,11 @@ User = get_user_model()
 #         fields = '__all__'
 class DealerSerializer(serializers.ModelSerializer):
     # read-only fields that come from User
-    email        = serializers.EmailField(source='user.email', read_only=True)
-    first_name   = serializers.CharField(source='user.first_name', read_only=True)
-    last_name    = serializers.CharField(source='user.last_name', read_only=True)
+    email        = serializers.EmailField(source='user.email', read_only=False, required=False)
+    first_name   = serializers.CharField(source='user.first_name', read_only=False, required=False)
+    last_name    = serializers.CharField(source='user.last_name', read_only=False, required=False)
+    username     = serializers.CharField(source='user.username', read_only=False, required=False)
+    password     = serializers.CharField(source='user.password', write_only=True, required=False, min_length=6)
 
     # optional: allow choosing an existing user when creating a dealer
     user         = serializers.PrimaryKeyRelatedField(
@@ -24,11 +29,104 @@ class DealerSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Dealer
         fields = [
-            'id','user','email','first_name','last_name','name','cnic_number',
-            'contact_number','company','region','zone','territory',
-            'address','latitude','longitude','remarks','is_active',
-            'cnic_front_image','cnic_back_image'
+            'id','user','username','email','first_name','last_name','password',
+            'name','business_name','cnic_number',
+            'contact_number','mobile_phone',
+            'company','region','zone','territory',
+            'address','city','state','country','latitude','longitude',
+            'federal_tax_id','additional_id','unified_federal_tax_id','filer_status',
+            'govt_license_number','license_expiry','u_leg',
+            'sap_series','card_type','group_code','debitor_account','vat_group','vat_liable','whatsapp_messages',
+            'minimum_investment',
+            'remarks','is_active',
+            'cnic_front_image','cnic_back_image','card_code','created_at','updated_at'
         ]
+        read_only_fields = ['id', 'card_code', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        """Create or link a user when creating a dealer"""
+        user_data = {}
+        
+        # Extract user fields
+        if 'user' in validated_data:
+            user = validated_data.pop('user')
+        else:
+            user = None
+            
+        # Collect user data from nested serializer
+        username = validated_data.pop('username', None) if 'username' in validated_data else None
+        email = validated_data.pop('email', None) if 'email' in validated_data else None
+        first_name = validated_data.pop('first_name', None) if 'first_name' in validated_data else None
+        last_name = validated_data.pop('last_name', None) if 'last_name' in validated_data else None
+        password = validated_data.pop('password', None) if 'password' in validated_data else None
+        
+        # If user data provided but no user FK, create new user
+        if not user and (username or email):
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            
+            user_create_data = {
+                'username': username or email.split('@')[0] if email else f"dealer_{validated_data.get('name', 'new')}",
+                'email': email or '',
+                'first_name': first_name or '',
+                'last_name': last_name or ''
+            }
+            
+            user = User.objects.create_user(**user_create_data)
+            if password:
+                user.set_password(password)
+                user.save()
+        
+        # Create dealer with user if available
+        validated_data['user'] = user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        """Update user fields when updating a dealer"""
+        user_data = {}
+        user = instance.user
+        
+        # Extract user-related fields
+        username = validated_data.pop('username', None) if 'username' in validated_data else None
+        email = validated_data.pop('email', None) if 'email' in validated_data else None
+        first_name = validated_data.pop('first_name', None) if 'first_name' in validated_data else None
+        last_name = validated_data.pop('last_name', None) if 'last_name' in validated_data else None
+        password = validated_data.pop('password', None) if 'password' in validated_data else None
+        new_user = validated_data.pop('user', None) if 'user' in validated_data else None
+        
+        # Update or create user
+        if new_user:
+            validated_data['user'] = new_user
+            user = new_user
+        elif username or email or first_name or last_name or password:
+            if not user:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                user = User.objects.create_user(
+                    username=username or email.split('@')[0] if email else f"dealer_{instance.name}",
+                    email=email or '',
+                    first_name=first_name or '',
+                    last_name=last_name or ''
+                )
+                if password:
+                    user.set_password(password)
+                    user.save()
+                validated_data['user'] = user
+            else:
+                # Update existing user
+                if username:
+                    user.username = username
+                if email:
+                    user.email = email
+                if first_name:
+                    user.first_name = first_name
+                if last_name:
+                    user.last_name = last_name
+                if password:
+                    user.set_password(password)
+                user.save()
+        
+        return super().update(instance, validated_data)
 
 class FlexibleListField(serializers.ListField):
     def to_internal_value(self, data):
@@ -346,7 +444,32 @@ class SalesOrderAttachmentSerializer(serializers.ModelSerializer):
 class SalesOrderLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = SalesOrderLine
-        exclude = ('sales_order',)
+        fields = [
+            'id',
+            'line_num',
+            'item_code',
+            'item_description',
+            'quantity',
+            'unit_price',
+            'discount_percent',
+            'warehouse_code',
+            'vat_group',
+            'tax_percentage_per_row',
+            'units_of_measurment',
+            'uom_entry',
+            'measure_unit',
+            'uom_code',
+            'project_code',
+            'u_sd',
+            'u_ad',
+            'u_exd',
+            'u_zerop',
+            'u_pl',  # Policy Link
+            'u_bp',  # Project Balance
+            'u_policy',  # Policy Code
+            'u_focitem',  # FOC Item
+            'u_crop',  # Crop Code
+        ]
 
 
 class SalesOrderLineInputSerializer(serializers.Serializer):
@@ -421,14 +544,14 @@ class SalesOrderFormSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SalesOrder
-        fields = ['id', 'staff', 'schedule', 'dealer', 'status', 'series', 'doc_type', 
+        fields = ['id', 'portal_order_id', 'staff', 'schedule', 'dealer', 'status', 'series', 'doc_type', 
                   'doc_date', 'doc_due_date', 'tax_date', 'card_code', 'card_name',
                   'contact_person_code', 'federal_tax_id', 'address', 'doc_currency',
                   'doc_rate', 'comments', 'u_sotyp', 'u_usid', 'u_s_card_code',
                   'u_s_card_name', 'created_at',
                   'item_code', 'item_description', 'quantity', 'unit_price', 
                   'discount_percent', 'warehouse_code', 'vat_group', 'u_crop']
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'portal_order_id', 'created_at']
     
     def create(self, validated_data):
         from .models import SalesOrderLine
@@ -478,6 +601,7 @@ class SalesOrderFormSerializer(serializers.ModelSerializer):
 class SalesOrderSerializer(serializers.ModelSerializer):
     attachments = SalesOrderAttachmentSerializer(many=True, read_only=True)
     document_lines = SalesOrderLineSerializer(many=True, required=False)
+    portal_order_id = serializers.CharField(read_only=True, help_text="Unique portal order ID (e.g., SO001)")
     
     # Make all fields optional for easier mobile API usage
     staff = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
@@ -773,3 +897,142 @@ class CompanyNestedSerializer(serializers.ModelSerializer):
         model = Company
         fields = ['id', 'name', 'regions']
 
+
+# ==================== Hierarchy Serializers ====================
+
+class HierarchyLevelSerializer(serializers.ModelSerializer):
+    """Serializer for HierarchyLevel model"""
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    
+    class Meta:
+        model = HierarchyLevel
+        fields = [
+            'id', 'company', 'company_name', 'level_name', 'level_code',
+            'level_order', 'description', 'is_active', 'created_at',
+            'updated_at', 'created_by', 'created_by_username'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'created_by']
+
+
+class UserHierarchyListSerializer(serializers.ModelSerializer):
+    """Simplified serializer for listing user hierarchies"""
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    
+    hierarchy_level_name = serializers.CharField(source='hierarchy_level.level_name', read_only=True)
+    hierarchy_level_code = serializers.CharField(source='hierarchy_level.level_code', read_only=True)
+    hierarchy_level_order = serializers.IntegerField(source='hierarchy_level.level_order', read_only=True)
+    
+    reports_to_username = serializers.CharField(source='reports_to.username', read_only=True, allow_null=True)
+    reports_to_id = serializers.IntegerField(source='reports_to.id', read_only=True, allow_null=True)
+    
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
+    region_name = serializers.CharField(source='region.name', read_only=True, allow_null=True)
+    zone_name = serializers.CharField(source='zone.name', read_only=True, allow_null=True)
+    territory_name = serializers.CharField(source='territory.name', read_only=True, allow_null=True)
+    
+    assigned_by_username = serializers.CharField(source='assigned_by.username', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = UserHierarchy
+        fields = [
+            'id', 'user_id', 'username', 'first_name', 'last_name', 'email',
+            'company', 'company_name', 'hierarchy_level',
+            'hierarchy_level_name', 'hierarchy_level_code', 'hierarchy_level_order',
+            'reports_to', 'reports_to_id', 'reports_to_username',
+            'region', 'region_name', 'zone', 'zone_name', 'territory', 'territory_name',
+            'is_active', 'assigned_at', 'updated_at', 'assigned_by', 'assigned_by_username'
+        ]
+        read_only_fields = ['assigned_at', 'updated_at', 'assigned_by']
+
+
+class UserHierarchyDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer with nested objects"""
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    
+    hierarchy_level = HierarchyLevelSerializer(read_only=True)
+    reports_to_detail = UserHierarchyListSerializer(source='reports_to.hierarchy_assignment', read_only=True, allow_null=True)
+    
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
+    region_detail = serializers.SerializerMethodField()
+    zone_detail = serializers.SerializerMethodField()
+    territory_detail = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = UserHierarchy
+        fields = [
+            'id', 'user_id', 'username', 'first_name', 'last_name', 'email',
+            'company', 'company_name', 'hierarchy_level',
+            'reports_to', 'reports_to_detail',
+            'region', 'region_detail', 'zone', 'zone_detail',
+            'territory', 'territory_detail',
+            'is_active', 'assigned_at', 'updated_at', 'assigned_by'
+        ]
+        read_only_fields = ['assigned_at', 'updated_at', 'assigned_by']
+    
+    def get_region_detail(self, obj):
+        if obj.region:
+            return {'id': obj.region.id, 'name': obj.region.name}
+        return None
+    
+    def get_zone_detail(self, obj):
+        if obj.zone:
+            return {'id': obj.zone.id, 'name': obj.zone.name}
+        return None
+    
+    def get_territory_detail(self, obj):
+        if obj.territory:
+            return {'id': obj.territory.id, 'name': obj.territory.name}
+        return None
+
+
+class UserHierarchyCreateUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating user hierarchies"""
+    class Meta:
+        model = UserHierarchy
+        fields = [
+            'user', 'company', 'hierarchy_level', 'reports_to',
+            'region', 'zone', 'territory', 'is_active'
+        ]
+    
+    def validate(self, data):
+        """Custom validation"""
+        user = data.get('user')
+        company = data.get('company')
+        hierarchy_level = data.get('hierarchy_level')
+        reports_to = data.get('reports_to')
+        
+        # Check if user already has hierarchy in this company
+        if user and company:
+            existing = UserHierarchy.objects.filter(
+                user=user, company=company
+            ).exclude(pk=self.instance.pk if self.instance else None)
+            if existing.exists():
+                raise serializers.ValidationError(
+                    f"User {user.username} already has a hierarchy assignment in {company.Company_name}"
+                )
+        
+        # Validate reports_to
+        if reports_to and hierarchy_level:
+            try:
+                manager_hierarchy = UserHierarchy.objects.get(
+                    user=reports_to, company=company
+                )
+                if manager_hierarchy.hierarchy_level.level_order >= hierarchy_level.level_order:
+                    raise serializers.ValidationError(
+                        "Manager must be at a higher hierarchy level (lower order number)."
+                    )
+            except UserHierarchy.DoesNotExist:
+                raise serializers.ValidationError(
+                    "Manager must have a hierarchy assignment in the same company."
+                )
+        
+        return data

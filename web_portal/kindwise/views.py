@@ -4,6 +4,7 @@ from django.http import JsonResponse
 from django.conf import settings
 from .services import identify_crop
 from .models import KindwiseIdentification
+from .disease_matcher import enrich_kindwise_response
 import base64
 import json
 from drf_yasg.utils import swagger_auto_schema, no_body
@@ -121,6 +122,11 @@ def identify_view(request):
                 'has_image': True,
                 'user_id': user_id,
             }
+            
+            # Enrich result with disease recommendations if requested
+            include_recommendations = request.GET.get('include_recommendations', 'true').lower() in ['true', '1', 'yes']
+            if include_recommendations and status_str == 'success':
+                result = enrich_kindwise_response(result, include_recommendations=True)
 
             # Create record
             record = KindwiseIdentification.objects.create(

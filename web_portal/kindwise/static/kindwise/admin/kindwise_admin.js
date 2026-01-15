@@ -81,7 +81,7 @@
         modalBody.innerHTML = '<div class="loading" style="text-align:center;padding:40px;"><p>Loading details...</p></div>';
 
         // Fetch record details from API
-        fetch(`/kindwise/records/${recordId}/`)
+        fetch(`/api/kindwise/records/${recordId}/`)
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
