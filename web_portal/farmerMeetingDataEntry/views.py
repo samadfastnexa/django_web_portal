@@ -32,6 +32,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
         'key_topics_discussed',
     ]
     ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees"]
+    ordering = ["-id"]
     
      # ---------------- Global Extra Data ----------------
     # Removed verbose nested data to reduce response size
@@ -320,6 +321,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
     filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location", "total_participants", "user"]
     search_fields = ["title", "region_fk__name", "zone_fk__name", "territory_fk__name", "company_fk__Company_name", "location", "feedback"]
     ordering_fields = ["date", "title", "region_fk__name", "zone_fk__name", "territory_fk__name"]
+    ordering = ["-id"]
      # ---------------- Global Extra Data ----------------
     # Removed finalize_response method to eliminate verbose nested data for companies, regions, zones, and territories
     # The API now returns only IDs and names for these entities to reduce response size

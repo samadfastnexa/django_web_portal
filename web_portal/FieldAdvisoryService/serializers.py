@@ -30,9 +30,15 @@ class DealerSerializer(serializers.ModelSerializer):
         model  = Dealer
         fields = [
             'id','user','username','email','first_name','last_name','password',
-            'name','cnic_number',
-            'contact_number','company','region','zone','territory',
-            'address','latitude','longitude','remarks','is_active',
+            'name','business_name','cnic_number',
+            'contact_number','mobile_phone',
+            'company','region','zone','territory',
+            'address','city','state','country','latitude','longitude',
+            'federal_tax_id','additional_id','unified_federal_tax_id','filer_status',
+            'govt_license_number','license_expiry','u_leg',
+            'sap_series','card_type','group_code','debitor_account','vat_group','vat_liable','whatsapp_messages',
+            'minimum_investment',
+            'remarks','is_active',
             'cnic_front_image','cnic_back_image','card_code','created_at','updated_at'
         ]
         read_only_fields = ['id', 'card_code', 'created_at', 'updated_at']
@@ -538,14 +544,14 @@ class SalesOrderFormSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SalesOrder
-        fields = ['id', 'staff', 'schedule', 'dealer', 'status', 'series', 'doc_type', 
+        fields = ['id', 'portal_order_id', 'staff', 'schedule', 'dealer', 'status', 'series', 'doc_type', 
                   'doc_date', 'doc_due_date', 'tax_date', 'card_code', 'card_name',
                   'contact_person_code', 'federal_tax_id', 'address', 'doc_currency',
                   'doc_rate', 'comments', 'u_sotyp', 'u_usid', 'u_s_card_code',
                   'u_s_card_name', 'created_at',
                   'item_code', 'item_description', 'quantity', 'unit_price', 
                   'discount_percent', 'warehouse_code', 'vat_group', 'u_crop']
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'portal_order_id', 'created_at']
     
     def create(self, validated_data):
         from .models import SalesOrderLine
@@ -595,6 +601,7 @@ class SalesOrderFormSerializer(serializers.ModelSerializer):
 class SalesOrderSerializer(serializers.ModelSerializer):
     attachments = SalesOrderAttachmentSerializer(many=True, read_only=True)
     document_lines = SalesOrderLineSerializer(many=True, required=False)
+    portal_order_id = serializers.CharField(read_only=True, help_text="Unique portal order ID (e.g., SO001)")
     
     # Make all fields optional for easier mobile API usage
     staff = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)

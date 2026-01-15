@@ -2706,6 +2706,15 @@ def get_business_partner_detail(request, card_code):
     operation_description="List all policies from SAP Projects (UDF U_pol)",
     manual_parameters=[
         openapi.Parameter(
+            'company',
+            openapi.IN_QUERY,
+            description="Optional: Company database key",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['4B-BIO_APP', '4B-ORANG_APP'],
+            default='4B-ORANG_APP'
+        ),
+        openapi.Parameter(
             'active',
             openapi.IN_QUERY,
             description="Filter by Active projects (true/false)",
@@ -2758,10 +2767,29 @@ def list_policies(request):
     """
     API endpoint to list policies from SAP Projects based on UDF `U_pol`.
     Usage: GET /api/sap/policies/
-    Optional: ?active=true|false
+    Optional: ?company=4B-BIO_APP|4B-ORANG_APP&active=true|false
     """
+    import logging
+    import socket
+    import json
+    
+    logger = logging.getLogger(__name__)
+    
     try:
-        selected_db = request.session.get('selected_db', '4B-BIO')
+        # Priority: 1. company parameter, 2. database parameter (backward compatibility), 3. Session, 4. Default
+        company_param = request.GET.get('company') or request.query_params.get('company')
+        database_param = request.GET.get('database') or request.query_params.get('database')
+        
+        # Normalize company parameter (remove _APP suffix for SAPClient)
+        if company_param:
+            selected_db = company_param.replace('_APP', '').replace('-APP', '')
+        elif database_param:
+            selected_db = database_param.replace('_APP', '').replace('-APP', '')
+        else:
+            selected_db = request.session.get('selected_db', '4B-ORANG')
+        
+        logger.info(f"[SAP POLICIES] Fetching policies for database: {selected_db}")
+        
         sap_client = SAPClient(company_db_key=selected_db)
         policies = sap_client.get_all_policies()
 
@@ -2773,15 +2801,109 @@ def list_policies(request):
         return Response({
             "success": True,
             "count": len(policies),
+            "database": selected_db,
             "data": policies,
             "message": "Policies retrieved successfully"
         }, status=status.HTTP_200_OK)
 
+    except socket.timeout:
+        logger.error(f"[SAP POLICIES] Connection timeout - SAP server not responding")
+        return Response({
+            "success": False,
+            "error": "Connection Timeout",
+            "message": "SAP server is not responding. The server may be down or network connection is slow. Please contact your system administrator.",
+            "troubleshooting": [
+                "Check if SAP server is running",
+                "Verify network/VPN connection",
+                "Check firewall settings",
+                "Run diagnose_sap_policies.py for detailed diagnostics"
+            ]
+        }, status=status.HTTP_504_GATEWAY_TIMEOUT)
+    except socket.error as e:
+        error_msg = str(e)
+        logger.error(f"[SAP POLICIES] Network error: {error_msg}")
+        
+        # WinError 10060 is connection timeout
+        if "10060" in error_msg or "timed out" in error_msg.lower():
+            return Response({
+                "success": False,
+                "error": "Connection Timeout",
+                "message": "Cannot connect to SAP server. Connection timed out after 60 seconds.",
+                "details": error_msg,
+                "troubleshooting": [
+                    "Verify SAP server is accessible",
+                    "Check network connectivity",
+                    "Ensure you are connected to the correct network/VPN",
+                    "Check if firewall is blocking the connection",
+                    "Run: python diagnose_sap_policies.py"
+                ]
+            }, status=status.HTTP_504_GATEWAY_TIMEOUT)
+        else:
+            return Response({
+                "success": False,
+                "error": "Network Error",
+                "message": f"Network error while connecting to SAP: {error_msg}",
+                "troubleshooting": [
+                    "Check network connection",
+                    "Verify SAP server status",
+                    "Run: python diagnose_sap_policies.py"
+                ]
+            }, status=status.HTTP_502_BAD_GATEWAY)
     except Exception as e:
+        error_msg = str(e)
+        logger.error(f"[SAP POLICIES] Error: {error_msg}")
+        
+        # Check for cache refresh failure (SAP internal error)
+        if 'cache refresh failure' in error_msg.lower():
+            return Response({
+                "success": False,
+                "error": "SAP Cache Error",
+                "message": "SAP server cache refresh failed. This is usually temporary.",
+                "details": error_msg,
+                "troubleshooting": [
+                    "Wait a few seconds and try again",
+                    "Try with database parameter: ?database=4B-BIO or ?database=4B-ORANG",
+                    "Clear your browser cache/cookies",
+                    "Check if SAP server is under heavy load",
+                    "Contact SAP administrator if issue persists"
+                ],
+                "retry_suggestion": "Try: /api/sap/policies/?database=4B-BIO"
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        # Check if it's a timeout-related error
+        if any(keyword in error_msg.lower() for keyword in ['timeout', '10060', 'timed out']):
+            return Response({
+                "success": False,
+                "error": "Connection Timeout",
+                "message": "SAP server connection timed out. Server may be slow or unreachable.",
+                "details": error_msg,
+                "troubleshooting": [
+                    "Check SAP server status",
+                    "Verify network connection",
+                    "Run diagnostic: python diagnose_sap_policies.py"
+                ]
+            }, status=status.HTTP_504_GATEWAY_TIMEOUT)
+        
+        # Check for session/authentication errors
+        if any(keyword in error_msg.lower() for keyword in ['invalid session', 'authentication', 'unauthorized', 'session timeout']):
+            return Response({
+                "success": False,
+                "error": "SAP Authentication Error",
+                "message": "SAP authentication failed or session expired.",
+                "details": error_msg,
+                "troubleshooting": [
+                    "Check SAP credentials in settings",
+                    "Verify SAP user permissions",
+                    "Run diagnostic: python diagnose_sap_policies.py"
+                ]
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
         return Response({
             "success": False,
             "error": "SAP integration failed",
-            "message": str(e)
+            "message": error_msg,
+            "selected_database": selected_db,
+            "troubleshooting": "Run: python diagnose_sap_policies.py for detailed diagnostics"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2830,13 +2952,34 @@ def list_db_policies(request):
 @swagger_auto_schema(tags=['SAP'], 
     method='post',
     operation_description="Sync policies from SAP Projects (UDF U_pol) into the database.",
+    manual_parameters=[
+        openapi.Parameter(
+            'company',
+            openapi.IN_QUERY,
+            description="Optional: Company database key",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['4B-BIO_APP', '4B-ORANG_APP'],
+            default='4B-ORANG_APP'
+        )
+    ],
     responses={
         200: openapi.Response(description="Sync completed")
     }
 )
 @api_view(['POST'])
 def sync_policies(request):
-    selected_db = request.session.get('selected_db', '4B-BIO')
+    # Priority: 1. company parameter, 2. database parameter (backward compatibility), 3. Session, 4. Default
+    company_param = request.GET.get('company') or request.query_params.get('company')
+    database_param = request.GET.get('database') or request.query_params.get('database')
+    
+    # Normalize company parameter (remove _APP suffix for SAPClient)
+    if company_param:
+        selected_db = company_param.replace('_APP', '').replace('-APP', '')
+    elif database_param:
+        selected_db = database_param.replace('_APP', '').replace('-APP', '')
+    else:
+        selected_db = request.session.get('selected_db', '4B-ORANG')
     client = SAPClient(company_db_key=selected_db)
     try:
         rows = client.get_all_policies()
@@ -4696,6 +4839,7 @@ def project_balance_api(request):
     operation_summary="Customer addresses",
     operation_description="Return default billing addresses. When card_code is empty or show_all=true, returns all BPs' default billing addresses. Otherwise returns specific BP address.",
     manual_parameters=[
+        openapi.Parameter('company', openapi.IN_QUERY, description="Optional: Company database key", type=openapi.TYPE_STRING, required=False, enum=['4B-BIO_APP', '4B-ORANG_APP'], default='4B-ORANG_APP'),
         openapi.Parameter('card_code', openapi.IN_QUERY, description="Business Partner code (optional)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('show_all', openapi.IN_QUERY, description="Show all addresses", type=openapi.TYPE_BOOLEAN, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
@@ -4966,6 +5110,7 @@ def cwl_full_api(request):
     operation_summary="Customer LOV",
     operation_description="List customers with optional search and pagination.",
     manual_parameters=[
+        openapi.Parameter('company', openapi.IN_QUERY, description="Optional: Company database key", type=openapi.TYPE_STRING, required=False, enum=['4B-BIO_APP', '4B-ORANG_APP'], default='4B-ORANG_APP'),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search CardCode or CardName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),

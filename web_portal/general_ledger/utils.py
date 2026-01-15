@@ -64,15 +64,17 @@ def get_schema_from_company_key(company_db_key: Optional[str] = None) -> str:
     Get HANA schema name from company database key.
     
     Args:
-        company_db_key: Company key like '4B-BIO' or '4B-ORANG'
+        company_db_key: Company key like '4B-BIO', '4B-ORANG' or with _APP suffix
     
     Returns:
         Schema name like '4B-BIO_APP' or '4B-ORANG_APP'
     """
-    # Default mapping
+    # Default mapping (accepts both with and without _APP suffix)
     schema_mapping = {
         '4B-BIO': '4B-BIO_APP',
+        '4B-BIO_APP': '4B-BIO_APP',
         '4B-ORANG': '4B-ORANG_APP',
+        '4B-ORANG_APP': '4B-ORANG_APP',
     }
     
     # Try to get from Django settings first

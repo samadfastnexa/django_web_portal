@@ -105,48 +105,103 @@ class Territory(models.Model):
         verbose_name_plural = "Territories"
 
 class Dealer(models.Model):
+    FILER_CHOICES = [
+        ('01', 'Filer'),
+        ('02', 'Non-Filer'),
+    ]
+    
+    CARD_TYPE_CHOICES = [
+        ('cCustomer', 'Customer'),
+        ('cSupplier', 'Supplier'),
+        ('cLid', 'Lead'),
+    ]
+    
+    VAT_LIABLE_CHOICES = [
+        ('vLiable', 'Liable'),
+        ('vExempted', 'Exempted'),
+    ]
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='dealer',               # ← already different, OK
+        related_name='dealer',
         null=True,
         blank=True
     )
     card_code = models.CharField(max_length=20, unique=True, blank=True, null=True)
-    name = models.CharField(max_length=100)
+    
+    # ==================== Basic Information ====================
+    name = models.CharField(max_length=100, help_text="Contact Person Name / Owner Name")
+    business_name = models.CharField(max_length=150, blank=True, null=True, help_text="Business/Company Name (SAP CardName)")
+    
     cnic_number = models.CharField(
         max_length=15,
         unique=True,
         validators=[cnic_validator]
     )
-    # email = models.EmailField(validators=[email_validator])
+    
+    # ==================== Contact Information ====================
+    email = models.EmailField(max_length=100, blank=True, null=True, validators=[email_validator])
     contact_number = models.CharField(
         max_length=20,
         unique=True,
-        validators=[phone_number_validator]
+        validators=[phone_number_validator],
+        help_text="Primary Phone Number"
     )
+    mobile_phone = models.CharField(max_length=20, blank=True, null=True, help_text="Mobile/WhatsApp Number")
 
+    # ==================== Location ====================
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='dealers')
     region = models.ForeignKey(Region, on_delete=models.SET_NULL, null=True, blank=True)
     zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True)
     territory = models.ForeignKey(Territory, on_delete=models.SET_NULL, null=True, blank=True)
 
     address = models.TextField()
-    remarks = models.TextField(blank=True, null=True)
-
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    country = models.CharField(max_length=2, default='PK', blank=True, null=True, help_text="Country Code")
+    
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    
+    remarks = models.TextField(blank=True, null=True)
 
+    # ==================== Tax & Legal Information ====================
+    federal_tax_id = models.CharField(max_length=50, blank=True, null=True, help_text="NTN Number")
+    additional_id = models.CharField(max_length=50, blank=True, null=True, help_text="Additional Tax ID")
+    unified_federal_tax_id = models.CharField(max_length=50, blank=True, null=True, help_text="Unified Tax ID")
+    filer_status = models.CharField(max_length=2, choices=FILER_CHOICES, blank=True, null=True)
+
+    # ==================== License Information ====================
+    govt_license_number = models.CharField(max_length=50, blank=True, null=True, help_text="Government License Number (U_lic)")
+    license_expiry = models.DateField(blank=True, null=True, help_text="License Expiry Date (U_gov)")
+    u_leg = models.CharField(max_length=50, default='17-5349', blank=True, null=True, help_text="Legal Reference")
+
+    # ==================== SAP Configuration ====================
+    sap_series = models.IntegerField(default=70, blank=True, null=True, help_text="BP Series Number")
+    card_type = models.CharField(max_length=10, choices=CARD_TYPE_CHOICES, default='cCustomer', blank=True, null=True)
+    group_code = models.IntegerField(default=100, blank=True, null=True, help_text="Customer Group")
+    debitor_account = models.CharField(max_length=50, default='A020301001', blank=True, null=True)
+    vat_group = models.CharField(max_length=10, default='AT1', blank=True, null=True)
+    vat_liable = models.CharField(max_length=10, choices=VAT_LIABLE_CHOICES, default='vLiable', blank=True, null=True)
+    whatsapp_messages = models.CharField(max_length=3, default='YES', blank=True, null=True)
+    
+    # ==================== Financial ====================
+    minimum_investment = models.PositiveIntegerField(blank=True, null=True, help_text="Minimum investment amount")
+
+    # ==================== System Fields ====================
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='dealers_created'      # ← NEW
+        related_name='dealers_created'
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
+    
+    # ==================== Documents ====================
     cnic_front_image = models.ImageField(
         upload_to='dealers/cnic_front/',
         validators=[FileExtensionValidator(['jpg', 'jpeg', 'png'])],
@@ -395,6 +450,14 @@ class SalesOrder(models.Model):
     )
 
     # Existing fields
+    portal_order_id = models.CharField(
+        max_length=20,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+        help_text="Unique portal order ID (e.g., SO001, SA002) - Not sent to SAP"
+    )
     staff = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -447,7 +510,32 @@ class SalesOrder(models.Model):
     is_posted_to_sap = models.BooleanField(default=False, help_text="Posted to SAP successfully")
     posted_at = models.DateTimeField(null=True, blank=True, help_text="When posted to SAP")
 
+    def save(self, *args, **kwargs):
+        """Generate unique portal_order_id before saving"""
+        if not self.portal_order_id:
+            # Generate portal ID based on status
+            prefix = 'SO' if self.status == 'pending' else 'SA'
+            
+            # Get last order with this prefix
+            last_order = SalesOrder.objects.filter(
+                portal_order_id__startswith=prefix
+            ).order_by('-portal_order_id').first()
+            
+            if last_order and last_order.portal_order_id:
+                # Extract number and increment
+                last_num = int(last_order.portal_order_id[2:])
+                new_num = last_num + 1
+            else:
+                new_num = 1
+            
+            # Generate new ID with zero-padded number
+            self.portal_order_id = f"{prefix}{new_num:03d}"
+        
+        super().save(*args, **kwargs)
+
     def __str__(self):
+        if self.portal_order_id:
+            return f"{self.portal_order_id} - {self.card_name} - {self.status}"
         return f"Order #{self.id} - {self.card_name} - {self.status}"
     
     class Meta:

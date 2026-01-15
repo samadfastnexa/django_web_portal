@@ -40,6 +40,7 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
     filterset_fields = ["fsm_name", "region", "zone", "territory", "location", "presence_of_zm", "presence_of_rsm", "staff"]
     search_fields = ["fsm_name", "region__name", "zone__name", "territory__name", "location", "key_topics_discussed"]
     ordering_fields = ["date", "fsm_name", "region__name", "zone__name", "territory__name", "total_attendees"]
+    ordering = ["-id"]
     common_parameters = [
         openapi.Parameter('fsm_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='Field Sales Manager name'),
         openapi.Parameter('territory_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Territory ID'),
@@ -233,6 +234,7 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
     serializer_class = SalesOrderSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [IsAuthenticated, HasRolePermission]
+    ordering = ['-id']
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -248,11 +250,25 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                     'application/json': [
                         {
                             'id': 1,
+                            'portal_order_id': 'SO001',
                             'schedule': 1,
                             'staff': 1,
                             'dealer': 1,
                             'status': 'pending',
+                            'card_code': 'C001',
+                            'card_name': 'ABC Company',
                             'created_at': '2024-01-15T10:30:00Z'
+                        },
+                        {
+                            'id': 2,
+                            'portal_order_id': 'SA002',
+                            'schedule': 2,
+                            'staff': 1,
+                            'dealer': 2,
+                            'status': 'entertained',
+                            'card_code': 'C002',
+                            'card_name': 'XYZ Company',
+                            'created_at': '2024-01-16T14:20:00Z'
                         }
                     ]
                 }
@@ -271,10 +287,13 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                 examples={
                     'application/json': {
                         'id': 1,
+                        'portal_order_id': 'SO001',
                         'schedule': 1,
                         'staff': 1,
                         'dealer': 1,
                         'status': 'entertained',
+                        'card_code': 'C001',
+                        'card_name': 'ABC Company',
                         'created_at': '2024-01-15T10:30:00Z'
                     }
                 }
@@ -373,11 +392,13 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                 examples={
                     'application/json': {
                         'id': 1,
+                        'portal_order_id': 'SO001',
                         'staff': 1,
                         'dealer': 2,
                         'status': 'pending',
                         'card_code': 'C20000',
                         'card_name': 'ABC Traders',
+                        'created_at': '2024-01-15T10:30:00Z',
                         'document_lines': [
                             {
                                 'id': 1,
@@ -586,6 +607,7 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
 class DealerViewSet(viewsets.ModelViewSet):
     queryset = Dealer.objects.all()
     serializer_class = DealerSerializer
+    ordering = ['-id']
 
     @swagger_auto_schema(
         operation_description="List all dealers with their user credentials",
@@ -642,6 +664,7 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]  # Accept form-data
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status', 'filer_status', 'card_type', 'is_posted_to_sap', 'requested_by']
+    ordering = ['-id']
 
     def get_queryset(self):
         user = self.request.user

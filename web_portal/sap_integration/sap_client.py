@@ -225,14 +225,14 @@ class SAPClient:
             # Use HTTP without SSL
             return http.client.HTTPConnection(
                 self.host, self.port,
-                timeout=30
+                timeout=60
             )
         else:
             # Use HTTPS with SSL
             return http.client.HTTPSConnection(
                 self.host, self.port,
                 context=self.ssl_context,
-                timeout=30
+                timeout=60
             )
 
     def _close_connection(self, conn):
