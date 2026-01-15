@@ -918,6 +918,8 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         ' T0."ItemName", '
         ' T0."SalPackMsr", '
         ' T0."InvntryUom", '
+        ' T0."U_GenericName", '
+        ' T0."U_BrandName", '
         ' PI."FileName" AS "Product_Image_Name", '
         ' PI."FileExt" AS "Product_Image_Ext", '
         ' PU."FileName" AS "Product_Urdu_Name", '
@@ -981,14 +983,22 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         # Product Image URL (from attachment Line 0)
         img_name = row.get('Product_Image_Name')
         img_ext = row.get('Product_Image_Ext')
-        if img_name and img_ext:
-            row['product_image_url'] = f'/media/product_images/{folder_name}/{img_name}.{img_ext}'
-        else:
-            row['product_image_url'] = None
         
-        # Product Description Urdu URL (from attachment Line 1)
+        # Product Description Urdu (from attachment Line 1)
         urdu_name = row.get('Product_Urdu_Name')
         urdu_ext = row.get('Product_Urdu_Ext')
+        
+        # Primary: Use Line 0 attachment if available
+        if img_name and img_ext:
+            row['product_image_url'] = f'/media/product_images/{folder_name}/{img_name}.{img_ext}'
+        # Fallback 1: Use Line 1 (Urdu) attachment as primary image if Line 0 is missing
+        elif urdu_name and urdu_ext:
+            row['product_image_url'] = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
+        else:
+            # No attachments found
+            row['product_image_url'] = None
+        
+        # Urdu URL: Use Line 1 attachment
         if urdu_name and urdu_ext:
             row['product_description_urdu_url'] = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
         else:

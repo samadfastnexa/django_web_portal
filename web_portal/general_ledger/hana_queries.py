@@ -2,8 +2,10 @@
 HANA SQL queries for SAP B1 General Ledger Reports
 """
 import logging
+import re
 from typing import Optional, List, Dict, Any
 from decimal import Decimal
+from .transaction_types import get_transaction_type_name
 
 logger = logging.getLogger("general_ledger")
 
@@ -268,7 +270,28 @@ def general_ledger_report(
     if offset:
         sql += f' OFFSET {int(offset)}'
     
-    return _fetch_all(db, sql, tuple(params))
+    # Fetch results
+    results = _fetch_all(db, sql, tuple(params))
+    
+    # Post-process results to add transaction type name and extract project from description
+    for row in results:
+        # Add transaction type name
+        trans_type_code = row.get('TransType')
+        row['TransTypeName'] = get_transaction_type_name(trans_type_code)
+        
+        # Extract project from description if it contains "PR: xxxxx | IN: xxxxxx" pattern
+        description = row.get('Description', '')
+        if description and 'PR:' in description:
+            # Pattern: "PR: 232687 | IN: 5700817"
+            match = re.search(r'PR:\s*(\d+)', description)
+            if match:
+                row['ExtractedProject'] = match.group(1)
+            else:
+                row['ExtractedProject'] = None
+        else:
+            row['ExtractedProject'] = None
+    
+    return results
 
 
 def general_ledger_count(

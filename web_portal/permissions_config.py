@@ -5,13 +5,44 @@ CUSTOM_PERMISSIONS = {
     # SAP Integration / HANA Connect
     'sap_integration': {
         'HanaConnect': [
+            # Dashboard & General Access
             ('access_hana_connect', 'Can access HANA Connect dashboard'),
-            ('view_policy_balance', 'Can view policy balance reports'),
-            ('view_customer_data', 'Can view customer data'),
-            ('view_item_master', 'Can view item master list'),
-            ('view_sales_reports', 'Can view sales vs achievement reports'),
-            ('sync_policies', 'Can sync policies from SAP'),
             ('post_to_sap', 'Can post data to SAP'),
+            ('sync_policies', 'Can sync policies from SAP'),
+            
+            # Sales VS Achievement Reports
+            ('view_sales_vs_achievement_geo', 'Can view Sales VS Achievement (Geo Inv)'),
+            ('view_sales_vs_achievement_territory', 'Can view Sales VS Achievement (Territory)'),
+            ('view_sales_vs_achievement_profit', 'Can view Sales VS Achievement (Profit)'),
+            
+            # Product & Policy
+            ('view_products_catalog', 'Can view Products Catalog'),
+            ('view_policy_balance', 'Can view Policy Wise Customer Balance'),
+            ('view_policy_link', 'Can view and link policies'),
+            
+            # Territory & Organizational
+            ('view_all_territories', 'Can view All Territories'),
+            ('view_cwl', 'Can view CWL (Customer Watch List)'),
+            
+            # Sales Orders
+            ('view_sales_orders', 'Can view Sales Orders'),
+            ('create_sales_orders', 'Can create Sales Orders'),
+            ('edit_sales_orders', 'Can edit Sales Orders'),
+            
+            # Master Data (List of Values)
+            ('view_customer_list', 'Can view Customer List (LOV)'),
+            ('view_item_master', 'Can view Item Master List'),
+            ('view_project_list', 'Can view Project List'),
+            ('view_crop_master', 'Can view Crop Master List'),
+            ('view_tax_codes', 'Can view Sales Tax Codes'),
+            
+            # Customer & Contact Details
+            ('view_customer_address', 'Can view Customer Address'),
+            ('view_contact_person', 'Can view Contact Person Name'),
+            ('view_child_customers', 'Can view Child Customers'),
+            
+            # Item & Warehouse
+            ('view_warehouse_for_item', 'Can view Warehouse for Item'),
         ],
         'Policy': [
             ('manage_policies', 'Can manage policy records'),

@@ -6547,209 +6547,154 @@ def disease_detail_api(request, disease_id=None):
 )
 @api_view(['GET'])
 def recommended_products_api(request):
-    """Get recommended products for a disease - queries directly from SAP @ODID and OITM tables"""
+    """Get recommended products for a disease with images from HANA catalog"""
     try:
-        from hdbcli import dbapi
-        
         disease_id = request.GET.get('disease_id')
         item_code = request.GET.get('item_code', '').strip()
         disease_name = request.GET.get('disease_name', '').strip()
+        include_inactive = request.GET.get('include_inactive', 'false').lower() in ['true', '1', 'yes']
         
-        # Get database parameter
-        hana_schema = get_hana_schema_from_request(request)
-        if not hana_schema:
+        # Find disease
+        disease = None
+        if disease_id:
+            try:
+                disease = DiseaseIdentification.objects.get(pk=disease_id)
+            except DiseaseIdentification.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': f'Disease with ID {disease_id} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        elif item_code:
+            try:
+                disease = DiseaseIdentification.objects.get(item_code=item_code)
+            except DiseaseIdentification.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': f'Disease with item code {item_code} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        elif disease_name:
+            # Search in both item_code and item_name fields
+            from django.db.models import Q
+            try:
+                disease = DiseaseIdentification.objects.get(
+                    Q(disease_name__iexact=disease_name) | 
+                    Q(item_code__iexact=disease_name) | 
+                    Q(item_name__iexact=disease_name),
+                    is_active=True
+                )
+            except DiseaseIdentification.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': f'Disease with name "{disease_name}" not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            except DiseaseIdentification.MultipleObjectsReturned:
+                # If multiple matches, return the first active one
+                disease = DiseaseIdentification.objects.filter(
+                    Q(disease_name__iexact=disease_name) | 
+                    Q(item_code__iexact=disease_name) | 
+                    Q(item_name__iexact=disease_name),
+                    is_active=True
+                ).first()
+                if not disease:
+                    return Response({
+                        'success': False,
+                        'error': f'Multiple diseases found with name "{disease_name}". Please use item_code or disease_id for specific match.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+        else:
             return Response({
                 'success': False,
-                'error': 'Database parameter is required (e.g., database=4B-BIO_APP or database=4B-ORANG_APP)'
+                'error': 'Either disease_id, item_code, or disease_name parameter is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Load environment variables
-        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
-        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
-        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
-        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+        # Get recommended products
+        queryset = disease.recommended_products.all()
+        if not include_inactive:
+            queryset = queryset.filter(is_active=True)
         
-        cfg = {
-            'host': os.environ.get('HANA_HOST') or '',
-            'port': os.environ.get('HANA_PORT') or '',
-            'user': os.environ.get('HANA_USER') or '',
-            'encrypt': os.environ.get('HANA_ENCRYPT') or '',
-            'schema': hana_schema
-        }
-        
-        pwd = os.environ.get('HANA_PASSWORD', '')
-        kwargs = {
-            'address': cfg['host'],
-            'port': int(cfg['port']),
-            'user': cfg['user'],
-            'password': pwd
-        }
-        
-        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
-            kwargs['encrypt'] = True
-            kwargs['sslValidateCertificate'] = False
-        
-        conn = dbapi.connect(**kwargs)
-        
+        # Fetch product details from HANA catalog
+        product_catalog = {}
         try:
-            # Set schema
-            cur = conn.cursor()
-            cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
-            cur.close()
+            # Load environment variables
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
             
-            # Query @ODID table for disease
-            disease_info = None
-            product_item_codes = []
+            # Get database parameter
+            hana_schema = get_hana_schema_from_request(request)
             
-            if item_code:
-                # Query by specific item code
-                cur = conn.cursor()
-                cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Description", "U_Disease" '
-                    'FROM "@ODID" WHERE "U_ItemCode" = ?',
-                    (item_code,)
-                )
-                row = cur.fetchone()
-                if row:
-                    disease_info = {
-                        'doc_entry': row[0],
-                        'item_code': row[1],
-                        'item_name': row[2],
-                        'description': row[3],
-                        'disease_name': row[4]
-                    }
-                    product_item_codes = [row[1]]
-                cur.close()
-            elif disease_name:
-                # Query by disease name - can return multiple item codes for same disease
-                cur = conn.cursor()
-                cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Description", "U_Disease" '
-                    'FROM "@ODID" WHERE UPPER("U_Disease") = ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") = ?',
-                    (disease_name.upper(), disease_name.upper(), disease_name.upper())
-                )
-                rows = cur.fetchall()
-                if rows:
-                    # Use first row for disease info
-                    disease_info = {
-                        'doc_entry': rows[0][0],
-                        'item_code': rows[0][1],
-                        'item_name': rows[0][2],
-                        'description': rows[0][3],
-                        'disease_name': rows[0][4]
-                    }
-                    # Collect ALL item codes for this disease
-                    product_item_codes = [row[1] for row in rows if row[1]]
-                cur.close()
-            else:
-                conn.close()
-                return Response({
-                    'success': False,
-                    'error': 'Either item_code or disease_name parameter is required'
-                }, status=status.HTTP_400_BAD_REQUEST)
+            # Get product item codes to fetch
+            product_codes = [p.product_item_code for p in queryset if p.product_item_code]
             
-            if not disease_info:
-                conn.close()
-                return Response({
-                    'success': False,
-                    'error': f'Disease not found in SAP @ODID table'
-                }, status=status.HTTP_404_NOT_FOUND)
-            
-            # Fetch product details from OITM for all item codes
-            products_data = []
-            
-            if product_item_codes:
-                # Extract database folder name for images
-                db_name = hana_schema.upper()
-                if '4B-BIO' in db_name:
-                    folder_name = 'bio'
-                elif '4B-ORANG' in db_name:
-                    folder_name = 'orange'
-                else:
-                    folder_name = 'default'
+            if product_codes and hana_schema:
+                from hdbcli import dbapi
                 
-                for idx, prod_code in enumerate(product_item_codes, 1):
-                    try:
+                cfg = {
+                    'host': os.environ.get('HANA_HOST') or '',
+                    'port': os.environ.get('HANA_PORT') or '',
+                    'user': os.environ.get('HANA_USER') or '',
+                    'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+                    'schema': hana_schema
+                }
+                
+                pwd = os.environ.get('HANA_PASSWORD', '')
+                kwargs = {
+                    'address': cfg['host'],
+                    'port': int(cfg['port']),
+                    'user': cfg['user'],
+                    'password': pwd
+                }
+                
+                if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+                    kwargs['encrypt'] = True
+                    kwargs['sslValidateCertificate'] = False  # Skip SSL validation
+                
+                conn = dbapi.connect(**kwargs)
+                
+                try:
+                    # Set schema
+                    if cfg['schema']:
                         cur = conn.cursor()
-                        sql = '''
-                        SELECT 
-                            T0."ItemCode",
-                            T0."ItemName",
-                            T1."ItmsGrpNam",
-                            T0."SalPackMsr",
-                            T0."InvntryUom",
-                            T0."U_GenericName",
-                            T0."U_BrandName",
-                            PI."FileName" AS "Image_File",
-                            PI."FileExt" AS "Image_Ext",
-                            PU."FileName" AS "Urdu_File",
-                            PU."FileExt" AS "Urdu_Ext"
-                        FROM OITM T0
-                        INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"
-                        LEFT JOIN ATC1 PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."Line" = 0
-                        LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."Line" = 1
-                        WHERE T0."ItemCode" = ?
-                        '''
-                        cur.execute(sql, (prod_code,))
-                        row = cur.fetchone()
-                        
-                        if row:
-                            # Extract product name - use only the part before " - " if exists
-                            full_product_name = row[1].strip() if row[1] else prod_code
-                            # Split by " - " and take first part (e.g., "Map" from "Map - 25-Kgs.")
-                            product_name = full_product_name.split(' - ')[0].strip() if ' - ' in full_product_name else full_product_name
-                            
-                            # Build image URLs
-                            img_file = row[7]
-                            img_ext = row[8]
-                            if img_file and img_ext:
-                                product_image_url = f'/media/{folder_name}/{img_file}.{img_ext}'
-                            else:
-                                # Fallback to product name-based naming (e.g., Badar.jpg, Haryali.jpg, Map.jpg)
-                                product_image_url = f'/media/{folder_name}/{product_name}.jpg'
-                            
-                            urdu_file = row[9]
-                            urdu_ext = row[10]
-                            if urdu_file and urdu_ext:
-                                urdu_url = f'/media/{folder_name}/{urdu_file}.{urdu_ext}'
-                            else:
-                                urdu_url = f'/media/{folder_name}/{product_name}-urdu.jpg'
-                            
-                            product = {
-                                'priority': idx,
-                                'product_item_code': row[0],
-                                'product_name': row[1],
-                                'item_group_name': row[2],
-                                'unit_of_measure': row[3] or row[4],
-                                'generic_name': row[5],
-                                'brand_name': row[6],
-                                'product_image_url': product_image_url,
-                                'product_description_urdu_url': urdu_url,
-                                # Additional fields
-                                'dosage': f'As per product label',
-                                'application_method': 'Follow product instructions',
-                                'timing': 'At first symptoms or preventively',
-                            }
-                            products_data.append(product)
-                        
+                        cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
                         cur.close()
-                        
-                    except Exception as e:
-                        logger.warning(f"Could not fetch product {prod_code}: {str(e)}")
-                        continue
-            
-            return Response({
-                'success': True,
-                'disease_name': disease_info['disease_name'],
-                'disease_item_code': disease_info['item_code'],
-                'description': disease_info['description'],
-                'database': hana_schema,
-                'count': len(products_data),
-                'data': products_data
-            }, status=status.HTTP_200_OK)
-            
-        finally:
-            conn.close()
+                    
+                    # Fetch product catalog for these specific item codes
+                    # Query HANA for each product code individually
+                    for product_code in product_codes:
+                        try:
+                            catalog_items = products_catalog(conn, cfg['schema'], search=product_code)
+                            for item in catalog_items:
+                                if item.get('ItemCode') == product_code:
+                                    product_catalog[product_code] = item
+                                    logger.info(f"Found product in HANA: {product_code} - {item.get('ItemName')}")
+                                    break
+                        except Exception as e:
+                            logger.warning(f"Could not fetch product {product_code} from HANA: {str(e)}")
+                    
+                    logger.info(f"Product catalog lookup: {len(product_catalog)} products found out of {len(product_codes)} requested")
+                    
+                finally:
+                    conn.close()
+                    
+        except Exception as e:
+            logger.warning(f"[RECOMMENDED_PRODUCTS] Could not fetch product catalog: {str(e)}")
+            # Continue without product catalog data
+        
+        # Serialize with product catalog context
+        serializer = RecommendedProductSerializer(
+            queryset, 
+            many=True,
+            context={'product_catalog': product_catalog}
+        )
+        
+        return Response({
+            'success': True,
+            'disease_name': disease.disease_name,
+            'disease_item_code': disease.item_code,
+            'database': hana_schema if 'hana_schema' in locals() else None,
+            'count': queryset.count(),
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
         
     except Exception as e:
         logger.error(f"[RECOMMENDED_PRODUCTS] Error: {str(e)}")

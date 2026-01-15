@@ -593,10 +593,10 @@ def export_ledger_excel_api(request):
             ws.cell(row=row_num, column=3, value=sanitize_for_excel(txn.get('Description', '')))  # Product Name
             ws.cell(row=row_num, column=4, value=txn.get('Qty', 0))  # Qty
             ws.cell(row=row_num, column=5, value=txn.get('UnitPrice', 0))  # Price
-            ws.cell(row=row_num, column=6, value=sanitize_for_excel(txn.get('ProjectCode', '')))  # Policy
+            ws.cell(row=row_num, column=6, value=sanitize_for_excel(txn.get('ExtractedProject') or txn.get('ProjectCode', '')))  # Policy/Project
             ws.cell(row=row_num, column=7, value=txn.get('Discount', 0))  # Discount
             ws.cell(row=row_num, column=8, value=txn.get('Amount', 0))  # Sale Value
-            ws.cell(row=row_num, column=9, value=sanitize_for_excel(txn.get('TransType', '')))  # Type
+            ws.cell(row=row_num, column=9, value=sanitize_for_excel(txn.get('TransTypeName') or txn.get('TransType', '')))  # Type Name
             ws.cell(row=row_num, column=10, value=debit if debit > 0 else 0)  # Debit
             ws.cell(row=row_num, column=11, value=credit if credit > 0 else 0)  # Credit
             ws.cell(row=row_num, column=12, value=running_balance)  # Balance
@@ -843,12 +843,12 @@ def export_ledger_csv(request):
                 txn.get('AccountName', ''),
                 txn.get('BPCode', ''),
                 txn.get('BPName', ''),
-                txn.get('TransType', ''),
+                txn.get('TransTypeName') or txn.get('TransType', ''),
                 txn.get('Reference1', ''),
                 txn.get('Description', ''),
                 txn.get('Debit', 0),
                 txn.get('Credit', 0),
-                txn.get('ProjectCode', ''),
+                txn.get('ExtractedProject') or txn.get('ProjectCode', ''),
             ])
         
         return response
@@ -1096,7 +1096,7 @@ def export_ledger_pdf_api(request):
                 str(txn.get('TransId', '')),  # VNo
                 posting_date,  # VDate
                 narration_para,  # Narration (Policy Name/Project)
-                str(txn.get('TransType', '')),  # Type
+                str(txn.get('TransTypeName') or txn.get('TransType', '')),  # Type Name
                 f"{debit:.2f}" if debit > 0 else '',  # Debit
                 f"{credit:.2f}" if credit > 0 else '',  # Credit
                 f"{running_balance:.2f}",  # Balance
@@ -1328,7 +1328,7 @@ def export_ledger_pdf(request):
                 str(txn.get('TransId', '')),  # VNo
                 posting_date,  # VDate
                 narration_para,  # Narration (Policy Name/Project)
-                str(txn.get('TransType', '')),  # Type
+                str(txn.get('TransTypeName') or txn.get('TransType', '')),  # Type Name
                 f"{debit:.2f}" if debit > 0 else '',  # Debit
                 f"{credit:.2f}" if credit > 0 else '',  # Credit
                 f"{running_balance:.2f}",  # Balance

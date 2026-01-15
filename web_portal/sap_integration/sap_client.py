@@ -710,6 +710,21 @@ class SAPClient:
             path = f"{self.base_path}/{resource}"
         return self._make_request("POST", path, body)
 
+    def get(self, resource: str, query_params: str = None):
+        """Generic GET helper for Service Layer resources.
+        Example: get('U_ODID') -> GET /b1s/v2/U_ODID
+        """
+        if not resource or not isinstance(resource, str):
+            raise ValueError("resource must be a non-empty string")
+        # Allow callers to pass either 'U_ODID' or '/U_ODID'
+        if resource.startswith('/'):
+            path = f"{self.base_path}{resource}"
+        else:
+            path = f"{self.base_path}/{resource}"
+        if query_params:
+            path += f"?{query_params}"
+        return self._make_request("GET", path)
+
     def get_dealer_bp_info(self, dealer_id: int):
         try:
             dealer = Dealer.objects.get(id=dealer_id)
@@ -725,3 +740,94 @@ class SAPClient:
             }
         except Dealer.DoesNotExist:
             raise ValueError(f"Dealer with ID {dealer_id} not found")
+
+    def get_diseases(self):
+        """
+        Fetch all diseases from SAP @ODID user-defined table via HANA connection.
+        Returns list of disease dictionaries.
+        """
+        try:
+            from hdbcli import dbapi
+            from .hana_connect import _load_env_file as _hana_load_env_file
+            import os
+            from pathlib import Path
+            from django.conf import settings
+            
+            # Load HANA environment variables
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            
+            # Map company_db to HANA schema
+            schema_map = {
+                '4B-BIO': '4B-BIO_APP',
+                '4B-ORANG': '4B-ORANG_APP',
+                '4B-BIO_APP': '4B-BIO_APP',
+                '4B-ORANG_APP': '4B-ORANG_APP',
+            }
+            schema = schema_map.get(self.company_db, self.company_db if '_APP' in self.company_db else self.company_db + '_APP')
+            
+            # Connect to HANA
+            cfg = {
+                'host': os.environ.get('HANA_HOST', ''),
+                'port': os.environ.get('HANA_PORT', ''),
+                'user': os.environ.get('HANA_USER', ''),
+                'encrypt': os.environ.get('HANA_ENCRYPT', ''),
+                'schema': schema
+            }
+            
+            pwd = os.environ.get('HANA_PASSWORD', '')
+            kwargs = {
+                'address': cfg['host'],
+                'port': int(cfg['port']),
+                'user': cfg['user'],
+                'password': pwd
+            }
+            
+            if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+                kwargs['encrypt'] = True
+                kwargs['sslValidateCertificate'] = False
+            
+            conn = dbapi.connect(**kwargs)
+            
+            try:
+                # Set schema
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                
+                # Query @ODID table
+                sql = '''
+                SELECT 
+                    "DocEntry",
+                    "U_ItemCode",
+                    "U_ItemName",
+                    "U_Description",
+                    "U_Disease"
+                FROM "@ODID"
+                '''
+                
+                cur.execute(sql)
+                rows = cur.fetchall()
+                
+                diseases = []
+                for row in rows:
+                    disease = {
+                        'doc_entry': row[0] or '',
+                        'item_code': row[1] or '',
+                        'item_name': row[2] or '',
+                        'description': row[3] or '',
+                        'disease_name': row[4] or '',
+                    }
+                    diseases.append(disease)
+                
+                cur.close()
+                return diseases
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            print(f"Error fetching diseases from SAP: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
