@@ -153,7 +153,7 @@ class FlexibleListField(serializers.ListField):
 
 class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
     farmer_id = serializers.CharField(source='farmer.farmer_id', read_only=True)
-    farmer_full_name = serializers.CharField(source='farmer.full_name', read_only=True)
+    farmer_full_name = serializers.SerializerMethodField(read_only=True)
     farmer_primary_phone = serializers.CharField(source='farmer.primary_phone', read_only=True)
     farmer_district = serializers.CharField(source='farmer.district', read_only=True)
     farmer_village = serializers.CharField(source='farmer.village', read_only=True)
@@ -167,12 +167,18 @@ class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
         ]
         ref_name = 'MeetingAttendee'
     
+    def get_farmer_full_name(self, obj):
+        """Get full name from farmer.name or combine first_name and last_name"""
+        if obj.farmer:
+            return obj.farmer.name or f"{obj.farmer.first_name} {obj.farmer.last_name}".strip()
+        return None
+    
     def create(self, validated_data):
         """Auto-populate farmer_name and contact_number from farmer if farmer is provided"""
         farmer = validated_data.get('farmer')
         if farmer:
             if not validated_data.get('farmer_name'):
-                validated_data['farmer_name'] = farmer.name or farmer.full_name
+                validated_data['farmer_name'] = farmer.name or f"{farmer.first_name} {farmer.last_name}".strip()
             if not validated_data.get('contact_number'):
                 validated_data['contact_number'] = farmer.primary_phone or ''
         return super().create(validated_data)
@@ -182,7 +188,7 @@ class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
         farmer = validated_data.get('farmer')
         if farmer:
             if not validated_data.get('farmer_name'):
-                validated_data['farmer_name'] = farmer.name or farmer.full_name
+                validated_data['farmer_name'] = farmer.name or f"{farmer.first_name} {farmer.last_name}".strip()
             if not validated_data.get('contact_number'):
                 validated_data['contact_number'] = farmer.primary_phone or ''
         return super().update(instance, validated_data)
@@ -190,9 +196,18 @@ class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
 class MeetingScheduleSerializer(serializers.ModelSerializer):
     attendees = MeetingScheduleAttendanceSerializer(many=True, read_only=True, help_text="List of meeting attendees")
     fsm_name = serializers.CharField(required=False)
+    
+    # Write-only ID fields for creating/updating
+    company_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     region_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     zone_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     territory_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    
+    # Read-only fields for displaying names in responses
+    company_name = serializers.SerializerMethodField(read_only=True)
+    region_name = serializers.CharField(source='region.name', read_only=True)
+    zone_name = serializers.CharField(source='zone.name', read_only=True)
+    territory_name = serializers.CharField(source='territory.name', read_only=True)
 
     attendee_farmer_id = FlexibleListField(child=serializers.CharField(), write_only=True, required=False)
     attendee_name = serializers.ListField(child=serializers.CharField(), write_only=True, required=False)
@@ -204,7 +219,8 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         model = MeetingSchedule
         fields = [
             'id', 'staff', 'fsm_name',
-            'region_id', 'zone_id', 'territory_id',
+            'company_id', 'region_id', 'zone_id', 'territory_id',
+            'company_name', 'region_name', 'zone_name', 'territory_name',
             'date', 'location', 'total_attendees',
             'key_topics_discussed', 'presence_of_zm', 'presence_of_rsm',
             'feedback_from_attendees', 'suggestions_for_future',
@@ -212,12 +228,23 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
             'attendee_farmer_id', 'attendee_name', 'attendee_contact', 'attendee_acreage', 'attendee_crop',
         ]
         read_only_fields = ['staff']
+    
+    def get_company_name(self, obj):
+        """Get company name from region, zone, or territory"""
+        if obj.region and obj.region.company:
+            return obj.region.company.Company_name
+        elif obj.zone and obj.zone.company:
+            return obj.zone.company.Company_name
+        elif obj.territory and obj.territory.company:
+            return obj.territory.company.Company_name
+        return None
 
     def create(self, validated_data):
         import logging
         logger = logging.getLogger(__name__)
         
-        # Map FK IDs to actual relations if provided
+        # Map FK IDs to actual relations if provided (company_id is informational only)
+        company_id = validated_data.pop('company_id', None)  # Not stored directly, just removed from validated_data
         region_id = validated_data.pop('region_id', None)
         zone_id = validated_data.pop('zone_id', None)
         territory_id = validated_data.pop('territory_id', None)
@@ -329,6 +356,7 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         return schedule
 
     def update(self, instance, validated_data):
+        company_id = validated_data.pop('company_id', None)  # company_id is informational only
         region_id = validated_data.pop('region_id', None)
         zone_id = validated_data.pop('zone_id', None)
         territory_id = validated_data.pop('territory_id', None)

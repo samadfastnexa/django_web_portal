@@ -6,7 +6,7 @@ from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from .models import Meeting
 from .serializers import MeetingSerializer
-from rest_framework import viewsets, filters, status
+from rest_framework import viewsets, filters, status, serializers
 from .models import FieldDay
 from .serializers import FieldDaySerializer
 from FieldAdvisoryService.serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer,Company,Region,Zone,Territory
@@ -15,7 +15,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
     # queryset = Meeting.objects.all()  # Use .filter(is_active=True) after adding the field
     queryset = Meeting.objects.select_related(
         'region_fk', 'zone_fk', 'territory_fk', 'company_fk'
-    ).all()
+    ).all().order_by('-id')
     serializer_class = MeetingSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -31,7 +31,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
         'location',
         'key_topics_discussed',
     ]
-    ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees"]
+    ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees", "id"]
     ordering = ["-id"]
     
      # ---------------- Global Extra Data ----------------
@@ -595,3 +595,26 @@ class FieldDayViewSet(viewsets.ModelViewSet):
         field_day.is_active = False
         field_day.save()
         return Response({"detail": "Field Day deleted."}, status=status.HTTP_204_NO_CONTENT)
+
+# NOTE: This is a template for your products catalog serializer.
+# Apply this pattern to your actual serializer (not shown in the provided code).
+
+class ProductCatalogSerializer(serializers.ModelSerializer):
+    # ...existing code...
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Ensure these fields are never null
+        for field in [
+            "product_image_url",
+            "product_description_urdu_url",
+            "Product_Image_Name",
+            "Product_Image_Ext",
+            "Product_Urdu_Name",
+            "Product_Urdu_Ext"
+        ]:
+            if data.get(field) is None:
+                data[field] = ""
+        return data
+
+    # ...existing code...

@@ -979,6 +979,9 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     
     # Add image URLs to each product using actual filenames from SAP attachments
     # Images stored in media/product_images/{folder_name}/{FileName}.{FileExt}
+    import os
+    from django.conf import settings
+    
     for row in results:
         # Product Image URL (from attachment Line 0)
         img_name = row.get('Product_Image_Name')
@@ -995,8 +998,40 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         elif urdu_name and urdu_ext:
             row['product_image_url'] = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
         else:
-            # No attachments found
-            row['product_image_url'] = None
+            # Fallback 2: Try to find image by brand name or item name
+            # Check if file actually exists on disk
+            brand_name = row.get('U_BrandName') or ''
+            item_name = row.get('ItemName') or ''
+            image_url = None
+            
+            # Get the base media directory path
+            try:
+                media_root = settings.MEDIA_ROOT
+            except:
+                media_root = 'media'
+            
+            # Try brand name first (more specific)
+            if brand_name:
+                for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG', 'JPEG']:
+                    # Check if file exists
+                    file_path = os.path.join(media_root, 'product_images', folder_name, f'{brand_name}.{ext}')
+                    if os.path.exists(file_path):
+                        image_url = f'/media/product_images/{folder_name}/{brand_name}.{ext}'
+                        break
+            
+            # If no brand image found, try item name
+            if not image_url and item_name:
+                # Clean item name (remove size/weight info in parentheses or after dash)
+                clean_name = item_name.split('(')[0].strip() if '(' in item_name else item_name
+                clean_name = clean_name.split('-')[0].strip() if '-' in clean_name else clean_name.strip()
+                
+                for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG', 'JPEG']:
+                    file_path = os.path.join(media_root, 'product_images', folder_name, f'{clean_name}.{ext}')
+                    if os.path.exists(file_path):
+                        image_url = f'/media/product_images/{folder_name}/{clean_name}.{ext}'
+                        break
+            
+            row['product_image_url'] = image_url
         
         # Urdu URL: Use Line 1 attachment
         if urdu_name and urdu_ext:

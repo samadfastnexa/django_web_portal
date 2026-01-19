@@ -13,6 +13,10 @@ web_portal/staticfiles/
 web_portal/.env
 web_portal/*.log
 
+# Environment files
+.env
+*.env
+
 # Ignore editor/IDE settings
 .vscode/
 .idea/
