@@ -6760,3 +6760,205 @@ def recommended_products_api(request):
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@swagger_auto_schema(
+    tags=['SAP Projects'], 
+    method='get',
+    operation_description="Get list of active SAP projects (OPRJ) with optional filters",
+    manual_parameters=[
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['4B-BIO_APP', '4B-ORANG_APP']
+        ),
+        openapi.Parameter(
+            'active',
+            openapi.IN_QUERY,
+            description="Filter by active status (Y/N)",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['Y', 'N']
+        ),
+        openapi.Parameter(
+            'code',
+            openapi.IN_QUERY,
+            description="Filter by project code (exact match)",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter(
+            'name',
+            openapi.IN_QUERY,
+            description="Filter by project name (partial match)",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="Projects retrieved successfully",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "count": 2,
+                    "database": "4B-ORANG_APP",
+                    "data": [
+                        {
+                            "code": "PRJ001",
+                            "name": "Cotton Policy 2024",
+                            "valid_from": "2024-01-01",
+                            "valid_to": "2024-12-31",
+                            "active": "tYES"
+                        },
+                        {
+                            "code": "PRJ002",
+                            "name": "Wheat Policy 2024",
+                            "valid_from": "2024-01-15",
+                            "valid_to": "2024-12-31",
+                            "active": "tYES"
+                        }
+                    ]
+                }
+            }
+        ),
+        500: openapi.Response(
+            description="Database connection error",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "Connection failed"
+                }
+            }
+        )
+    }
+)
+@api_view(['GET'])
+def projects_list_api(request):
+    """
+    Get list of SAP projects from OPRJ table.
+    Endpoint: GET /api/sap/projects/
+    Query params: ?database=4B-BIO_APP&active=Y&code=PRJ001&name=Cotton
+    """
+    try:
+        from hdbcli import dbapi
+        from datetime import date, datetime
+        
+        # Load environment from multiple possible locations
+        try:
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+        except Exception:
+            pass
+        
+        # Get HANA connection parameters from environment
+        hana_host = os.environ.get('HANA_HOST', '')
+        hana_port = os.environ.get('HANA_PORT', '30015')
+        hana_user = os.environ.get('HANA_USER', '')
+        hana_password = os.environ.get('HANA_PASSWORD', '')
+        
+        # Get database schema
+        schema = get_hana_schema_from_request(request)
+        logger.info(f"[PROJECTS_LIST] Using schema: {schema}")
+        
+        # Get filter parameters
+        active_filter = request.GET.get('active', 'Y').upper()  # Default to active only
+        code_filter = request.GET.get('code', '').strip()
+        name_filter = request.GET.get('name', '').strip()
+        
+        if not hana_host or not hana_user or not hana_password:
+            return Response({
+                'success': False,
+                'error': 'Missing HANA connection parameters in environment'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Connect without setting schema initially
+        conn = dbapi.connect(
+            address=hana_host,
+            port=int(hana_port),
+            user=hana_user,
+            password=hana_password
+        )
+        
+        try:
+            # Set schema using SQL (handles special characters like hyphens)
+            cursor = conn.cursor()
+            cursor.execute(f'SET SCHEMA "{schema}"')
+            cursor.close()
+            
+            # Build query with filters
+            base_query = '''
+                SELECT
+                    P."PrjCode" AS "code",
+                    P."PrjName" AS "name",
+                    P."ValidFrom" AS "valid_from",
+                    P."ValidTo" AS "valid_to",
+                    CASE
+                        WHEN P."Active" = 'Y' THEN 'tYES'
+                        ELSE 'tNO'
+                    END AS "active",
+                    P."U_pol" AS "policy"
+                FROM OPRJ P
+                WHERE 1=1
+            '''
+            
+            params = []
+            
+            # Apply active filter
+            if active_filter in ['Y', 'N']:
+                base_query += ' AND P."Active" = ?'
+                params.append(active_filter)
+            
+            # Apply code filter
+            if code_filter:
+                base_query += ' AND P."PrjCode" = ?'
+                params.append(code_filter)
+            
+            # Apply name filter (partial match)
+            if name_filter:
+                base_query += ' AND UPPER(P."PrjName") LIKE ?'
+                params.append(f'%{name_filter.upper()}%')
+            
+            base_query += ' ORDER BY P."PrjCode"'
+            
+            logger.info(f"[PROJECTS_LIST] Executing query with params: {params}")
+            cursor.execute(base_query, params)
+            
+            columns = [desc[0] for desc in cursor.description]
+            results = []
+            
+            for row in cursor.fetchall():
+                row_dict = {}
+                for i, col in enumerate(columns):
+                    value = row[i]
+                    # Convert dates to string
+                    if isinstance(value, (date, datetime)):
+                        value = value.isoformat()
+                    row_dict[col] = value
+                results.append(row_dict)
+            
+            cursor.close()
+            
+            return Response({
+                'success': True,
+                'count': len(results),
+                'database': schema,
+                'data': results
+            }, status=status.HTTP_200_OK)
+            
+        finally:
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"[PROJECTS_LIST] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

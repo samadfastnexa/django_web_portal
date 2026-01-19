@@ -2,8 +2,6 @@ from rest_framework import serializers
 from .models import Dealer, MeetingSchedule, MeetingScheduleAttendance, SalesOrder, SalesOrderLine, SalesOrderAttachment,DealerRequest
 import re
 from .models import Company, Region, Zone, Territory
-from .models import HierarchyLevel, UserHierarchy
-
 
 from rest_framework import viewsets
 from django.contrib.auth import get_user_model
@@ -153,7 +151,7 @@ class FlexibleListField(serializers.ListField):
 
 class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
     farmer_id = serializers.CharField(source='farmer.farmer_id', read_only=True)
-    farmer_full_name = serializers.CharField(source='farmer.full_name', read_only=True)
+    farmer_full_name = serializers.SerializerMethodField(read_only=True)
     farmer_primary_phone = serializers.CharField(source='farmer.primary_phone', read_only=True)
     farmer_district = serializers.CharField(source='farmer.district', read_only=True)
     farmer_village = serializers.CharField(source='farmer.village', read_only=True)
@@ -167,12 +165,18 @@ class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
         ]
         ref_name = 'MeetingAttendee'
     
+    def get_farmer_full_name(self, obj):
+        """Get full name from farmer.name or combine first_name and last_name"""
+        if obj.farmer:
+            return obj.farmer.name or f"{obj.farmer.first_name} {obj.farmer.last_name}".strip()
+        return None
+    
     def create(self, validated_data):
         """Auto-populate farmer_name and contact_number from farmer if farmer is provided"""
         farmer = validated_data.get('farmer')
         if farmer:
             if not validated_data.get('farmer_name'):
-                validated_data['farmer_name'] = farmer.name or farmer.full_name
+                validated_data['farmer_name'] = farmer.name or f"{farmer.first_name} {farmer.last_name}".strip()
             if not validated_data.get('contact_number'):
                 validated_data['contact_number'] = farmer.primary_phone or ''
         return super().create(validated_data)
@@ -182,7 +186,7 @@ class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
         farmer = validated_data.get('farmer')
         if farmer:
             if not validated_data.get('farmer_name'):
-                validated_data['farmer_name'] = farmer.name or farmer.full_name
+                validated_data['farmer_name'] = farmer.name or f"{farmer.first_name} {farmer.last_name}".strip()
             if not validated_data.get('contact_number'):
                 validated_data['contact_number'] = farmer.primary_phone or ''
         return super().update(instance, validated_data)
@@ -190,9 +194,18 @@ class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
 class MeetingScheduleSerializer(serializers.ModelSerializer):
     attendees = MeetingScheduleAttendanceSerializer(many=True, read_only=True, help_text="List of meeting attendees")
     fsm_name = serializers.CharField(required=False)
+    
+    # Write-only ID fields for creating/updating
+    company_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     region_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     zone_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     territory_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    
+    # Read-only fields for displaying names in responses
+    company_name = serializers.SerializerMethodField(read_only=True)
+    region_name = serializers.CharField(source='region.name', read_only=True)
+    zone_name = serializers.CharField(source='zone.name', read_only=True)
+    territory_name = serializers.CharField(source='territory.name', read_only=True)
 
     attendee_farmer_id = FlexibleListField(child=serializers.CharField(), write_only=True, required=False)
     attendee_name = serializers.ListField(child=serializers.CharField(), write_only=True, required=False)
@@ -204,7 +217,8 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         model = MeetingSchedule
         fields = [
             'id', 'staff', 'fsm_name',
-            'region_id', 'zone_id', 'territory_id',
+            'company_id', 'region_id', 'zone_id', 'territory_id',
+            'company_name', 'region_name', 'zone_name', 'territory_name',
             'date', 'location', 'total_attendees',
             'key_topics_discussed', 'presence_of_zm', 'presence_of_rsm',
             'feedback_from_attendees', 'suggestions_for_future',
@@ -212,12 +226,23 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
             'attendee_farmer_id', 'attendee_name', 'attendee_contact', 'attendee_acreage', 'attendee_crop',
         ]
         read_only_fields = ['staff']
+    
+    def get_company_name(self, obj):
+        """Get company name from region, zone, or territory"""
+        if obj.region and obj.region.company:
+            return obj.region.company.Company_name
+        elif obj.zone and obj.zone.company:
+            return obj.zone.company.Company_name
+        elif obj.territory and obj.territory.company:
+            return obj.territory.company.Company_name
+        return None
 
     def create(self, validated_data):
         import logging
         logger = logging.getLogger(__name__)
         
-        # Map FK IDs to actual relations if provided
+        # Map FK IDs to actual relations if provided (company_id is informational only)
+        company_id = validated_data.pop('company_id', None)  # Not stored directly, just removed from validated_data
         region_id = validated_data.pop('region_id', None)
         zone_id = validated_data.pop('zone_id', None)
         territory_id = validated_data.pop('territory_id', None)
@@ -329,6 +354,7 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         return schedule
 
     def update(self, instance, validated_data):
+        company_id = validated_data.pop('company_id', None)  # company_id is informational only
         region_id = validated_data.pop('region_id', None)
         zone_id = validated_data.pop('zone_id', None)
         territory_id = validated_data.pop('territory_id', None)
@@ -896,143 +922,3 @@ class CompanyNestedSerializer(serializers.ModelSerializer):
     class Meta:
         model = Company
         fields = ['id', 'name', 'regions']
-
-
-# ==================== Hierarchy Serializers ====================
-
-class HierarchyLevelSerializer(serializers.ModelSerializer):
-    """Serializer for HierarchyLevel model"""
-    company_name = serializers.CharField(source='company.Company_name', read_only=True)
-    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
-    
-    class Meta:
-        model = HierarchyLevel
-        fields = [
-            'id', 'company', 'company_name', 'level_name', 'level_code',
-            'level_order', 'description', 'is_active', 'created_at',
-            'updated_at', 'created_by', 'created_by_username'
-        ]
-        read_only_fields = ['created_at', 'updated_at', 'created_by']
-
-
-class UserHierarchyListSerializer(serializers.ModelSerializer):
-    """Simplified serializer for listing user hierarchies"""
-    user_id = serializers.IntegerField(source='user.id', read_only=True)
-    username = serializers.CharField(source='user.username', read_only=True)
-    first_name = serializers.CharField(source='user.first_name', read_only=True)
-    last_name = serializers.CharField(source='user.last_name', read_only=True)
-    email = serializers.CharField(source='user.email', read_only=True)
-    
-    hierarchy_level_name = serializers.CharField(source='hierarchy_level.level_name', read_only=True)
-    hierarchy_level_code = serializers.CharField(source='hierarchy_level.level_code', read_only=True)
-    hierarchy_level_order = serializers.IntegerField(source='hierarchy_level.level_order', read_only=True)
-    
-    reports_to_username = serializers.CharField(source='reports_to.username', read_only=True, allow_null=True)
-    reports_to_id = serializers.IntegerField(source='reports_to.id', read_only=True, allow_null=True)
-    
-    company_name = serializers.CharField(source='company.Company_name', read_only=True)
-    region_name = serializers.CharField(source='region.name', read_only=True, allow_null=True)
-    zone_name = serializers.CharField(source='zone.name', read_only=True, allow_null=True)
-    territory_name = serializers.CharField(source='territory.name', read_only=True, allow_null=True)
-    
-    assigned_by_username = serializers.CharField(source='assigned_by.username', read_only=True, allow_null=True)
-    
-    class Meta:
-        model = UserHierarchy
-        fields = [
-            'id', 'user_id', 'username', 'first_name', 'last_name', 'email',
-            'company', 'company_name', 'hierarchy_level',
-            'hierarchy_level_name', 'hierarchy_level_code', 'hierarchy_level_order',
-            'reports_to', 'reports_to_id', 'reports_to_username',
-            'region', 'region_name', 'zone', 'zone_name', 'territory', 'territory_name',
-            'is_active', 'assigned_at', 'updated_at', 'assigned_by', 'assigned_by_username'
-        ]
-        read_only_fields = ['assigned_at', 'updated_at', 'assigned_by']
-
-
-class UserHierarchyDetailSerializer(serializers.ModelSerializer):
-    """Detailed serializer with nested objects"""
-    user_id = serializers.IntegerField(source='user.id', read_only=True)
-    username = serializers.CharField(source='user.username', read_only=True)
-    first_name = serializers.CharField(source='user.first_name', read_only=True)
-    last_name = serializers.CharField(source='user.last_name', read_only=True)
-    email = serializers.CharField(source='user.email', read_only=True)
-    
-    hierarchy_level = HierarchyLevelSerializer(read_only=True)
-    reports_to_detail = UserHierarchyListSerializer(source='reports_to.hierarchy_assignment', read_only=True, allow_null=True)
-    
-    company_name = serializers.CharField(source='company.Company_name', read_only=True)
-    region_detail = serializers.SerializerMethodField()
-    zone_detail = serializers.SerializerMethodField()
-    territory_detail = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = UserHierarchy
-        fields = [
-            'id', 'user_id', 'username', 'first_name', 'last_name', 'email',
-            'company', 'company_name', 'hierarchy_level',
-            'reports_to', 'reports_to_detail',
-            'region', 'region_detail', 'zone', 'zone_detail',
-            'territory', 'territory_detail',
-            'is_active', 'assigned_at', 'updated_at', 'assigned_by'
-        ]
-        read_only_fields = ['assigned_at', 'updated_at', 'assigned_by']
-    
-    def get_region_detail(self, obj):
-        if obj.region:
-            return {'id': obj.region.id, 'name': obj.region.name}
-        return None
-    
-    def get_zone_detail(self, obj):
-        if obj.zone:
-            return {'id': obj.zone.id, 'name': obj.zone.name}
-        return None
-    
-    def get_territory_detail(self, obj):
-        if obj.territory:
-            return {'id': obj.territory.id, 'name': obj.territory.name}
-        return None
-
-
-class UserHierarchyCreateUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for creating/updating user hierarchies"""
-    class Meta:
-        model = UserHierarchy
-        fields = [
-            'user', 'company', 'hierarchy_level', 'reports_to',
-            'region', 'zone', 'territory', 'is_active'
-        ]
-    
-    def validate(self, data):
-        """Custom validation"""
-        user = data.get('user')
-        company = data.get('company')
-        hierarchy_level = data.get('hierarchy_level')
-        reports_to = data.get('reports_to')
-        
-        # Check if user already has hierarchy in this company
-        if user and company:
-            existing = UserHierarchy.objects.filter(
-                user=user, company=company
-            ).exclude(pk=self.instance.pk if self.instance else None)
-            if existing.exists():
-                raise serializers.ValidationError(
-                    f"User {user.username} already has a hierarchy assignment in {company.Company_name}"
-                )
-        
-        # Validate reports_to
-        if reports_to and hierarchy_level:
-            try:
-                manager_hierarchy = UserHierarchy.objects.get(
-                    user=reports_to, company=company
-                )
-                if manager_hierarchy.hierarchy_level.level_order >= hierarchy_level.level_order:
-                    raise serializers.ValidationError(
-                        "Manager must be at a higher hierarchy level (lower order number)."
-                    )
-            except UserHierarchy.DoesNotExist:
-                raise serializers.ValidationError(
-                    "Manager must have a hierarchy assignment in the same company."
-                )
-        
-        return data

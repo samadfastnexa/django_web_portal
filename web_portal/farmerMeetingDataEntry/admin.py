@@ -39,7 +39,7 @@ class MeetingAdmin(admin.ModelAdmin):
         'territory_fk',
         ('date', admin.DateFieldListFilter),
     ]
-    ordering = ['-date']
+    ordering = ['-id']
 
 
 class FieldDayAttendanceInline(admin.TabularInline):
@@ -73,7 +73,7 @@ class FieldDayAdmin(admin.ModelAdmin):
         'zone_fk__name', 'region_fk__name', 'user__email', 'feedback'
     )
     readonly_fields = ('id',)
-    ordering = ['-date']
+    ordering = ['-id']
     inlines = [FieldDayAttendanceInline, FieldDayAttachmentInline]
 
 class FieldDayAttendanceCropInline(admin.TabularInline):

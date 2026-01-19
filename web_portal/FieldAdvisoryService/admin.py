@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from .models import Dealer, MeetingSchedule, MeetingScheduleAttendance, SalesOrder, SalesOrderLine, SalesOrderAttachment
-from .models import DealerRequest , Company, Region, Zone, Territory, HierarchyLevel, UserHierarchy
+from .models import DealerRequest , Company, Region, Zone, Territory
 from sap_integration.sap_client import SAPClient
 from django import forms
 from django.utils import timezone
@@ -594,6 +594,7 @@ class SalesOrderAdmin(admin.ModelAdmin):
     list_filter = ('status', 'is_posted_to_sap', 'doc_date', 'created_at')
     search_fields = ('card_code', 'card_name', 'federal_tax_id', 'u_s_card_code', 'portal_order_id')
     readonly_fields = ('portal_order_id', 'current_database', 'created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_display', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code')
+    ordering = ['-id']
     
     fieldsets = (
         ('Database Selection', {
@@ -1903,96 +1904,3 @@ class DealerRequestAdmin(admin.ModelAdmin):
             except Exception:
                 pass
         return redirect(f'../../{pk}/change/')
-
-# ==================== Hierarchy Admin ====================
-
-@admin.register(HierarchyLevel, site=admin_site)
-class HierarchyLevelAdmin(admin.ModelAdmin):
-    """Admin for managing organizational hierarchy levels"""
-    list_display = ('level_name', 'level_code', 'level_order', 'company', 'is_active', 'created_at')
-    list_filter = ('company', 'level_code', 'is_active', 'created_at')
-    search_fields = ('level_name', 'level_code', 'company__Company_name')
-    readonly_fields = ('created_at', 'updated_at', 'created_by')
-    fieldsets = (
-        ('Basic Information', {
-            'fields': ('company', 'level_name', 'level_code', 'level_order')
-        }),
-        ('Details', {
-            'fields': ('description', 'is_active')
-        }),
-        ('Audit Trail', {
-            'fields': ('created_by', 'created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def save_model(self, request, obj, form, change):
-        if not change:
-            obj.created_by = request.user
-        super().save_model(request, obj, form, change)
-
-
-@admin.register(UserHierarchy, site=admin_site)
-class UserHierarchyAdmin(admin.ModelAdmin):
-    """Admin for managing user hierarchy assignments"""
-    list_display = (
-        'get_username', 'get_hierarchy_level', 'get_hierarchy_order',
-        'get_reports_to', 'company', 'region', 'zone', 'territory',
-        'is_active', 'assigned_at'
-    )
-    list_filter = (
-        'company', 'hierarchy_level__level_order', 'region', 'zone',
-        'territory', 'is_active', 'assigned_at'
-    )
-    search_fields = (
-        'user__username', 'user__first_name', 'user__last_name',
-        'user__email', 'company__Company_name'
-    )
-    readonly_fields = ('assigned_at', 'updated_at', 'assigned_by')
-    autocomplete_fields = ['user', 'reports_to', 'region', 'zone', 'territory']
-    
-    fieldsets = (
-        ('User & Hierarchy', {
-            'fields': ('user', 'company', 'hierarchy_level')
-        }),
-        ('Reporting Structure', {
-            'fields': ('reports_to',)
-        }),
-        ('Geographic Assignment', {
-            'fields': ('region', 'zone', 'territory')
-        }),
-        ('Status', {
-            'fields': ('is_active',)
-        }),
-        ('Audit Trail', {
-            'fields': ('assigned_by', 'assigned_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def get_username(self, obj):
-        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.username
-    get_username.short_description = 'User'
-    get_username.admin_order_field = 'user__username'
-    
-    def get_hierarchy_level(self, obj):
-        return obj.hierarchy_level.level_name
-    get_hierarchy_level.short_description = 'Level'
-    get_hierarchy_level.admin_order_field = 'hierarchy_level__level_name'
-    
-    def get_hierarchy_order(self, obj):
-        return obj.hierarchy_level.level_order
-    get_hierarchy_order.short_description = 'Order'
-    get_hierarchy_order.admin_order_field = 'hierarchy_level__level_order'
-    
-    def get_reports_to(self, obj):
-        if obj.reports_to:
-            return f"{obj.reports_to.first_name} {obj.reports_to.last_name}".strip() or obj.reports_to.username
-        return "-"
-    get_reports_to.short_description = 'Reports To'
-    get_reports_to.admin_order_field = 'reports_to__username'
-    
-    def save_model(self, request, obj, form, change):
-        if not change:
-            obj.assigned_by = request.user
-        super().save_model(request, obj, form, change)

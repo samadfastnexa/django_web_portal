@@ -31,6 +31,49 @@ class Role(models.Model):
     
     def __str__(self):
         return self.name
+
+
+# ✅ Dynamic Designation Model (replaces static TextChoices)
+class DesignationModel(models.Model):
+    """
+    Dynamic designation/job title model.
+    Allows adding new designations via admin without code changes.
+    """
+    code = models.CharField(
+        max_length=20, 
+        unique=True,
+        help_text="Short code (e.g., CEO, RSL, FSM)"
+    )
+    name = models.CharField(
+        max_length=100,
+        help_text="Full designation name (e.g., Chief Executive Officer)"
+    )
+    level = models.IntegerField(
+        default=0,
+        help_text="Hierarchy level (0=highest, 10=lowest). Used for sorting."
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Inactive designations won't appear in dropdowns"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Optional description of role responsibilities"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['level', 'name']
+        verbose_name = "Designation"
+        verbose_name_plural = "Designations"
+    
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+# Keep old TextChoices for backward compatibility during migration
 class Designation(models.TextChoices):
     CEO = "CEO", "CEO – Orange Protection"
     NSM = "NSM", "National Sales Manager"
@@ -162,10 +205,13 @@ class SalesStaffProfile(models.Model):
     employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=20)
     address = models.TextField()
-    # designation = models.CharField(max_length=100)
-    designation = models.CharField(
-        max_length=50,
-        choices=Designation.choices
+    
+    # ✅ Dynamic designation (ForeignKey to DesignationModel)
+    designation = models.ForeignKey(
+        DesignationModel,
+        on_delete=models.PROTECT,
+        related_name='staff_members',
+        help_text="Job title/designation"
     )
     # use lazy app.model strings to avoid circular import
 #     company = models.ForeignKey(
@@ -184,6 +230,17 @@ class SalesStaffProfile(models.Model):
     zones       = models.ManyToManyField('FieldAdvisoryService.Zone', blank=True, related_name="sales_profiles")
     territories = models.ManyToManyField('FieldAdvisoryService.Territory', blank=True, related_name="sales_profiles")
     
+    # ==================== REPORTING HIERARCHY ====================
+    # Self-referencing FK for manager-subordinate relationships
+    manager = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='subordinates',
+        help_text="Direct manager/supervisor of this staff member"
+    )
+    
     hod = models.ForeignKey('self', related_name='sales_hod', on_delete=models.SET_NULL, null=True, blank=True)
     master_hod = models.ForeignKey('self', related_name='sales_master_hod', on_delete=models.SET_NULL, null=True, blank=True)
     is_vacant = models.BooleanField(default=False, help_text="Mark if this position is vacant")
@@ -192,31 +249,138 @@ class SalesStaffProfile(models.Model):
     casual_leave_quota = models.PositiveIntegerField(default=0)
     others_leave_quota = models.PositiveIntegerField(default=0)
     
+    # ==================== REPORTING HIERARCHY METHODS ====================
+    
+    def get_all_subordinates(self, include_self=False):
+        """
+        Recursively get all subordinates (direct + indirect) in the reporting chain.
+        
+        Args:
+            include_self (bool): Whether to include this staff member in the result
+            
+        Returns:
+            QuerySet: All subordinates under this manager
+        """
+        from django.db.models import Q
+        
+        subordinate_ids = set()
+        if include_self:
+            subordinate_ids.add(self.id)
+        
+        def _collect_subordinates(manager_id):
+            # Get direct subordinates
+            direct_subs = SalesStaffProfile.objects.filter(
+                manager_id=manager_id,
+                is_vacant=False
+            ).values_list('id', flat=True)
+            
+            for sub_id in direct_subs:
+                if sub_id not in subordinate_ids:
+                    subordinate_ids.add(sub_id)
+                    # Recursively get their subordinates
+                    _collect_subordinates(sub_id)
+        
+        _collect_subordinates(self.id)
+        return SalesStaffProfile.objects.filter(id__in=subordinate_ids)
+    
+    def get_reporting_chain(self, include_self=True):
+        """
+        Get the upward reporting chain (manager → manager's manager → ... → CEO).
+        
+        Args:
+            include_self (bool): Whether to include this staff member in the chain
+            
+        Returns:
+            list: Ordered list of SalesStaffProfile objects from self to top-level manager
+        """
+        chain = []
+        if include_self:
+            chain.append(self)
+        
+        current = self.manager
+        max_depth = 20  # Prevent infinite loops
+        depth = 0
+        
+        while current and depth < max_depth:
+            chain.append(current)
+            current = current.manager
+            depth += 1
+        
+        return chain
+    
+    def is_subordinate_of(self, potential_manager):
+        """
+        Check if this staff member is a subordinate (direct or indirect) of another staff member.
+        
+        Args:
+            potential_manager (SalesStaffProfile): The staff member to check against
+            
+        Returns:
+            bool: True if this person reports to potential_manager in the hierarchy
+        """
+        if not potential_manager:
+            return False
+        
+        reporting_chain = self.get_reporting_chain(include_self=False)
+        return potential_manager in reporting_chain
+    
+    def get_subordinate_users(self):
+        """
+        Get all User objects of subordinates (useful for filtering data access).
+        
+        Returns:
+            QuerySet: User objects of all subordinates
+        """
+        subordinates = self.get_all_subordinates(include_self=False)
+        user_ids = subordinates.values_list('user_id', flat=True)
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        return User.objects.filter(id__in=user_ids)
+    
+    def get_subordinate_territory_ids(self):
+        """
+        Get all territory IDs assigned to subordinates (for data filtering).
+        
+        Returns:
+            set: Set of territory IDs
+        """
+        subordinates = self.get_all_subordinates(include_self=False)
+        territory_ids = set()
+        
+        for sub in subordinates:
+            territory_ids.update(sub.territories.values_list('id', flat=True))
+        
+        return territory_ids
+    
+    def __str__(self):
+        if self.user:
+            return f"{self.user.get_full_name()} ({self.designation})"
+        return f"Vacant - {self.designation}"
+    
     def clean(self):
         if self.is_vacant:
             return
 
         if self.user and getattr(self.user, 'is_sales_staff', False):
+            # Get designation code for comparison
+            designation_code = self.designation.code if self.designation else None
+            
             # CEO / NSM → no geo validation
-            if self.designation in [Designation.CEO, Designation.NSM]:
+            if designation_code in ['CEO', 'NSM']:
                 return  
 
             # Regional Sales Leader → at least 1 region
-            if self.designation == Designation.RSL:
+            if designation_code == 'RSL':
                 if not self.regions.exists():
                     raise ValidationError("Regional Sales Leader must have at least one region.")
 
             # Deputy RSL / Zonal Manager → at least 1 zone
-            elif self.designation in [Designation.DRSL, Designation.ZM]:
+            elif designation_code in ['DRSL', 'ZM']:
                 if not self.zones.exists():
                     raise ValidationError("Zonal-level staff must have at least one zone.")
 
             # Territory-level staff
-            elif self.designation in [
-                Designation.PL, Designation.SR_PL, Designation.FSM,
-                Designation.SR_FSM, Designation.DPL,
-                Designation.MTO, Designation.SR_MTO
-            ]:
+            elif designation_code in ['PL', 'SR_PL', 'FSM', 'SR_FSM', 'DPL', 'MTO', 'SR_MTO']:
                 if not self.territories.exists():
                     raise ValidationError("Territory-level staff must have at least one territory.")
 
@@ -251,13 +415,18 @@ class SalesStaffProfile(models.Model):
     class Meta:
         permissions = [
             ('manage_sales_staff', 'Can manage sales staff profiles'),
+            ('view_hierarchy', 'Can view reporting hierarchy'),
+            ('manage_hierarchy', 'Can assign/change managers'),
+            ('view_subordinate_data', 'Can view subordinates data'),
+            ('view_all_hierarchy', 'Can view entire organization hierarchy'),
         ]
 
     def __str__(self):
+        designation_text = self.designation.name if self.designation else "No Designation"
         if self.is_vacant:
-            return f"Vacant ({self.get_designation_display()})"
+            return f"Vacant ({designation_text})"
         elif self.user:
-            return f"{self.user.email} ({self.get_designation_display()})"
-        return f"Unassigned ({self.get_designation_display()})"
+            return f"{self.user.email} ({designation_text})"
+        return f"Unassigned ({designation_text})"
 
 

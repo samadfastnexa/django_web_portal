@@ -4,6 +4,7 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework import viewsets, permissions
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import action, permission_classes
 from django.contrib.auth import get_user_model
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -11,6 +12,7 @@ from django.core.exceptions import PermissionDenied
 from .filters import UserFilter
 from .serializers import UserSerializer, UserUpdateSerializer
 from accounts.permissions import HasRolePermission
+from accounts.hierarchy_permissions import CanViewHierarchy, CanManageHierarchy
 from django.db.models import Prefetch
 from FieldAdvisoryService.models import Company, Region, Zone, Territory
 from django.db import transaction
@@ -88,6 +90,145 @@ class UserViewSet(viewsets.ModelViewSet):
         description="List of territory IDs",
         type=openapi.TYPE_ARRAY,
         items=openapi.Items(type=openapi.TYPE_INTEGER),
+        required=False
+    ),
+]
+    
+    # Dealer-specific parameters
+    dealer_parameters = [
+    openapi.Parameter(
+        "is_dealer",
+        openapi.IN_FORM,
+        description="Set to true if user is a dealer",
+        type=openapi.TYPE_BOOLEAN,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_business_name",
+        openapi.IN_FORM,
+        description="Business/Company Name (required if is_dealer=true)",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_cnic_number",
+        openapi.IN_FORM,
+        description="CNIC Number (13 or 15 digits, required if is_dealer=true)",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_contact_number",
+        openapi.IN_FORM,
+        description="Primary Contact Number (required if is_dealer=true)",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_mobile_phone",
+        openapi.IN_FORM,
+        description="Mobile/WhatsApp Number",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_company_id",
+        openapi.IN_FORM,
+        description="Company ID (required if is_dealer=true)",
+        type=openapi.TYPE_INTEGER,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_region_id",
+        openapi.IN_FORM,
+        description="Region ID",
+        type=openapi.TYPE_INTEGER,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_zone_id",
+        openapi.IN_FORM,
+        description="Zone ID",
+        type=openapi.TYPE_INTEGER,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_territory_id",
+        openapi.IN_FORM,
+        description="Territory ID",
+        type=openapi.TYPE_INTEGER,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_address",
+        openapi.IN_FORM,
+        description="Full Address (required if is_dealer=true)",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_city",
+        openapi.IN_FORM,
+        description="City",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_state",
+        openapi.IN_FORM,
+        description="State/Province",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_federal_tax_id",
+        openapi.IN_FORM,
+        description="NTN Number (National Tax Number)",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_filer_status",
+        openapi.IN_FORM,
+        description="Tax Filer Status",
+        type=openapi.TYPE_STRING,
+        required=False,
+        enum=['01', '02']
+    ),
+    openapi.Parameter(
+        "dealer_govt_license_number",
+        openapi.IN_FORM,
+        description="Government License Number",
+        type=openapi.TYPE_STRING,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_license_expiry",
+        openapi.IN_FORM,
+        description="License Expiry Date (YYYY-MM-DD)",
+        type=openapi.TYPE_STRING,
+        format='date',
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_minimum_investment",
+        openapi.IN_FORM,
+        description="Minimum Investment Amount",
+        type=openapi.TYPE_INTEGER,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_cnic_front_image",
+        openapi.IN_FORM,
+        description="CNIC Front Image (JPEG, PNG)",
+        type=openapi.TYPE_FILE,
+        required=False
+    ),
+    openapi.Parameter(
+        "dealer_cnic_back_image",
+        openapi.IN_FORM,
+        description="CNIC Back Image (JPEG, PNG)",
+        type=openapi.TYPE_FILE,
         required=False
     ),
 ]
@@ -191,7 +332,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         tags=["02. User Management"],
-        manual_parameters=m2m_parameters,
+        manual_parameters=m2m_parameters + dealer_parameters,
         request_body=None,  # ⛔ important: avoid conflicts with serializer
         responses={201: UserSerializer}
     )
@@ -200,8 +341,9 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # Extract is_sales_staff flag
-        is_sales_staff = serializer.validated_data.get('is_sales_staff', False)
+        # Extract is_sales_staff and is_dealer flags
+        is_sales_staff = serializer.validated_data.pop('is_sales_staff', False)
+        is_dealer = serializer.validated_data.pop('is_dealer', False)
 
         # ✅ Use request.data.getlist for M2M fields
         m2m_data = {
@@ -211,13 +353,51 @@ class UserViewSet(viewsets.ModelViewSet):
             'territories': request.data.getlist('territories'),
         }
 
+        # Remove M2M fields from validated_data (they belong to SalesStaffProfile, not User)
+        for field in ['companies', 'regions', 'zones', 'territories']:
+            serializer.validated_data.pop(field, None)
+
         # Extract profile fields
         profile_fields = [
             'employee_code', 'phone_number', 'address', 'designation',
-            'hod', 'master_hod', 'date_of_joining',
+            'hod', 'master_hod', 'manager', 'date_of_joining',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
         profile_data = {f: serializer.validated_data.pop(f, None) for f in profile_fields}
+
+        # Extract dealer fields from validated_data
+        dealer_fields = [
+            'dealer_business_name', 'dealer_cnic_number', 'dealer_contact_number', 'dealer_mobile_phone',
+            'dealer_company_id', 'dealer_region_id', 'dealer_zone_id', 'dealer_territory_id',
+            'dealer_address', 'dealer_city', 'dealer_state', 'dealer_federal_tax_id', 'dealer_filer_status',
+            'dealer_govt_license_number', 'dealer_license_expiry', 'dealer_minimum_investment',
+            'dealer_cnic_front_image', 'dealer_cnic_back_image'
+        ]
+        dealer_data = {}
+        dealer_fields_mapping = {
+            'dealer_business_name': 'business_name',
+            'dealer_cnic_number': 'cnic_number',
+            'dealer_contact_number': 'contact_number',
+            'dealer_mobile_phone': 'mobile_phone',
+            'dealer_company_id': 'company_id',
+            'dealer_region_id': 'region_id',
+            'dealer_zone_id': 'zone_id',
+            'dealer_territory_id': 'territory_id',
+            'dealer_address': 'address',
+            'dealer_city': 'city',
+            'dealer_state': 'state',
+            'dealer_federal_tax_id': 'federal_tax_id',
+            'dealer_filer_status': 'filer_status',
+            'dealer_govt_license_number': 'govt_license_number',
+            'dealer_license_expiry': 'license_expiry',
+            'dealer_minimum_investment': 'minimum_investment',
+            'dealer_cnic_front_image': 'cnic_front_image',
+            'dealer_cnic_back_image': 'cnic_back_image',
+        }
+        for request_field, model_field in dealer_fields_mapping.items():
+            value = serializer.validated_data.pop(request_field, None)
+            if value is not None:
+                dealer_data[model_field] = value
 
         # Extract password
         password = serializer.validated_data.pop('password', None)
@@ -227,6 +407,7 @@ class UserViewSet(viewsets.ModelViewSet):
         if password:
             user.set_password(password)
         user.is_sales_staff = is_sales_staff
+        user.is_dealer = is_dealer
         user.save()
 
         # Create sales profile if needed
@@ -236,6 +417,32 @@ class UserViewSet(viewsets.ModelViewSet):
             for field, values in m2m_data.items():
                 if values:  # convert string IDs -> int IDs
                     getattr(profile, field).set(map(int, values))
+
+        # Create dealer profile if needed
+        if is_dealer and dealer_data:
+            from FieldAdvisoryService.models import Dealer
+            
+            # Ensure required fields are present
+            if not dealer_data.get('company_id'):
+                # Company is required for Dealer - skip creation if not provided
+                pass
+            else:
+                dealer_data['user'] = user
+                dealer_data['name'] = f"{user.first_name} {user.last_name}".strip() or user.username
+                
+                # Handle file fields separately
+                cnic_front = dealer_data.pop('cnic_front_image', None)
+                cnic_back = dealer_data.pop('cnic_back_image', None)
+                
+                # Create dealer instance
+                dealer = Dealer.objects.create(**dealer_data)
+                
+                if cnic_front:
+                    dealer.cnic_front_image = cnic_front
+                if cnic_back:
+                    dealer.cnic_back_image = cnic_back
+                
+                dealer.save()
 
         return Response(self.get_serializer(user).data, status=status.HTTP_201_CREATED)
 
@@ -262,7 +469,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 type=openapi.TYPE_FILE,
                 required=False
             )
-        ]
+        ] + m2m_parameters + dealer_parameters
     )
     @transaction.atomic
     def update(self, request, *args, **kwargs):
@@ -271,7 +478,8 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
 
-        is_sales_staff = serializer.validated_data.get('is_sales_staff', instance.is_sales_staff)
+        is_sales_staff = serializer.validated_data.pop('is_sales_staff', instance.is_sales_staff)
+        is_dealer = serializer.validated_data.pop('is_dealer', instance.is_dealer)
 
         # Extract M2M fields
         m2m_fields = ['companies', 'regions', 'zones', 'territories']
@@ -280,10 +488,37 @@ class UserViewSet(viewsets.ModelViewSet):
         # Extract profile fields
         profile_fields = [
             'employee_code', 'phone_number', 'address', 'designation',
-            'hod', 'master_hod','date_of_joining',
+            'hod', 'master_hod', 'manager', 'date_of_joining',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
         profile_data = {f: serializer.validated_data.pop(f, None) for f in profile_fields}
+
+        # Extract dealer fields
+        dealer_fields_mapping = {
+            'dealer_business_name': 'business_name',
+            'dealer_cnic_number': 'cnic_number',
+            'dealer_contact_number': 'contact_number',
+            'dealer_mobile_phone': 'mobile_phone',
+            'dealer_company_id': 'company_id',
+            'dealer_region_id': 'region_id',
+            'dealer_zone_id': 'zone_id',
+            'dealer_territory_id': 'territory_id',
+            'dealer_address': 'address',
+            'dealer_city': 'city',
+            'dealer_state': 'state',
+            'dealer_federal_tax_id': 'federal_tax_id',
+            'dealer_filer_status': 'filer_status',
+            'dealer_govt_license_number': 'govt_license_number',
+            'dealer_license_expiry': 'license_expiry',
+            'dealer_minimum_investment': 'minimum_investment',
+            'dealer_cnic_front_image': 'cnic_front_image',
+            'dealer_cnic_back_image': 'cnic_back_image',
+        }
+        dealer_data = {}
+        for request_field, model_field in dealer_fields_mapping.items():
+            value = serializer.validated_data.pop(request_field, None)
+            if value is not None:
+                dealer_data[model_field] = value
 
         # Password update
         password = serializer.validated_data.pop('password', None)
@@ -299,6 +534,7 @@ class UserViewSet(viewsets.ModelViewSet):
         for attr, value in serializer.validated_data.items():
             setattr(instance, attr, value)
         instance.is_sales_staff = is_sales_staff
+        instance.is_dealer = is_dealer
         instance.save()
 
         # Handle sales profile
@@ -323,6 +559,43 @@ class UserViewSet(viewsets.ModelViewSet):
             if profile:
                 profile.is_vacant = True
                 profile.save()
+
+        # Handle dealer profile
+        from FieldAdvisoryService.models import Dealer
+        dealer = getattr(instance, 'dealer', None)
+        if is_dealer:
+            if not dealer:
+                # Create new dealer if doesn't exist
+                if dealer_data.get('company_id'):
+                    dealer_data['user'] = instance
+                    dealer_data['name'] = f"{instance.first_name} {instance.last_name}".strip() or instance.username
+                    
+                    # Handle file fields separately
+                    cnic_front = dealer_data.pop('cnic_front_image', None)
+                    cnic_back = dealer_data.pop('cnic_back_image', None)
+                    
+                    dealer = Dealer.objects.create(**dealer_data)
+                    
+                    if cnic_front:
+                        dealer.cnic_front_image = cnic_front
+                    if cnic_back:
+                        dealer.cnic_back_image = cnic_back
+                    
+                    dealer.save()
+            else:
+                # Update existing dealer
+                for field, value in dealer_data.items():
+                    if field in ['cnic_front_image', 'cnic_back_image']:
+                        # Handle file fields
+                        if value:
+                            setattr(dealer, field, value)
+                    elif value is not None:
+                        setattr(dealer, field, value)
+                dealer.save()
+        else:
+            # If is_dealer is set to false, optionally delete dealer profile
+            # For now, we'll keep the dealer record but mark user as non-dealer
+            pass
 
         return Response(self.get_serializer(instance).data, status=status.HTTP_200_OK)
     # ----------------------
@@ -352,6 +625,13 @@ class UserViewSet(viewsets.ModelViewSet):
             "- `employee_code`, `phone_number`, `address`, `designation`\n"
             "- `hod`, `master_hod`, `date_of_joining`\n"
             "- `companies`, `regions`, `zones`, `territories` (M2M relations)\n\n"
+            "**Dealer Fields** (if `is_dealer=true`):\n"
+            "- `dealer_business_name`, `dealer_cnic_number`, `dealer_contact_number`\n"
+            "- `dealer_company_id`, `dealer_region_id`, `dealer_zone_id`, `dealer_territory_id`\n"
+            "- `dealer_address`, `dealer_city`, `dealer_state`\n"
+            "- `dealer_federal_tax_id`, `dealer_filer_status`, `dealer_govt_license_number`\n"
+            "- `dealer_license_expiry`, `dealer_minimum_investment`\n"
+            "- `dealer_cnic_front_image`, `dealer_cnic_back_image`\n\n"
             "**Authorization:** Regular users can only update their own profile. "
             "Admins can update any user."
         ),
@@ -364,7 +644,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 type=openapi.TYPE_FILE,
                 required=False
             )
-        ]
+        ] + m2m_parameters + dealer_parameters
     )
     def partial_update(self, request, *args, **kwargs):
         """
@@ -396,3 +676,196 @@ class UserViewSet(viewsets.ModelViewSet):
             {"detail": f"User {instance.username} soft deleted."},
             status=status.HTTP_204_NO_CONTENT
         )
+    
+    # ==================== HIERARCHY ENDPOINTS ====================
+    
+    @swagger_auto_schema(
+        tags=["02. User Management"],
+        operation_description="Get all subordinates (direct + indirect) of the current user",
+        responses={
+            200: openapi.Response(
+                description='List of subordinate users with their profiles',
+                examples={
+                    'application/json': {
+                        'count': 3,
+                        'subordinates': [
+                            {
+                                'id': 5,
+                                'username': 'john.doe',
+                                'email': 'john@example.com',
+                                'first_name': 'John',
+                                'last_name': 'Doe',
+                                'designation': 'FSM',
+                                'territories': [1, 2]
+                            }
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='my-team', permission_classes=[IsAuthenticated, CanViewHierarchy])
+    def my_team(self, request):
+        """
+        Get all subordinates (direct and indirect) of the current user.
+        Returns full user details with sales profile.
+        """
+        sales_profile = getattr(request.user, 'sales_profile', None)
+        if not sales_profile:
+            return Response(
+                {'error': 'Only sales staff can view their team'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        subordinates = sales_profile.get_all_subordinates(include_self=False)
+        subordinate_users = User.objects.filter(
+            sales_profile__in=subordinates
+        ).select_related('sales_profile')
+        
+        serializer = UserSerializer(subordinate_users, many=True)
+        
+        return Response({
+            'count': subordinate_users.count(),
+            'subordinates': serializer.data
+        })
+    
+    @swagger_auto_schema(
+        tags=["02. User Management"],
+        operation_description="Get the upward reporting chain (manager → manager's manager → CEO)",
+        responses={
+            200: openapi.Response(
+                description='Reporting chain from current user to top-level manager',
+                examples={
+                    'application/json': {
+                        'chain': [
+                            {
+                                'id': 3,
+                                'name': 'Ahmed Ali',
+                                'designation': 'ZM',
+                                'level': 0
+                            },
+                            {
+                                'id': 2,
+                                'name': 'Sara Khan',
+                                'designation': 'RSL',
+                                'level': 1
+                            },
+                            {
+                                'id': 1,
+                                'name': 'CEO',
+                                'designation': 'CEO',
+                                'level': 2
+                            }
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='my-reporting-chain', permission_classes=[IsAuthenticated, CanViewHierarchy])
+    def my_reporting_chain(self, request):
+        """
+        Get the upward reporting chain (self → manager → manager's manager → ... → CEO).
+        Shows who this user reports to, all the way up the hierarchy.
+        """
+        sales_profile = getattr(request.user, 'sales_profile', None)
+        if not sales_profile:
+            return Response(
+                {'error': 'Only sales staff have reporting chains'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        chain = sales_profile.get_reporting_chain(include_self=True)
+        
+        chain_data = []
+        for level, profile in enumerate(chain):
+            chain_data.append({
+                'id': profile.id,
+                'user_id': profile.user.id if profile.user else None,
+                'name': str(profile),
+                'designation': profile.designation,
+                'level': level,
+                'is_self': (level == 0)
+            })
+        
+        return Response({'chain': chain_data})
+    
+    @swagger_auto_schema(
+        tags=["02. User Management"],
+        operation_description="Get complete hierarchy view: subordinates + reporting chain",
+        responses={
+            200: openapi.Response(
+                description='Complete hierarchy showing both upward and downward relationships',
+                examples={
+                    'application/json': {
+                        'self': {
+                            'id': 3,
+                            'name': 'Ahmed Ali',
+                            'designation': 'ZM'
+                        },
+                        'manager': {
+                            'id': 2,
+                            'name': 'Sara Khan',
+                            'designation': 'RSL'
+                        },
+                        'subordinates_count': 3,
+                        'subordinates': [
+                            {
+                                'id': 5,
+                                'name': 'John Doe',
+                                'designation': 'FSM'
+                            }
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='my-hierarchy', permission_classes=[IsAuthenticated, CanViewHierarchy])
+    def my_hierarchy(self, request):
+        """
+        Get a complete hierarchy view: manager, self, and subordinates.
+        Useful for organization charts and understanding position in hierarchy.
+        """
+        sales_profile = getattr(request.user, 'sales_profile', None)
+        if not sales_profile:
+            return Response(
+                {'error': 'Only sales staff have hierarchies'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        subordinates = sales_profile.get_all_subordinates(include_self=False)
+        
+        hierarchy_data = {
+            'self': {
+                'id': sales_profile.id,
+                'user_id': request.user.id,
+                'name': str(sales_profile),
+                'designation': sales_profile.designation,
+                'employee_code': sales_profile.employee_code,
+            },
+            'manager': None,
+            'subordinates_count': subordinates.count(),
+            'subordinates': []
+        }
+        
+        # Add manager info
+        if sales_profile.manager:
+            hierarchy_data['manager'] = {
+                'id': sales_profile.manager.id,
+                'user_id': sales_profile.manager.user.id if sales_profile.manager.user else None,
+                'name': str(sales_profile.manager),
+                'designation': sales_profile.manager.designation,
+            }
+        
+        # Add subordinates
+        for sub in subordinates:
+            hierarchy_data['subordinates'].append({
+                'id': sub.id,
+                'user_id': sub.user.id if sub.user else None,
+                'name': str(sub),
+                'designation': sub.designation,
+                'is_direct': (sub.manager_id == sales_profile.id)
+            })
+        
+        return Response(hierarchy_data)

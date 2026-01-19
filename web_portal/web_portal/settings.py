@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'kindwise',  # app for Kindwise crop identification
     'analytics',  # app for analytics and dashboard
     'general_ledger',  # app for SAP General Ledger reports
+    'cart',  # app for shopping cart and order management
 ]
 
 MIDDLEWARE = [
@@ -299,8 +300,9 @@ SWAGGER_SETTINGS = {
 }
 WEATHER_API_KEY = "36c4dcfbb24443b18b2112951252507"
 
-# Kindwise API Configuration (from .env)
-# KINDWISE_API_ENABLED=true|false; KINDWISE_API_KEY=<your key>
+# ==============================================================================
+# KINDWISE API CONFIGURATION
+# ==============================================================================
 KINDWISE_API_ENABLED = config('KINDWISE_API_ENABLED', cast=bool, default=True)
-KINDWISE_API_KEY = config('KINDWISE_API_KEY', default='m1Rx5M1cCciIUYbNaCpDH4gOKwBItDTeciJ1aSg01x5A3lUUQz')
+KINDWISE_API_KEY = config('KINDWISE_API_KEY', default='K3heryGSyoR6KdYJML6UXGjiQXA9FFqQzBBMycxLT7TLnJG5H9')
 
