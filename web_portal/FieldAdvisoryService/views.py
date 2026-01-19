@@ -7,13 +7,13 @@ from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.admin.views.decorators import staff_member_required
+from accounts.hierarchy_filters import HierarchyFilterMixin
 
-from .models import Dealer, MeetingSchedule, SalesOrder, HierarchyLevel, UserHierarchy
+from .models import Dealer, MeetingSchedule, SalesOrder
 from .serializers import (
     DealerSerializer, DealerRequestSerializer, MeetingScheduleSerializer, SalesOrderSerializer, SalesOrderFormSerializer,
     CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer, DealerRequestSerializer,
-    CompanyNestedSerializer, RegionNestedSerializer, ZoneNestedSerializer, TerritoryNestedSerializer,
-    HierarchyLevelSerializer, UserHierarchyListSerializer, UserHierarchyDetailSerializer, UserHierarchyCreateUpdateSerializer
+    CompanyNestedSerializer, RegionNestedSerializer, ZoneNestedSerializer, TerritoryNestedSerializer
 )
 from .models import DealerRequest
 from .models import Company, Region, Zone, Territory
@@ -27,16 +27,18 @@ from rest_framework import viewsets
 from drf_yasg import openapi
 
 
-class MeetingScheduleViewSet(viewsets.ModelViewSet):
+class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing Meeting Schedules.
     Supports list, retrieve, create, update, partial update, and delete.
+    Filters data based on user's position in reporting hierarchy.
     """
     queryset = MeetingSchedule.objects.select_related('region', 'zone', 'territory', 'staff').all()
     serializer_class = MeetingScheduleSerializer
     parser_classes = [MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     permission_classes = [IsAuthenticated, HasRolePermission]
+    hierarchy_field = 'staff'  # Filter by staff who created the meeting
     filterset_fields = ["fsm_name", "region", "zone", "territory", "location", "presence_of_zm", "presence_of_rsm", "staff"]
     search_fields = ["fsm_name", "region__name", "zone__name", "territory__name", "location", "key_topics_discussed"]
     ordering_fields = ["date", "fsm_name", "region__name", "zone__name", "territory__name", "total_attendees"]
@@ -237,17 +239,19 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class SalesOrderViewSet(viewsets.ModelViewSet):
+class SalesOrderViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing Sales Orders.
     Supports list, retrieve, create, update, partial update, and delete.
     Accepts form-data format only.
+    Filters data based on user's position in reporting hierarchy.
     """
     queryset = SalesOrder.objects.all()
     serializer_class = SalesOrderSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [IsAuthenticated, HasRolePermission]
     ordering = ['-id']
+    hierarchy_field = 'staff'  # Filter by staff who created the order
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -1655,194 +1659,3 @@ def api_customer_details(request):
         error_trace = traceback.format_exc()
         logger.error(f"Error in api_customer_details: {str(e)}\n{error_trace}")
         return JsonResponse({'error': str(e), 'trace': error_trace}, status=500)
-
-# ==================== Hierarchy ViewSets ====================
-
-class HierarchyLevelViewSet(viewsets.ModelViewSet):
-    """
-    CRUD operations for organizational hierarchy levels.
-    Supports dynamic level creation, update, and management.
-    
-    Endpoints:
-    - GET /api/hierarchy-levels/ - List all levels
-    - POST /api/hierarchy-levels/ - Create new level
-    - GET /api/hierarchy-levels/{id}/ - Retrieve specific level
-    - PUT /api/hierarchy-levels/{id}/ - Update level
-    - PATCH /api/hierarchy-levels/{id}/ - Partial update
-    - DELETE /api/hierarchy-levels/{id}/ - Delete level
-    """
-    queryset = HierarchyLevel.objects.select_related('company', 'created_by').all()
-    serializer_class = HierarchyLevelSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['company', 'level_code', 'is_active']
-    search_fields = ['level_name', 'level_code', 'company__Company_name']
-    ordering_fields = ['level_order', 'created_at', 'level_name']
-    ordering = ['level_order']
-    
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
-    
-    @action(detail=False, methods=['get'])
-    def by_company(self, request):
-        """Get hierarchy levels for a specific company"""
-        company_id = request.query_params.get('company_id')
-        if not company_id:
-            return Response({'error': 'company_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        levels = HierarchyLevel.objects.filter(
-            company_id=company_id,
-            is_active=True
-        ).order_by('level_order')
-        serializer = self.get_serializer(levels, many=True)
-        return Response(serializer.data)
-
-
-class UserHierarchyViewSet(viewsets.ModelViewSet):
-    """
-    CRUD operations for user hierarchy assignments.
-    Manages reporting structure, hierarchy levels, and geo assignments.
-    
-    Endpoints:
-    - GET /api/user-hierarchies/ - List all assignments
-    - POST /api/user-hierarchies/ - Create new assignment
-    - GET /api/user-hierarchies/{id}/ - Retrieve specific assignment
-    - PUT /api/user-hierarchies/{id}/ - Update assignment
-    - PATCH /api/user-hierarchies/{id}/ - Partial update
-    - DELETE /api/user-hierarchies/{id}/ - Delete assignment
-    """
-    queryset = UserHierarchy.objects.select_related(
-        'user', 'company', 'hierarchy_level', 'reports_to',
-        'region', 'zone', 'territory', 'assigned_by'
-    ).all()
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['company', 'hierarchy_level', 'region', 'zone', 'territory', 'is_active']
-    search_fields = ['user__username', 'user__first_name', 'user__last_name', 'user__email']
-    ordering_fields = ['hierarchy_level__level_order', 'assigned_at', 'user__username']
-    ordering = ['hierarchy_level__level_order']
-    
-    def get_serializer_class(self):
-        """Return appropriate serializer based on action"""
-        if self.action == 'list':
-            return UserHierarchyListSerializer
-        elif self.action == 'retrieve':
-            return UserHierarchyDetailSerializer
-        else:
-            return UserHierarchyCreateUpdateSerializer
-    
-    def perform_create(self, serializer):
-        serializer.save(assigned_by=self.request.user)
-    
-    def perform_update(self, serializer):
-        serializer.save(assigned_by=self.request.user)
-    
-    @action(detail=False, methods=['get'])
-    def by_company(self, request):
-        """Get all users' hierarchy assignments in a company"""
-        company_id = request.query_params.get('company_id')
-        if not company_id:
-            return Response({'error': 'company_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        hierarchies = UserHierarchy.objects.filter(
-            company_id=company_id, is_active=True
-        ).select_related('user', 'hierarchy_level', 'reports_to').order_by('hierarchy_level__level_order')
-        
-        serializer = UserHierarchyListSerializer(hierarchies, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['get'])
-    def by_hierarchy_level(self, request):
-        """Get users at a specific hierarchy level"""
-        level_id = request.query_params.get('level_id')
-        if not level_id:
-            return Response({'error': 'level_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        hierarchies = UserHierarchy.objects.filter(
-            hierarchy_level_id=level_id, is_active=True
-        ).select_related('user', 'hierarchy_level', 'company')
-        
-        serializer = UserHierarchyListSerializer(hierarchies, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['get'])
-    def direct_reports(self, request, pk=None):
-        """Get all direct reports for a specific user"""
-        hierarchy = self.get_object()
-        direct_reports = UserHierarchy.objects.filter(
-            reports_to=hierarchy.user, company=hierarchy.company, is_active=True
-        ).select_related('user', 'hierarchy_level', 'region', 'zone', 'territory')
-        
-        serializer = UserHierarchyListSerializer(direct_reports, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['get'])
-    def reporting_chain(self, request, pk=None):
-        """Get full reporting chain (all managers above) for a specific user"""
-        hierarchy = self.get_object()
-        chain = []
-        
-        current = hierarchy
-        while current.reports_to:
-            try:
-                current = UserHierarchy.objects.get(
-                    user=current.reports_to, company=current.company
-                )
-                serializer = UserHierarchyListSerializer(current)
-                chain.append(serializer.data)
-            except UserHierarchy.DoesNotExist:
-                break
-        
-        return Response({'reporting_chain': chain})
-    
-    @action(detail=False, methods=['get'])
-    def by_geo(self, request):
-        """Filter by geographic assignment"""
-        region_id = request.query_params.get('region_id')
-        zone_id = request.query_params.get('zone_id')
-        territory_id = request.query_params.get('territory_id')
-        
-        queryset = UserHierarchy.objects.filter(is_active=True)
-        
-        if region_id:
-            queryset = queryset.filter(region_id=region_id)
-        if zone_id:
-            queryset = queryset.filter(zone_id=zone_id)
-        if territory_id:
-            queryset = queryset.filter(territory_id=territory_id)
-        
-        queryset = queryset.select_related('user', 'hierarchy_level')
-        serializer = UserHierarchyListSerializer(queryset, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['post'])
-    def bulk_assign(self, request):
-        """Bulk assign multiple users to hierarchy levels"""
-        assignments = request.data.get('assignments', [])
-        if not assignments:
-            return Response(
-                {'error': 'assignments list is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        created = []
-        errors = []
-        
-        for assignment in assignments:
-            serializer = UserHierarchyCreateUpdateSerializer(data=assignment)
-            if serializer.is_valid():
-                try:
-                    serializer.save(assigned_by=request.user)
-                    created.append(serializer.data)
-                except Exception as e:
-                    errors.append({'assignment': assignment, 'error': str(e)})
-            else:
-                errors.append({'assignment': assignment, 'errors': serializer.errors})
-        
-        return Response({
-            'created': created,
-            'errors': errors,
-            'total_created': len(created),
-            'total_errors': len(errors)
-        })
-        ### End of File ###

@@ -34,6 +34,73 @@ class MeetingViewSet(viewsets.ModelViewSet):
     ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees", "id"]
     ordering = ["-id"]
     
+    def get_queryset(self):
+        """
+        Filter meetings based on user's geographic hierarchy AND reporting hierarchy.
+        Users see:
+        1. Meetings in their assigned geographic areas (companies/regions/zones/territories)
+        2. Meetings created by their subordinates (reporting hierarchy)
+        """
+        from django.db.models import Q
+        
+        queryset = super().get_queryset()
+        user = self.request.user
+        
+        # During schema generation, return empty queryset for AnonymousUser
+        if not user.is_authenticated:
+            return queryset.none()
+        
+        # Superusers see everything
+        if user.is_superuser or user.is_staff:
+            return queryset
+        
+        # Get user's sales profile
+        sales_profile = getattr(user, 'sales_profile', None)
+        if not sales_profile:
+            # Non-sales staff see only their own meetings
+            return queryset.filter(user_id=user)
+        
+        # Build filter for geographic hierarchy
+        geo_filter = Q()
+        
+        # Add filters for assigned geographic areas
+        company_ids = list(sales_profile.companies.values_list('id', flat=True))
+        region_ids = list(sales_profile.regions.values_list('id', flat=True))
+        zone_ids = list(sales_profile.zones.values_list('id', flat=True))
+        territory_ids = list(sales_profile.territories.values_list('id', flat=True))
+        
+        if company_ids:
+            geo_filter |= Q(company_fk_id__in=company_ids)
+        if region_ids:
+            geo_filter |= Q(region_fk_id__in=region_ids)
+        if zone_ids:
+            geo_filter |= Q(zone_fk_id__in=zone_ids)
+        if territory_ids:
+            geo_filter |= Q(territory_fk_id__in=territory_ids)
+        
+        # Build filter for reporting hierarchy (subordinates)
+        reporting_filter = Q()
+        
+        # Get all subordinates' user IDs
+        subordinate_users = sales_profile.get_subordinate_users()
+        subordinate_user_ids = list(subordinate_users.values_list('id', flat=True))
+        
+        # Get all subordinates' territory IDs
+        subordinate_territory_ids = sales_profile.get_subordinate_territory_ids()
+        
+        if subordinate_user_ids:
+            reporting_filter |= Q(user_id__in=subordinate_user_ids)
+        if subordinate_territory_ids:
+            reporting_filter |= Q(territory_fk_id__in=subordinate_territory_ids)
+        
+        # Include own meetings
+        own_filter = Q(user_id=user)
+        
+        # Combine all filters with OR
+        final_filter = own_filter | geo_filter | reporting_filter
+        
+        return queryset.filter(final_filter).distinct()
+    
      # ---------------- Global Extra Data ----------------
     # Removed verbose nested data to reduce response size
     # The API now returns only IDs and names for companies, regions, zones, and territories
@@ -322,6 +389,72 @@ class FieldDayViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "region_fk__name", "zone_fk__name", "territory_fk__name", "company_fk__Company_name", "location", "feedback"]
     ordering_fields = ["date", "title", "region_fk__name", "zone_fk__name", "territory_fk__name"]
     ordering = ["-id"]
+    
+    def get_queryset(self):
+        """
+        Filter field days based on user's geographic hierarchy AND reporting hierarchy.
+        Same logic as MeetingViewSet - users see their data + subordinates' data.
+        """
+        from django.db.models import Q
+        
+        queryset = super().get_queryset()
+        user = self.request.user
+        
+        # During schema generation, return empty queryset for AnonymousUser
+        if not user.is_authenticated:
+            return queryset.none()
+        
+        # Superusers see everything
+        if user.is_superuser or user.is_staff:
+            return queryset
+        
+        # Get user's sales profile
+        sales_profile = getattr(user, 'sales_profile', None)
+        if not sales_profile:
+            # Non-sales staff see only their own field days
+            return queryset.filter(user=user)
+        
+        # Build filter for geographic hierarchy
+        geo_filter = Q()
+        
+        # Add filters for assigned geographic areas
+        company_ids = list(sales_profile.companies.values_list('id', flat=True))
+        region_ids = list(sales_profile.regions.values_list('id', flat=True))
+        zone_ids = list(sales_profile.zones.values_list('id', flat=True))
+        territory_ids = list(sales_profile.territories.values_list('id', flat=True))
+        
+        if company_ids:
+            geo_filter |= Q(company_fk_id__in=company_ids)
+        if region_ids:
+            geo_filter |= Q(region_fk_id__in=region_ids)
+        if zone_ids:
+            geo_filter |= Q(zone_fk_id__in=zone_ids)
+        if territory_ids:
+            geo_filter |= Q(territory_fk_id__in=territory_ids)
+        
+        # Build filter for reporting hierarchy (subordinates)
+        reporting_filter = Q()
+        
+        # Get all subordinates' user IDs
+        subordinate_users = sales_profile.get_subordinate_users()
+        subordinate_user_ids = list(subordinate_users.values_list('id', flat=True))
+        
+        # Get all subordinates' territory IDs
+        subordinate_territory_ids = sales_profile.get_subordinate_territory_ids()
+        
+        if subordinate_user_ids:
+            reporting_filter |= Q(user_id__in=subordinate_user_ids)
+        if subordinate_territory_ids:
+            reporting_filter |= Q(territory_fk_id__in=subordinate_territory_ids)
+        
+        # Include own field days
+        own_filter = Q(user=user)
+        
+        # Combine all filters with OR
+        final_filter = own_filter | geo_filter | reporting_filter
+        
+        return queryset.filter(final_filter).distinct()
+    
      # ---------------- Global Extra Data ----------------
     # Removed finalize_response method to eliminate verbose nested data for companies, regions, zones, and territories
     # The API now returns only IDs and names for these entities to reduce response size

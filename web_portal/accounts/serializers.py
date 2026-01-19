@@ -271,6 +271,17 @@ class SalesStaffProfileSerializer(serializers.ModelSerializer):
     territories = TerritoryDetailSerializer(many=True, read_only=True)
     hod = HODDetailSerializer(read_only=True)
     master_hod = HODDetailSerializer(read_only=True)
+    
+    # Reporting hierarchy fields
+    manager = HODDetailSerializer(read_only=True)
+    subordinates = HODDetailSerializer(many=True, read_only=True)
+    manager_id = serializers.PrimaryKeyRelatedField(
+        queryset=SalesStaffProfile.objects.all(), 
+        source='manager',
+        write_only=True, 
+        required=False, 
+        allow_null=True
+    )
 
     class Meta:
         model = SalesStaffProfile
@@ -321,6 +332,11 @@ class UserSerializer(serializers.ModelSerializer):
     master_hod = serializers.PrimaryKeyRelatedField(
         queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True
     )
+    
+    # Reporting hierarchy (profile-only)
+    manager = serializers.PrimaryKeyRelatedField(
+        queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True
+    )
 
     # Leave quotas (profile-only)
     sick_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
@@ -357,7 +373,7 @@ class UserSerializer(serializers.ModelSerializer):
             # Extra sales staff input fields (using plural names for M2M)
             'employee_code', 'phone_number', 'address', 'designation', 'date_of_joining',
             'companies', 'regions', 'zones', 'territories',  # For backward compatibility in write operations
-            'hod', 'master_hod',
+            'hod', 'master_hod', 'manager',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota',
             # Dealer fields
             'dealer_business_name', 'dealer_cnic_number', 'dealer_contact_number', 'dealer_mobile_phone',

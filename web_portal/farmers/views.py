@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
+from accounts.hierarchy_filters import HierarchyFilterMixin
 from .models import Farmer, FarmingHistory
 from .serializers import (
     FarmerSerializer, FarmerListSerializer, FarmerDetailSerializer,
@@ -15,9 +16,10 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 # ✅ Comprehensive Farmer ViewSet with Search and Filtering
-class FarmerViewSet(viewsets.ModelViewSet):
+class FarmerViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing farmers with comprehensive search and filtering capabilities.
+    Filters data based on user's position in reporting hierarchy.
     
     Provides:
     - List farmers with search and filtering
@@ -31,6 +33,7 @@ class FarmerViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = FarmerFilter
+    hierarchy_field = 'registered_by'  # Filter by user who registered the farmer
     search_fields = [
         'farmer_id', 'first_name', 'last_name', 'father_name',
         'primary_phone', 'email', 'village', 'district', 'province',

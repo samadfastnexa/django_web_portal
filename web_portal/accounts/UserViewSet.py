@@ -4,6 +4,7 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework import viewsets, permissions
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import action, permission_classes
 from django.contrib.auth import get_user_model
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -11,6 +12,7 @@ from django.core.exceptions import PermissionDenied
 from .filters import UserFilter
 from .serializers import UserSerializer, UserUpdateSerializer
 from accounts.permissions import HasRolePermission
+from accounts.hierarchy_permissions import CanViewHierarchy, CanManageHierarchy
 from django.db.models import Prefetch
 from FieldAdvisoryService.models import Company, Region, Zone, Territory
 from django.db import transaction
@@ -358,7 +360,7 @@ class UserViewSet(viewsets.ModelViewSet):
         # Extract profile fields
         profile_fields = [
             'employee_code', 'phone_number', 'address', 'designation',
-            'hod', 'master_hod', 'date_of_joining',
+            'hod', 'master_hod', 'manager', 'date_of_joining',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
         profile_data = {f: serializer.validated_data.pop(f, None) for f in profile_fields}
@@ -486,7 +488,7 @@ class UserViewSet(viewsets.ModelViewSet):
         # Extract profile fields
         profile_fields = [
             'employee_code', 'phone_number', 'address', 'designation',
-            'hod', 'master_hod','date_of_joining',
+            'hod', 'master_hod', 'manager', 'date_of_joining',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
         profile_data = {f: serializer.validated_data.pop(f, None) for f in profile_fields}
@@ -674,3 +676,196 @@ class UserViewSet(viewsets.ModelViewSet):
             {"detail": f"User {instance.username} soft deleted."},
             status=status.HTTP_204_NO_CONTENT
         )
+    
+    # ==================== HIERARCHY ENDPOINTS ====================
+    
+    @swagger_auto_schema(
+        tags=["02. User Management"],
+        operation_description="Get all subordinates (direct + indirect) of the current user",
+        responses={
+            200: openapi.Response(
+                description='List of subordinate users with their profiles',
+                examples={
+                    'application/json': {
+                        'count': 3,
+                        'subordinates': [
+                            {
+                                'id': 5,
+                                'username': 'john.doe',
+                                'email': 'john@example.com',
+                                'first_name': 'John',
+                                'last_name': 'Doe',
+                                'designation': 'FSM',
+                                'territories': [1, 2]
+                            }
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='my-team', permission_classes=[IsAuthenticated, CanViewHierarchy])
+    def my_team(self, request):
+        """
+        Get all subordinates (direct and indirect) of the current user.
+        Returns full user details with sales profile.
+        """
+        sales_profile = getattr(request.user, 'sales_profile', None)
+        if not sales_profile:
+            return Response(
+                {'error': 'Only sales staff can view their team'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        subordinates = sales_profile.get_all_subordinates(include_self=False)
+        subordinate_users = User.objects.filter(
+            sales_profile__in=subordinates
+        ).select_related('sales_profile')
+        
+        serializer = UserSerializer(subordinate_users, many=True)
+        
+        return Response({
+            'count': subordinate_users.count(),
+            'subordinates': serializer.data
+        })
+    
+    @swagger_auto_schema(
+        tags=["02. User Management"],
+        operation_description="Get the upward reporting chain (manager → manager's manager → CEO)",
+        responses={
+            200: openapi.Response(
+                description='Reporting chain from current user to top-level manager',
+                examples={
+                    'application/json': {
+                        'chain': [
+                            {
+                                'id': 3,
+                                'name': 'Ahmed Ali',
+                                'designation': 'ZM',
+                                'level': 0
+                            },
+                            {
+                                'id': 2,
+                                'name': 'Sara Khan',
+                                'designation': 'RSL',
+                                'level': 1
+                            },
+                            {
+                                'id': 1,
+                                'name': 'CEO',
+                                'designation': 'CEO',
+                                'level': 2
+                            }
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='my-reporting-chain', permission_classes=[IsAuthenticated, CanViewHierarchy])
+    def my_reporting_chain(self, request):
+        """
+        Get the upward reporting chain (self → manager → manager's manager → ... → CEO).
+        Shows who this user reports to, all the way up the hierarchy.
+        """
+        sales_profile = getattr(request.user, 'sales_profile', None)
+        if not sales_profile:
+            return Response(
+                {'error': 'Only sales staff have reporting chains'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        chain = sales_profile.get_reporting_chain(include_self=True)
+        
+        chain_data = []
+        for level, profile in enumerate(chain):
+            chain_data.append({
+                'id': profile.id,
+                'user_id': profile.user.id if profile.user else None,
+                'name': str(profile),
+                'designation': profile.designation,
+                'level': level,
+                'is_self': (level == 0)
+            })
+        
+        return Response({'chain': chain_data})
+    
+    @swagger_auto_schema(
+        tags=["02. User Management"],
+        operation_description="Get complete hierarchy view: subordinates + reporting chain",
+        responses={
+            200: openapi.Response(
+                description='Complete hierarchy showing both upward and downward relationships',
+                examples={
+                    'application/json': {
+                        'self': {
+                            'id': 3,
+                            'name': 'Ahmed Ali',
+                            'designation': 'ZM'
+                        },
+                        'manager': {
+                            'id': 2,
+                            'name': 'Sara Khan',
+                            'designation': 'RSL'
+                        },
+                        'subordinates_count': 3,
+                        'subordinates': [
+                            {
+                                'id': 5,
+                                'name': 'John Doe',
+                                'designation': 'FSM'
+                            }
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='my-hierarchy', permission_classes=[IsAuthenticated, CanViewHierarchy])
+    def my_hierarchy(self, request):
+        """
+        Get a complete hierarchy view: manager, self, and subordinates.
+        Useful for organization charts and understanding position in hierarchy.
+        """
+        sales_profile = getattr(request.user, 'sales_profile', None)
+        if not sales_profile:
+            return Response(
+                {'error': 'Only sales staff have hierarchies'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        subordinates = sales_profile.get_all_subordinates(include_self=False)
+        
+        hierarchy_data = {
+            'self': {
+                'id': sales_profile.id,
+                'user_id': request.user.id,
+                'name': str(sales_profile),
+                'designation': sales_profile.designation,
+                'employee_code': sales_profile.employee_code,
+            },
+            'manager': None,
+            'subordinates_count': subordinates.count(),
+            'subordinates': []
+        }
+        
+        # Add manager info
+        if sales_profile.manager:
+            hierarchy_data['manager'] = {
+                'id': sales_profile.manager.id,
+                'user_id': sales_profile.manager.user.id if sales_profile.manager.user else None,
+                'name': str(sales_profile.manager),
+                'designation': sales_profile.manager.designation,
+            }
+        
+        # Add subordinates
+        for sub in subordinates:
+            hierarchy_data['subordinates'].append({
+                'id': sub.id,
+                'user_id': sub.user.id if sub.user else None,
+                'name': str(sub),
+                'designation': sub.designation,
+                'is_direct': (sub.manager_id == sales_profile.id)
+            })
+        
+        return Response(hierarchy_data)

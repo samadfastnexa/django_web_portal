@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'kindwise',  # app for Kindwise crop identification
     'analytics',  # app for analytics and dashboard
     'general_ledger',  # app for SAP General Ledger reports
+    'cart',  # app for shopping cart and order management
 ]
 
 MIDDLEWARE = [
