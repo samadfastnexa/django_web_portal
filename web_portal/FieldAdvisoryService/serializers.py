@@ -216,7 +216,7 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = MeetingSchedule
         fields = [
-            'id', 'staff', 'fsm_name',
+            'id', 'meeting_id', 'staff', 'fsm_name',
             'company_id', 'region_id', 'zone_id', 'territory_id',
             'company_name', 'region_name', 'zone_name', 'territory_name',
             'date', 'location', 'total_attendees',
@@ -225,7 +225,7 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
             'attendees',
             'attendee_farmer_id', 'attendee_name', 'attendee_contact', 'attendee_acreage', 'attendee_crop',
         ]
-        read_only_fields = ['staff']
+        read_only_fields = ['staff', 'meeting_id']
     
     def get_company_name(self, obj):
         """Get company name from region, zone, or territory"""

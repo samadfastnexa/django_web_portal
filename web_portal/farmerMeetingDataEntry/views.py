@@ -7,7 +7,11 @@ from drf_yasg.utils import swagger_auto_schema
 from .models import Meeting
 from .serializers import MeetingSerializer
 from rest_framework import viewsets, filters, status, serializers
+from rest_framework.decorators import action
 from .models import FieldDay
+from django.http import HttpResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
 from .serializers import FieldDaySerializer
 from FieldAdvisoryService.serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer,Company,Region,Zone,Territory
 
@@ -277,6 +281,191 @@ class MeetingViewSet(viewsets.ModelViewSet):
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+
+    # ---------------- Export to Excel ----------------
+    @swagger_auto_schema(
+        tags=["12. Farmer Advisory Meeting"],
+        operation_description="Export filtered farmer advisory meetings to Excel format with all attendee details. Use 'id' parameter to download a specific record. Respects all applied filters and returns an .xlsx file.",
+        manual_parameters=[
+            openapi.Parameter('id', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Download specific meeting by ID (e.g., FM123ABC)'),
+            openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by FSM name'),
+            openapi.Parameter('company_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by company ID'),
+            openapi.Parameter('region_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by region ID'),
+            openapi.Parameter('zone_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by zone ID'),
+            openapi.Parameter('territory_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by territory ID'),
+            openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by location'),
+            openapi.Parameter('presence_of_zm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Zone Manager'),
+            openapi.Parameter('presence_of_rsm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Regional Sales Manager'),
+            openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by User ID (Created By)'),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Search in FSM name, region, zone, territory, location, topics'),
+            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Order by field (e.g., date, -date, fsm_name, -id)'),
+        ],
+        responses={
+            200: openapi.Response(
+                description='Excel file download',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_FILE
+                )
+            )
+        }
+    )
+    @action(detail=False, methods=['get'])
+    def export_to_excel(self, request):
+        """Export filtered meetings to Excel"""
+        from datetime import datetime
+        # Get filtered queryset based on current query params
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Create workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Farmer Meetings"
+        
+        # Add export date/time at the top
+        export_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        title_cell = ws.cell(row=1, column=1)
+        title_cell.value = f"Farmer Advisory Meeting Export - {export_time}"
+        title_cell.font = Font(bold=True, size=14, color="1F4E78")
+        ws.merge_cells('A1:R1')
+        
+        # Header style
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        
+        odd_row_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+        even_row_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        
+        from openpyxl.styles import Border, Side
+        thin_border = Border(
+            left=Side(style='thin', color='D3D3D3'),
+            right=Side(style='thin', color='D3D3D3'),
+            top=Side(style='thin', color='D3D3D3'),
+            bottom=Side(style='thin', color='D3D3D3')
+        )
+        
+        data_alignment = Alignment(vertical="top", wrap_text=True)
+        
+        # Headers - Meeting Info
+        main_headers = [
+            'ID', 'FSM Name', 'Date', 'Company', 'Region', 'Zone', 'Territory',
+            'Location', 'Total Attendees', 'ZM Present', 'RSM Present',
+            'Key Topics', 'Feedback', 'Suggestions'
+        ]
+        
+        # Attendee headers
+        attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
+        
+        # Write main headers in row 3 (columns A-N)
+        for col_num, header in enumerate(main_headers, 1):
+            cell = ws.cell(row=3, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # Write attendee headers (columns O-R)
+        for col_num, header in enumerate(attendee_headers, len(main_headers) + 1):
+            cell = ws.cell(row=3, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # Write data
+        row_num = 4
+        for meeting in queryset:
+            attendees = meeting.attendees.all()
+            
+            # Meeting main info (only once per meeting)
+            meeting_data = [
+                meeting.id, meeting.fsm_name,
+                meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
+                meeting.company_fk.Company_name if meeting.company_fk else '',
+                meeting.region_fk.name if meeting.region_fk else '',
+                meeting.zone_fk.name if meeting.zone_fk else '',
+                meeting.territory_fk.name if meeting.territory_fk else '',
+                meeting.location, meeting.total_attendees,
+                'Yes' if meeting.presence_of_zm else 'No',
+                'Yes' if meeting.presence_of_rsm else 'No',
+                meeting.key_topics_discussed,
+                meeting.feedback_from_attendees or '',
+                meeting.suggestions_for_future or ''
+            ]
+            
+            is_odd_row = (row_num - 4) % 2 == 0
+            row_fill = odd_row_fill if is_odd_row else even_row_fill
+            
+            if attendees.exists():
+                first_row = True
+                for attendee in attendees:
+                    # Write meeting info only in the first row
+                    if first_row:
+                        for col_num, value in enumerate(meeting_data, 1):
+                            cell = ws.cell(row=row_num, column=col_num, value=value)
+                            cell.fill = row_fill
+                            cell.border = thin_border
+                            cell.alignment = data_alignment
+                        first_row = False
+                    else:
+                        # Leave meeting columns empty for subsequent attendees
+                        for col_num in range(1, len(main_headers) + 1):
+                            cell = ws.cell(row=row_num, column=col_num, value='')
+                            cell.fill = row_fill
+                            cell.border = thin_border
+                    
+                    # Write attendee info
+                    for col_num, value in enumerate([
+                        attendee.farmer_name, attendee.contact_number,
+                        attendee.acreage, attendee.crop
+                    ], len(main_headers) + 1):
+                        cell = ws.cell(row=row_num, column=col_num, value=value)
+                        cell.fill = row_fill
+                        cell.border = thin_border
+                        cell.alignment = data_alignment
+                    row_num += 1
+            else:
+                # No attendees - just write meeting info
+                for col_num, value in enumerate(meeting_data, 1):
+                    cell = ws.cell(row=row_num, column=col_num, value=value)
+                    cell.fill = row_fill
+                    cell.border = thin_border
+                    cell.alignment = data_alignment
+                row_num += 1
+        
+        # Adjust column widths
+        from openpyxl.cell.cell import MergedCell
+        for col in ws.columns:
+            max_length = 0
+            col_letter = None
+            for cell in col:
+                # Skip merged cells
+                if isinstance(cell, MergedCell):
+                    continue
+                if col_letter is None:
+                    col_letter = cell.column_letter
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            if col_letter:
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[col_letter].width = adjusted_width
+        
+        ws.row_dimensions[1].height = 25
+        ws.row_dimensions[3].height = 30
+        ws.freeze_panes = 'A4'
+        
+        # Create response
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=farmer_meetings.xlsx'
+        wb.save(response)
+        return response
 
     # ---------------- Create ----------------
     @swagger_auto_schema(
@@ -675,6 +864,188 @@ class FieldDayViewSet(viewsets.ModelViewSet):
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+
+    # ---------------- Export to Excel ----------------
+    @swagger_auto_schema(
+        tags=["13. Field Day"],
+        operation_description="Export filtered field days to Excel format with all attendee details. Use 'id' parameter to download a specific record. Respects all applied filters and returns an .xlsx file.",
+        manual_parameters=[
+            openapi.Parameter('id', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Download specific field day by ID (e.g., FD123ABC)'),
+            openapi.Parameter('title', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by title/FSM name'),
+            openapi.Parameter('company_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by company ID'),
+            openapi.Parameter('region_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by region ID'),
+            openapi.Parameter('zone_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by zone ID'),
+            openapi.Parameter('territory_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by territory ID'),
+            openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by location'),
+            openapi.Parameter('total_participants', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by total participants'),
+            openapi.Parameter('is_active', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by active status'),
+            openapi.Parameter('user', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by User ID (Created By)'),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Search in title, company, region, zone, territory, location'),
+            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Order by field (e.g., date, -date, title, -id)'),
+        ],
+        responses={
+            200: openapi.Response(
+                description='Excel file download',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_FILE
+                )
+            )
+        }
+    )
+    @action(detail=False, methods=['get'])
+    def export_to_excel(self, request):
+        """Export filtered field days to Excel"""
+        from datetime import datetime
+        # Get filtered queryset based on current query params
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Create workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Field Days"
+        
+        # Add export date/time at the top
+        export_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        title_cell = ws.cell(row=1, column=1)
+        title_cell.value = f"Field Day Export - {export_time}"
+        title_cell.font = Font(bold=True, size=14, color="1F4E78")
+        ws.merge_cells('A1:P1')
+        
+        # Header style
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        
+        odd_row_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+        even_row_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        
+        from openpyxl.styles import Border, Side
+        thin_border = Border(
+            left=Side(style='thin', color='D3D3D3'),
+            right=Side(style='thin', color='D3D3D3'),
+            top=Side(style='thin', color='D3D3D3'),
+            bottom=Side(style='thin', color='D3D3D3')
+        )
+        
+        data_alignment = Alignment(vertical="top", wrap_text=True)
+        
+        # Headers - Field Day Info
+        main_headers = [
+            'ID', 'Title', 'Date', 'Company', 'Region', 'Zone', 'Territory',
+            'Total Participants', 'Demonstrations Conducted', 'User', 'Active', 'Feedback'
+        ]
+        
+        # Attendee headers
+        attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
+        
+        # Write main headers in row 3 (columns A-L)
+        for col_num, header in enumerate(main_headers, 1):
+            cell = ws.cell(row=3, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # Write attendee headers (columns M-P)
+        for col_num, header in enumerate(attendee_headers, len(main_headers) + 1):
+            cell = ws.cell(row=3, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # Write data
+        row_num = 4
+        for field_day in queryset:
+            attendees = field_day.attendees.all()
+            
+            # Field day main info (only once per field day)
+            field_day_data = [
+                field_day.id, field_day.title,
+                field_day.date.strftime('%Y-%m-%d %H:%M') if field_day.date else '',
+                field_day.company_fk.Company_name if field_day.company_fk else '',
+                field_day.region_fk.name if field_day.region_fk else '',
+                field_day.zone_fk.name if field_day.zone_fk else '',
+                field_day.territory_fk.name if field_day.territory_fk else '',
+                field_day.total_participants, field_day.demonstrations_conducted,
+                field_day.user.username if field_day.user else '',
+                'Yes' if field_day.is_active else 'No',
+                field_day.feedback or ''
+            ]
+            
+            is_odd_row = (row_num - 4) % 2 == 0
+            row_fill = odd_row_fill if is_odd_row else even_row_fill
+            
+            if attendees.exists():
+                first_row = True
+                for attendee in attendees:
+                    # Write field day info only in the first row
+                    if first_row:
+                        for col_num, value in enumerate(field_day_data, 1):
+                            cell = ws.cell(row=row_num, column=col_num, value=value)
+                            cell.fill = row_fill
+                            cell.border = thin_border
+                            cell.alignment = data_alignment
+                        first_row = False
+                    else:
+                        # Leave field day columns empty for subsequent attendees
+                        for col_num in range(1, len(main_headers) + 1):
+                            cell = ws.cell(row=row_num, column=col_num, value='')
+                            cell.fill = row_fill
+                            cell.border = thin_border
+                    
+                    # Write attendee info
+                    for col_num, value in enumerate([
+                        attendee.farmer_name, attendee.contact_number,
+                        attendee.acreage, attendee.crop
+                    ], len(main_headers) + 1):
+                        cell = ws.cell(row=row_num, column=col_num, value=value)
+                        cell.fill = row_fill
+                        cell.border = thin_border
+                        cell.alignment = data_alignment
+                    row_num += 1
+            else:
+                # No attendees - just write field day info
+                for col_num, value in enumerate(field_day_data, 1):
+                    cell = ws.cell(row=row_num, column=col_num, value=value)
+                    cell.fill = row_fill
+                    cell.border = thin_border
+                    cell.alignment = data_alignment
+                row_num += 1
+        
+        # Adjust column widths
+        from openpyxl.cell.cell import MergedCell
+        for col in ws.columns:
+            max_length = 0
+            col_letter = None
+            for cell in col:
+                # Skip merged cells
+                if isinstance(cell, MergedCell):
+                    continue
+                if col_letter is None:
+                    col_letter = cell.column_letter
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            if col_letter:
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[col_letter].width = adjusted_width
+        
+        ws.row_dimensions[1].height = 25
+        ws.row_dimensions[3].height = 30
+        ws.freeze_panes = 'A4'
+        
+        # Create response
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=field_days.xlsx'
+        wb.save(response)
+        return response
 
     # ---------------- Create ----------------
     @swagger_auto_schema(
