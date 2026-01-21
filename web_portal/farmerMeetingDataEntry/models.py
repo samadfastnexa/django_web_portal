@@ -53,6 +53,11 @@ class Meeting(models.Model):
 
     def __str__(self):
         return f"{self.id} - {self.user_id.username if self.user_id else 'No User'}"
+    
+    class Meta:
+        ordering = ['-id']
+        verbose_name = "Farmer Advisory Meeting"
+        verbose_name_plural = "Farmer Advisory Meetings"
 
 class FarmerAttendance(models.Model):
     meeting = models.ForeignKey(Meeting, related_name='attendees', on_delete=models.CASCADE)
@@ -159,6 +164,14 @@ class FieldDay(models.Model):
         if not self.id:
             self.id = f"FD{uuid.uuid4().hex[:6].upper()}"
         super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.id} - {self.title}"
+    
+    class Meta:
+        ordering = ['-id']
+        verbose_name = "Field Day"
+        verbose_name_plural = "Field Days"
 
 class FieldDayAttendance(models.Model):
     field_day = models.ForeignKey(FieldDay, related_name="attendees", on_delete=models.CASCADE)

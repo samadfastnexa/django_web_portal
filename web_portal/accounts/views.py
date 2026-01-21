@@ -225,6 +225,142 @@ class SignupView(generics.CreateAPIView):
                 required=False
             ),
             openapi.Parameter(
+                'is_dealer',
+                openapi.IN_FORM,
+                description='Set to true if registering a dealer account',
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+            # Dealer-specific fields (required if is_dealer=true)
+            openapi.Parameter(
+                'dealer_business_name',
+                openapi.IN_FORM,
+                description='Business/Company Name (required if is_dealer=true)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_cnic_number',
+                openapi.IN_FORM,
+                description='CNIC Number (13 or 15 digits, required if is_dealer=true)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_contact_number',
+                openapi.IN_FORM,
+                description='Primary Contact Number (required if is_dealer=true)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_mobile_phone',
+                openapi.IN_FORM,
+                description='Mobile/WhatsApp Number',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_company_id',
+                openapi.IN_FORM,
+                description='Company ID (required if is_dealer=true)',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_region_id',
+                openapi.IN_FORM,
+                description='Region ID',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_zone_id',
+                openapi.IN_FORM,
+                description='Zone ID',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_territory_id',
+                openapi.IN_FORM,
+                description='Territory ID',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_address',
+                openapi.IN_FORM,
+                description='Full Address (required if is_dealer=true)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_city',
+                openapi.IN_FORM,
+                description='City',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_state',
+                openapi.IN_FORM,
+                description='State/Province',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_federal_tax_id',
+                openapi.IN_FORM,
+                description='NTN Number (National Tax Number)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_filer_status',
+                openapi.IN_FORM,
+                description='Tax Filer Status',
+                type=openapi.TYPE_STRING,
+                required=False,
+                enum=['01', '02']
+            ),
+            openapi.Parameter(
+                'dealer_govt_license_number',
+                openapi.IN_FORM,
+                description='Government License Number',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_license_expiry',
+                openapi.IN_FORM,
+                description='License Expiry Date (YYYY-MM-DD)',
+                type=openapi.TYPE_STRING,
+                format='date',
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_minimum_investment',
+                openapi.IN_FORM,
+                description='Minimum Investment Amount',
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_cnic_front_image',
+                openapi.IN_FORM,
+                description='CNIC Front Image (JPEG, PNG)',
+                type=openapi.TYPE_FILE,
+                required=False
+            ),
+            openapi.Parameter(
+                'dealer_cnic_back_image',
+                openapi.IN_FORM,
+                description='CNIC Back Image (JPEG, PNG)',
+                type=openapi.TYPE_FILE,
+                required=False
+            ),
+            openapi.Parameter(
                 'employee_code',
                 openapi.IN_FORM,
                 description='Unique employee identification code (required if is_sales_staff=true)',
@@ -328,13 +464,15 @@ class SignupView(generics.CreateAPIView):
                         'first_name': 'John',
                         'last_name': 'Doe',
                         'is_sales_staff': True,
+                        'is_dealer': False,
                         'is_active': True,
                         'date_joined': '2024-01-15T10:30:00Z',
                         'sales_profile': {
                             'employee_code': 'EMP001',
                             'designation': 'MTO',
                             'phone_number': '+1234567890'
-                        }
+                        },
+                        'dealer': None
                     }
                 }
             ),

@@ -36,6 +36,7 @@ class FarmerAdmin(admin.ModelAdmin):
         'primary_phone', 'email', 'village', 'tehsil', 'district'
     )
     readonly_fields = ('registration_date', 'last_updated', 'age')
+    ordering = ['-id']
     
     fieldsets = (
         ('Basic Information', {

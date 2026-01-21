@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib import messages
 from django.db.models import Q
-from .models import User, Role, SalesStaffProfile
+from .models import User, Role, SalesStaffProfile, DesignationModel
 from web_portal.admin import admin_site
 
 # Import Dealer model for the inline
@@ -25,8 +25,9 @@ class SalesProfileInline(admin.StackedInline):
         ('Location', {
             'fields': ('companies', 'regions', 'zones', 'territories')  # ✅ updated M2M
         }),
-        ('Reporting', {
-            'fields': ('hod', 'master_hod')
+        ('Reporting Hierarchy', {
+            'fields': ('manager', 'hod', 'master_hod'),
+            'description': 'Reporting hierarchy: manager = direct supervisor in reporting chain'
         }),
         ('Leave Quotas', {
             'fields': ('sick_leave_quota', 'casual_leave_quota', 'others_leave_quota')
@@ -262,10 +263,11 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(SalesStaffProfile, site=admin_site)
 class SalesStaffProfileAdmin(admin.ModelAdmin):
     """Admin for SalesStaffProfile with data integrity checks"""
-    list_display = ['id', 'designation', 'employee_code', 'user_display', 'is_vacant']
+    list_display = ['id', 'designation', 'employee_code', 'user_display', 'manager_display', 'subordinates_count', 'is_vacant']
     list_filter = ['designation', 'is_vacant', 'employee_code']
     search_fields = ['user__email', 'user__username', 'employee_code']
     filter_horizontal = ('companies', 'regions', 'zones', 'territories')
+    raw_id_fields = ('manager', 'hod', 'master_hod')
     
     fieldsets = (
         ('User Assignment', {
@@ -277,8 +279,9 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
         ('Location', {
             'fields': ('companies', 'regions', 'zones', 'territories')
         }),
-        ('Reporting', {
-            'fields': ('hod', 'master_hod')
+        ('Reporting Hierarchy', {
+            'fields': ('manager', 'hod', 'master_hod'),
+            'description': 'Manager = direct supervisor in reporting chain. Subordinates will see this person\'s data.'
         }),
         ('Leave Quotas', {
             'fields': ('sick_leave_quota', 'casual_leave_quota', 'others_leave_quota')
@@ -293,6 +296,85 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
             return "🔴 VACANT"
         return "⚠️ UNASSIGNED"
     user_display.short_description = 'User'
+    
+    def manager_display(self, obj):
+        """Display manager in list view"""
+        if obj.manager:
+            return f"{obj.manager}"
+        return "—"
+    manager_display.short_description = 'Reports To'
+    
+    def subordinates_count(self, obj):
+        """Display count of subordinates"""
+        try:
+            count = obj.subordinates.filter(is_vacant=False).count()
+            if count > 0:
+                return f"👥 {count}"
+            return "—"
+        except:
+            return "—"
+    subordinates_count.short_description = 'Team Size'
+    
+    actions = ['view_hierarchy_tree', 'view_reporting_chain']
+    
+    def view_hierarchy_tree(self, request, queryset):
+        """Show hierarchy tree for selected profiles"""
+        if queryset.count() != 1:
+            self.message_user(
+                request,
+                '⚠️ Please select exactly one profile to view hierarchy tree.',
+                messages.WARNING
+            )
+            return
+        
+        profile = queryset.first()
+        subordinates = profile.get_all_subordinates(include_self=False)
+        chain = profile.get_reporting_chain(include_self=True)
+        
+        # Build hierarchy message
+        msg_lines = [f"\n📊 Hierarchy for {profile}:\n"]
+        
+        # Show reporting chain (upward)
+        msg_lines.append("📈 Reports to:")
+        for i, manager in enumerate(chain[1:], 1):  # Skip self
+            indent = "  " * i
+            msg_lines.append(f"{indent}↑ {manager} ({manager.designation})")
+        if len(chain) == 1:
+            msg_lines.append("  → Top level (no manager)")
+        
+        # Show subordinates (downward)
+        msg_lines.append(f"\n👥 Team ({subordinates.count()} subordinates):")
+        if subordinates.exists():
+            for sub in subordinates:
+                is_direct = "Direct" if sub.manager_id == profile.id else "Indirect"
+                msg_lines.append(f"  • {sub} ({sub.designation}) - {is_direct}")
+        else:
+            msg_lines.append("  → No subordinates")
+        
+        self.message_user(request, "\n".join(msg_lines), messages.INFO)
+    
+    view_hierarchy_tree.short_description = "📊 View hierarchy tree"
+    
+    def view_reporting_chain(self, request, queryset):
+        """Show reporting chain to CEO"""
+        selected = queryset.count()
+        msg_lines = []
+        
+        for profile in queryset[:5]:  # Limit to 5 to avoid spam
+            chain = profile.get_reporting_chain(include_self=True)
+            chain_str = " → ".join([f"{p} ({p.designation})" for p in chain])
+            msg_lines.append(f"• {chain_str}")
+        
+        if selected > 5:
+            msg_lines.append(f"... and {selected - 5} more")
+        
+        self.message_user(
+            request,
+            "📈 Reporting Chains:\n" + "\n".join(msg_lines),
+            messages.INFO
+        )
+    
+    view_reporting_chain.short_description = "📈 View reporting chain"
     
     def changelist_view(self, request, extra_context=None):
         """Check for data integrity issues"""
@@ -346,3 +428,51 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
                 )
 
 
+@admin.register(DesignationModel, site=admin_site)
+class DesignationAdmin(admin.ModelAdmin):
+    """Admin for dynamic Designation management"""
+    list_display = ['code', 'name', 'level', 'is_active', 'staff_count']
+    list_filter = ['is_active', 'level']
+    search_fields = ['code', 'name', 'description']
+    ordering = ['level', 'name']
+    list_editable = ['level', 'is_active']
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('code', 'name', 'level')
+        }),
+        ('Details', {
+            'fields': ('description', 'is_active')
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    readonly_fields = ('created_at', 'updated_at')
+    
+    def staff_count(self, obj):
+        """Show count of staff with this designation"""
+        count = obj.staff_members.filter(is_vacant=False).count()
+        if count > 0:
+            return f"👥 {count}"
+        return "—"
+    staff_count.short_description = 'Active Staff'
+    
+    def has_delete_permission(self, request, obj=None):
+        """Prevent deletion if designation is in use"""
+        if obj and obj.staff_members.exists():
+            return False
+        return super().has_delete_permission(request, obj)
+    
+    def delete_model(self, request, obj):
+        """Check if designation is in use before deletion"""
+        if obj.staff_members.exists():
+            self.message_user(
+                request,
+                f'❌ Cannot delete "{obj.name}" - {obj.staff_members.count()} staff member(s) are using this designation.',
+                messages.ERROR
+            )
+            return
+        super().delete_model(request, obj)

@@ -4,16 +4,18 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from django.core.paginator import Paginator
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.admin.views.decorators import staff_member_required
+from accounts.hierarchy_filters import HierarchyFilterMixin
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
 
-from .models import Dealer, MeetingSchedule, SalesOrder, HierarchyLevel, UserHierarchy
+from .models import Dealer, MeetingSchedule, SalesOrder
 from .serializers import (
     DealerSerializer, DealerRequestSerializer, MeetingScheduleSerializer, SalesOrderSerializer, SalesOrderFormSerializer,
     CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer, DealerRequestSerializer,
-    CompanyNestedSerializer, RegionNestedSerializer, ZoneNestedSerializer, TerritoryNestedSerializer,
-    HierarchyLevelSerializer, UserHierarchyListSerializer, UserHierarchyDetailSerializer, UserHierarchyCreateUpdateSerializer
+    CompanyNestedSerializer, RegionNestedSerializer, ZoneNestedSerializer, TerritoryNestedSerializer
 )
 from .models import DealerRequest
 from .models import Company, Region, Zone, Territory
@@ -27,16 +29,18 @@ from rest_framework import viewsets
 from drf_yasg import openapi
 
 
-class MeetingScheduleViewSet(viewsets.ModelViewSet):
+class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing Meeting Schedules.
     Supports list, retrieve, create, update, partial update, and delete.
+    Filters data based on user's position in reporting hierarchy.
     """
     queryset = MeetingSchedule.objects.select_related('region', 'zone', 'territory', 'staff').all()
     serializer_class = MeetingScheduleSerializer
     parser_classes = [MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     permission_classes = [IsAuthenticated, HasRolePermission]
+    hierarchy_field = 'staff'  # Filter by staff who created the meeting
     filterset_fields = ["fsm_name", "region", "zone", "territory", "location", "presence_of_zm", "presence_of_rsm", "staff"]
     search_fields = ["fsm_name", "region__name", "zone__name", "territory__name", "location", "key_topics_discussed"]
     ordering_fields = ["date", "fsm_name", "region__name", "zone__name", "territory__name", "total_attendees"]
@@ -82,10 +86,15 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
                     'application/json': [
                         {
                             'id': 1,
+                            'meeting_id': 'FAS01',
                             'fsm_name': 'Ahmed Ali',
+                            'company_name': 'Tarzan Crop Sciences',
                             'region_id': 1,
+                            'region_name': 'Punjab',
                             'zone_id': 1,
+                            'zone_name': 'Central Punjab',
                             'territory_id': 1,
+                            'territory_name': 'Lahore',
                             'date': '2024-01-15',
                             'location': 'Community Center',
                             'total_attendees': 25,
@@ -120,9 +129,13 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
                     'application/json': {
                         'id': 1,
                         'fsm_name': 'Ahmed Ali',
+                        'company_name': 'Tarzan Crop Sciences',
                         'region_id': 1,
+                        'region_name': 'Punjab',
                         'zone_id': 1,
+                        'zone_name': 'Central Punjab',
                         'territory_id': 1,
+                        'territory_name': 'Lahore',
                         'date': '2024-01-15',
                         'location': 'Community Center',
                         'total_attendees': 25,
@@ -149,6 +162,186 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Export meeting schedules to Excel. Returns an Excel file with all filtered meeting schedules and their attendee details. Use 'id' parameter to download a specific record. Respects all query parameters used for filtering.",
+        manual_parameters=[
+            openapi.Parameter('id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Download specific meeting by ID'),
+            openapi.Parameter('staff', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Staff ID (User ID)'),
+            openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by Field Sales Manager name'),
+            openapi.Parameter('region', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Region ID'),
+            openapi.Parameter('zone', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Zone ID'),
+            openapi.Parameter('territory', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Territory ID'),
+            openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by Location'),
+            openapi.Parameter('presence_of_zm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Zone Manager'),
+            openapi.Parameter('presence_of_rsm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Regional Sales Manager'),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Search in FSM name, region, zone, territory, location, topics'),
+            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Order by field (e.g., date, -date, fsm_name, -id)'),
+        ],
+        responses={
+            200: openapi.Response(
+                description='Excel file download',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_FILE,
+                    format='binary'
+                )
+            )
+        },
+        tags=["14. MeetingSchedules"]
+    )
+    @action(detail=False, methods=['get'], url_path='export-to-excel')
+    def export_to_excel(self, request):
+        """Export filtered meeting schedules to Excel"""
+        from datetime import datetime
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Meeting Schedules"
+        
+        # Add export date/time at the top
+        export_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        title_cell = ws.cell(row=1, column=1)
+        title_cell.value = f"Field Advisory Meeting Schedule Export - {export_time}"
+        title_cell.font = Font(bold=True, size=14, color="1F4E78")
+        ws.merge_cells('A1:S1')
+        
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        
+        odd_row_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+        even_row_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        
+        from openpyxl.styles import Border, Side
+        thin_border = Border(
+            left=Side(style='thin', color='D3D3D3'),
+            right=Side(style='thin', color='D3D3D3'),
+            top=Side(style='thin', color='D3D3D3'),
+            bottom=Side(style='thin', color='D3D3D3')
+        )
+        
+        data_alignment = Alignment(vertical="top", wrap_text=True)
+        
+        # Headers - Meeting Schedule Info
+        main_headers = [
+            'Meeting ID', 'FSM Name', 'Date', 'Region', 'Zone', 'Territory', 
+            'Location', 'Total Attendees', 'Confirmed Attendees', 
+            'Min Farmers Required', 'ZM Present', 'RSM Present',
+            'Key Topics Discussed', 'Feedback', 'Suggestions'
+        ]
+        
+        # Attendee headers
+        attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
+        
+        # Write main headers in row 3 (columns A-O)
+        for col_num, header in enumerate(main_headers, 1):
+            cell = ws.cell(row=3, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # Write attendee headers (columns P-S)
+        for col_num, header in enumerate(attendee_headers, len(main_headers) + 1):
+            cell = ws.cell(row=3, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        row_num = 4
+        for meeting in queryset:
+            attendees = meeting.attendees.all()
+            
+            # Meeting main info (only once per meeting)
+            meeting_data = [
+                meeting.meeting_id, meeting.fsm_name,
+                meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
+                meeting.region.name if meeting.region else '',
+                meeting.zone.name if meeting.zone else '',
+                meeting.territory.name if meeting.territory else '',
+                meeting.location, meeting.total_attendees, meeting.confirmed_attendees,
+                meeting.min_farmers_required,
+                'Yes' if meeting.presence_of_zm else 'No',
+                'Yes' if meeting.presence_of_rsm else 'No',
+                meeting.key_topics_discussed,
+                meeting.feedback_from_attendees or '',
+                meeting.suggestions_for_future or ''
+            ]
+            
+            is_odd_row = (row_num - 4) % 2 == 0
+            row_fill = odd_row_fill if is_odd_row else even_row_fill
+            
+            if attendees.exists():
+                first_row = True
+                for attendee in attendees:
+                    # Write meeting info only in the first row
+                    if first_row:
+                        for col_num, value in enumerate(meeting_data, 1):
+                            cell = ws.cell(row=row_num, column=col_num, value=value)
+                            cell.fill = row_fill
+                            cell.border = thin_border
+                            cell.alignment = data_alignment
+                        first_row = False
+                    else:
+                        # Leave meeting columns empty for subsequent attendees
+                        for col_num in range(1, len(main_headers) + 1):
+                            cell = ws.cell(row=row_num, column=col_num, value='')
+                            cell.fill = row_fill
+                            cell.border = thin_border
+                    
+                    # Write attendee info
+                    for col_num, value in enumerate([
+                        attendee.farmer_name, attendee.contact_number,
+                        attendee.acreage, attendee.crop
+                    ], len(main_headers) + 1):
+                        cell = ws.cell(row=row_num, column=col_num, value=value)
+                        cell.fill = row_fill
+                        cell.border = thin_border
+                        cell.alignment = data_alignment
+                    row_num += 1
+            else:
+                # No attendees - just write meeting info
+                for col_num, value in enumerate(meeting_data, 1):
+                    cell = ws.cell(row=row_num, column=col_num, value=value)
+                    cell.fill = row_fill
+                    cell.border = thin_border
+                    cell.alignment = data_alignment
+                row_num += 1
+        
+        # Adjust column widths
+        from openpyxl.cell.cell import MergedCell
+        for col in ws.columns:
+            max_length = 0
+            col_letter = None
+            for cell in col:
+                # Skip merged cells
+                if isinstance(cell, MergedCell):
+                    continue
+                if col_letter is None:
+                    col_letter = cell.column_letter
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            if col_letter:
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[col_letter].width = adjusted_width
+        
+        ws.row_dimensions[1].height = 25
+        ws.row_dimensions[3].height = 30
+        ws.freeze_panes = 'A4'
+        
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=meeting_schedules.xlsx'
+        wb.save(response)
+        return response
 
     @swagger_auto_schema(
         operation_description="Create a meeting schedule with FSM name, region, zone, territory, and attendees.",
@@ -229,17 +422,19 @@ class MeetingScheduleViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class SalesOrderViewSet(viewsets.ModelViewSet):
+class SalesOrderViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing Sales Orders.
     Supports list, retrieve, create, update, partial update, and delete.
     Accepts form-data format only.
+    Filters data based on user's position in reporting hierarchy.
     """
     queryset = SalesOrder.objects.all()
     serializer_class = SalesOrderSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [IsAuthenticated, HasRolePermission]
     ordering = ['-id']
+    hierarchy_field = 'staff'  # Filter by staff who created the order
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -1647,194 +1842,3 @@ def api_customer_details(request):
         error_trace = traceback.format_exc()
         logger.error(f"Error in api_customer_details: {str(e)}\n{error_trace}")
         return JsonResponse({'error': str(e), 'trace': error_trace}, status=500)
-
-# ==================== Hierarchy ViewSets ====================
-
-class HierarchyLevelViewSet(viewsets.ModelViewSet):
-    """
-    CRUD operations for organizational hierarchy levels.
-    Supports dynamic level creation, update, and management.
-    
-    Endpoints:
-    - GET /api/hierarchy-levels/ - List all levels
-    - POST /api/hierarchy-levels/ - Create new level
-    - GET /api/hierarchy-levels/{id}/ - Retrieve specific level
-    - PUT /api/hierarchy-levels/{id}/ - Update level
-    - PATCH /api/hierarchy-levels/{id}/ - Partial update
-    - DELETE /api/hierarchy-levels/{id}/ - Delete level
-    """
-    queryset = HierarchyLevel.objects.select_related('company', 'created_by').all()
-    serializer_class = HierarchyLevelSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['company', 'level_code', 'is_active']
-    search_fields = ['level_name', 'level_code', 'company__Company_name']
-    ordering_fields = ['level_order', 'created_at', 'level_name']
-    ordering = ['level_order']
-    
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
-    
-    @action(detail=False, methods=['get'])
-    def by_company(self, request):
-        """Get hierarchy levels for a specific company"""
-        company_id = request.query_params.get('company_id')
-        if not company_id:
-            return Response({'error': 'company_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        levels = HierarchyLevel.objects.filter(
-            company_id=company_id,
-            is_active=True
-        ).order_by('level_order')
-        serializer = self.get_serializer(levels, many=True)
-        return Response(serializer.data)
-
-
-class UserHierarchyViewSet(viewsets.ModelViewSet):
-    """
-    CRUD operations for user hierarchy assignments.
-    Manages reporting structure, hierarchy levels, and geo assignments.
-    
-    Endpoints:
-    - GET /api/user-hierarchies/ - List all assignments
-    - POST /api/user-hierarchies/ - Create new assignment
-    - GET /api/user-hierarchies/{id}/ - Retrieve specific assignment
-    - PUT /api/user-hierarchies/{id}/ - Update assignment
-    - PATCH /api/user-hierarchies/{id}/ - Partial update
-    - DELETE /api/user-hierarchies/{id}/ - Delete assignment
-    """
-    queryset = UserHierarchy.objects.select_related(
-        'user', 'company', 'hierarchy_level', 'reports_to',
-        'region', 'zone', 'territory', 'assigned_by'
-    ).all()
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['company', 'hierarchy_level', 'region', 'zone', 'territory', 'is_active']
-    search_fields = ['user__username', 'user__first_name', 'user__last_name', 'user__email']
-    ordering_fields = ['hierarchy_level__level_order', 'assigned_at', 'user__username']
-    ordering = ['hierarchy_level__level_order']
-    
-    def get_serializer_class(self):
-        """Return appropriate serializer based on action"""
-        if self.action == 'list':
-            return UserHierarchyListSerializer
-        elif self.action == 'retrieve':
-            return UserHierarchyDetailSerializer
-        else:
-            return UserHierarchyCreateUpdateSerializer
-    
-    def perform_create(self, serializer):
-        serializer.save(assigned_by=self.request.user)
-    
-    def perform_update(self, serializer):
-        serializer.save(assigned_by=self.request.user)
-    
-    @action(detail=False, methods=['get'])
-    def by_company(self, request):
-        """Get all users' hierarchy assignments in a company"""
-        company_id = request.query_params.get('company_id')
-        if not company_id:
-            return Response({'error': 'company_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        hierarchies = UserHierarchy.objects.filter(
-            company_id=company_id, is_active=True
-        ).select_related('user', 'hierarchy_level', 'reports_to').order_by('hierarchy_level__level_order')
-        
-        serializer = UserHierarchyListSerializer(hierarchies, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['get'])
-    def by_hierarchy_level(self, request):
-        """Get users at a specific hierarchy level"""
-        level_id = request.query_params.get('level_id')
-        if not level_id:
-            return Response({'error': 'level_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        hierarchies = UserHierarchy.objects.filter(
-            hierarchy_level_id=level_id, is_active=True
-        ).select_related('user', 'hierarchy_level', 'company')
-        
-        serializer = UserHierarchyListSerializer(hierarchies, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['get'])
-    def direct_reports(self, request, pk=None):
-        """Get all direct reports for a specific user"""
-        hierarchy = self.get_object()
-        direct_reports = UserHierarchy.objects.filter(
-            reports_to=hierarchy.user, company=hierarchy.company, is_active=True
-        ).select_related('user', 'hierarchy_level', 'region', 'zone', 'territory')
-        
-        serializer = UserHierarchyListSerializer(direct_reports, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['get'])
-    def reporting_chain(self, request, pk=None):
-        """Get full reporting chain (all managers above) for a specific user"""
-        hierarchy = self.get_object()
-        chain = []
-        
-        current = hierarchy
-        while current.reports_to:
-            try:
-                current = UserHierarchy.objects.get(
-                    user=current.reports_to, company=current.company
-                )
-                serializer = UserHierarchyListSerializer(current)
-                chain.append(serializer.data)
-            except UserHierarchy.DoesNotExist:
-                break
-        
-        return Response({'reporting_chain': chain})
-    
-    @action(detail=False, methods=['get'])
-    def by_geo(self, request):
-        """Filter by geographic assignment"""
-        region_id = request.query_params.get('region_id')
-        zone_id = request.query_params.get('zone_id')
-        territory_id = request.query_params.get('territory_id')
-        
-        queryset = UserHierarchy.objects.filter(is_active=True)
-        
-        if region_id:
-            queryset = queryset.filter(region_id=region_id)
-        if zone_id:
-            queryset = queryset.filter(zone_id=zone_id)
-        if territory_id:
-            queryset = queryset.filter(territory_id=territory_id)
-        
-        queryset = queryset.select_related('user', 'hierarchy_level')
-        serializer = UserHierarchyListSerializer(queryset, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['post'])
-    def bulk_assign(self, request):
-        """Bulk assign multiple users to hierarchy levels"""
-        assignments = request.data.get('assignments', [])
-        if not assignments:
-            return Response(
-                {'error': 'assignments list is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        created = []
-        errors = []
-        
-        for assignment in assignments:
-            serializer = UserHierarchyCreateUpdateSerializer(data=assignment)
-            if serializer.is_valid():
-                try:
-                    serializer.save(assigned_by=request.user)
-                    created.append(serializer.data)
-                except Exception as e:
-                    errors.append({'assignment': assignment, 'error': str(e)})
-            else:
-                errors.append({'assignment': assignment, 'errors': serializer.errors})
-        
-        return Response({
-            'created': created,
-            'errors': errors,
-            'total_created': len(created),
-            'total_errors': len(errors)
-        })
-        ### End of File ###

@@ -88,5 +88,6 @@ urlpatterns = [
      path('api/', include('crop_manage.urls')),  # <-- add this
     path('api/kindwise/', include('kindwise.urls')),  # Kindwise app URLs
     path('api/analytics/', include('analytics.urls')),  # Analytics dashboard APIs
+    path('api/cart/', include('cart.urls')),  # Shopping cart and orders
     path('', include('general_ledger.urls')),  # General Ledger app URLs (includes both API and admin routes)
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

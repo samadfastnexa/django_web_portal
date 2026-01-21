@@ -64,7 +64,7 @@ class Farmer(models.Model):
     class Meta:
         verbose_name = _('Farmer')
         verbose_name_plural = _('Farmers')
-        ordering = ['first_name', 'last_name']
+        ordering = ['-id']
         indexes = [
             models.Index(fields=['farmer_id']),
             models.Index(fields=['district', 'tehsil']),

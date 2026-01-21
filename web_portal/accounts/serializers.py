@@ -53,6 +53,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
     )
     profile_image = serializers.ImageField(required=False)
     is_sales_staff = serializers.BooleanField(required=False)
+    is_dealer = serializers.BooleanField(required=False)
 
     # Sales staff fields (optional, allow blank/null)
     employee_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -84,7 +85,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'password',
             'first_name', 'last_name', 'profile_image',
             'role', 'is_active', 'is_staff',
-            'is_sales_staff','date_joined',
+            'is_sales_staff', 'is_dealer', 'date_joined',
             # SalesStaffProfile fields
             'employee_code', 'phone_number', 'address', 'designation','company','hod', 'master_hod',
             'region', 'zone', 'territory','sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
@@ -126,6 +127,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         is_sales = validated_data.pop('is_sales_staff', False)
+        is_dealer = validated_data.pop('is_dealer', False)
 
         # Always remove sales staff–only fields from User data
         sales_staff_fields = [
@@ -140,6 +142,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
         user = User(**validated_data)
         user.set_password(password)
         user.is_sales_staff = is_sales
+        user.is_dealer = is_dealer
         user.save()
 
         if is_sales:
@@ -268,6 +271,17 @@ class SalesStaffProfileSerializer(serializers.ModelSerializer):
     territories = TerritoryDetailSerializer(many=True, read_only=True)
     hod = HODDetailSerializer(read_only=True)
     master_hod = HODDetailSerializer(read_only=True)
+    
+    # Reporting hierarchy fields
+    manager = HODDetailSerializer(read_only=True)
+    subordinates = HODDetailSerializer(many=True, read_only=True)
+    manager_id = serializers.PrimaryKeyRelatedField(
+        queryset=SalesStaffProfile.objects.all(), 
+        source='manager',
+        write_only=True, 
+        required=False, 
+        allow_null=True
+    )
 
     class Meta:
         model = SalesStaffProfile
@@ -279,6 +293,7 @@ class SalesStaffProfileSerializer(serializers.ModelSerializer):
 # ----------------------
 class UserSerializer(serializers.ModelSerializer):
     sales_profile = serializers.SerializerMethodField()
+    dealer = serializers.SerializerMethodField()
     profile_image_url = serializers.SerializerMethodField()
     profile_image = serializers.ImageField(write_only=True, required=False, allow_null=True)
     role = RoleDetailSerializer(read_only=True)
@@ -287,6 +302,7 @@ class UserSerializer(serializers.ModelSerializer):
     )
     password = serializers.CharField(write_only=True, min_length=6, required=False)
     is_sales_staff = serializers.BooleanField(write_only=True, default=False, required=False)
+    is_dealer = serializers.BooleanField(write_only=True, default=False, required=False)
 
     # Write-only SalesStaffProfile fields (using ManyToMany field names)
     employee_code = serializers.CharField(write_only=True, required=False)
@@ -316,24 +332,55 @@ class UserSerializer(serializers.ModelSerializer):
     master_hod = serializers.PrimaryKeyRelatedField(
         queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True
     )
+    
+    # Reporting hierarchy (profile-only)
+    manager = serializers.PrimaryKeyRelatedField(
+        queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True
+    )
 
     # Leave quotas (profile-only)
     sick_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
     casual_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
     others_leave_quota = serializers.IntegerField(write_only=True, required=False, default=0)
 
+    # Dealer fields (write-only)
+    dealer_business_name = serializers.CharField(write_only=True, required=False)
+    dealer_cnic_number = serializers.CharField(write_only=True, required=False)
+    dealer_contact_number = serializers.CharField(write_only=True, required=False)
+    dealer_mobile_phone = serializers.CharField(write_only=True, required=False)
+    dealer_company_id = serializers.IntegerField(write_only=True, required=False)
+    dealer_region_id = serializers.IntegerField(write_only=True, required=False)
+    dealer_zone_id = serializers.IntegerField(write_only=True, required=False)
+    dealer_territory_id = serializers.IntegerField(write_only=True, required=False)
+    dealer_address = serializers.CharField(write_only=True, required=False)
+    dealer_city = serializers.CharField(write_only=True, required=False)
+    dealer_state = serializers.CharField(write_only=True, required=False)
+    dealer_federal_tax_id = serializers.CharField(write_only=True, required=False)
+    dealer_filer_status = serializers.CharField(write_only=True, required=False)
+    dealer_govt_license_number = serializers.CharField(write_only=True, required=False)
+    dealer_license_expiry = serializers.DateField(write_only=True, required=False, allow_null=True)
+    dealer_minimum_investment = serializers.IntegerField(write_only=True, required=False)
+    dealer_cnic_front_image = serializers.ImageField(write_only=True, required=False, allow_null=True)
+    dealer_cnic_back_image = serializers.ImageField(write_only=True, required=False, allow_null=True)
+
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'password', 'first_name', 'last_name',
             'profile_image', 'profile_image_url',  # Separate read/write fields
-            'role', 'role_id', 'is_active', 'is_staff', 'is_sales_staff',
-            'sales_profile',
+            'role', 'role_id', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer',
+            'sales_profile', 'dealer',
             # Extra sales staff input fields (using plural names for M2M)
             'employee_code', 'phone_number', 'address', 'designation', 'date_of_joining',
             'companies', 'regions', 'zones', 'territories',  # For backward compatibility in write operations
-            'hod', 'master_hod',
-            'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
+            'hod', 'master_hod', 'manager',
+            'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota',
+            # Dealer fields
+            'dealer_business_name', 'dealer_cnic_number', 'dealer_contact_number', 'dealer_mobile_phone',
+            'dealer_company_id', 'dealer_region_id', 'dealer_zone_id', 'dealer_territory_id',
+            'dealer_address', 'dealer_city', 'dealer_state', 'dealer_federal_tax_id', 'dealer_filer_status',
+            'dealer_govt_license_number', 'dealer_license_expiry', 'dealer_minimum_investment',
+            'dealer_cnic_front_image', 'dealer_cnic_back_image'
         ]
         read_only_fields = ['id', 'is_staff', 'is_active', 'profile_image_url']
         extra_kwargs = {
@@ -348,6 +395,16 @@ class UserSerializer(serializers.ModelSerializer):
         if not profile:
             return None
         return SalesStaffProfileSerializer(profile).data
+    
+    def get_dealer(self, obj):
+        from FieldAdvisoryService.serializers import DealerSerializer
+        try:
+            dealer = obj.dealer
+            if dealer:
+                return DealerSerializer(dealer).data
+        except:
+            pass
+        return None
     
     def get_profile_image_url(self, obj):
         try:
@@ -374,6 +431,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         sales_staff_flag = validated_data.pop('is_sales_staff', False)
+        is_dealer = validated_data.pop('is_dealer', False)
         password = validated_data.pop('password', None)
         
         # Extract profile data
@@ -390,6 +448,7 @@ class UserSerializer(serializers.ModelSerializer):
         user = User(**validated_data)
         if password:
             user.set_password(password)
+        user.is_dealer = is_dealer
         user.save()
 
         # Create sales profile if needed
@@ -416,6 +475,7 @@ class UserSerializer(serializers.ModelSerializer):
             instance.set_password(password)
             
         sales_staff_flag = validated_data.pop('is_sales_staff', instance.is_sales_staff)
+        is_dealer = validated_data.pop('is_dealer', instance.is_dealer)
 
         # Extract profile data
         profile_fields = [
@@ -432,6 +492,7 @@ class UserSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         
         instance.is_sales_staff = sales_staff_flag
+        instance.is_dealer = is_dealer
         instance.save()
 
         # Handle sales profile

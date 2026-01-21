@@ -10,6 +10,7 @@ from drf_yasg import openapi
 from drf_yasg.inspectors import SwaggerAutoSchema
 from django.utils import timezone
 from django.db.models import Q
+from accounts.hierarchy_filters import HierarchyFilterMixin
 from .models import Farm
 from .serializers import (
     FarmSerializer, 
@@ -50,11 +51,12 @@ class FormDataAutoSchema(SwaggerAutoSchema):
         return consumes or ['application/json']
 
 
-class FarmViewSet(viewsets.ModelViewSet):
+class FarmViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     """
     API endpoint for managing Farms.
-
-    - Admin can see all farms
+    Filters data based on user's position in reporting hierarchy:
+    - CEO can see all farms
+    - Managers can see farms created by their team
     - Normal users can only see their own farms
     - Supports JSON, form data, and multipart form data
     """
@@ -62,6 +64,7 @@ class FarmViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     queryset = Farm.objects.all().order_by("-created_at")
+    hierarchy_field = 'created_by'  # Filter by user who created the farm
 
     # ✅ Filters & Searching
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]

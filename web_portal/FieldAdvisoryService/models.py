@@ -404,12 +404,13 @@ class DealerRequest(models.Model):
         self._previous_status = self.status
 
 class MeetingSchedule(models.Model):
+    meeting_id = models.CharField(max_length=20, unique=True, editable=False, blank=True)
     staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='fas_meetings')
     fsm_name = models.CharField(max_length=100, default="Unknown FSM")
     region = models.ForeignKey('FieldAdvisoryService.Region', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_region')
     zone = models.ForeignKey('FieldAdvisoryService.Zone', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_zone')
     territory = models.ForeignKey('FieldAdvisoryService.Territory', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_territory')
-    date = models.DateField()
+    date = models.DateTimeField()
     location = models.CharField(max_length=200)
     total_attendees = models.PositiveIntegerField(default=0)
     key_topics_discussed = models.TextField(default="Not specified")
@@ -420,8 +421,26 @@ class MeetingSchedule(models.Model):
     min_farmers_required = models.PositiveIntegerField(default=5)
     confirmed_attendees = models.PositiveIntegerField(default=0)
 
+    def save(self, *args, **kwargs):
+        if not self.meeting_id:
+            # Get the last meeting ID
+            last_meeting = MeetingSchedule.objects.all().order_by('id').last()
+            if last_meeting and last_meeting.meeting_id:
+                # Extract number from last ID (e.g., "FAS01" -> 1)
+                last_number = int(last_meeting.meeting_id.replace('FAS', ''))
+                new_number = last_number + 1
+            else:
+                new_number = 1
+            self.meeting_id = f'FAS{new_number:02d}'
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Meeting on {self.date} at {self.location}"
+        return f"{self.meeting_id} - Meeting on {self.date} at {self.location}"
+    
+    class Meta:
+        ordering = ['-id']
+        verbose_name = "Field Advisory Meeting"
+        verbose_name_plural = "Field Advisory Meetings"
 
 class MeetingScheduleAttendance(models.Model):
     schedule = models.ForeignKey(MeetingSchedule, related_name='attendees', on_delete=models.CASCADE)
@@ -539,7 +558,7 @@ class SalesOrder(models.Model):
         return f"Order #{self.id} - {self.card_name} - {self.status}"
     
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-id']
         verbose_name = "Sales Order"
         verbose_name_plural = "Sales Orders"
 
@@ -599,104 +618,3 @@ class SalesOrderAttachment(models.Model):
 
     def __str__(self):
         return self.file.name
-
-# ==================== Organizational Hierarchy Models ====================
-
-class HierarchyLevel(models.Model):
-    """
-    Defines the organizational hierarchy levels dynamically.
-    Example: CEO (0) → Regional Manager (1) → Zone Manager (2) → Field Staff (3)
-    """
-    LEVEL_CHOICES = [
-        ('ceo', 'CEO'),
-        ('regional_manager', 'Regional Manager'),
-        ('zone_manager', 'Zone Manager'),
-        ('field_staff', 'Field Staff'),
-        ('custom', 'Custom'),
-    ]
-    
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='hierarchy_levels')
-    level_name = models.CharField(max_length=100, help_text="Name of hierarchy level (e.g., CEO, Regional Manager)")
-    level_code = models.CharField(max_length=50, choices=LEVEL_CHOICES, default='custom')
-    level_order = models.PositiveIntegerField(help_text="Order in hierarchy (0=top, higher=bottom)")
-    description = models.TextField(blank=True, null=True)
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='created_hierarchy_levels'
-    )
-    is_active = models.BooleanField(default=True)
-    
-    class Meta:
-        unique_together = ('company', 'level_order')
-        ordering = ['level_order']
-        verbose_name = "Hierarchy Level"
-        verbose_name_plural = "Hierarchy Levels"
-    
-    def __str__(self):
-        return f"{self.level_name} (Order: {self.level_order}) - {self.company.Company_name}"
-
-
-class UserHierarchy(models.Model):
-    """
-    Links users to hierarchy levels and their reporting structure.
-    Defines: Who reports to whom, at which level, and in which region/zone.
-    """
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='hierarchy_assignment'
-    )
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='user_hierarchies')
-    hierarchy_level = models.ForeignKey(HierarchyLevel, on_delete=models.PROTECT)
-    
-    # Reporting Structure
-    reports_to = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='direct_reports'
-    )
-    
-    # Geo Assignment
-    region = models.ForeignKey(Region, on_delete=models.SET_NULL, null=True, blank=True)
-    zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True)
-    territory = models.ForeignKey(Territory, on_delete=models.SET_NULL, null=True, blank=True)
-    
-    # Status
-    is_active = models.BooleanField(default=True)
-    assigned_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    assigned_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='hierarchy_assignments_made'
-    )
-    
-    class Meta:
-        unique_together = ('user', 'company')
-        verbose_name = "User Hierarchy"
-        verbose_name_plural = "User Hierarchies"
-    
-    def __str__(self):
-        return f"{self.user.username} - {self.hierarchy_level.level_name} ({self.company.Company_name})"
-    
-    def clean(self):
-        """Validate that reports_to is at a higher level in hierarchy"""
-        if self.reports_to and self.hierarchy_level:
-            try:
-                manager_hierarchy = UserHierarchy.objects.get(user=self.reports_to, company=self.company)
-                if manager_hierarchy.hierarchy_level.level_order >= self.hierarchy_level.level_order:
-                    raise ValidationError(
-                        "Manager must be at a higher hierarchy level (lower order number)."
-                    )
-            except UserHierarchy.DoesNotExist:
-                raise ValidationError("Manager must have a hierarchy assignment in the same company.")

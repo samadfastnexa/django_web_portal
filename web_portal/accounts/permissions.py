@@ -60,57 +60,6 @@ class HasRolePermission(BasePermission):
         raise PermissionDenied(f"You do not have permission: '{required_codename}'")
 
 
-# ==================== Hierarchy-based Permissions ====================
-
-from .hierarchy_utils import get_user_subordinates, user_can_access_data
-
-
-class HierarchyBasedPermission(BasePermission):
-    """
-    Permission class that allows users to access their own data and their subordinates' data.
-    Superusers can access all data.
-    """
-    
-    def has_permission(self, request, view):
-        """Check if user has permission to perform the action."""
-        if not request.user or not request.user.is_authenticated:
-            return False
-        
-        if request.user.is_superuser:
-            return True
-        
-        # For safe methods, allow access
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        
-        return True  # Will be further checked in has_object_permission
-    
-    def has_object_permission(self, request, view, obj):
-        """Check if user has permission to access a specific object."""
-        if request.user.is_superuser:
-            return True
-        
-        # Determine the owner of the object
-        owner = self.get_object_owner(obj)
-        if not owner:
-            return request.method in permissions.SAFE_METHODS
-        
-        # Check if user can access this data
-        return user_can_access_data(request.user, owner)
-    
-    def get_object_owner(self, obj):
-        """
-        Determine who owns the object. Override this in subclasses if needed.
-        Tries common patterns: user, created_by, owner fields.
-        """
-        for field_name in ['user', 'created_by', 'owner', 'assigned_to']:
-            if hasattr(obj, field_name):
-                owner = getattr(obj, field_name)
-                if owner:
-                    return owner
-        return None
-
-
 class CanManageUsers(BasePermission):
     """Permission for managing users."""
     

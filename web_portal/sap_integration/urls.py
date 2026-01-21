@@ -29,6 +29,8 @@ from .views import (
     disease_list_api,
     disease_detail_api,
     recommended_products_api,
+    # Projects endpoint
+    projects_list_api,
 )
 
 urlpatterns = [
@@ -39,7 +41,7 @@ urlpatterns = [
     path('policy-customer-balance/', policy_customer_balance_list, name='policy_customer_balance_list'),
     # Legacy endpoint - card_code in path (kept for backward compatibility)
     path('policy-customer-balance/<str:card_code>/', policy_customer_balance_detail, name='policy_customer_balance_detail'),
-    path('policies/', list_policies, name='sap_policies'),
+    path('projects/', list_policies, name='sap_policies'),
     # DB-backed policies APIs and page
     path('policy-records/', list_db_policies, name='policy_records'),
     path('policies/sync/', sync_policies, name='policies_sync'),
@@ -67,4 +69,7 @@ urlpatterns = [
     path('diseases/', disease_list_api, name='disease_list_api'),
     path('diseases/<int:disease_id>/', disease_detail_api, name='disease_detail_api'),
     path('recommended-products/', recommended_products_api, name='recommended_products_api'),
+    
+    # Policies endpoint
+    path('policies/', projects_list_api, name='projects_list_api'),
 ]
