@@ -10,22 +10,190 @@ from sap_integration.sap_client import SAPClient
 from django import forms
 from django.utils import timezone
 from sap_integration import hana_connect
+from django.http import HttpResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from django.db import models
+from django.contrib.admin import widgets as admin_widgets
+from datetime import datetime
 
 # admin.site.register(Dealer)
 class MeetingScheduleAttendanceInline(admin.TabularInline):
     model = MeetingScheduleAttendance
     extra = 1
     fields = ('farmer', 'farmer_name', 'contact_number', 'acreage', 'crop')
-    readonly_fields = ('farmer_name', 'contact_number')
+    readonly_fields = ()
     autocomplete_fields = ['farmer']
+    
+    class Media:
+        js = ('admin/js/farmer_autocomplete.js',)
+
+def export_meeting_schedule_to_excel(modeladmin, request, queryset):
+    """Export selected Meeting Schedules to Excel with attendance details"""
+    # Create workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Meeting Schedules"
+    
+    # Add export date/time at the top
+    export_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    title_cell = ws.cell(row=1, column=1)
+    title_cell.value = f"Field Advisory Meeting Schedule Export - {export_time}"
+    title_cell.font = Font(bold=True, size=14, color="1F4E78")
+    ws.merge_cells('A1:S1')
+    
+    # Define styles
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    
+    odd_row_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    even_row_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    
+    thin_border = Border(
+        left=Side(style='thin', color='D3D3D3'),
+        right=Side(style='thin', color='D3D3D3'),
+        top=Side(style='thin', color='D3D3D3'),
+        bottom=Side(style='thin', color='D3D3D3')
+    )
+    
+    data_alignment = Alignment(vertical="top", wrap_text=True)
+    
+    # Headers - Meeting Schedule Info
+    main_headers = [
+        'Meeting ID', 'FSM Name', 'Date', 'Region', 'Zone', 'Territory', 
+        'Location', 'Total Attendees', 'Confirmed Attendees', 
+        'Min Farmers Required', 'ZM Present', 'RSM Present',
+        'Key Topics Discussed', 'Feedback', 'Suggestions'
+    ]
+    
+    # Attendee headers
+    attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
+    
+    # Write main headers in row 3 (columns A-O)
+    for col_num, header in enumerate(main_headers, 1):
+        cell = ws.cell(row=3, column=col_num)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_alignment
+        cell.border = thin_border
+    
+    # Write attendee headers (columns P-S)
+    for col_num, header in enumerate(attendee_headers, len(main_headers) + 1):
+        cell = ws.cell(row=3, column=col_num)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_alignment
+        cell.border = thin_border
+    
+    # Write data starting from row 4
+    row_num = 4
+    for meeting in queryset:
+        attendees = meeting.attendees.all()
+        
+        # Meeting main info (only once per meeting)
+        meeting_data = [
+            meeting.meeting_id, meeting.fsm_name,
+            meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
+            meeting.region.name if meeting.region else '',
+            meeting.zone.name if meeting.zone else '',
+            meeting.territory.name if meeting.territory else '',
+            meeting.location, meeting.total_attendees, meeting.confirmed_attendees,
+            meeting.min_farmers_required,
+            'Yes' if meeting.presence_of_zm else 'No',
+            'Yes' if meeting.presence_of_rsm else 'No',
+            meeting.key_topics_discussed,
+            meeting.feedback_from_attendees or '',
+            meeting.suggestions_for_future or ''
+        ]
+        
+        is_odd_row = (row_num - 4) % 2 == 0
+        row_fill = odd_row_fill if is_odd_row else even_row_fill
+        
+        if attendees.exists():
+            first_row = True
+            for attendee in attendees:
+                # Write meeting info only in the first row
+                if first_row:
+                    for col_num, value in enumerate(meeting_data, 1):
+                        cell = ws.cell(row=row_num, column=col_num, value=value)
+                        cell.fill = row_fill
+                        cell.border = thin_border
+                        cell.alignment = data_alignment
+                    first_row = False
+                else:
+                    # Leave meeting columns empty for subsequent attendees
+                    for col_num in range(1, len(main_headers) + 1):
+                        cell = ws.cell(row=row_num, column=col_num, value='')
+                        cell.fill = row_fill
+                        cell.border = thin_border
+                
+                # Write attendee info
+                for col_num, value in enumerate([
+                    attendee.farmer_name, attendee.contact_number,
+                    attendee.acreage, attendee.crop
+                ], len(main_headers) + 1):
+                    cell = ws.cell(row=row_num, column=col_num, value=value)
+                    cell.fill = row_fill
+                    cell.border = thin_border
+                    cell.alignment = data_alignment
+                row_num += 1
+        else:
+            # No attendees - just write meeting info
+            for col_num, value in enumerate(meeting_data, 1):
+                cell = ws.cell(row=row_num, column=col_num, value=value)
+                cell.fill = row_fill
+                cell.border = thin_border
+                cell.alignment = data_alignment
+            row_num += 1
+    
+    # Adjust column widths
+    from openpyxl.cell.cell import MergedCell
+    for col in ws.columns:
+        max_length = 0
+        col_letter = None
+        for cell in col:
+            # Skip merged cells
+            if isinstance(cell, MergedCell):
+                continue
+            if col_letter is None:
+                col_letter = cell.column_letter
+            try:
+                if cell.value and len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        if col_letter:
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[col_letter].width = adjusted_width
+    
+    # Set row heights
+    ws.row_dimensions[1].height = 25
+    ws.row_dimensions[3].height = 30
+    
+    # Freeze panes (freeze header row)
+    ws.freeze_panes = 'A4'
+    
+    # Create HTTP response
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename=meeting_schedules.xlsx'
+    wb.save(response)
+    
+    return response
+
+export_meeting_schedule_to_excel.short_description = "Export selected to Excel"
 
 @admin.register(MeetingSchedule, site=admin_site)
 class MeetingScheduleAdmin(admin.ModelAdmin):
     inlines = [MeetingScheduleAttendanceInline]
     list_display = [
-        'id',
+        'meeting_id',
         'fsm_name',
-        'date',
+        'formatted_date',
         'region',
         'zone',
         'territory',
@@ -35,6 +203,7 @@ class MeetingScheduleAdmin(admin.ModelAdmin):
         'presence_of_rsm'
     ]
     search_fields = [
+        'meeting_id',
         'fsm_name',
         'region__name',
         'zone__name',
@@ -51,6 +220,22 @@ class MeetingScheduleAdmin(admin.ModelAdmin):
         'presence_of_rsm'
     ]
     ordering = ['-id']
+    actions = [export_meeting_schedule_to_excel]
+    readonly_fields = ['meeting_id']
+    
+    # Configure form to show datetime input with separate date and time fields
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == 'date':
+            kwargs['widget'] = admin_widgets.AdminSplitDateTime()
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+    
+    def formatted_date(self, obj):
+        """Display date with time"""
+        if obj.date:
+            return obj.date.strftime('%Y-%m-%d %H:%M')
+        return '-'
+    formatted_date.short_description = 'Date & Time'
+    formatted_date.admin_order_field = 'date'
 
 
 def _load_env_file(path: str) -> None:

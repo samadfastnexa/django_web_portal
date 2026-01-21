@@ -404,12 +404,13 @@ class DealerRequest(models.Model):
         self._previous_status = self.status
 
 class MeetingSchedule(models.Model):
+    meeting_id = models.CharField(max_length=20, unique=True, editable=False, blank=True)
     staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='fas_meetings')
     fsm_name = models.CharField(max_length=100, default="Unknown FSM")
     region = models.ForeignKey('FieldAdvisoryService.Region', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_region')
     zone = models.ForeignKey('FieldAdvisoryService.Zone', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_zone')
     territory = models.ForeignKey('FieldAdvisoryService.Territory', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_territory')
-    date = models.DateField()
+    date = models.DateTimeField()
     location = models.CharField(max_length=200)
     total_attendees = models.PositiveIntegerField(default=0)
     key_topics_discussed = models.TextField(default="Not specified")
@@ -420,8 +421,21 @@ class MeetingSchedule(models.Model):
     min_farmers_required = models.PositiveIntegerField(default=5)
     confirmed_attendees = models.PositiveIntegerField(default=0)
 
+    def save(self, *args, **kwargs):
+        if not self.meeting_id:
+            # Get the last meeting ID
+            last_meeting = MeetingSchedule.objects.all().order_by('id').last()
+            if last_meeting and last_meeting.meeting_id:
+                # Extract number from last ID (e.g., "FAS01" -> 1)
+                last_number = int(last_meeting.meeting_id.replace('FAS', ''))
+                new_number = last_number + 1
+            else:
+                new_number = 1
+            self.meeting_id = f'FAS{new_number:02d}'
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Meeting on {self.date} at {self.location}"
+        return f"{self.meeting_id} - Meeting on {self.date} at {self.location}"
     
     class Meta:
         ordering = ['-id']

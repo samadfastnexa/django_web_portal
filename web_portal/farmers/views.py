@@ -41,9 +41,9 @@ class FarmerViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     ]
     ordering_fields = [
         'registration_date', 'first_name', 'last_name', 'total_land_area',
-        'education_level'
+        'education_level', 'id'
     ]
-    ordering = ['-registration_date']
+    ordering = ['-id']
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""

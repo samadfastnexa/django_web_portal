@@ -4,10 +4,12 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from django.core.paginator import Paginator
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.admin.views.decorators import staff_member_required
 from accounts.hierarchy_filters import HierarchyFilterMixin
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
 
 from .models import Dealer, MeetingSchedule, SalesOrder
 from .serializers import (
@@ -84,6 +86,7 @@ class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
                     'application/json': [
                         {
                             'id': 1,
+                            'meeting_id': 'FAS01',
                             'fsm_name': 'Ahmed Ali',
                             'company_name': 'Tarzan Crop Sciences',
                             'region_id': 1,
@@ -159,6 +162,186 @@ class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Export meeting schedules to Excel. Returns an Excel file with all filtered meeting schedules and their attendee details. Use 'id' parameter to download a specific record. Respects all query parameters used for filtering.",
+        manual_parameters=[
+            openapi.Parameter('id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Download specific meeting by ID'),
+            openapi.Parameter('staff', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Staff ID (User ID)'),
+            openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by Field Sales Manager name'),
+            openapi.Parameter('region', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Region ID'),
+            openapi.Parameter('zone', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Zone ID'),
+            openapi.Parameter('territory', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Territory ID'),
+            openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by Location'),
+            openapi.Parameter('presence_of_zm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Zone Manager'),
+            openapi.Parameter('presence_of_rsm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Regional Sales Manager'),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Search in FSM name, region, zone, territory, location, topics'),
+            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Order by field (e.g., date, -date, fsm_name, -id)'),
+        ],
+        responses={
+            200: openapi.Response(
+                description='Excel file download',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_FILE,
+                    format='binary'
+                )
+            )
+        },
+        tags=["14. MeetingSchedules"]
+    )
+    @action(detail=False, methods=['get'], url_path='export-to-excel')
+    def export_to_excel(self, request):
+        """Export filtered meeting schedules to Excel"""
+        from datetime import datetime
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Meeting Schedules"
+        
+        # Add export date/time at the top
+        export_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        title_cell = ws.cell(row=1, column=1)
+        title_cell.value = f"Field Advisory Meeting Schedule Export - {export_time}"
+        title_cell.font = Font(bold=True, size=14, color="1F4E78")
+        ws.merge_cells('A1:S1')
+        
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        
+        odd_row_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+        even_row_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        
+        from openpyxl.styles import Border, Side
+        thin_border = Border(
+            left=Side(style='thin', color='D3D3D3'),
+            right=Side(style='thin', color='D3D3D3'),
+            top=Side(style='thin', color='D3D3D3'),
+            bottom=Side(style='thin', color='D3D3D3')
+        )
+        
+        data_alignment = Alignment(vertical="top", wrap_text=True)
+        
+        # Headers - Meeting Schedule Info
+        main_headers = [
+            'Meeting ID', 'FSM Name', 'Date', 'Region', 'Zone', 'Territory', 
+            'Location', 'Total Attendees', 'Confirmed Attendees', 
+            'Min Farmers Required', 'ZM Present', 'RSM Present',
+            'Key Topics Discussed', 'Feedback', 'Suggestions'
+        ]
+        
+        # Attendee headers
+        attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
+        
+        # Write main headers in row 3 (columns A-O)
+        for col_num, header in enumerate(main_headers, 1):
+            cell = ws.cell(row=3, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # Write attendee headers (columns P-S)
+        for col_num, header in enumerate(attendee_headers, len(main_headers) + 1):
+            cell = ws.cell(row=3, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        row_num = 4
+        for meeting in queryset:
+            attendees = meeting.attendees.all()
+            
+            # Meeting main info (only once per meeting)
+            meeting_data = [
+                meeting.meeting_id, meeting.fsm_name,
+                meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
+                meeting.region.name if meeting.region else '',
+                meeting.zone.name if meeting.zone else '',
+                meeting.territory.name if meeting.territory else '',
+                meeting.location, meeting.total_attendees, meeting.confirmed_attendees,
+                meeting.min_farmers_required,
+                'Yes' if meeting.presence_of_zm else 'No',
+                'Yes' if meeting.presence_of_rsm else 'No',
+                meeting.key_topics_discussed,
+                meeting.feedback_from_attendees or '',
+                meeting.suggestions_for_future or ''
+            ]
+            
+            is_odd_row = (row_num - 4) % 2 == 0
+            row_fill = odd_row_fill if is_odd_row else even_row_fill
+            
+            if attendees.exists():
+                first_row = True
+                for attendee in attendees:
+                    # Write meeting info only in the first row
+                    if first_row:
+                        for col_num, value in enumerate(meeting_data, 1):
+                            cell = ws.cell(row=row_num, column=col_num, value=value)
+                            cell.fill = row_fill
+                            cell.border = thin_border
+                            cell.alignment = data_alignment
+                        first_row = False
+                    else:
+                        # Leave meeting columns empty for subsequent attendees
+                        for col_num in range(1, len(main_headers) + 1):
+                            cell = ws.cell(row=row_num, column=col_num, value='')
+                            cell.fill = row_fill
+                            cell.border = thin_border
+                    
+                    # Write attendee info
+                    for col_num, value in enumerate([
+                        attendee.farmer_name, attendee.contact_number,
+                        attendee.acreage, attendee.crop
+                    ], len(main_headers) + 1):
+                        cell = ws.cell(row=row_num, column=col_num, value=value)
+                        cell.fill = row_fill
+                        cell.border = thin_border
+                        cell.alignment = data_alignment
+                    row_num += 1
+            else:
+                # No attendees - just write meeting info
+                for col_num, value in enumerate(meeting_data, 1):
+                    cell = ws.cell(row=row_num, column=col_num, value=value)
+                    cell.fill = row_fill
+                    cell.border = thin_border
+                    cell.alignment = data_alignment
+                row_num += 1
+        
+        # Adjust column widths
+        from openpyxl.cell.cell import MergedCell
+        for col in ws.columns:
+            max_length = 0
+            col_letter = None
+            for cell in col:
+                # Skip merged cells
+                if isinstance(cell, MergedCell):
+                    continue
+                if col_letter is None:
+                    col_letter = cell.column_letter
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            if col_letter:
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[col_letter].width = adjusted_width
+        
+        ws.row_dimensions[1].height = 25
+        ws.row_dimensions[3].height = 30
+        ws.freeze_panes = 'A4'
+        
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=meeting_schedules.xlsx'
+        wb.save(response)
+        return response
 
     @swagger_auto_schema(
         operation_description="Create a meeting schedule with FSM name, region, zone, territory, and attendees.",
