@@ -286,24 +286,31 @@ class WeatherTestView(APIView):
 
         if zone:
             location_name = f"Zone: {zone.name}"
-            location_for_weather = zone.name
+            # Use the original query for weather API
+            location_for_weather = query
         else:
             # 🔎 Search for Territory
             territory = Territory.objects.filter(name__icontains=query).select_related("zone").first()
             if territory:
                 location_name = f"Territory: {territory.name} (Zone: {territory.zone.name})"
-                # Use latitude,longitude if available, otherwise use territory name
+                # Use latitude,longitude if available, otherwise use the original query
                 if territory.latitude and territory.longitude:
                     location_for_weather = f"{territory.latitude},{territory.longitude}"
                 else:
-                    location_for_weather = territory.name
+                    location_for_weather = query
             else:
                 return Response({"error": f"No Zone/Territory found matching '{query}'"}, status=404)
 
         # 🌤️ Get real weather data from WeatherAPI.com
         try:
             api_key = settings.WEATHER_API_KEY
+            
+            # Debug: Print the location being used for weather API
+            print(f"[DEBUG] Weather API - Location query: '{location_for_weather}'")
+            print(f"[DEBUG] Weather API - Location name: '{location_name}'")
+            
             url = f"http://api.weatherapi.com/v1/forecast.json?key={api_key}&q={location_for_weather}&days=3&aqi=no&alerts=no"
+            print(f"[DEBUG] Weather API - Full URL: {url.replace(api_key, '***HIDDEN***')}")
             
             response = requests.get(url, timeout=10)
             response.raise_for_status()

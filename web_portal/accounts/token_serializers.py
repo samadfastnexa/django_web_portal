@@ -56,6 +56,8 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
         permissions = list(role.permissions.values("id", "codename")) if role else []
 
         companies_data, default_company_data = [], None
+        
+        # Check for Sales Staff Profile
         profile = getattr(user, "sales_profile", None)
         if profile:
             companies_qs = profile.companies.all()
@@ -67,6 +69,21 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
                 })
                 if i == 0:
                     default_company_data = {"id": c.id, "name": c.Company_name}
+        
+        # Check for Dealer Profile
+        else:
+            try:
+                from FieldAdvisoryService.models import Dealer
+                dealer = Dealer.objects.filter(user=user).first()
+                if dealer and dealer.company:
+                    companies_data.append({
+                        "id": dealer.company.id,
+                        "name": dealer.company.Company_name,
+                        "default": True,
+                    })
+                    default_company_data = {"id": dealer.company.id, "name": dealer.company.Company_name}
+            except Exception:
+                pass
 
         return {
             "refresh": str(refresh),

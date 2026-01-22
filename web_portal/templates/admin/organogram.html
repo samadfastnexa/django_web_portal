@@ -1,0 +1,279 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+<link rel="stylesheet" href="{% static 'admin/css/organogram.css' %}">
+{% endblock %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block branding %}
+<h1 id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:"Django administration" }}</a></h1>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; Organization Hierarchy
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="organogram-container">
+    <div class="organogram-header">
+        <h1>🏢 {{ title }}</h1>
+        <p class="help-text">Interactive organizational hierarchy showing reporting relationships</p>
+    </div>
+
+    <div id="organogram-chart" class="organogram-chart">
+        <!-- Organogram will be rendered here by JavaScript -->
+        <div class="loading" id="loading-message">Loading organization hierarchy...</div>
+        <div id="error-message" style="display: none; color: red; padding: 20px;"></div>
+    </div>
+
+    <div class="organogram-legend" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; max-width: 600px; margin-left: auto; margin-right: auto;">
+        <h3 style="margin-top: 0; color: #333; font-size: 16px; margin-bottom: 15px;">📊 Legend</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 15px;">
+            <div class="legend-item" style="display: flex; align-items: center; gap: 8px;">
+                <span style="display: inline-block; width: 16px; height: 16px; border: 2px solid #333; background: #fff; border-radius: 2px;"></span>
+                <span style="font-size: 13px; color: #555;">Active Position</span>
+            </div>
+            <div class="legend-item" style="display: flex; align-items: center; gap: 8px;">
+                <span style="display: inline-block; width: 16px; height: 16px; border: 2px solid #e74c3c; background: #ffebee; border-radius: 2px;"></span>
+                <span style="font-size: 13px; color: #555;">Vacant Position</span>
+            </div>
+        </div>
+    </div>
+        </div>
+    </div>
+</div>
+
+<!-- Debug: Show raw data -->
+<div style="display: none;" id="debug-info">
+    <h4>Debug Info:</h4>
+    <p>Data length: <span id="debug-length"></span></p>
+    <pre id="debug-raw" style="max-height: 200px; overflow: auto; background: #f5f5f5; padding: 10px; font-size: 11px;"></pre>
+</div>
+
+<!-- Hidden data container -->
+<script id="hierarchy-data" type="application/json">
+{{ hierarchy_data|safe }}
+</script>
+
+<script>
+// Direct inline script - runs immediately
+(function() {
+    'use strict';
+    
+    console.log('=== ORGANOGRAM SCRIPT STARTING ===');
+    
+    let hierarchyData = [];
+    
+    function init() {
+        console.log('Init function called');
+        loadHierarchyData();
+        setupEventListeners();
+        renderOrganogram();
+    }
+    
+    function loadHierarchyData() {
+        const dataElement = document.getElementById('hierarchy-data');
+        console.log('Data element:', dataElement);
+        
+        if (dataElement) {
+            try {
+                const rawData = dataElement.textContent.trim();
+                console.log('Raw data length:', rawData.length);
+                
+                if (rawData.length === 0) {
+                    console.error('Empty data!');
+                    return;
+                }
+                
+                hierarchyData = JSON.parse(rawData);
+                console.log('Parsed data:', hierarchyData);
+                console.log('Number of nodes:', hierarchyData.length);
+            } catch (error) {
+                console.error('Parse error:', error);
+            }
+        } else {
+            console.error('hierarchy-data element not found!');
+        }
+    }
+    
+    function setupEventListeners() {
+        // Event listeners removed - no controls needed for static hierarchy view
+    }
+    
+    function renderOrganogram() {
+        console.log('=== RENDERING ORGANOGRAM ===');
+        const container = document.getElementById('organogram-chart');
+        
+        if (!container) {
+            console.error('Container not found!');
+            return;
+        }
+        
+        // Clear container
+        container.innerHTML = '';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.alignItems = 'center';
+        container.style.padding = '40px 20px';
+        container.style.overflowX = 'auto';
+        container.style.minHeight = '400px';
+        
+        if (!hierarchyData || hierarchyData.length === 0) {
+            container.innerHTML = '<div style="padding: 40px; text-align: center; color: #999; font-size: 16px;">No hierarchy data available. Add sales staff profiles with manager relationships.</div>';
+            console.warn('No data to render');
+            return;
+        }
+        
+        console.log('Rendering', hierarchyData.length, 'nodes');
+        
+        // Create wrapper for all top-level nodes
+        const topLevelContainer = document.createElement('div');
+        topLevelContainer.style.display = 'flex';
+        topLevelContainer.style.flexDirection = 'row';
+        topLevelContainer.style.gap = '40px';
+        topLevelContainer.style.justifyContent = 'center';
+        
+        hierarchyData.forEach((node, index) => {
+            console.log('Node', index, ':', node.name);
+            const nodeElement = renderNode(node, 0);
+            topLevelContainer.appendChild(nodeElement);
+        });
+        
+        container.appendChild(topLevelContainer);
+        
+        console.log('=== RENDER COMPLETE ===');
+    }
+    
+    function renderNode(node, level) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'org-node';
+        wrapper.style.display = 'flex';
+        wrapper.style.flexDirection = 'column';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.margin = '10px';
+        
+        const card = document.createElement('div');
+        card.className = 'node-card';
+        card.style.border = '2px solid #333';
+        card.style.borderRadius = '4px';
+        card.style.padding = '10px 15px';
+        card.style.backgroundColor = '#fff';
+        card.style.minWidth = '150px';
+        card.style.maxWidth = '200px';
+        card.style.textAlign = 'center';
+        card.style.position = 'relative';
+        card.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+        
+        if (node.is_vacant) {
+            card.style.borderColor = '#e74c3c';
+            card.style.color = '#e74c3c';
+            card.style.backgroundColor = '#ffebee';
+        }
+        
+        // Create card content
+        const nameDiv = document.createElement('div');
+        nameDiv.style.fontWeight = 'bold';
+        nameDiv.style.fontSize = '13px';
+        nameDiv.style.marginBottom = '4px';
+        nameDiv.textContent = node.name;
+        
+        const designationDiv = document.createElement('div');
+        designationDiv.style.fontSize = '11px';
+        designationDiv.style.marginBottom = '2px';
+        designationDiv.textContent = node.designation;
+        
+        const codeDiv = document.createElement('div');
+        codeDiv.style.fontSize = '10px';
+        codeDiv.style.color = '#666';
+        codeDiv.textContent = node.employee_code;
+        
+        if (node.is_vacant) {
+            const vacantLabel = document.createElement('div');
+            vacantLabel.style.fontSize = '10px';
+            vacantLabel.style.color = '#e74c3c';
+            vacantLabel.style.fontStyle = 'italic';
+            vacantLabel.style.marginTop = '4px';
+            vacantLabel.textContent = '(Vacant)';
+            card.appendChild(vacantLabel);
+        }
+        
+        card.appendChild(nameDiv);
+        card.appendChild(designationDiv);
+        card.appendChild(codeDiv);
+        
+        wrapper.appendChild(card);
+        
+        // Render children in horizontal layout
+        if (node.children && node.children.length > 0) {
+            // Add vertical line connector
+            const vLine = document.createElement('div');
+            vLine.style.width = '2px';
+            vLine.style.height = '30px';
+            vLine.style.backgroundColor = '#333';
+            vLine.style.margin = '0 auto';
+            wrapper.appendChild(vLine);
+            
+            // Create horizontal container for children
+            const childrenRow = document.createElement('div');
+            childrenRow.style.display = 'flex';
+            childrenRow.style.flexDirection = 'row';
+            childrenRow.style.justifyContent = 'center';
+            childrenRow.style.alignItems = 'flex-start';
+            childrenRow.style.position = 'relative';
+            childrenRow.style.gap = '20px';
+            
+            // Add horizontal line above children
+            if (node.children.length > 1) {
+                const hLine = document.createElement('div');
+                hLine.style.position = 'absolute';
+                hLine.style.top = '0';
+                hLine.style.height = '2px';
+                hLine.style.backgroundColor = '#333';
+                hLine.style.left = '15%';
+                hLine.style.right = '15%';
+                childrenRow.appendChild(hLine);
+            }
+            
+            node.children.forEach(child => {
+                childrenRow.appendChild(renderNode(child, level + 1));
+            });
+            
+            wrapper.appendChild(childrenRow);
+        }
+        
+        return wrapper;
+    }
+    
+    function expandAll() {
+        console.log('Expand all');
+        renderOrganogram();
+    }
+    
+    function collapseAll() {
+        console.log('Collapse all');
+        renderOrganogram();
+    }
+    
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Run immediately if DOM is ready, otherwise wait
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+
+{% endblock %}
+

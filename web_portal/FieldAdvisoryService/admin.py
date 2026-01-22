@@ -40,12 +40,15 @@ def export_meeting_schedule_to_excel(modeladmin, request, queryset):
     title_cell = ws.cell(row=1, column=1)
     title_cell.value = f"Field Advisory Meeting Schedule Export - {export_time}"
     title_cell.font = Font(bold=True, size=14, color="1F4E78")
-    ws.merge_cells('A1:S1')
+    ws.merge_cells('A1:D1')
     
     # Define styles
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
     header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    
+    info_label_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    info_label_font = Font(bold=True, size=10, color="1F4E78")
     
     odd_row_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
     even_row_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
@@ -59,95 +62,86 @@ def export_meeting_schedule_to_excel(modeladmin, request, queryset):
     
     data_alignment = Alignment(vertical="top", wrap_text=True)
     
-    # Headers - Meeting Schedule Info
-    main_headers = [
-        'Meeting ID', 'FSM Name', 'Date', 'Region', 'Zone', 'Territory', 
-        'Location', 'Total Attendees', 'Confirmed Attendees', 
-        'Min Farmers Required', 'ZM Present', 'RSM Present',
-        'Key Topics Discussed', 'Feedback', 'Suggestions'
-    ]
+    current_row = 3
     
-    # Attendee headers
-    attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
-    
-    # Write main headers in row 3 (columns A-O)
-    for col_num, header in enumerate(main_headers, 1):
-        cell = ws.cell(row=3, column=col_num)
-        cell.value = header
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = header_alignment
-        cell.border = thin_border
-    
-    # Write attendee headers (columns P-S)
-    for col_num, header in enumerate(attendee_headers, len(main_headers) + 1):
-        cell = ws.cell(row=3, column=col_num)
-        cell.value = header
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = header_alignment
-        cell.border = thin_border
-    
-    # Write data starting from row 4
-    row_num = 4
     for meeting in queryset:
-        attendees = meeting.attendees.all()
-        
-        # Meeting main info (only once per meeting)
-        meeting_data = [
-            meeting.meeting_id, meeting.fsm_name,
-            meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
-            meeting.region.name if meeting.region else '',
-            meeting.zone.name if meeting.zone else '',
-            meeting.territory.name if meeting.territory else '',
-            meeting.location, meeting.total_attendees, meeting.confirmed_attendees,
-            meeting.min_farmers_required,
-            'Yes' if meeting.presence_of_zm else 'No',
-            'Yes' if meeting.presence_of_rsm else 'No',
-            meeting.key_topics_discussed,
-            meeting.feedback_from_attendees or '',
-            meeting.suggestions_for_future or ''
+        # Meeting Information Section
+        info_fields = [
+            ('Meeting ID', meeting.meeting_id),
+            ('FSM Name', meeting.fsm_name),
+            ('Date', meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else ''),
+            ('Region', meeting.region.name if meeting.region else ''),
+            ('Zone', meeting.zone.name if meeting.zone else ''),
+            ('Territory', meeting.territory.name if meeting.territory else ''),
+            ('Location', meeting.location),
+            ('Total Attendees', meeting.total_attendees),
+            ('Confirmed Attendees', meeting.confirmed_attendees),
+            ('Min Farmers Required', meeting.min_farmers_required),
+            ('ZM Present', 'Yes' if meeting.presence_of_zm else 'No'),
+            ('RSM Present', 'Yes' if meeting.presence_of_rsm else 'No'),
+            ('Key Topics Discussed', meeting.key_topics_discussed),
+            ('Feedback', meeting.feedback_from_attendees or ''),
+            ('Suggestions', meeting.suggestions_for_future or '')
         ]
         
-        is_odd_row = (row_num - 4) % 2 == 0
-        row_fill = odd_row_fill if is_odd_row else even_row_fill
+        # Write meeting information as key-value pairs
+        for label, value in info_fields:
+            label_cell = ws.cell(row=current_row, column=1, value=label)
+            label_cell.fill = info_label_fill
+            label_cell.font = info_label_font
+            label_cell.border = thin_border
+            label_cell.alignment = Alignment(horizontal="left", vertical="center")
+            
+            value_cell = ws.cell(row=current_row, column=2, value=value)
+            value_cell.border = thin_border
+            value_cell.alignment = data_alignment
+            ws.merge_cells(f'B{current_row}:D{current_row}')
+            
+            current_row += 1
         
+        current_row += 1  # Empty row
+        
+        # Attendee table headers
+        attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
+        for col_num, header in enumerate(attendee_headers, 1):
+            cell = ws.cell(row=current_row, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        current_row += 1
+        
+        # Write attendees
+        attendees = meeting.attendees.all()
         if attendees.exists():
-            first_row = True
-            for attendee in attendees:
-                # Write meeting info only in the first row
-                if first_row:
-                    for col_num, value in enumerate(meeting_data, 1):
-                        cell = ws.cell(row=row_num, column=col_num, value=value)
-                        cell.fill = row_fill
-                        cell.border = thin_border
-                        cell.alignment = data_alignment
-                    first_row = False
-                else:
-                    # Leave meeting columns empty for subsequent attendees
-                    for col_num in range(1, len(main_headers) + 1):
-                        cell = ws.cell(row=row_num, column=col_num, value='')
-                        cell.fill = row_fill
-                        cell.border = thin_border
+            for idx, attendee in enumerate(attendees):
+                is_odd_row = idx % 2 == 0
+                row_fill = odd_row_fill if is_odd_row else even_row_fill
                 
-                # Write attendee info
-                for col_num, value in enumerate([
-                    attendee.farmer_name, attendee.contact_number,
-                    attendee.acreage, attendee.crop
-                ], len(main_headers) + 1):
-                    cell = ws.cell(row=row_num, column=col_num, value=value)
+                attendee_data = [
+                    attendee.farmer_name,
+                    attendee.contact_number,
+                    attendee.acreage,
+                    attendee.crop
+                ]
+                
+                for col_num, value in enumerate(attendee_data, 1):
+                    cell = ws.cell(row=current_row, column=col_num, value=value)
                     cell.fill = row_fill
                     cell.border = thin_border
                     cell.alignment = data_alignment
-                row_num += 1
+                
+                current_row += 1
         else:
-            # No attendees - just write meeting info
-            for col_num, value in enumerate(meeting_data, 1):
-                cell = ws.cell(row=row_num, column=col_num, value=value)
-                cell.fill = row_fill
-                cell.border = thin_border
-                cell.alignment = data_alignment
-            row_num += 1
+            # No attendees message
+            no_attendee_cell = ws.cell(row=current_row, column=1, value="No attendees")
+            no_attendee_cell.font = Font(italic=True, color="999999")
+            ws.merge_cells(f'A{current_row}:D{current_row}')
+            current_row += 1
+        
+        current_row += 2  # Space before next meeting
     
     # Adjust column widths
     from openpyxl.cell.cell import MergedCell
@@ -171,10 +165,6 @@ def export_meeting_schedule_to_excel(modeladmin, request, queryset):
     
     # Set row heights
     ws.row_dimensions[1].height = 25
-    ws.row_dimensions[3].height = 30
-    
-    # Freeze panes (freeze header row)
-    ws.freeze_panes = 'A4'
     
     # Create HTTP response
     response = HttpResponse(

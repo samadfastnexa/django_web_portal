@@ -285,9 +285,9 @@ class MeetingViewSet(viewsets.ModelViewSet):
     # ---------------- Export to Excel ----------------
     @swagger_auto_schema(
         tags=["12. Farmer Advisory Meeting"],
-        operation_description="Export filtered farmer advisory meetings to Excel format with all attendee details. Use 'id' parameter to download a specific record. Respects all applied filters and returns an .xlsx file.",
+        operation_description="Export filtered farmer advisory meetings to Excel format with all attendee details. Use 'ids' parameter to download specific records (comma-separated, e.g., FM123ABC,FM456DEF). Respects all applied filters and returns an .xlsx file.",
         manual_parameters=[
-            openapi.Parameter('id', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Download specific meeting by ID (e.g., FM123ABC)'),
+            openapi.Parameter('ids', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Download specific meetings by IDs (comma-separated, e.g., FM123ABC,FM456DEF)'),
             openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by FSM name'),
             openapi.Parameter('company_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by company ID'),
             openapi.Parameter('region_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by region ID'),
@@ -315,6 +315,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
         from datetime import datetime
         # Get filtered queryset based on current query params
         queryset = self.filter_queryset(self.get_queryset())
+        
+        # Handle multiple IDs if provided
+        ids_param = request.query_params.get('ids', None)
+        if ids_param:
+            # Split comma-separated IDs and filter
+            id_list = [id.strip() for id in ids_param.split(',') if id.strip()]
+            queryset = queryset.filter(id__in=id_list)
         
         # Create workbook
         wb = Workbook()
@@ -868,9 +875,9 @@ class FieldDayViewSet(viewsets.ModelViewSet):
     # ---------------- Export to Excel ----------------
     @swagger_auto_schema(
         tags=["13. Field Day"],
-        operation_description="Export filtered field days to Excel format with all attendee details. Use 'id' parameter to download a specific record. Respects all applied filters and returns an .xlsx file.",
+        operation_description="Export filtered field days to Excel format with all attendee details. Use 'ids' parameter to download specific records (comma-separated, e.g., FD123ABC,FD456DEF). Respects all applied filters and returns an .xlsx file.",
         manual_parameters=[
-            openapi.Parameter('id', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Download specific field day by ID (e.g., FD123ABC)'),
+            openapi.Parameter('ids', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Download specific field days by IDs (comma-separated, e.g., FD123ABC,FD456DEF)'),
             openapi.Parameter('title', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by title/FSM name'),
             openapi.Parameter('company_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by company ID'),
             openapi.Parameter('region_fk', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by region ID'),
@@ -898,6 +905,13 @@ class FieldDayViewSet(viewsets.ModelViewSet):
         from datetime import datetime
         # Get filtered queryset based on current query params
         queryset = self.filter_queryset(self.get_queryset())
+        
+        # Handle multiple IDs if provided
+        ids_param = request.query_params.get('ids', None)
+        if ids_param:
+            # Split comma-separated IDs and filter
+            id_list = [id.strip() for id in ids_param.split(',') if id.strip()]
+            queryset = queryset.filter(id__in=id_list)
         
         # Create workbook
         wb = Workbook()
