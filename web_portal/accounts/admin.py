@@ -2,6 +2,10 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib import messages
 from django.db.models import Q
+from django.urls import path
+from django.shortcuts import render
+from django.contrib.admin.views.decorators import staff_member_required
+from django.utils.decorators import method_decorator
 from .models import User, Role, SalesStaffProfile, DesignationModel
 from web_portal.admin import admin_site
 
@@ -15,9 +19,24 @@ except ImportError:
 # Inline for Sales Staff profile
 class SalesProfileInline(admin.StackedInline):
     model = SalesStaffProfile
-    can_delete = False
+    can_delete = True
     verbose_name_plural = 'Sales Profile'
-    extra = 1  # ✅ Show one empty form so users can create profile directly from user edit
+    extra = 0  # Don't show empty forms by default
+    max_num = 1  # Only one sales profile per user
+    show_change_link = True  # Add link to edit profile separately
+    
+    # Make fields not required for deletion
+    def get_formset(self, request, obj=None, **kwargs):
+        """Customize the formset to allow deletion even with required fields empty"""
+        formset = super().get_formset(request, obj, **kwargs)
+        
+        # Make fields optional in the form to allow deletion
+        for field_name in ['phone_number', 'address', 'designation']:
+            if field_name in formset.form.base_fields:
+                formset.form.base_fields[field_name].required = False
+        
+        return formset
+    
     fieldsets = (
         ('Basic Info', {
             'fields': ('employee_code', 'phone_number', 'designation', 'address')
@@ -37,6 +56,10 @@ class SalesProfileInline(admin.StackedInline):
     
     def has_add_permission(self, request, obj=None):
         """Allow adding profiles from User edit if user is marked as sales_staff"""
+        return True
+    
+    def has_delete_permission(self, request, obj=None):
+        """Allow deletion of sales profiles"""
         return True
 
 
@@ -122,6 +145,24 @@ class CustomUserAdmin(BaseUserAdmin):
     if HAS_DEALER:
         inlines.append(DealerInline)
     
+    def save_formset(self, request, form, formset, change):
+        """
+        Override save_formset to properly handle deletion of sales profiles.
+        This ensures that when the delete checkbox is checked, the profile is actually deleted.
+        """
+        instances = formset.save(commit=False)
+        
+        # Handle deletions explicitly
+        for obj in formset.deleted_objects:
+            obj.delete()
+        
+        # Save new/modified instances
+        for instance in instances:
+            instance.save()
+        
+        # Save many-to-many relationships
+        formset.save_m2m()
+    
     def has_delete_permission(self, request, obj=None):
         """Prevent deletion of protected superuser"""
         if obj and obj.email == 'superuser@gmail.com':
@@ -144,8 +185,6 @@ class CustomUserAdmin(BaseUserAdmin):
             messages.error(request, 'Cannot delete protected superuser: superuser@gmail.com')
             queryset = queryset.exclude(email='superuser@gmail.com')
         super().delete_queryset(request, queryset)
-    if HAS_DEALER:
-        inlines.append(DealerInline)
     
     class Media:
         css = {
@@ -315,6 +354,45 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
             return "—"
     subordinates_count.short_description = 'Team Size'
     
+    def save_model(self, request, obj, form, change):
+        """Override save to handle validation properly"""
+        # Save the object first (without M2M validation)
+        super().save_model(request, obj, form, change)
+    
+    def save_related(self, request, form, formsets, change):
+        """Validate M2M fields after they're saved"""
+        # Save M2M fields first
+        super().save_related(request, form, formsets, change)
+        
+        # Now validate with M2M data available
+        obj = form.instance
+        if obj.user and getattr(obj.user, 'is_sales_staff', False):
+            designation_code = obj.designation.code if obj.designation else None
+            
+            # Skip validation for CEO/NSM
+            if designation_code in ['CEO', 'NSM']:
+                return
+            
+            # Regional Sales Leader → at least 1 region
+            if designation_code == 'RSL':
+                if not obj.regions.exists():
+                    messages.error(request, f"❌ Regional Sales Leader must have at least one region assigned.")
+                    return
+            
+            # Zonal level → at least 1 zone
+            elif designation_code in ['DRSL', 'ZM']:
+                if not obj.zones.exists():
+                    messages.error(request, f"❌ Zonal-level staff must have at least one zone assigned.")
+                    return
+            
+            # Territory level → at least 1 territory
+            elif designation_code in ['PL', 'SR_PL', 'FSM', 'SR_FSM', 'DPL', 'MTO', 'SR_MTO']:
+                if not obj.territories.exists():
+                    messages.error(request, f"❌ Territory-level staff must have at least one territory assigned.")
+                    return
+        
+        messages.success(request, f"✅ Sales staff profile saved successfully.")
+    
     actions = ['view_hierarchy_tree', 'view_reporting_chain']
     
     def view_hierarchy_tree(self, request, queryset):
@@ -476,3 +554,101 @@ class DesignationAdmin(admin.ModelAdmin):
             )
             return
         super().delete_model(request, obj)
+
+
+# ==================== ORGANOGRAM ADMIN VIEW ====================
+class OrganogramAdminView:
+    """
+    Custom admin view for displaying organization hierarchy.
+    Accessible via Admin panel with proper permissions.
+    """
+    
+    @staticmethod
+    @staff_member_required
+    def organogram_view(request):
+        """Render the organogram page"""
+        
+        # Check permission
+        if not request.user.is_superuser and not request.user.has_perm('accounts.view_organogram'):
+            messages.error(request, "You don't have permission to view the organogram.")
+            return render(request, 'admin/permission_denied.html')
+        
+        # Get hierarchy data
+        hierarchy_data = OrganogramAdminView._build_hierarchy()
+        
+        context = {
+            'title': 'Organization Hierarchy (Organogram)',
+            'hierarchy_data': hierarchy_data,
+            'has_permission': True,
+            'site_header': admin_site.site_header,
+            'site_title': admin_site.site_title,
+        }
+        
+        return render(request, 'admin/organogram.html', context)
+    
+    @staticmethod
+    def _build_hierarchy():
+        """Build hierarchical structure for admin display"""
+        from django.core.serializers.json import DjangoJSONEncoder
+        import json
+        
+        # Get all sales profiles (including vacant ones)
+        profiles = SalesStaffProfile.objects.select_related(
+            'user', 'designation', 'manager'
+        ).prefetch_related(
+            'companies', 'regions', 'zones', 'territories'
+        )
+        
+        # Find top-level managers (those without a manager)
+        top_level = profiles.filter(manager__isnull=True)
+        
+        def build_node(profile):
+            """Recursively build node"""
+            # Handle vacant positions
+            if profile.is_vacant or not profile.user:
+                name = f"Vacant ({profile.designation.name if profile.designation else 'Position'})"
+                email = ""
+            else:
+                name = f"{profile.user.first_name} {profile.user.last_name}"
+                email = profile.user.email
+            
+            node = {
+                'id': profile.id,
+                'name': name,
+                'designation': profile.designation.name if profile.designation else "N/A",
+                'designation_code': profile.designation.code if profile.designation else "",
+                'employee_code': profile.employee_code or "N/A",
+                'email': email,
+                'phone': profile.phone_number or "",
+                'companies': list(profile.companies.values_list('Company_name', flat=True)),
+                'regions': list(profile.regions.values_list('name', flat=True)),
+                'zones': list(profile.zones.values_list('name', flat=True)),
+                'territories': list(profile.territories.values_list('name', flat=True)),
+                'is_vacant': profile.is_vacant,
+            }
+            
+            # Get subordinates (including vacant ones)
+            subordinates = profile.subordinates.all().order_by('designation__level', 'user__first_name')
+            if subordinates.exists():
+                node['children'] = [build_node(sub) for sub in subordinates]
+            
+            return node
+        
+        hierarchy = [build_node(profile) for profile in top_level]
+        return json.dumps(hierarchy, cls=DjangoJSONEncoder)
+
+
+# Register custom admin view URL
+class CustomAdminSite(admin.AdminSite):
+    """Custom admin site with organogram view"""
+    
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('organogram/', OrganogramAdminView.organogram_view, name='organogram'),
+        ]
+        return custom_urls + urls
+
+
+# Add organogram link to admin index (optional)
+# This will be accessible via /admin/organogram/

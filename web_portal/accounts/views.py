@@ -744,3 +744,155 @@ class PermissionListAPIView(generics.ListAPIView):
         if any(param in self.request.query_params for param in ['limit', 'offset', 'page']):
             return super().paginate_queryset(queryset)
         return None
+
+
+# ==================== ORGANOGRAM VIEW ====================
+class OrganogramView(generics.GenericAPIView):
+    """
+    Organization Hierarchy/Organogram View
+    
+    Returns the hierarchical structure of sales staff with their reporting relationships.
+    Only accessible to users with 'view_organogram' permission.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def check_permissions(self, request):
+        """Check if user has view_organogram permission"""
+        super().check_permissions(request)
+        
+        # Superuser has all permissions
+        if request.user.is_superuser:
+            return
+        
+        # Check for specific permission
+        if not request.user.has_perm('accounts.view_organogram'):
+            raise PermissionDenied("You don't have permission to view the organogram")
+    
+    @swagger_auto_schema(
+        operation_description="Get organization hierarchy (organogram) showing sales staff reporting structure. Requires 'view_organogram' permission.",
+        manual_parameters=[
+            openapi.Parameter(
+                'root_id',
+                openapi.IN_QUERY,
+                description='Start from specific staff member (defaults to top-level managers)',
+                type=openapi.TYPE_INTEGER,
+                required=False,
+            ),
+            openapi.Parameter(
+                'depth',
+                openapi.IN_QUERY,
+                description='Maximum depth of hierarchy to return (default: unlimited)',
+                type=openapi.TYPE_INTEGER,
+                required=False,
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description='Hierarchical organization structure',
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'user_id': 10,
+                            'name': 'John Doe',
+                            'email': 'john@example.com',
+                            'designation': 'CEO',
+                            'employee_code': 'EMP001',
+                            'phone_number': '+92300xxxxxxx',
+                            'companies': ['4B-ORANG_APP'],
+                            'regions': ['Central Region'],
+                            'zones': ['Lahore Zone'],
+                            'territories': ['Territory A', 'Territory B'],
+                            'subordinates': [
+                                {
+                                    'id': 2,
+                                    'name': 'Jane Smith',
+                                    'designation': 'Regional Manager',
+                                    'subordinates': []
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ),
+            403: 'Permission denied - requires view_organogram permission'
+        },
+        tags=["28. Organogram"]
+    )
+    def get(self, request):
+        """Get organization hierarchy"""
+        root_id = request.query_params.get('root_id')
+        max_depth = request.query_params.get('depth')
+        
+        if max_depth:
+            try:
+                max_depth = int(max_depth)
+            except ValueError:
+                max_depth = None
+        
+        # Get the hierarchical data
+        hierarchy = self._build_hierarchy(root_id, max_depth)
+        
+        return Response({
+            'success': True,
+            'data': hierarchy
+        })
+    
+    def _build_hierarchy(self, root_id=None, max_depth=None):
+        """Build hierarchical structure of sales staff"""
+        
+        # Get all active sales profiles with related data
+        profiles = SalesStaffProfile.objects.filter(
+            is_vacant=False
+        ).select_related(
+            'user', 'designation', 'manager'
+        ).prefetch_related(
+            'companies', 'regions', 'zones', 'territories'
+        )
+        
+        if root_id:
+            # Start from specific root
+            try:
+                root_profile = profiles.get(id=int(root_id))
+                return [self._build_node(root_profile, max_depth, 0)]
+            except SalesStaffProfile.DoesNotExist:
+                return []
+        else:
+            # Find top-level managers (those with no manager)
+            top_level = profiles.filter(manager__isnull=True)
+            return [self._build_node(profile, max_depth, 0) for profile in top_level]
+    
+    def _build_node(self, profile, max_depth, current_depth):
+        """Recursively build a node with its subordinates"""
+        
+        # Build node data
+        node = {
+            'id': profile.id,
+            'user_id': profile.user.id if profile.user else None,
+            'name': f"{profile.user.first_name} {profile.user.last_name}" if profile.user else "Vacant",
+            'email': profile.user.email if profile.user else None,
+            'designation': profile.designation.name if profile.designation else None,
+            'designation_code': profile.designation.code if profile.designation else None,
+            'employee_code': profile.employee_code,
+            'phone_number': profile.phone_number,
+            'companies': [c.Company_name for c in profile.companies.all()],
+            'regions': [r.name for r in profile.regions.all()],
+            'zones': [z.name for z in profile.zones.all()],
+            'territories': [t.name for t in profile.territories.all()],
+            'is_vacant': profile.is_vacant,
+        }
+        
+        # Add subordinates if within depth limit
+        if max_depth is None or current_depth < max_depth:
+            subordinates = profile.subordinates.filter(is_vacant=False)
+            node['subordinates'] = [
+                self._build_node(sub, max_depth, current_depth + 1) 
+                for sub in subordinates
+            ]
+        else:
+            node['subordinates'] = []
+            # Indicate if there are more subordinates beyond depth limit
+            if profile.subordinates.exists():
+                node['has_more_subordinates'] = True
+        
+        return node

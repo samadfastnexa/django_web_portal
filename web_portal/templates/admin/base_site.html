@@ -525,5 +525,87 @@
 
 {% block footer %}
   {{ block.super }}
+  <script>
+    // Add asterisk to required fields using JavaScript
+    (function() {
+      'use strict';
+      
+      function addRequiredAsterisks() {
+        // Find all required form rows
+        const requiredRows = document.querySelectorAll('.form-row.required, .required');
+        
+        requiredRows.forEach(function(row) {
+          // Find the label within this row
+          const labels = row.querySelectorAll('label');
+          
+          labels.forEach(function(label) {
+            // Check if asterisk already added
+            if (label.querySelector('.required-asterisk')) {
+              return;
+            }
+            
+            // Create asterisk span
+            const asterisk = document.createElement('span');
+            asterisk.className = 'required-asterisk';
+            asterisk.textContent = ' *';
+            asterisk.style.color = '#e74c3c';
+            asterisk.style.fontWeight = 'bold';
+            asterisk.style.marginLeft = '2px';
+            
+            // Append to label
+            label.appendChild(asterisk);
+          });
+        });
+        
+        // Also handle input fields with 'required' attribute
+        const requiredInputs = document.querySelectorAll('input[required], select[required], textarea[required]');
+        
+        requiredInputs.forEach(function(input) {
+          // Find associated label
+          let label = null;
+          
+          // Try to find label by 'for' attribute
+          if (input.id) {
+            label = document.querySelector('label[for="' + input.id + '"]');
+          }
+          
+          // If not found, try to find parent label or sibling label
+          if (!label) {
+            const formRow = input.closest('.form-row');
+            if (formRow) {
+              label = formRow.querySelector('label');
+            }
+          }
+          
+          if (label && !label.querySelector('.required-asterisk')) {
+            const asterisk = document.createElement('span');
+            asterisk.className = 'required-asterisk';
+            asterisk.textContent = ' *';
+            asterisk.style.color = '#e74c3c';
+            asterisk.style.fontWeight = 'bold';
+            asterisk.style.marginLeft = '2px';
+            
+            label.appendChild(asterisk);
+          }
+        });
+      }
+      
+      // Run on page load
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', addRequiredAsterisks);
+      } else {
+        addRequiredAsterisks();
+      }
+      
+      // Also run when inline forms are added dynamically
+      if (typeof django !== 'undefined' && django.jQuery) {
+        django.jQuery(document).on('formset:added', function() {
+          setTimeout(addRequiredAsterisks, 100);
+        });
+      }
+      
+      // Re-run periodically for dynamically loaded content
+      setInterval(addRequiredAsterisks, 2000);
+    })();
+  </script>
 {% endblock %}
-
