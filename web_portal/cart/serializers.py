@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Cart, CartItem, Order, OrderItem
+from .models import Cart, CartItem, Order, OrderItem, Payment
 from django.utils import timezone
 
 
@@ -211,3 +211,129 @@ class UpdatePaymentSerializer(serializers.Serializer):
         choices=Order.PAYMENT_STATUS_CHOICES,
         required=False
     )
+
+
+# =============== Payment Serializers ===============
+
+class PaymentSerializer(serializers.ModelSerializer):
+    """Serializer for payment records"""
+    order_number = serializers.CharField(source='order.order_number', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    payment_method_display = serializers.CharField(source='get_payment_method_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    class Meta:
+        model = Payment
+        fields = [
+            'id',
+            'transaction_id',
+            'order',
+            'order_number',
+            'user',
+            'user_email',
+            'payment_method',
+            'payment_method_display',
+            'amount',
+            'status',
+            'status_display',
+            'jazzcash_transaction_id',
+            'jazzcash_response_code',
+            'jazzcash_response_message',
+            'customer_phone',
+            'customer_email',
+            'notes',
+            'created_at',
+            'updated_at',
+            'completed_at',
+        ]
+        read_only_fields = [
+            'id',
+            'transaction_id',
+            'user',
+            'jazzcash_transaction_id',
+            'jazzcash_response_code',
+            'jazzcash_response_message',
+            'created_at',
+            'updated_at',
+            'completed_at',
+        ]
+
+
+class PaymentListSerializer(serializers.ModelSerializer):
+    """Simplified serializer for payment list"""
+    order_number = serializers.CharField(source='order.order_number', read_only=True)
+    payment_method_display = serializers.CharField(source='get_payment_method_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    class Meta:
+        model = Payment
+        fields = [
+            'id',
+            'transaction_id',
+            'order_number',
+            'payment_method',
+            'payment_method_display',
+            'amount',
+            'status',
+            'status_display',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class InitiatePaymentSerializer(serializers.Serializer):
+    """Serializer for initiating a payment"""
+    order_id = serializers.IntegerField(required=True)
+    payment_method = serializers.ChoiceField(
+        choices=Payment.PAYMENT_METHOD_CHOICES,
+        required=True
+    )
+    amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=1,
+        required=True
+    )
+    customer_phone = serializers.CharField(
+        max_length=20,
+        required=False,
+        help_text="Customer mobile number (format: 03xxxxxxxxx)"
+    )
+    customer_email = serializers.EmailField(required=False)
+    
+    def validate_customer_phone(self, value):
+        """Validate Pakistani mobile number format"""
+        if value and not value.startswith('03') and not value.startswith('+923'):
+            raise serializers.ValidationError(
+                "Phone number must be in format 03xxxxxxxxx or +923xxxxxxxxx"
+            )
+        return value
+    
+    def validate(self, data):
+        """Validate payment request"""
+        # JazzCash requires phone number
+        if data['payment_method'] == 'jazzcash' and not data.get('customer_phone'):
+            raise serializers.ValidationError({
+                'customer_phone': 'Phone number is required for JazzCash payments'
+            })
+        return data
+
+
+class JazzCashPaymentResponseSerializer(serializers.Serializer):
+    """Serializer for JazzCash payment response/callback"""
+    pp_TxnRefNo = serializers.CharField(required=True)
+    pp_ResponseCode = serializers.CharField(required=True)
+    pp_ResponseMessage = serializers.CharField(required=False, allow_blank=True)
+    pp_Amount = serializers.CharField(required=True)
+    pp_BillReference = serializers.CharField(required=False, allow_blank=True)
+    pp_SecureHash = serializers.CharField(required=True)
+    
+    # Optional fields
+    pp_TxnDateTime = serializers.CharField(required=False, allow_blank=True)
+    pp_TxnType = serializers.CharField(required=False, allow_blank=True)
+    pp_MerchantID = serializers.CharField(required=False, allow_blank=True)
+
+
+class VerifyPaymentSerializer(serializers.Serializer):
+    """Serializer for manual payment verification"""
+    transaction_id = serializers.CharField(required=True)

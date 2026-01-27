@@ -39,7 +39,8 @@ class SalesProfileInline(admin.StackedInline):
     
     fieldsets = (
         ('Basic Info', {
-            'fields': ('employee_code', 'phone_number', 'designation', 'address')
+            'fields': ('employee_code', 'phone_number', 'designation', 'address'),
+            'description': '📱 Phone number can be used for login instead of email'
         }),
         ('Location', {
             'fields': ('companies', 'regions', 'zones', 'territories')  # ✅ updated M2M
@@ -302,9 +303,9 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(SalesStaffProfile, site=admin_site)
 class SalesStaffProfileAdmin(admin.ModelAdmin):
     """Admin for SalesStaffProfile with data integrity checks"""
-    list_display = ['id', 'designation', 'employee_code', 'user_display', 'manager_display', 'subordinates_count', 'is_vacant']
+    list_display = ['id', 'designation', 'employee_code', 'phone_number', 'user_display', 'manager_display', 'subordinates_count', 'is_vacant']
     list_filter = ['designation', 'is_vacant', 'employee_code']
-    search_fields = ['user__email', 'user__username', 'employee_code']
+    search_fields = ['user__email', 'user__username', 'employee_code', 'phone_number']
     filter_horizontal = ('companies', 'regions', 'zones', 'territories')
     raw_id_fields = ('manager', 'hod', 'master_hod')
     
@@ -313,7 +314,8 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
             'fields': ('user', 'is_vacant')
         }),
         ('Basic Info', {
-            'fields': ('employee_code', 'phone_number', 'designation', 'address')
+            'fields': ('employee_code', 'phone_number', 'designation', 'address'),
+            'description': '📱 Phone number can be used for login instead of email'
         }),
         ('Location', {
             'fields': ('companies', 'regions', 'zones', 'territories')

@@ -1,13 +1,42 @@
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
 from rest_framework import serializers
 
 User = get_user_model()
 
 
 class MyTokenObtainPairSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-    password = serializers.CharField(write_only=True)
+    """
+    JWT Token Authentication Serializer
+    
+    Supports authentication for all user types:
+    1. Login with Email: Provide 'email' and 'password'
+    2. Login with Phone Number: Provide 'phone_number' and 'password'
+    
+    Phone Number Sources by User Type:
+    - Farmers: Phone stored in User.username
+    - Sales Staff: Phone from SalesStaffProfile.phone_number
+    - Dealers: Phone from Dealer.contact_number or mobile_phone
+    
+    Examples:
+    - Email login: {"email": "user@example.com", "password": "your_password"}
+    - Phone login (any type): {"phone_number": "03001234567", "password": "your_password"}
+    """
+    # Accept either email or phone_number for login
+    email = serializers.CharField(
+        required=False, 
+        allow_blank=True,
+        help_text="User's email address (optional if phone_number is provided)"
+    )
+    phone_number = serializers.CharField(
+        required=False, 
+        allow_blank=True,
+        help_text="User's phone number (optional if email is provided) - works for all user types"
+    )
+    password = serializers.CharField(
+        write_only=True,
+        help_text="User's password"
+    )
 
     # -----------------------------------------------------------
     # 1.  Turn built-in field errors into a single string
@@ -26,23 +55,25 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
     # -----------------------------------------------------------
     def validate(self, attrs):
         # Normalize inputs
-        raw_email = attrs.get("email")
+        raw_email = attrs.get("email", "").strip()
+        raw_phone = attrs.get("phone_number", "").strip()
         password = attrs.get("password")
-        email = (raw_email or "").strip()
 
-        if not email:
-            raise serializers.ValidationError({"message": "Email is required."})
+        # Must provide either email or phone_number
+        if not raw_email and not raw_phone:
+            raise serializers.ValidationError({"message": "Email or phone number is required."})
+        
         if not password:
             raise serializers.ValidationError({"message": "Password is required."})
 
-        # Case-insensitive lookup and uniform error to avoid account enumeration
-        try:
-            user = User.objects.get(email__iexact=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"message": "Invalid email or password."})
+        # Determine which credential to use for authentication
+        username = raw_email if raw_email else raw_phone
 
-        if not user.check_password(password):
-            raise serializers.ValidationError({"message": "Invalid email or password."})
+        # Use Django's authenticate function (which will use our custom backend)
+        user = authenticate(username=username, password=password)
+
+        if user is None:
+            raise serializers.ValidationError({"message": "Invalid email/phone number or password."})
 
         if not user.is_active:
             raise serializers.ValidationError({"message": "User account is inactive."})

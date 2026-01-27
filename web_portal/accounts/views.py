@@ -509,8 +509,122 @@ class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
 
     @swagger_auto_schema(
-        operation_description="Authenticate user and obtain JWT tokens",
-        request_body=MyTokenObtainPairSerializer,
+        operation_description="""
+        Authenticate user and obtain JWT tokens.
+        
+        **Three login methods are supported:**
+        
+        1. **Email Login**: Use email and password (all user types)
+        2. **Phone Number Login**: Use phone number and password (all user types)
+        3. **Username Login**: Use username and password (farmers use phone as username)
+        
+        **Phone Number Sources by User Type:**
+        
+        | User Type | Phone Field | Example |
+        |-----------|-------------|---------|
+        | **Farmer** | `User.username` | Login with phone as username |
+        | **Sales Staff** | `SalesStaffProfile.phone_number` | Login with profile phone |
+        | **Dealer** | `Dealer.contact_number` or `mobile_phone` | Login with either phone |
+        
+        **Important Notes:**
+        - You must provide either email OR phone_number (not both required)
+        - Password is always required
+        - Phone numbers must be registered in the system
+        - Login is case-insensitive for email
+        - Farmers: Phone auto-saved as username during registration
+        
+        **Default Passwords:**
+        - Farmers: Last 4 digits of CNIC (auto-set)
+        - Others: Set during user creation
+        
+        **Examples:**
+        
+        Farmer login with phone:
+        ```json
+        {
+            "phone_number": "03001234567",
+            "password": "1234"
+        }
+        ```
+        
+        Email login:
+        ```json
+        {
+            "email": "user@example.com",
+            "password": "your_password"
+        }
+        ```
+        
+        Phone number login:
+        ```json
+        {
+            "phone_number": "03001234567",
+            "password": "your_password"
+        }
+        ```
+        """,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'email': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='User email address (optional if phone_number is provided)',
+                    example='user@example.com'
+                ),
+                'phone_number': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='User phone number - works for Farmers, Sales Staff, and Dealers (optional if email is provided)',
+                    example='03001234567'
+                ),
+                'password': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='User password (required)',
+                    format='password',
+                    example='your_password'
+                ),
+            },
+            required=['password'],
+        ),
+        responses={
+            200: openapi.Response(
+                description='Login successful - Returns JWT tokens and user information',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'refresh': openapi.Schema(type=openapi.TYPE_STRING, description='Refresh token for obtaining new access tokens'),
+                        'access': openapi.Schema(type=openapi.TYPE_STRING, description='Access token for API authentication'),
+                        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='User ID'),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING, description='User email'),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING, description='Username'),
+                        'role': openapi.Schema(type=openapi.TYPE_STRING, description='User role name'),
+                        'permissions': openapi.Schema(
+                            type=openapi.TYPE_ARRAY, 
+                            description='User permissions',
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                        ),
+                        'companies': openapi.Schema(
+                            type=openapi.TYPE_ARRAY, 
+                            description='Associated companies',
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                        ),
+                        'default_company': openapi.Schema(type=openapi.TYPE_OBJECT, description='Default company'),
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description='Bad Request - Invalid credentials or missing required fields',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(
+                            type=openapi.TYPE_STRING, 
+                            description='Error message',
+                            example='Invalid email/phone number or password.'
+                        )
+                    }
+                )
+            ),
+        },
         tags=["01. Authentication"]
     )
     def post(self, request, *args, **kwargs):
