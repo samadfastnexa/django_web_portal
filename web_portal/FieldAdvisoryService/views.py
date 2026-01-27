@@ -164,9 +164,9 @@ class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_description="Export meeting schedules to Excel. Returns an Excel file with all filtered meeting schedules and their attendee details. Use 'ids' parameter to download specific records (comma-separated). Respects all query parameters used for filtering.",
+        operation_description="Export meeting schedules to Excel. Returns an Excel file with all filtered meeting schedules and their attendee details. Use 'ids' parameter to download specific records (comma-separated) or 'all' combined with 'staff' parameter to download all records for a specific user. Respects all query parameters used for filtering.",
         manual_parameters=[
-            openapi.Parameter('ids', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Download specific meetings by IDs (comma-separated, e.g., 123,456,789)'),
+            openapi.Parameter('ids', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Download specific meetings by IDs (comma-separated, e.g., 123,456,789) or "all" to download all records (use with "staff" parameter to specify user)'),
             openapi.Parameter('staff', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Staff ID (User ID)'),
             openapi.Parameter('fsm_name', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by Field Sales Manager name'),
             openapi.Parameter('region', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by Region ID'),
@@ -198,9 +198,17 @@ class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
         # Handle multiple IDs if provided
         ids_param = request.query_params.get('ids', None)
         if ids_param:
-            # Split comma-separated IDs and filter
-            id_list = [int(id.strip()) for id in ids_param.split(',') if id.strip().isdigit()]
-            queryset = queryset.filter(id__in=id_list)
+            # Check if user wants all records for a specific user
+            if ids_param.strip().lower() == 'all':
+                # If 'staff' parameter is provided, get all records for that user
+                staff_id = request.query_params.get('staff', None)
+                if staff_id:
+                    queryset = queryset.filter(staff_id=staff_id)
+                # Otherwise, queryset is already filtered by get_queryset() and filters
+            else:
+                # Split comma-separated IDs and filter
+                id_list = [int(id.strip()) for id in ids_param.split(',') if id.strip().isdigit()]
+                queryset = queryset.filter(id__in=id_list)
         
         wb = Workbook()
         ws = wb.active

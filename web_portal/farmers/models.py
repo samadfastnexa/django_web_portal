@@ -6,6 +6,15 @@ from django.utils.translation import gettext_lazy as _
 User = get_user_model()
 
 class Farmer(models.Model):
+    # User Account (for login)
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='farmer_profile',
+        null=True,
+        blank=True,
+        help_text=_('Associated user account for login')
+    )
     GENDER_CHOICES = [
         ('male', _('Male')),
         ('female', _('Female')),
@@ -82,6 +91,28 @@ class Farmer(models.Model):
         # Auto-generate farmer_id if not provided
         if not self.farmer_id:
             self.farmer_id = self.generate_unique_farmer_id()
+        
+        # Auto-create User account if not exists
+        if not self.user and self.primary_phone:
+            try:
+                # Check if user with this phone already exists
+                self.user = User.objects.get(username=self.primary_phone)
+            except User.DoesNotExist:
+                # Create new user with phone as username
+                # Default password: last 4 digits of CNIC or 'farmer1234'
+                default_password = self.cnic[-4:] if self.cnic and len(self.cnic) >= 4 else 'farmer1234'
+                self.user = User.objects.create_user(
+                    username=self.primary_phone,
+                    email=self.email if self.email else f'{self.primary_phone}@farmer.local',
+                    password=default_password,
+                    first_name=self.first_name,
+                    last_name=self.last_name,
+                    is_active=True
+                )
+                # Set farmer flag if exists
+                if hasattr(self.user, 'is_farmer'):
+                    self.user.is_farmer = True
+                    self.user.save(update_fields=['is_farmer'])
         
         super().save(*args, **kwargs)
     

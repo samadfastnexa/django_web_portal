@@ -4,7 +4,6 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
-from accounts.hierarchy_filters import HierarchyFilterMixin
 from .models import Farmer, FarmingHistory
 from .serializers import (
     FarmerSerializer, FarmerListSerializer, FarmerDetailSerializer,
@@ -16,10 +15,10 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 # ✅ Comprehensive Farmer ViewSet with Search and Filtering
-class FarmerViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
+class FarmerViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing farmers with comprehensive search and filtering capabilities.
-    Filters data based on user's position in reporting hierarchy.
+    All authenticated users can view all farmers.
     
     Provides:
     - List farmers with search and filtering
@@ -33,7 +32,6 @@ class FarmerViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = FarmerFilter
-    hierarchy_field = 'registered_by'  # Filter by user who registered the farmer
     search_fields = [
         'farmer_id', 'first_name', 'last_name', 'father_name',
         'primary_phone', 'email', 'village', 'district', 'province',
@@ -56,7 +54,9 @@ class FarmerViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Optimize queryset based on action"""
-        queryset = super().get_queryset()
+        # Get base queryset without hierarchy filtering for farmers
+        # This allows all users to see all farmers regardless of who registered them
+        queryset = Farmer.objects.all()
         
         if self.action == 'list':
             # For list view, we don't need farming history
