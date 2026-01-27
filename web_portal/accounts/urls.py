@@ -43,6 +43,7 @@ from .views import (
     AdminUserStatusUpdateView,
     PermissionListAPIView,
     user_territories_emp_api,
+    OrganogramView,
 )
 from .UserViewSet import UserViewSet
 
@@ -72,6 +73,11 @@ urlpatterns = [
     # Permission management
     # ----------------------
     path('permissions/', PermissionListAPIView.as_view(), name='permission-list'),
+
+    # ----------------------
+    # Organogram (requires view_organogram permission)
+    # ----------------------
+    path('organogram/', OrganogramView.as_view(), name='organogram'),
 
     # ----------------------
     # Sales staff helpers

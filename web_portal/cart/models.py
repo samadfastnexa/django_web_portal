@@ -302,3 +302,152 @@ class OrderItem(models.Model):
         """Auto-calculate subtotal before saving"""
         self.subtotal = self.get_subtotal()
         super().save(*args, **kwargs)
+
+
+class Payment(models.Model):
+    """
+    Payment transactions for orders.
+    Supports JazzCash and other payment gateways.
+    """
+    PAYMENT_METHOD_CHOICES = [
+        ('jazzcash', 'JazzCash'),
+        ('easypaisa', 'EasyPaisa'),
+        ('bank_transfer', 'Bank Transfer'),
+        ('cash_on_delivery', 'Cash on Delivery'),
+    ]
+    
+    PAYMENT_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+        ('refunded', 'Refunded'),
+    ]
+    
+    # Basic Information
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.PROTECT,
+        related_name='payments',
+        help_text="Order this payment is for"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='payments',
+        help_text="User who made the payment"
+    )
+    transaction_id = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Unique transaction identifier"
+    )
+    
+    # Payment Details
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_METHOD_CHOICES,
+        help_text="Payment method used"
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Payment amount"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=PAYMENT_STATUS_CHOICES,
+        default='pending',
+        help_text="Payment status"
+    )
+    
+    # JazzCash Specific Fields
+    jazzcash_transaction_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="JazzCash transaction reference number"
+    )
+    jazzcash_response_code = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        help_text="JazzCash response code"
+    )
+    jazzcash_response_message = models.TextField(
+        blank=True,
+        null=True,
+        help_text="JazzCash response message"
+    )
+    jazzcash_payment_token = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="JazzCash payment token for verification"
+    )
+    
+    # Additional Information
+    customer_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Customer phone number used for payment"
+    )
+    customer_email = models.EmailField(
+        blank=True,
+        null=True,
+        help_text="Customer email for payment confirmation"
+    )
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Additional payment notes"
+    )
+    raw_response = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Raw payment gateway response for debugging"
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When payment was initiated"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="When payment was completed"
+    )
+    
+    class Meta:
+        verbose_name = "Payment"
+        verbose_name_plural = "Payments"
+        ordering = ['-created_at']
+        permissions = [
+            ('view_payment_history', 'Can view payment history'),
+            ('process_payments', 'Can process payments'),
+            ('refund_payments', 'Can refund payments'),
+        ]
+    
+    def __str__(self):
+        return f"Payment {self.transaction_id} - {self.order.order_number} ({self.status})"
+    
+    def mark_completed(self):
+        """Mark payment as completed"""
+        self.status = 'completed'
+        self.completed_at = timezone.now()
+        self.save()
+        
+        # Update order payment status
+        self.order.paid_amount += self.amount
+        self.order.update_payment_status()
+    
+    def mark_failed(self, reason=None):
+        """Mark payment as failed"""
+        self.status = 'failed'
+        if reason:
+            self.notes = f"{self.notes}\nFailure reason: {reason}" if self.notes else f"Failure reason: {reason}"
+        self.save()

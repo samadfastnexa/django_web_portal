@@ -22,7 +22,7 @@ class AnalyticsAdminSite(AdminSite):
         try:
             # Import models here to avoid circular imports
             from farmers.models import Farmer
-            from FieldAdvisoryService.models import MeetingSchedule, SalesOrder
+            from FieldAdvisoryService.models import MeetingSchedule, SalesOrder, SalesOrderLine
             from farmerMeetingDataEntry.models import Meeting, FieldDay
             
             # Calculate date ranges
@@ -221,6 +221,17 @@ class AnalyticsAdminSite(AdminSite):
             })
         
         return super().index(request, extra_context)
+    
+    def get_urls(self):
+        """Add custom organogram URL"""
+        from django.urls import path
+        from accounts.admin import OrganogramAdminView
+        
+        urls = super().get_urls()
+        custom_urls = [
+            path('organogram/', OrganogramAdminView.organogram_view, name='organogram'),
+        ]
+        return custom_urls + urls
     
     def _calculate_percentage_change(self, current, previous):
         """Calculate percentage change between two values"""

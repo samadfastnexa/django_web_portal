@@ -1,0 +1,32 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}Permission Denied{% endblock %}
+
+{% block branding %}
+<h1 id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:"Django administration" }}</a></h1>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; Permission Denied
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="padding: 40px; text-align: center;">
+    <h1 style="color: #e74c3c; font-size: 48px;">🔒</h1>
+    <h2 style="color: #2c3e50;">Permission Denied</h2>
+    <p style="color: #7f8c8d; font-size: 16px; margin: 20px 0;">
+        You don't have permission to access this page.
+    </p>
+    <p style="color: #95a5a6;">
+        Please contact your administrator if you believe you should have access.
+    </p>
+    <div style="margin-top: 30px;">
+        <a href="{% url 'admin:index' %}" class="button" style="background: #417690; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">
+            Return to Admin Home
+        </a>
+    </div>
+</div>
+{% endblock %}

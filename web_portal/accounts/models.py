@@ -187,6 +187,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         permissions = [
             ('manage_users', 'Can add/edit users'),
             ('view_user_reports', 'Can view user reports'),
+            ('view_organogram', 'Can view organization hierarchy/organogram'),
         ]
 
     def __str__(self):
@@ -203,8 +204,8 @@ class SalesStaffProfile(models.Model):
 )
     # employee_code = models.CharField(max_length=50)
     employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True)
-    phone_number = models.CharField(max_length=20)
-    address = models.TextField()
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
     
     # ✅ Dynamic designation (ForeignKey to DesignationModel)
     designation = models.ForeignKey(
@@ -369,20 +370,8 @@ class SalesStaffProfile(models.Model):
             if designation_code in ['CEO', 'NSM']:
                 return  
 
-            # Regional Sales Leader → at least 1 region
-            if designation_code == 'RSL':
-                if not self.regions.exists():
-                    raise ValidationError("Regional Sales Leader must have at least one region.")
-
-            # Deputy RSL / Zonal Manager → at least 1 zone
-            elif designation_code in ['DRSL', 'ZM']:
-                if not self.zones.exists():
-                    raise ValidationError("Zonal-level staff must have at least one zone.")
-
-            # Territory-level staff
-            elif designation_code in ['PL', 'SR_PL', 'FSM', 'SR_FSM', 'DPL', 'MTO', 'SR_MTO']:
-                if not self.territories.exists():
-                    raise ValidationError("Territory-level staff must have at least one territory.")
+            # Note: M2M field validation (regions, zones, territories) is handled in admin.py
+            # because M2M fields aren't available during model.clean()
 
     def save(self, *args, **kwargs):
         # 1. Run validation first

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ur" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ product.ItemName }} - تفصیلات</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Jameel Noori Nastaleeq', 'Noto Nastalikh Urdu', 'Alvi Nastaleeq', Arial, sans-serif;
+            background: #f8f9fa;
+        }
+        
+        .rtl-content {
+            direction: rtl;
+            text-align: right;
+            line-height: 2;
+        }
+        
+        .product-document {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin: 30px 0;
+        }
+        
+        .product-document h1,
+        .product-document .heading1 {
+            color: #2c3e50;
+            font-size: 2.5rem;
+            margin: 25px 0 15px 0;
+            font-weight: bold;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        
+        .product-document h2,
+        .product-document .heading2 {
+            color: #34495e;
+            font-size: 2rem;
+            margin: 20px 0 12px 0;
+            font-weight: bold;
+        }
+        
+        .product-document h3,
+        .product-document .heading3 {
+            color: #7f8c8d;
+            font-size: 1.5rem;
+            margin: 15px 0 10px 0;
+            font-weight: bold;
+        }
+        
+        .product-document h4,
+        .product-document .heading4 {
+            color: #95a5a6;
+            font-size: 1.25rem;
+            margin: 12px 0 8px 0;
+        }
+        
+        .product-document p {
+            line-height: 2.2;
+            margin: 15px 0;
+            font-size: 1.15rem;
+        }
+        
+        .product-document strong {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .product-document em {
+            font-style: italic;
+        }
+        
+        .product-table {
+            width: 100%;
+            margin: 25px 0;
+            border-collapse: collapse;
+            direction: rtl;
+            font-size: 1.05rem;
+        }
+        
+        .product-table th {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px;
+            font-weight: bold;
+            border: 1px solid #45a049;
+            text-align: center;
+        }
+        
+        .product-table td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        
+        .product-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        .product-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .product-document img {
+            max-width: 100%;
+            height: auto;
+            margin: 20px auto;
+            display: block;
+            border-radius: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            padding: 20px 0;
+            margin-bottom: 20px;
+        }
+        
+        .doc-info {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .method-switch {
+            margin-bottom: 20px;
+        }
+        
+        .method-switch .btn {
+            margin: 0 5px;
+        }
+        
+        .product-header-card {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .product-image-header {
+            max-width: 200px;
+            height: auto;
+            border-radius: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <a href="{% url 'product_catalog_list' %}?database={{ database }}" class="btn btn-light">
+                <i class="fas fa-arrow-right"></i> واپس فہرست میں
+            </a>
+        </div>
+    </div>
+    
+    <div class="container">
+        {% if error_msg %}
+        <div class="alert alert-danger rtl-content">
+            <i class="fas fa-exclamation-triangle"></i> {{ error_msg }}
+        </div>
+        {% endif %}
+        
+        {% if product %}
+        <!-- Product Header -->
+        <div class="product-header-card rtl-content">
+            <div class="row">
+                <div class="col-md-8">
+                    <h1 class="mb-3">{{ product.ItemName }}</h1>
+                    <p><strong>کوڈ:</strong> {{ product.ItemCode }}</p>
+                    {% if product.U_BrandName %}
+                    <p><strong>برانڈ:</strong> {{ product.U_BrandName }}</p>
+                    {% endif %}
+                    {% if product.U_GenericName %}
+                    <p><strong>جینرک نام:</strong> {{ product.U_GenericName }}</p>
+                    {% endif %}
+                    <p><strong>زمرہ:</strong> {{ product.ItmsGrpNam }}</p>
+                </div>
+                <div class="col-md-4 text-center">
+                    {% if product.product_image_url %}
+                    <img src="{{ product.product_image_url }}" alt="{{ product.ItemName }}" class="product-image-header">
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        {% if doc_info %}
+        <div class="doc-info rtl-content">
+            <h5><i class="fas fa-info-circle"></i> معلومات دستاویز</h5>
+            <p class="mb-0">
+                پیراگراف: {{ doc_info.paragraphs }} | 
+                ٹیبل: {{ doc_info.tables }} | 
+                حصے: {{ doc_info.sections }}
+            </p>
+        </div>
+        {% endif %}
+        
+        <!-- Method Switch -->
+        {% if doc_content %}
+        <div class="method-switch text-center">
+            <a href="?database={{ database }}&method=mammoth" 
+               class="btn {% if parse_method == 'mammoth' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                <i class="fas fa-magic"></i> Mammoth Parser (تجویز کردہ)
+            </a>
+            <a href="?database={{ database }}&method=custom" 
+               class="btn {% if parse_method == 'custom' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                <i class="fas fa-cog"></i> Custom Parser (تفصیلی)
+            </a>
+        </div>
+        {% endif %}
+        
+        <!-- Document Content -->
+        {% if doc_content %}
+        <div class="product-content">
+            {{ doc_content|safe }}
+        </div>
+        {% else %}
+        <div class="alert alert-warning rtl-content">
+            <i class="fas fa-file-excel"></i> 
+            اس پروڈکٹ کے لیے دستاویز دستیاب نہیں ہے
+        </div>
+        {% endif %}
+        
+        <!-- Download Button -->
+        {% if product.product_description_urdu_url %}
+        <div class="text-center mt-4 mb-5">
+            <a href="{{ product.product_description_urdu_url }}" class="btn btn-success btn-lg" download>
+                <i class="fas fa-download"></i> اصل دستاویز ڈاؤن لوڈ کریں
+            </a>
+        </div>
+        {% endif %}
+        
+        {% else %}
+        <div class="alert alert-danger rtl-content">
+            <i class="fas fa-exclamation-triangle"></i> پروڈکٹ نہیں ملا
+        </div>
+        {% endif %}
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

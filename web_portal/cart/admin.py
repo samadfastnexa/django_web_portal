@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Cart, CartItem, Order, OrderItem
+from .models import Cart, CartItem, Order, OrderItem, Payment
 
 
 @admin.register(Cart)
@@ -143,3 +143,82 @@ class OrderItemAdmin(admin.ModelAdmin):
     ]
     readonly_fields = ['subtotal', 'created_at']
     list_filter = ['created_at']
+
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = [
+        'transaction_id',
+        'order',
+        'user',
+        'payment_method',
+        'amount',
+        'status',
+        'jazzcash_response_code',
+        'created_at',
+        'completed_at',
+    ]
+    list_filter = ['payment_method', 'status', 'created_at', 'completed_at']
+    search_fields = [
+        'transaction_id',
+        'jazzcash_transaction_id',
+        'order__order_number',
+        'user__email',
+        'customer_phone',
+        'customer_email',
+    ]
+    readonly_fields = [
+        'transaction_id',
+        'created_at',
+        'updated_at',
+        'completed_at',
+        'raw_response',
+    ]
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': (
+                'transaction_id',
+                'order',
+                'user',
+                'payment_method',
+                'amount',
+                'status',
+            )
+        }),
+        ('JazzCash Details', {
+            'fields': (
+                'jazzcash_transaction_id',
+                'jazzcash_response_code',
+                'jazzcash_response_message',
+                'jazzcash_payment_token',
+            ),
+            'classes': ('collapse',),
+        }),
+        ('Customer Information', {
+            'fields': (
+                'customer_phone',
+                'customer_email',
+            )
+        }),
+        ('Additional Information', {
+            'fields': (
+                'notes',
+                'raw_response',
+            ),
+            'classes': ('collapse',),
+        }),
+        ('Timestamps', {
+            'fields': (
+                'created_at',
+                'updated_at',
+                'completed_at',
+            )
+        }),
+    )
+    
+    def has_delete_permission(self, request, obj=None):
+        """Prevent deletion of completed payments"""
+        if obj and obj.status == 'completed':
+            return False
+        return super().has_delete_permission(request, obj)

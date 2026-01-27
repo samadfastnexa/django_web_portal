@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ur" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مصنوعات کی فہرست - Product Catalog</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Jameel Noori Nastaleeq', 'Noto Nastalikh Urdu', 'Alvi Nastaleeq', Arial, sans-serif;
+            direction: rtl;
+            text-align: right;
+        }
+        
+        .product-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+            background: white;
+        }
+        
+        .product-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-3px);
+        }
+        
+        .product-image {
+            width: 100%;
+            height: 200px;
+            object-fit: contain;
+            border-radius: 5px;
+            background: #f8f9fa;
+            padding: 10px;
+        }
+        
+        .product-title {
+            font-size: 1.25rem;
+            color: #2c3e50;
+            margin: 15px 0 10px 0;
+            font-weight: bold;
+            min-height: 60px;
+        }
+        
+        .product-category {
+            background: #4CAF50;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+        
+        .product-code {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            padding: 30px 0;
+            margin-bottom: 30px;
+        }
+        
+        .filters-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .no-doc-badge {
+            background: #f39c12;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+        }
+        
+        .has-doc-badge {
+            background: #27ae60;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1><i class="fas fa-box-open"></i> مصنوعات کی فہرست</h1>
+            <p class="mb-0">Product Catalog - {{ database }}</p>
+        </div>
+    </div>
+    
+    <div class="container">
+        {% if error_msg %}
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle"></i> {{ error_msg }}
+        </div>
+        {% endif %}
+        
+        <!-- Filters -->
+        <div class="filters-section">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">تلاش کریں / Search</label>
+                    <input type="text" name="search" class="form-control" placeholder="کوڈ یا نام..." value="{{ search }}">
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">زمرہ / Category</label>
+                    <select name="item_group" class="form-select">
+                        <option value="">تمام / All</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.code }}" {% if cat.code|stringformat:"s" == selected_item_group %}selected{% endif %}>
+                            {{ cat.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">ڈیٹا بیس / Database</label>
+                    <select name="database" class="form-select">
+                        <option value="4B-BIO_APP" {% if '4B-BIO' in database %}selected{% endif %}>4B-BIO</option>
+                        <option value="4B-ORANG_APP" {% if '4B-ORANG' in database %}selected{% endif %}>4B-ORANG</option>
+                    </select>
+                </div>
+                
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> تلاش کریں
+                    </button>
+                    <a href="{% url 'product_catalog_list' %}" class="btn btn-secondary">
+                        <i class="fas fa-redo"></i> دوبارہ سیٹ کریں
+                    </a>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Products Grid -->
+        <div class="row">
+            {% for product in products %}
+            <div class="col-md-6 col-lg-4 col-xl-3">
+                <div class="product-card">
+                    <!-- Product Image -->
+                    {% if product.product_image_url %}
+                    <img src="{{ product.product_image_url }}" alt="{{ product.ItemName }}" class="product-image">
+                    {% else %}
+                    <div class="product-image d-flex align-items-center justify-content-center">
+                        <i class="fas fa-box fa-4x text-muted"></i>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Category Badge -->
+                    <span class="product-category">{{ product.ItmsGrpNam }}</span>
+                    
+                    <!-- Product Code -->
+                    <div class="product-code">
+                        <strong>کوڈ:</strong> {{ product.ItemCode }}
+                    </div>
+                    
+                    <!-- Product Title -->
+                    <h3 class="product-title">{{ product.ItemName }}</h3>
+                    
+                    <!-- Brand -->
+                    {% if product.U_BrandName %}
+                    <div class="mb-2">
+                        <small><strong>برانڈ:</strong> {{ product.U_BrandName }}</small>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Generic Name -->
+                    {% if product.U_GenericName %}
+                    <div class="mb-2">
+                        <small><strong>جینرک نام:</strong> {{ product.U_GenericName }}</small>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Document Status -->
+                    {% if product.Product_Urdu_Name %}
+                    <span class="has-doc-badge">
+                        <i class="fas fa-file-word"></i> دستاویز دستیاب ہے
+                    </span>
+                    {% else %}
+                    <span class="no-doc-badge">
+                        <i class="fas fa-file-excel"></i> دستاویز نہیں
+                    </span>
+                    {% endif %}
+                    
+                    <!-- Action Buttons -->
+                    <div class="mt-3">
+                        {% if product.Product_Urdu_Name %}
+                        <a href="{% url 'product_document_detail' product.ItemCode %}?database={{ database }}" 
+                           class="btn btn-success btn-block w-100">
+                            <i class="fas fa-eye"></i> تفصیلات دیکھیں
+                        </a>
+                        {% endif %}
+                        
+                        {% if product.product_description_urdu_url %}
+                        <a href="{{ product.product_description_urdu_url }}" 
+                           class="btn btn-outline-primary btn-block w-100 mt-2" 
+                           target="_blank" download>
+                            <i class="fas fa-download"></i> ڈاؤن لوڈ
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col-12">
+                <div class="alert alert-info text-center">
+                    <i class="fas fa-info-circle"></i> کوئی مصنوعات نہیں ملیں
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Total Count -->
+        {% if products %}
+        <div class="alert alert-secondary text-center mt-4">
+            <strong>کل مصنوعات:</strong> {{ products|length }}
+        </div>
+        {% endif %}
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

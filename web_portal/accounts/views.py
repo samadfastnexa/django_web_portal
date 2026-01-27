@@ -509,8 +509,122 @@ class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
 
     @swagger_auto_schema(
-        operation_description="Authenticate user and obtain JWT tokens",
-        request_body=MyTokenObtainPairSerializer,
+        operation_description="""
+        Authenticate user and obtain JWT tokens.
+        
+        **Three login methods are supported:**
+        
+        1. **Email Login**: Use email and password (all user types)
+        2. **Phone Number Login**: Use phone number and password (all user types)
+        3. **Username Login**: Use username and password (farmers use phone as username)
+        
+        **Phone Number Sources by User Type:**
+        
+        | User Type | Phone Field | Example |
+        |-----------|-------------|---------|
+        | **Farmer** | `User.username` | Login with phone as username |
+        | **Sales Staff** | `SalesStaffProfile.phone_number` | Login with profile phone |
+        | **Dealer** | `Dealer.contact_number` or `mobile_phone` | Login with either phone |
+        
+        **Important Notes:**
+        - You must provide either email OR phone_number (not both required)
+        - Password is always required
+        - Phone numbers must be registered in the system
+        - Login is case-insensitive for email
+        - Farmers: Phone auto-saved as username during registration
+        
+        **Default Passwords:**
+        - Farmers: Last 4 digits of CNIC (auto-set)
+        - Others: Set during user creation
+        
+        **Examples:**
+        
+        Farmer login with phone:
+        ```json
+        {
+            "phone_number": "03001234567",
+            "password": "1234"
+        }
+        ```
+        
+        Email login:
+        ```json
+        {
+            "email": "user@example.com",
+            "password": "your_password"
+        }
+        ```
+        
+        Phone number login:
+        ```json
+        {
+            "phone_number": "03001234567",
+            "password": "your_password"
+        }
+        ```
+        """,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'email': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='User email address (optional if phone_number is provided)',
+                    example='user@example.com'
+                ),
+                'phone_number': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='User phone number - works for Farmers, Sales Staff, and Dealers (optional if email is provided)',
+                    example='03001234567'
+                ),
+                'password': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='User password (required)',
+                    format='password',
+                    example='your_password'
+                ),
+            },
+            required=['password'],
+        ),
+        responses={
+            200: openapi.Response(
+                description='Login successful - Returns JWT tokens and user information',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'refresh': openapi.Schema(type=openapi.TYPE_STRING, description='Refresh token for obtaining new access tokens'),
+                        'access': openapi.Schema(type=openapi.TYPE_STRING, description='Access token for API authentication'),
+                        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='User ID'),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING, description='User email'),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING, description='Username'),
+                        'role': openapi.Schema(type=openapi.TYPE_STRING, description='User role name'),
+                        'permissions': openapi.Schema(
+                            type=openapi.TYPE_ARRAY, 
+                            description='User permissions',
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                        ),
+                        'companies': openapi.Schema(
+                            type=openapi.TYPE_ARRAY, 
+                            description='Associated companies',
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                        ),
+                        'default_company': openapi.Schema(type=openapi.TYPE_OBJECT, description='Default company'),
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description='Bad Request - Invalid credentials or missing required fields',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(
+                            type=openapi.TYPE_STRING, 
+                            description='Error message',
+                            example='Invalid email/phone number or password.'
+                        )
+                    }
+                )
+            ),
+        },
         tags=["01. Authentication"]
     )
     def post(self, request, *args, **kwargs):
@@ -744,3 +858,155 @@ class PermissionListAPIView(generics.ListAPIView):
         if any(param in self.request.query_params for param in ['limit', 'offset', 'page']):
             return super().paginate_queryset(queryset)
         return None
+
+
+# ==================== ORGANOGRAM VIEW ====================
+class OrganogramView(generics.GenericAPIView):
+    """
+    Organization Hierarchy/Organogram View
+    
+    Returns the hierarchical structure of sales staff with their reporting relationships.
+    Only accessible to users with 'view_organogram' permission.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def check_permissions(self, request):
+        """Check if user has view_organogram permission"""
+        super().check_permissions(request)
+        
+        # Superuser has all permissions
+        if request.user.is_superuser:
+            return
+        
+        # Check for specific permission
+        if not request.user.has_perm('accounts.view_organogram'):
+            raise PermissionDenied("You don't have permission to view the organogram")
+    
+    @swagger_auto_schema(
+        operation_description="Get organization hierarchy (organogram) showing sales staff reporting structure. Requires 'view_organogram' permission.",
+        manual_parameters=[
+            openapi.Parameter(
+                'root_id',
+                openapi.IN_QUERY,
+                description='Start from specific staff member (defaults to top-level managers)',
+                type=openapi.TYPE_INTEGER,
+                required=False,
+            ),
+            openapi.Parameter(
+                'depth',
+                openapi.IN_QUERY,
+                description='Maximum depth of hierarchy to return (default: unlimited)',
+                type=openapi.TYPE_INTEGER,
+                required=False,
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description='Hierarchical organization structure',
+                examples={
+                    'application/json': [
+                        {
+                            'id': 1,
+                            'user_id': 10,
+                            'name': 'John Doe',
+                            'email': 'john@example.com',
+                            'designation': 'CEO',
+                            'employee_code': 'EMP001',
+                            'phone_number': '+92300xxxxxxx',
+                            'companies': ['4B-ORANG_APP'],
+                            'regions': ['Central Region'],
+                            'zones': ['Lahore Zone'],
+                            'territories': ['Territory A', 'Territory B'],
+                            'subordinates': [
+                                {
+                                    'id': 2,
+                                    'name': 'Jane Smith',
+                                    'designation': 'Regional Manager',
+                                    'subordinates': []
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ),
+            403: 'Permission denied - requires view_organogram permission'
+        },
+        tags=["28. Organogram"]
+    )
+    def get(self, request):
+        """Get organization hierarchy"""
+        root_id = request.query_params.get('root_id')
+        max_depth = request.query_params.get('depth')
+        
+        if max_depth:
+            try:
+                max_depth = int(max_depth)
+            except ValueError:
+                max_depth = None
+        
+        # Get the hierarchical data
+        hierarchy = self._build_hierarchy(root_id, max_depth)
+        
+        return Response({
+            'success': True,
+            'data': hierarchy
+        })
+    
+    def _build_hierarchy(self, root_id=None, max_depth=None):
+        """Build hierarchical structure of sales staff"""
+        
+        # Get all active sales profiles with related data
+        profiles = SalesStaffProfile.objects.filter(
+            is_vacant=False
+        ).select_related(
+            'user', 'designation', 'manager'
+        ).prefetch_related(
+            'companies', 'regions', 'zones', 'territories'
+        )
+        
+        if root_id:
+            # Start from specific root
+            try:
+                root_profile = profiles.get(id=int(root_id))
+                return [self._build_node(root_profile, max_depth, 0)]
+            except SalesStaffProfile.DoesNotExist:
+                return []
+        else:
+            # Find top-level managers (those with no manager)
+            top_level = profiles.filter(manager__isnull=True)
+            return [self._build_node(profile, max_depth, 0) for profile in top_level]
+    
+    def _build_node(self, profile, max_depth, current_depth):
+        """Recursively build a node with its subordinates"""
+        
+        # Build node data
+        node = {
+            'id': profile.id,
+            'user_id': profile.user.id if profile.user else None,
+            'name': f"{profile.user.first_name} {profile.user.last_name}" if profile.user else "Vacant",
+            'email': profile.user.email if profile.user else None,
+            'designation': profile.designation.name if profile.designation else None,
+            'designation_code': profile.designation.code if profile.designation else None,
+            'employee_code': profile.employee_code,
+            'phone_number': profile.phone_number,
+            'companies': [c.Company_name for c in profile.companies.all()],
+            'regions': [r.name for r in profile.regions.all()],
+            'zones': [z.name for z in profile.zones.all()],
+            'territories': [t.name for t in profile.territories.all()],
+            'is_vacant': profile.is_vacant,
+        }
+        
+        # Add subordinates if within depth limit
+        if max_depth is None or current_depth < max_depth:
+            subordinates = profile.subordinates.filter(is_vacant=False)
+            node['subordinates'] = [
+                self._build_node(sub, max_depth, current_depth + 1) 
+                for sub in subordinates
+            ]
+        else:
+            node['subordinates'] = []
+            # Indicate if there are more subordinates beyond depth limit
+            if profile.subordinates.exists():
+                node['has_more_subordinates'] = True
+        
+        return node

@@ -45,6 +45,13 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv(), default='localhost,127.0.0.1
 # ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.18.209:3000']
 # Application definition
 AUTH_USER_MODEL = 'accounts.User'
+
+# Authentication backends (supports login with email or phone number)
+AUTHENTICATION_BACKENDS = [
+    'accounts.backends.EmailOrPhoneBackend',  # Custom backend for email/phone login
+    'django.contrib.auth.backends.ModelBackend',  # Default backend
+]
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',

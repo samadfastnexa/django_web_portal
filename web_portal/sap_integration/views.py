@@ -4072,9 +4072,22 @@ def territory_summary_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(tags=['SAP'], 
+@swagger_auto_schema(tags=['SAP - Products'], 
     method='get',
-    operation_description="Products catalog with images based on database. Supports search and item group filters.",
+    operation_description="""Products catalog with images and document links based on database. 
+    
+    Features:
+    - Product images from media/product_images/{database}/
+    - Document description links (for products with Word documents)
+    - Search and filter by category
+    - Pagination support
+    
+    Each product includes:
+    - product_image_url: URL to product image
+    - product_description_urdu_url: URL to download Word document
+    - document_detail_url: URL to view formatted document (if available)
+    - document_detail_page_url: Full URL to document detail page
+    """,
     manual_parameters=[
         openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP). Uses default from env if not provided.", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search ItemCode, ItemName, GenericName, or BrandName", type=openapi.TYPE_STRING, required=False),
@@ -4140,6 +4153,22 @@ def products_catalog_api(request):
                 cur.close()
             # Pass the connection and schema name to products_catalog for image URL generation
             data = products_catalog(conn, cfg['schema'], search, item_group)
+            
+            # Add document detail URLs to each product
+            from django.urls import reverse
+            for product in data:
+                if product.get('Product_Urdu_Name') and product.get('Product_Urdu_Ext'):
+                    # Add API endpoint URL for document detail
+                    product['document_detail_url'] = reverse('product_document_detail', kwargs={'item_code': product['ItemCode']})
+                    # Add full page URL with database parameter
+                    base_url = request.build_absolute_uri('/')
+                    product['document_detail_page_url'] = f"{base_url.rstrip('/')}{product['document_detail_url']}?database={cfg['schema']}"
+                    product['has_document'] = True
+                else:
+                    product['document_detail_url'] = None
+                    product['document_detail_page_url'] = None
+                    product['has_document'] = False
+            
             paginator = Paginator(data or [], page_size)
             page_obj = paginator.get_page(page_num)
             return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'database': cfg['schema'], 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
@@ -6962,3 +6991,259 @@ def projects_list_api(request):
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+# ============= Product Catalog with Document Display =============
+
+@swagger_auto_schema(
+    tags=['SAP - Products'],
+    method='get',
+    operation_description="""Get detailed product document with formatted Word content.
+    
+    This endpoint parses Word documents on-the-fly and displays them with full formatting:
+    - Headings (H1, H2, H3, H4)
+    - Text colors and fonts
+    - Tables with cell formatting
+    - Embedded images
+    - RTL (Right-to-Left) support for Urdu text
+    
+    The document is parsed fresh on each request, so changes to the .docx file are reflected immediately.
+    
+    Parser Methods:
+    - mammoth (default): Automatic conversion with smart formatting
+    - custom: Detailed control over all formatting elements
+    """,
+    manual_parameters=[
+        openapi.Parameter('item_code', openapi.IN_PATH, description="Product ItemCode (e.g., FG00292)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('method', openapi.IN_QUERY, description="Parser method: 'mammoth' (recommended) or 'custom'", type=openapi.TYPE_STRING, required=False, default='mammoth'),
+    ],
+    responses={
+        200: openapi.Response(description="HTML page with formatted product document"),
+        404: openapi.Response(description="Product or document not found"),
+        500: openapi.Response(description="Server Error")
+    }
+)
+@api_view(['GET'])
+def product_document_api(request, item_code):
+    """API endpoint for product document (returns HTML)"""
+    return product_document_view(request, item_code)
+
+def product_catalog_list_view(request):
+    """
+    Display products catalog with option to view detailed documents
+    """
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    
+    # Get database from query param
+    database = request.GET.get('database', '').strip() or request.session.get('selected_database', '')
+    search = request.GET.get('search', '').strip()
+    item_group = request.GET.get('item_group', '').strip()
+    
+    # If no database selected, try to get from companies
+    if not database:
+        try:
+            company = Company.objects.filter(is_active=True).first()
+            if company:
+                database = company.Company_name
+        except:
+            database = os.environ.get('HANA_SCHEMA') or '4B-ORANG_APP'
+    
+    products = []
+    categories = []
+    error_msg = None
+    
+    try:
+        from hdbcli import dbapi
+        
+        cfg = {
+            'host': os.environ.get('HANA_HOST') or '',
+            'port': os.environ.get('HANA_PORT') or '30015',
+            'user': os.environ.get('HANA_USER') or '',
+            'schema': database,
+            'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+            'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+        }
+        
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'] or '',
+            'password': pwd or ''
+        }
+        
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+        
+        conn = dbapi.connect(**kwargs)
+        
+        try:
+            if cfg['schema']:
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                cur.close()
+            
+            # Get products
+            products = products_catalog(
+                conn, 
+                schema_name=database,
+                search=search,
+                item_group=item_group
+            )
+            
+            # Get unique categories
+            categories_dict = {}
+            for product in products:
+                grp_code = product.get('ItmsGrpCod')
+                grp_name = product.get('ItmsGrpNam')
+                if grp_code and grp_name and grp_code not in categories_dict:
+                    categories_dict[grp_code] = grp_name
+            
+            categories = [{'code': k, 'name': v} for k, v in sorted(categories_dict.items(), key=lambda x: x[1])]
+        
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        logger.error(f"Error loading products: {e}")
+        error_msg = str(e)
+    
+    context = {
+        'products': products,
+        'categories': categories,
+        'database': database,
+        'search': search,
+        'selected_item_group': item_group,
+        'error_msg': error_msg,
+    }
+    
+    return render(request, 'sap_integration/product_catalog_list.html', context)
+
+
+def product_document_view(request, item_code):
+    """
+    Display product details with parsed Word document content
+    """
+    from .utils.document_parser import parse_product_document, get_product_document_path, WordDocumentParser
+    
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    
+    # Get database from query param
+    database = request.GET.get('database', '').strip() or request.session.get('selected_database', '')
+    parse_method = request.GET.get('method', 'mammoth')
+    
+    # If no database selected, try to get from companies
+    if not database:
+        try:
+            company = Company.objects.filter(is_active=True).first()
+            if company:
+                database = company.Company_name
+        except:
+            database = os.environ.get('HANA_SCHEMA') or '4B-ORANG_APP'
+    
+    product = None
+    doc_content = None
+    doc_info = None
+    error_msg = None
+    file_path = None
+    
+    try:
+        from hdbcli import dbapi
+        
+        cfg = {
+            'host': os.environ.get('HANA_HOST') or '',
+            'port': os.environ.get('HANA_PORT') or '30015',
+            'user': os.environ.get('HANA_USER') or '',
+            'schema': database,
+            'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+            'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+        }
+        
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'] or '',
+            'password': pwd or ''
+        }
+        
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+        
+        conn = dbapi.connect(**kwargs)
+        
+        try:
+            if cfg['schema']:
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                cur.close()
+            
+            # Get product details
+            products = products_catalog(
+                conn, 
+                schema_name=database,
+                search=item_code
+            )
+            
+            # Find exact match
+            product = next((p for p in products if p.get('ItemCode') == item_code), None)
+            
+            if not product and products:
+                product = products[0]
+        
+        finally:
+            conn.close()
+        
+        # Parse document if available
+        if product:
+            urdu_name = product.get('Product_Urdu_Name')
+            urdu_ext = product.get('Product_Urdu_Ext')
+            
+            if urdu_name and urdu_ext:
+                file_path = get_product_document_path(urdu_name, urdu_ext, database)
+                
+                if file_path:
+                    # Parse document on-the-fly
+                    doc_content = parse_product_document(file_path, method=parse_method)
+                    
+                    # Get document info
+                    parser = WordDocumentParser(file_path)
+                    doc_info = parser.get_document_info()
+                else:
+                    error_msg = f"دستاویز فائل نہیں ملی: {urdu_name}.{urdu_ext}"
+            else:
+                error_msg = "اس پروڈکٹ کے لیے دستاویز دستیاب نہیں ہے"
+    
+    except Exception as e:
+        logger.error(f"Error loading product document: {e}")
+        error_msg = str(e)
+        import traceback
+        traceback.print_exc()
+    
+    context = {
+        'product': product,
+        'doc_content': doc_content,
+        'doc_info': doc_info,
+        'database': database,
+        'parse_method': parse_method,
+        'error_msg': error_msg,
+        'file_path': file_path,
+    }
+    
+    return render(request, 'sap_integration/product_document_detail.html', context)

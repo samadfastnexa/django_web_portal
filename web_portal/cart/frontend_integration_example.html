@@ -1,0 +1,308 @@
+<!-- 
+JazzCash Frontend Integration Example
+This shows how to integrate JazzCash payment in your React/Vue/HTML frontend
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JazzCash Payment Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .result {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛒 JazzCash Payment Integration Example</h1>
+    
+    <!-- Step 1: Add to Cart -->
+    <div class="section">
+        <h2>Step 1: Add Product to Cart</h2>
+        <input type="text" id="productCode" placeholder="Product Code" value="FG00259">
+        <input type="text" id="productName" placeholder="Product Name" value="Wheat Seeds">
+        <input type="number" id="quantity" placeholder="Quantity" value="1">
+        <input type="number" id="unitPrice" placeholder="Unit Price" value="1500">
+        <button onclick="addToCart()">Add to Cart</button>
+        <div id="cartResult" class="result" style="display: none;"></div>
+    </div>
+
+    <!-- Step 2: Create Order -->
+    <div class="section">
+        <h2>Step 2: Create Order from Cart</h2>
+        <input type="text" id="shippingAddress" placeholder="Shipping Address" value="House 123, Street 5, Lahore">
+        <button onclick="createOrder()">Create Order</button>
+        <div id="orderResult" class="result" style="display: none;"></div>
+    </div>
+
+    <!-- Step 3: Initiate Payment -->
+    <div class="section">
+        <h2>Step 3: Initiate JazzCash Payment</h2>
+        <input type="number" id="orderId" placeholder="Order ID">
+        <input type="text" id="customerPhone" placeholder="Phone (03xxxxxxxxx)" value="03001234567">
+        <input type="email" id="customerEmail" placeholder="Email" value="customer@example.com">
+        <input type="number" id="paymentAmount" placeholder="Amount" value="1500">
+        <button onclick="initiatePayment()">Pay with JazzCash</button>
+        <div id="paymentResult" class="result" style="display: none;"></div>
+    </div>
+
+    <!-- Hidden form for JazzCash submission -->
+    <form id="jazzcashForm" method="POST" style="display: none;"></form>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://localhost:8000/api/cart';
+        const AUTH_TOKEN = 'YOUR_AUTH_TOKEN_HERE'; // Get from login
+
+        // Helper function for API calls
+        async function apiCall(endpoint, method = 'GET', data = null) {
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${AUTH_TOKEN}`
+                }
+            };
+            
+            if (data && method !== 'GET') {
+                options.body = JSON.stringify(data);
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                console.error('API Error:', error);
+                return { error: error.message };
+            }
+        }
+
+        // Step 1: Add to Cart
+        async function addToCart() {
+            const data = {
+                product_item_code: document.getElementById('productCode').value,
+                product_name: document.getElementById('productName').value,
+                quantity: parseInt(document.getElementById('quantity').value),
+                unit_price: parseFloat(document.getElementById('unitPrice').value)
+            };
+            
+            const result = await apiCall('/cart/add_item/', 'POST', data);
+            
+            const resultDiv = document.getElementById('cartResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <h3>✅ ${result.message || 'Added to Cart'}</h3>
+                <pre>${JSON.stringify(result, null, 2)}</pre>
+            `;
+        }
+
+        // Step 2: Create Order
+        async function createOrder() {
+            const data = {
+                shipping_address: document.getElementById('shippingAddress').value,
+                notes: 'Order from web'
+            };
+            
+            const result = await apiCall('/orders/', 'POST', data);
+            
+            const resultDiv = document.getElementById('orderResult');
+            resultDiv.style.display = 'block';
+            
+            if (result.order) {
+                // Auto-fill order ID for payment
+                document.getElementById('orderId').value = result.order.id;
+                document.getElementById('paymentAmount').value = result.order.total_amount;
+                
+                resultDiv.innerHTML = `
+                    <h3>✅ ${result.message}</h3>
+                    <p><strong>Order Number:</strong> ${result.order.order_number}</p>
+                    <p><strong>Total Amount:</strong> PKR ${result.order.total_amount}</p>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            }
+        }
+
+        // Step 3: Initiate Payment
+        async function initiatePayment() {
+            const data = {
+                order_id: parseInt(document.getElementById('orderId').value),
+                payment_method: 'jazzcash',
+                amount: parseFloat(document.getElementById('paymentAmount').value),
+                customer_phone: document.getElementById('customerPhone').value,
+                customer_email: document.getElementById('customerEmail').value
+            };
+            
+            const result = await apiCall('/payments/initiate/', 'POST', data);
+            
+            const resultDiv = document.getElementById('paymentResult');
+            resultDiv.style.display = 'block';
+            
+            if (result.jazzcash_form_data) {
+                resultDiv.innerHTML = `
+                    <h3>🔄 Redirecting to JazzCash...</h3>
+                    <p>Transaction ID: ${result.transaction_id}</p>
+                `;
+                
+                // Create and submit JazzCash form
+                submitJazzCashForm(result.jazzcash_payment_url, result.jazzcash_form_data);
+            } else if (result.payment_method === 'cash_on_delivery') {
+                resultDiv.innerHTML = `
+                    <h3>✅ Order Confirmed!</h3>
+                    <p>Payment Method: Cash on Delivery</p>
+                    <p>Transaction ID: ${result.transaction_id}</p>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            }
+        }
+
+        // Submit JazzCash Form
+        function submitJazzCashForm(url, formData) {
+            const form = document.getElementById('jazzcashForm');
+            form.action = url;
+            form.innerHTML = '';
+            
+            // Add all form fields
+            for (const [key, value] of Object.entries(formData)) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = value;
+                form.appendChild(input);
+            }
+            
+            // Submit form (will redirect to JazzCash)
+            form.submit();
+        }
+
+        // Get Cart (optional - to display current cart)
+        async function getCart() {
+            const result = await apiCall('/cart/', 'GET');
+            console.log('Current Cart:', result);
+            return result;
+        }
+
+        // Get Payment History (optional)
+        async function getPaymentHistory() {
+            const result = await apiCall('/payments/', 'GET');
+            console.log('Payment History:', result);
+            return result;
+        }
+    </script>
+
+    <!-- React/Vue Example -->
+    <div class="section">
+        <h2>React/Vue Integration Example</h2>
+        <pre>
+// React Example
+import { useState } from 'react';
+
+function PaymentComponent() {
+  const [loading, setLoading] = useState(false);
+  
+  const handlePayment = async (orderId, amount) => {
+    setLoading(true);
+    
+    try {
+      const response = await fetch('http://localhost:8000/api/cart/payments/initiate/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          order_id: orderId,
+          payment_method: 'jazzcash',
+          amount: amount,
+          customer_phone: '03001234567'
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.jazzcash_form_data) {
+        // Create form and submit
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = result.jazzcash_payment_url;
+        
+        Object.entries(result.jazzcash_form_data).forEach(([key, value]) => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = value;
+          form.appendChild(input);
+        });
+        
+        document.body.appendChild(form);
+        form.submit();
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
+    &lt;button onClick={() => handlePayment(1, 1500)}&gt;
+      {loading ? 'Processing...' : 'Pay with JazzCash'}
+    &lt;/button&gt;
+  );
+}
+        </pre>
+    </div>
+</body>
+</html>

@@ -122,6 +122,25 @@
           </ul>
         {% endif %}
       </div>
+      
+      <!-- Quick Links Section -->
+      {% if user.is_superuser or perms.accounts.view_organogram %}
+      <div class="module" style="margin-top: 20px;">
+        <h2>🏢 Organization</h2>
+        <table summary="Organization tools">
+          <tbody>
+            <tr class="model-organogram">
+              <th scope="row">
+                <a href="{% url 'admin:organogram' %}">Organization Hierarchy</a>
+              </th>
+              <td>
+                <a href="{% url 'admin:organogram' %}" class="viewlink">View Organogram</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

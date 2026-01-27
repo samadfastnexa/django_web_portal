@@ -103,6 +103,18 @@
       </a>
     </li>
 
+    <!-- Organization Menu -->
+    {% if user.is_superuser or perms.accounts.view_organogram %}
+    <li class="menu-item {% if request.resolver_match and request.resolver_match.url_name == 'organogram' %}is-active{% endif %}">
+      <a class="menu-link" href="{% url 'admin:organogram' %}">
+        <span class="menu-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zm6 7c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zm-12 0c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zm6 0c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+        </span>
+        <span class="menu-text">Organization Hierarchy</span>
+      </a>
+    </li>
+    {% endif %}
+
     <!-- SAP Integration Menu -->
     <li class="menu-item"><span class="menu-text" style="font-weight:700;opacity:.85;">SAP Integration</span></li>
     
