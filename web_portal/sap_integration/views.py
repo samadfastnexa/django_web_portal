@@ -197,31 +197,37 @@ def hana_connect_admin(request):
     except Exception:
         pass
     
-    # Get database options from settings
+    # Get database options from Company model
     db_options = {}
-    selected_db_key = request.GET.get('company_db', '4B-BIO')  # Default to 4B-BIO
+    selected_db_key = request.GET.get('company_db', '')
     
     try:
-        from preferences.models import Setting
-        db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-        if db_setting:
-            # Handle both dict (JSONField) and string (TextField) formats
-            if isinstance(db_setting.value, dict):
-                db_options = db_setting.value
-            elif isinstance(db_setting.value, str):
-                try:
-                    db_options = json.loads(db_setting.value)
-                except:
-                    pass
+        # Fetch active companies from database
+        companies = Company.objects.filter(is_active=True).order_by('name')
+        
+        # Build db_options dictionary from companies
+        # The 'name' field contains the schema (e.g., '4B-BIO_APP', '4B-ORANG_APP')
+        for company in companies:
+            if company.name:
+                # Use the schema name as both key and value
+                # This allows direct schema selection
+                db_options[company.name] = company.name
+        
     except Exception as e:
+        # Fallback to default options if Company model not accessible
         pass
     
-    # Fallback to default options if setting not found or invalid
+    # Fallback to default options if no companies found
     if not db_options:
         db_options = {
-            '4B-ORANG': '4B-ORANG_APP',
-            '4B-BIO': '4B-BIO_APP'
+            '4B-ORANG_APP': '4B-ORANG_APP',
+            '4B-BIO_APP': '4B-BIO_APP'
         }
+    
+    # Set default selected key if not provided
+    if not selected_db_key:
+        # Use first company or default to 4B-BIO_APP
+        selected_db_key = list(db_options.keys())[0] if db_options else '4B-BIO_APP'
     
     # Clean up keys and values - remove any embedded quotes
     cleaned_options = {}
@@ -1207,7 +1213,7 @@ def hana_connect_admin(request):
                                 ignore_emp_filter=(ignore_emp_filter_param in ('true', '1', 'yes', 'on'))
                             )
                             
-                            if in_millions_param in ('', 'true','1','yes','y'):
+                            if in_millions_param in ('true','1','yes','y'):
                                 scaled = []
                                 for row in data or []:
                                     if isinstance(row, dict):

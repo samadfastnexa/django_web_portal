@@ -245,10 +245,11 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
     oter_tbl = '"OTER"'
     
     # Base SELECT
+    # Hierarchy: T (Territory) -> Z (Zone) -> R1 (Region) -> R2 -> R3
     select_clause = (
         'SELECT '
-        '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
-        '    R1."descript" AS "Zone", '
+        '    COALESCE(R2."descript", R1."descript") AS "Region", '
+        '    Z."descript" AS "Zone", '
         '    T."territryID" AS "TerritoryId", '
         '    T."descript" AS "TerritoryName", '
         '    SUM(c.colletion_Target) AS "Collection_Target", '
@@ -288,16 +289,13 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         params.append(emp_id)
         
     if region and region.strip():
-        # Search across all region levels to be safe, or just check the coalesced result logic if possible.
-        # But for SQL WHERE, we typically check the columns. 
-        # Given the hierarchy R3->R2->R1, usually Region is the top most.
-        # Let's match the pattern used in sales_vs_achievement_geo_inv if available, or just check R3/R2/R1.
-        # For simplicity and correctness with the SELECT COALESCE:
-        where_clauses.append(' (R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ?) ')
-        params.extend([region.strip(), region.strip(), region.strip()])
+        # Region is R1 or R2 (COALESCE(R2, R1))
+        where_clauses.append(' (R2."descript" = ? OR R1."descript" = ?) ')
+        params.extend([region.strip(), region.strip()])
         
     if zone and zone.strip():
-        where_clauses.append(' R1."descript" = ? ')
+        # Zone is Z (immediate parent of Territory)
+        where_clauses.append(' Z."descript" = ? ')
         params.append(zone.strip())
         
     if territory and territory.strip():
@@ -313,8 +311,8 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         where_sql = ' WHERE ' + ' AND '.join(where_clauses)
         
     group_by_fields = [
-        'COALESCE(R3."descript", R2."descript", R1."descript")',
-        'R1."descript"',
+        'COALESCE(R2."descript", R1."descript")',
+        'Z."descript"',
         'T."territryID"',
         'T."descript"'
     ]
