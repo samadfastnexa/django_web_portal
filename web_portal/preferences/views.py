@@ -156,7 +156,8 @@ class WeatherTestView(APIView):
             openapi.Parameter(
                 'q',
                 openapi.IN_QUERY,
-                description="Search by Zone or Territory name (typeahead style). Examples: 'MULTAN', 'DG Khan', 'Lahore', 'Territory A'",
+                description="Search by Zone/Territory name or latitude,longitude (decimal degrees). "
+                           "Examples: 'MULTAN', 'DG Khan', 'Lahore' or '30.1575,71.5249' for coordinates",
                 type=openapi.TYPE_STRING,
                 required=True,
                 examples={
@@ -164,7 +165,8 @@ class WeatherTestView(APIView):
                         "MULTAN": "MULTAN",
                         "DG Khan": "DG Khan",
                         "Lahore": "Lahore",
-                        "Karachi": "Karachi"
+                        "Karachi": "Karachi",
+                        "Coordinates": "30.1575,71.5249"
                     }
                 }
             )
@@ -252,7 +254,7 @@ class WeatherTestView(APIView):
                 description="Bad Request - Missing query parameter",
                 examples={
                     "application/json": {
-                        "error": "Please provide ?q=ZoneName or TerritoryName"
+                        "error": "Please provide ?q=ZoneName, TerritoryName, or latitude,longitude"
                     }
                 }
             ),
@@ -265,41 +267,48 @@ class WeatherTestView(APIView):
                 }
             )
         },
-        operation_description="Get real-time weather information for a specific Zone or Territory using WeatherAPI.com. "
-                             "Search by name using the 'q' parameter. "
-                             "The API will first search for Zones, then Territories if no Zone is found, "
+        operation_description="Get real-time weather information for a specific Zone, Territory, or coordinates using WeatherAPI.com. "
+                             "Search by name using the 'q' parameter or provide latitude,longitude (decimal degrees). "
+                             "The API will first check if the query is coordinates, then search for Zones, then Territories if no Zone is found, "
                              "then fetch current weather and 3-day forecast from WeatherAPI.com. "
-                             "Example: /api/weather/?q=MULTAN"
+                             "Examples: /api/weather/?q=MULTAN or /api/weather/?q=30.1575,71.5249"
     )
     def get(self, request, *args, **kwargs):
         from django.conf import settings
         import requests
+        import re
         
         query = request.GET.get("q", "")
 
         if not query:
-            return Response({"error": "Please provide ?q=ZoneName or TerritoryName"}, status=400)
+            return Response({"error": "Please provide ?q=ZoneName, TerritoryName, or latitude,longitude"}, status=400)
 
-        # 🔎 Search for Zone
-        zone = Zone.objects.filter(name__icontains=query).first()
-        location_for_weather = None
-
-        if zone:
-            location_name = f"Zone: {zone.name}"
-            # Use the original query for weather API
-            location_for_weather = query
+        # 🌍 Check if query is in latitude,longitude format (e.g., "48.8567,2.3508")
+        lat_lon_pattern = r'^-?\d+\.?\d*,-?\d+\.?\d*$'
+        if re.match(lat_lon_pattern, query.strip()):
+            location_name = f"Coordinates: {query}"
+            location_for_weather = query.strip()
         else:
-            # 🔎 Search for Territory
-            territory = Territory.objects.filter(name__icontains=query).select_related("zone").first()
-            if territory:
-                location_name = f"Territory: {territory.name} (Zone: {territory.zone.name})"
-                # Use latitude,longitude if available, otherwise use the original query
-                if territory.latitude and territory.longitude:
-                    location_for_weather = f"{territory.latitude},{territory.longitude}"
-                else:
-                    location_for_weather = query
+            # 🔎 Search for Zone
+            zone = Zone.objects.filter(name__icontains=query).first()
+            location_for_weather = None
+
+            if zone:
+                location_name = f"Zone: {zone.name}"
+                # Use the original query for weather API
+                location_for_weather = query
             else:
-                return Response({"error": f"No Zone/Territory found matching '{query}'"}, status=404)
+                # 🔎 Search for Territory
+                territory = Territory.objects.filter(name__icontains=query).select_related("zone").first()
+                if territory:
+                    location_name = f"Territory: {territory.name} (Zone: {territory.zone.name})"
+                    # Use latitude,longitude if available, otherwise use the original query
+                    if territory.latitude and territory.longitude:
+                        location_for_weather = f"{territory.latitude},{territory.longitude}"
+                    else:
+                        location_for_weather = query
+                else:
+                    return Response({"error": f"No Zone/Territory found matching '{query}'"}, status=404)
 
         # 🌤️ Get real weather data from WeatherAPI.com
         try:
@@ -513,7 +522,35 @@ class UserAnalyticsView(APIView):
             user_name = os.environ.get('HANA_USER') or ''
             password = os.environ.get('HANA_PASSWORD', '')
             schema = os.environ.get('HANA_SCHEMA') or ''
+            
+            # Get company options from Company model (dynamic)
             try:
+                from FieldAdvisoryService.models import Company
+                companies = Company.objects.filter(is_active=True).order_by('Company_name')
+                
+                if companies.exists():
+                    # Build options from Company model
+                    # Key: Company_name (display name), Schema: name (schema field)
+                    company_options = [
+                        {
+                            "key": company.Company_name.strip().strip('"').strip("'"),
+                            "schema": company.name.strip().strip('"').strip("'")
+                        }
+                        for company in companies
+                        if company.Company_name and company.name
+                    ]
+                    
+                    # If company_param is provided, find matching schema
+                    if company_param:
+                        selected_key = company_param.strip().strip('"').strip("'")
+                        matching_company = companies.filter(Company_name=selected_key).first()
+                        if matching_company and matching_company.name:
+                            schema = matching_company.name.strip().strip('"').strip("'")
+            except Exception:
+                pass
+            
+            # Fallback: Try to get from Settings if Company model didn't work
+            if not company_options:
                 try:
                     db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
                     mapping = {}
@@ -538,8 +575,6 @@ class UserAnalyticsView(APIView):
                                 schema = val.strip().strip('"').strip("'")
                 except Exception:
                     pass
-            except Exception:
-                pass
             encrypt = (str(os.environ.get('HANA_ENCRYPT') or '').strip().lower() in ('true','1','yes'))
             ssl_validate = (str(os.environ.get('HANA_SSL_VALIDATE') or '').strip().lower() in ('true','1','yes'))
             kwargs = {'address': host, 'port': int(port), 'user': user_name or '', 'password': password or ''}

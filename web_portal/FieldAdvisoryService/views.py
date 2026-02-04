@@ -35,7 +35,18 @@ class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     Supports list, retrieve, create, update, partial update, and delete.
     Filters data based on user's position in reporting hierarchy.
     """
-    queryset = MeetingSchedule.objects.select_related('region', 'zone', 'territory', 'staff').all()
+    queryset = MeetingSchedule.objects.select_related(
+        'region', 
+        'zone', 
+        'territory', 
+        'staff',
+        'region__company',
+        'zone__company',
+        'zone__region',
+        'territory__company',
+        'territory__zone',
+        'territory__zone__region'
+    ).prefetch_related('attendees').all()
     serializer_class = MeetingScheduleSerializer
     parser_classes = [MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -437,7 +448,21 @@ class SalesOrderViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     Accepts form-data format only.
     Filters data based on user's position in reporting hierarchy.
     """
-    queryset = SalesOrder.objects.all()
+    queryset = SalesOrder.objects.select_related(
+        'customer',
+        'staff',
+        'staff__sales_profile',
+        'territory',
+        'territory__zone',
+        'territory__zone__region',
+        'zone',
+        'zone__region',
+        'region'
+    ).prefetch_related(
+        'lines',
+        'lines__item',
+        'attachments'
+    ).all()
     serializer_class = SalesOrderSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [IsAuthenticated, HasRolePermission]
@@ -1106,7 +1131,7 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
 
 
 class CompanyViewSet(viewsets.ModelViewSet):
-    queryset = Company.objects.all()
+    queryset = Company.objects.only('id', 'Company_name', 'name', 'email', 'contact_number', 'is_active').all()
     serializer_class = CompanySerializer
     # permission_classes = [IsAdminOrReadOnly]
     permission_classes = [IsAuthenticated, HasRolePermission]
@@ -1166,7 +1191,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 class RegionViewSet(viewsets.ModelViewSet):
-    queryset = Region.objects.all()
+    queryset = Region.objects.select_related('company').all()
     serializer_class = RegionSerializer
     # permission_classes = [IsAdminOrReadOnly]
     permission_classes = [IsAuthenticated, HasRolePermission]
@@ -1211,7 +1236,7 @@ class RegionViewSet(viewsets.ModelViewSet):
 
 
 class ZoneViewSet(viewsets.ModelViewSet):
-    queryset = Zone.objects.all()
+    queryset = Zone.objects.select_related('company', 'region').all()
     serializer_class = ZoneSerializer
     # permission_classes = [IsAdminOrReadOnly]
     permission_classes = [IsAuthenticated, HasRolePermission]
@@ -1256,7 +1281,7 @@ class ZoneViewSet(viewsets.ModelViewSet):
 
 
 class TerritoryViewSet(viewsets.ModelViewSet):
-    queryset = Territory.objects.all()
+    queryset = Territory.objects.select_related('company', 'zone', 'zone__region').all()
     serializer_class = TerritorySerializer
     # permission_classes = [IsAdminOrReadOnly]
     permission_classes = [IsAuthenticated, HasRolePermission]

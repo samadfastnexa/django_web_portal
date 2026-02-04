@@ -21,7 +21,7 @@ import os
 import json
 import re
 import logging
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, unit_price_by_policy
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, sales_vs_achievement_territory, unit_price_by_policy
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -197,31 +197,37 @@ def hana_connect_admin(request):
     except Exception:
         pass
     
-    # Get database options from settings
+    # Get database options from Company model
     db_options = {}
-    selected_db_key = request.GET.get('company_db', '4B-BIO')  # Default to 4B-BIO
+    selected_db_key = request.GET.get('company_db', '')
     
     try:
-        from preferences.models import Setting
-        db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-        if db_setting:
-            # Handle both dict (JSONField) and string (TextField) formats
-            if isinstance(db_setting.value, dict):
-                db_options = db_setting.value
-            elif isinstance(db_setting.value, str):
-                try:
-                    db_options = json.loads(db_setting.value)
-                except:
-                    pass
+        # Fetch active companies from database
+        companies = Company.objects.filter(is_active=True).order_by('name')
+        
+        # Build db_options dictionary from companies
+        # The 'name' field contains the schema (e.g., '4B-BIO_APP', '4B-ORANG_APP')
+        for company in companies:
+            if company.name:
+                # Use the schema name as both key and value
+                # This allows direct schema selection
+                db_options[company.name] = company.name
+        
     except Exception as e:
+        # Fallback to default options if Company model not accessible
         pass
     
-    # Fallback to default options if setting not found or invalid
+    # Fallback to default options if no companies found
     if not db_options:
         db_options = {
-            '4B-ORANG': '4B-ORANG_APP',
-            '4B-BIO': '4B-BIO_APP'
+            '4B-ORANG_APP': '4B-ORANG_APP',
+            '4B-BIO_APP': '4B-BIO_APP'
         }
+    
+    # Set default selected key if not provided
+    if not selected_db_key:
+        # Use first company or default to 4B-BIO_APP
+        selected_db_key = list(db_options.keys())[0] if db_options else '4B-BIO_APP'
     
     # Clean up keys and values - remove any embedded quotes
     cleaned_options = {}
@@ -1207,7 +1213,7 @@ def hana_connect_admin(request):
                                 ignore_emp_filter=(ignore_emp_filter_param in ('true', '1', 'yes', 'on'))
                             )
                             
-                            if in_millions_param in ('', 'true','1','yes','y'):
+                            if in_millions_param in ('true','1','yes','y'):
                                 scaled = []
                                 for row in data or []:
                                     if isinstance(row, dict):
@@ -3045,7 +3051,7 @@ def policy_list_page(request):
     method='get',
     operation_description="Sales vs Achievement data",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
@@ -3330,7 +3336,7 @@ def sales_vs_achievement_api(request):
     method='get',
     operation_description="Sales vs Achievement (Geo Inv) with Region/Zone/Territory hierarchy",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('region', openapi.IN_QUERY, description="Region name", type=openapi.TYPE_STRING),
@@ -3506,19 +3512,49 @@ def sales_vs_achievement_geo_inv_api(request):
 
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
-    operation_description="Sales vs Achievement (Territory) hierarchy by Region/Zone/Territory",
+    operation_description="""
+    Get Sales vs Achievement data with hierarchical structure (Region → Zone → Territory).
+    
+    **User & Employee Tracking:**
+    - Response includes `user_id` (portal user) and `employee_id` (from sales_profile)
+    - Use `user_id` parameter to fetch data for a specific portal user (auto-fetches employee_code)
+    - Use `emp_id` parameter for direct SAP employee ID lookup
+    
+    **Date Filtering Options:**
+    
+    *Quick Period Filters (Recommended):*
+    - `period=today` - Today's sales data (Feb 3, 2026)
+    - `period=monthly` - Current month to date (Feb 1 - Feb 3, 2026)
+    - `period=yearly` - Current year to date (Jan 1 - Feb 3, 2026)
+    
+    *Custom Date Range:*
+    - Use `start_date` and `end_date` for specific ranges (YYYY-MM-DD)
+    - Note: `period` overrides custom dates if both provided
+    
+    **Parameter Priority:**
+    1. Employee: `emp_id` → `user_id` → authenticated user
+    2. Date: `period` → `start_date/end_date` → default range
+    
+    **Usage Examples:**
+    - Today: `?database=4B-BIO&period=today`
+    - User's monthly: `?database=4B-BIO&user_id=123&period=monthly`
+    - Region filter: `?database=4B-BIO&region=North&period=yearly&in_millions=true`
+    """,
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
-        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
-        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
-        openapi.Parameter('region', openapi.IN_QUERY, description="Region name", type=openapi.TYPE_STRING),
-        openapi.Parameter('zone', openapi.IN_QUERY, description="Zone name", type=openapi.TYPE_STRING),
-        openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
-        openapi.Parameter('in_millions', openapi.IN_QUERY, description="Scale numeric values to millions", type=openapi.TYPE_BOOLEAN),
-        openapi.Parameter('page', openapi.IN_QUERY, description="Page number (default 1)", type=openapi.TYPE_INTEGER, default=1),
-        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page (default 10)", type=openapi.TYPE_INTEGER, default=10),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('user_id', openapi.IN_QUERY, description="Portal User ID - Auto-fetches employee_code. Example: user_id=123", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('emp_id', openapi.IN_QUERY, description="SAP Employee ID - Overrides user_id. Example: emp_id=456", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('period', openapi.IN_QUERY, description="Quick date filter - 'today', 'monthly', or 'yearly'. Overrides start_date/end_date.", type=openapi.TYPE_STRING, enum=['today', 'monthly', 'yearly'], required=False),
+        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date (YYYY-MM-DD). Ignored if 'period' provided. Example: 2026-01-01", type=openapi.TYPE_STRING),
+        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date (YYYY-MM-DD). Ignored if 'period' provided. Example: 2026-01-31", type=openapi.TYPE_STRING),
+        openapi.Parameter('region', openapi.IN_QUERY, description="Filter by region name", type=openapi.TYPE_STRING),
+        openapi.Parameter('zone', openapi.IN_QUERY, description="Filter by zone name", type=openapi.TYPE_STRING),
+        openapi.Parameter('territory', openapi.IN_QUERY, description="Filter by territory name", type=openapi.TYPE_STRING),
+        openapi.Parameter('in_millions', openapi.IN_QUERY, description="Convert values to millions for readability. Default: false", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number. Default: 1", type=openapi.TYPE_INTEGER, default=1),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page. Default: 10", type=openapi.TYPE_INTEGER, default=10),
     ],
-    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+    responses={200: openapi.Response(description="Sales data with user_id and employee_id"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
 def sales_vs_achievement_territory_api(request):
@@ -3541,8 +3577,61 @@ def sales_vs_achievement_territory_api(request):
             cfg['schema'] = db_param
     else:
         cfg['schema'] = '4B-BIO_APP'
+    
+    # Handle period parameter
+    period = (request.query_params.get('period') or '').strip().lower()
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
+    
+    # Calculate dates based on period
+    from datetime import datetime, date
+    today = date.today()
+    
+    if period:
+        if period == 'today':
+            start_date = today.strftime('%Y-%m-%d')
+            end_date = today.strftime('%Y-%m-%d')
+        elif period == 'monthly':
+            start_date = today.replace(day=1).strftime('%Y-%m-%d')
+            end_date = today.strftime('%Y-%m-%d')
+        elif period == 'yearly':
+            start_date = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+            end_date = today.strftime('%Y-%m-%d')
+    
+    # If no period and no dates provided, default to today
+    if not start_date and not end_date:
+        start_date = today.strftime('%Y-%m-%d')
+        end_date = today.strftime('%Y-%m-%d')
+    
+    # Handle user_id and emp_id parameters
+    user_id_param = request.query_params.get('user_id', '').strip()
+    emp_id_param = request.query_params.get('emp_id', '').strip()
+    
+    emp_val = None
+    
+    # If user_id provided, fetch employee_code from sales_profile
+    if user_id_param:
+        try:
+            from accounts.models import User
+            user_id_int = int(user_id_param)
+            target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
+            if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
+                employee_code = target_user.sales_profile.employee_code
+                if employee_code:
+                    try:
+                        emp_val = int(employee_code)
+                    except ValueError:
+                        pass
+        except Exception:
+            pass
+    
+    # emp_id overrides user_id if both provided
+    if emp_id_param:
+        try:
+            emp_val = int(emp_id_param)
+        except Exception:
+            pass
+    
     region = (request.query_params.get('region') or '').strip()
     zone = (request.query_params.get('zone') or '').strip()
     territory = (request.query_params.get('territory') or '').strip()
@@ -3562,29 +3651,49 @@ def sales_vs_achievement_territory_api(request):
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
-            data = sales_vs_achievement_geo_inv(conn, emp_id=None, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_emp=False)
+            # Use the new sales_vs_achievement_territory function with B4_SALES_TARGET
+            data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=False)
             if in_millions_param in ('true','1','yes','y'):
                 scaled = []
                 for row in data or []:
                     if isinstance(row, dict):
                         r = dict(row)
                         try:
-                            v = r.get('Collection_Target')
-                            if v is None: v = r.get('COLLECTION_TARGET')
-                            if v is None: v = r.get('COLLETION_TARGET')
+                            v = r.get('Sales_Target')
                             if v is not None:
-                                r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                                r['Sales_Target'] = round((float(v) / 1000000.0), 2)
                         except Exception:
                             pass
                         try:
-                            v = r.get('Collection_Achievement')
-                            if v is None: v = r.get('COLLECTION_ACHIEVEMENT')
-                            if v is None: v = r.get('DocTotal')
+                            v = r.get('Sales_Achievement')
                             if v is not None:
-                                r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                                r['Sales_Achievement'] = round((float(v) / 1000000.0), 2)
                         except Exception:
                             pass
-                        r.pop('EmployeeName', None)
+                        try:
+                            v = r.get('Zone_Sales_Target')
+                            if v is not None:
+                                r['Zone_Sales_Target'] = round((float(v) / 1000000.0), 2)
+                        except Exception:
+                            pass
+                        try:
+                            v = r.get('Zone_Sales_Achievement')
+                            if v is not None:
+                                r['Zone_Sales_Achievement'] = round((float(v) / 1000000.0), 2)
+                        except Exception:
+                            pass
+                        try:
+                            v = r.get('Region_Sales_Target')
+                            if v is not None:
+                                r['Region_Sales_Target'] = round((float(v) / 1000000.0), 2)
+                        except Exception:
+                            pass
+                        try:
+                            v = r.get('Region_Sales_Achievement')
+                            if v is not None:
+                                r['Region_Sales_Achievement'] = round((float(v) / 1000000.0), 2)
+                        except Exception:
+                            pass
                         scaled.append(r)
                     else:
                         scaled.append(row)
@@ -3595,35 +3704,61 @@ def sales_vs_achievement_territory_api(request):
             for row in (data or []):
                 if not isinstance(row, dict):
                     continue
-                reg = row.get('Region') or row.get('REGION') or 'Unknown Region'
-                zon = row.get('Zone') or row.get('ZONE') or 'Unknown Zone'
-                ter = row.get('Territory') or row.get('TERRITORY') or 'Unknown Territory'
+                # Skip the GRAND TOTAL row in hierarchy building (will add separately)
+                if row.get('Region') == 'GRAND TOTAL':
+                    continue
+                    
+                reg = row.get('Region') or 'Unknown Region'
+                zon = row.get('Zone') or 'Unknown Zone'
+                ter = row.get('TerritoryName') or row.get('Territory') or 'Unknown Territory'
+                
+                # Territory-level values
                 sal = 0.0
                 ach = 0.0
                 try:
-                    v = row.get('Collection_Target')
-                    if v is None: v = row.get('COLLECTION_TARGET')
-                    if v is None: v = row.get('COLLETION_TARGET')
+                    v = row.get('Sales_Target')
                     sal = float(v or 0.0)
                 except Exception:
                     pass
                 try:
-                    v = row.get('Collection_Achievement')
-                    if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
-                    if v is None: v = row.get('DocTotal')
+                    v = row.get('Sales_Achievement')
                     ach = float(v or 0.0)
                 except Exception:
                     pass
+                
+                # Window function values (pre-calculated by SQL)
+                zone_sal = 0.0
+                zone_ach = 0.0
+                region_sal = 0.0
+                region_ach = 0.0
+                try:
+                    zone_sal = float(row.get('Zone_Sales_Target') or 0.0)
+                except Exception:
+                    pass
+                try:
+                    zone_ach = float(row.get('Zone_Sales_Achievement') or 0.0)
+                except Exception:
+                    pass
+                try:
+                    region_sal = float(row.get('Region_Sales_Target') or 0.0)
+                except Exception:
+                    pass
+                try:
+                    region_ach = float(row.get('Region_Sales_Achievement') or 0.0)
+                except Exception:
+                    pass
+                
                 total_sales += sal
                 total_achievement += ach
+                
+                # Use window function values for region totals (not summing)
                 if reg not in hierarchy:
-                    hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
-                hierarchy[reg]['sales'] += sal
-                hierarchy[reg]['achievement'] += ach
+                    hierarchy[reg] = {'name': reg, 'sales': region_sal, 'achievement': region_ach, 'zones': {}}
+                
+                # Use window function values for zone totals (not summing)
                 if zon not in hierarchy[reg]['zones']:
-                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
-                hierarchy[reg]['zones'][zon]['sales'] += sal
-                hierarchy[reg]['zones'][zon]['achievement'] += ach
+                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': zone_sal, 'achievement': zone_ach, 'territories': []}
+                
                 hierarchy[reg]['zones'][zon]['territories'].append({'name': ter, 'sales': sal, 'achievement': ach})
             final_list = []
             for r_name in sorted(hierarchy.keys()):
@@ -3664,8 +3799,26 @@ def sales_vs_achievement_territory_api(request):
                 paged_rows = list(final_list or [])
                 page_obj = None
             pagination = {'page': (page_obj.number if page_obj else 1), 'num_pages': (paginator.num_pages if paginator else 1), 'has_next': (page_obj.has_next() if page_obj else False), 'has_prev': (page_obj.has_previous() if page_obj else False), 'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)), 'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)), 'count': (paginator.count if paginator else len(final_list or [])), 'page_size': page_size}
+            
+            # Get user_id and employee_id - only populate if user_id or emp_id params were provided
+            user_id = None
+            employee_id = None
+            
+            if user_id_param or emp_id_param:
+                if request.user.is_authenticated:
+                    user_id = request.user.id
+                
+                # Try to fetch employee_id from sales_profile
+                try:
+                    if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
+                        employee_id = request.user.sales_profile.employee_code
+                except Exception:
+                    pass
+            
             return Response({
                 'success': True,
+                'user_id': user_id,
+                'employee_id': employee_id,
                 'count': (paginator.count if paginator else len(final_list or [])),
                 'data': paged_rows,
                 'pagination': pagination,
@@ -3685,7 +3838,7 @@ def sales_vs_achievement_territory_api(request):
     method='get',
     operation_description="Sales vs Achievement grouped by employee and territory",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
@@ -3890,7 +4043,7 @@ def sales_vs_achievement_by_emp_api(request):
     method='get',
     operation_description="Territory summary data",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], default='4B-BIO-app'),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('end_date', openapi.IN_QUERY, description="End date YYYY-MM-DD", type=openapi.TYPE_STRING),
         openapi.Parameter('territory', openapi.IN_QUERY, description="Territory name", type=openapi.TYPE_STRING),
@@ -4310,7 +4463,7 @@ def get_policy_customer_balance_data(request, card_code=None):
     operation_description="Get policy-wise customer balance. **NO REQUIRED FIELDS**. Flexible filtering options: (1) All balances - send no parameters, (2) By card_code - use card_code query parameter, (3) By user - use user parameter to get user's customers, (4) Combinations - use multiple filters together. Also see legacy path-based endpoint /policy-customer-balance/{card_code}/ for backward compatibility.",
     manual_parameters=[
         openapi.Parameter('card_code', openapi.IN_QUERY, description="Optional: Filter by customer card code (e.g., ORC00002)", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (4B-BIO_APP or 4B-ORANG_APP). If not provided, uses default from settings.", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP). If not provided, uses default from settings.", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('user', openapi.IN_QUERY, description="Optional: User ID or username. Returns customers assigned to this user.", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('limit', openapi.IN_QUERY, description="Optional: Max records (default: 200). Only applies when not filtering by specific card_code.", type=openapi.TYPE_INTEGER, required=False)
     ],
@@ -4373,7 +4526,7 @@ def policy_customer_balance_list(request):
     operation_summary="Policy Customer Balance by CardCode",
     operation_description="Get policy-wise customer balance for a specific customer. Provide user parameter to validate that the card_code belongs to that user. Returns 403 if card_code doesn't belong to the specified user.",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (4B-BIO_APP or 4B-ORANG_APP)", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('user', openapi.IN_QUERY, description="Optional: User ID or username to validate card_code belongs to this user. Returns 403 if validation fails.", type=openapi.TYPE_STRING, required=False)
     ],
     responses={200: openapi.Response(description="OK"), 403: openapi.Response(description="Forbidden - Card code does not belong to user"), 404: openapi.Response(description="User not found"), 500: openapi.Response(description="Server Error")}
@@ -4592,7 +4745,7 @@ def select_oitm_api(request):
     operation_summary="Warehouse list for item",
     operation_description="List warehouses for a specific ItemCode; when ItemCode is empty, returns all warehouses. Supports pagination and search.",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('item_code', openapi.IN_QUERY, description="ItemCode (optional)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search WhsCode or WhsName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
@@ -5238,7 +5391,7 @@ def customer_lov_api(request):
     operation_summary="Item LOV",
     operation_description="List items with optional search and pagination.",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search ItemCode or ItemName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
@@ -5887,7 +6040,7 @@ def projects_lov_api(request):
     operation_summary="Crop LOV",
     operation_description="List crops with optional search and pagination.",
     manual_parameters=[
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema", type=openapi.TYPE_STRING, enum=['4B-BIO-app', '4B-ORANG-app'], required=False),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search Code or Name", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
@@ -6984,6 +7137,224 @@ def projects_list_api(request):
         
     except Exception as e:
         logger.error(f"[PROJECTS_LIST] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ============= Policy Detail Endpoint =============
+
+@swagger_auto_schema(
+    tags=['SAP Policies'],
+    method='get',
+    operation_summary="Policy Detail",
+    operation_description="""Get detailed information for a specific policy from OPLN table.
+    
+    **Response includes:**
+    - Policy code and name
+    - Validity dates
+    - Active status
+    - Currency information
+    - Rounding and pricing rules
+    - All additional policy metadata
+    
+    **Use this when user clicks on a policy to see more details.**
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter(
+            'code',
+            openapi.IN_QUERY,
+            description="Policy code/ListNum (required)",
+            type=openapi.TYPE_STRING,
+            required=True
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="Policy details retrieved successfully",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "database": "4B-ORANG_APP",
+                    "data": {
+                        "code": "1",
+                        "name": "Orange Protection Closing Balance Policy 2022/23",
+                        "valid_from": "2023-01-01T00:00:00",
+                        "valid_to": "2025-12-31T00:00:00",
+                        "active": "Y",
+                        "currency": "AUD",
+                        "base_num": "1",
+                        "factor": "1.0",
+                        "round_sys": "0",
+                        "group_code": "1",
+                        "is_gross_price": "N",
+                        "created_date": "2022-12-01T00:00:00"
+                    }
+                }
+            }
+        ),
+        400: openapi.Response(
+            description="Bad Request - missing code parameter",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "code parameter is required"
+                }
+            }
+        ),
+        404: openapi.Response(
+            description="Policy not found",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "Policy with code 999 not found"
+                }
+            }
+        ),
+        500: openapi.Response(
+            description="Server error",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "Database connection failed"
+                }
+            }
+        )
+    }
+)
+@api_view(['GET'])
+def policy_detail_api(request):
+    """
+    Get detailed information for a specific policy from SAP HANA OPLN table.
+    
+    Endpoint: GET /api/sap/policies/detail/
+    Query params: ?database=4B-ORANG_APP&code=1
+    """
+    try:
+        from hdbcli import dbapi
+        from datetime import date, datetime
+        
+        # Get policy code from query parameters
+        policy_code = request.GET.get('code', '').strip()
+        
+        if not policy_code:
+            return Response({
+                'success': False,
+                'error': 'code parameter is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Load environment from multiple possible locations
+        try:
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+        except Exception:
+            pass
+        
+        # Get HANA connection parameters from environment
+        hana_host = os.environ.get('HANA_HOST', '')
+        hana_port = os.environ.get('HANA_PORT', '30015')
+        hana_user = os.environ.get('HANA_USER', '')
+        hana_password = os.environ.get('HANA_PASSWORD', '')
+        
+        # Get database schema
+        schema = get_hana_schema_from_request(request)
+        logger.info(f"[POLICY_DETAIL] Using schema: {schema}, code: {policy_code}")
+        
+        if not hana_host or not hana_user or not hana_password:
+            return Response({
+                'success': False,
+                'error': 'Missing HANA connection parameters in environment'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Connect to HANA
+        conn = dbapi.connect(
+            address=hana_host,
+            port=int(hana_port),
+            user=hana_user,
+            password=hana_password
+        )
+        
+        try:
+            # Set schema using SQL (handles special characters like hyphens)
+            cursor = conn.cursor()
+            cursor.execute(f'SET SCHEMA "{schema}"')
+            cursor.close()
+            
+            # TODO: Update this query with actual OPLN table columns after checking HANA
+            query = '''
+                SELECT 
+                    "ListNum" AS "code",
+                    "ListName" AS "name",
+                    "ValidFrom" AS "valid_from",
+                    "ValidTo" AS "valid_to",
+                    "ValidFor" AS "active",
+                    "CreateDate" AS "created_date",
+                    "UpdateDate" AS "updated_date",
+                    "PrimCurr" AS "currency",
+                    "GroupCode" AS "group_code",
+                    "Factor" AS "factor",
+                    "RoundSys" AS "round_sys",
+                    "IsGrossPrc" AS "is_gross_price",
+                    "BASE_NUM" AS "base_num",
+                    "RoundRule" AS "round_rule",
+                    "ExtAmount" AS "ext_amount"
+                FROM "OPLN"
+                WHERE "ListNum" = ?
+            '''
+            
+            cursor = conn.cursor()
+            cursor.execute(query, (policy_code,))
+            
+            # Get column names
+            columns = [desc[0] for desc in cursor.description]
+            
+            # Fetch the result
+            row = cursor.fetchone()
+            
+            if not row:
+                cursor.close()
+                conn.close()
+                return Response({
+                    'success': False,
+                    'error': f'Policy with code {policy_code} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Convert row to dictionary
+            policy_data = {}
+            for i, col in enumerate(columns):
+                value = row[i]
+                # Convert dates to ISO format string
+                if isinstance(value, (date, datetime)):
+                    value = value.isoformat()
+                policy_data[col] = value
+            
+            cursor.close()
+            
+            logger.info(f"[POLICY_DETAIL] Successfully retrieved policy: {policy_code}")
+            
+            return Response({
+                'success': True,
+                'database': schema,
+                'data': policy_data
+            }, status=status.HTTP_200_OK)
+            
+        finally:
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"[POLICY_DETAIL] Error: {str(e)}")
         import traceback
         traceback.print_exc()
         return Response({

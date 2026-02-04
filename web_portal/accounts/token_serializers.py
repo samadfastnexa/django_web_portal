@@ -66,8 +66,20 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
         if not password:
             raise serializers.ValidationError({"message": "Password is required."})
 
-        # Determine which credential to use for authentication
+        # Smart detection: if email field contains only digits/+/-, treat as phone
         username = raw_email if raw_email else raw_phone
+        
+        # If username looks like a phone number (only digits, +, -, spaces), treat as phone
+        # This allows users to enter phone in email field
+        if username and username.replace('+', '').replace('-', '').replace(' ', '').isdigit():
+            # It's a phone number, use it directly
+            credential_type = 'phone'
+        elif '@' in username:
+            # It's an email
+            credential_type = 'email'
+        else:
+            # Could be username (for farmers) or phone, try as is
+            credential_type = 'username'
 
         # Use Django's authenticate function (which will use our custom backend)
         user = authenticate(username=username, password=password)
