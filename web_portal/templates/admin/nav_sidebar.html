@@ -197,7 +197,7 @@
 
     {% if app_list_all %}
       {% for app in app_list_all %}
-        {% if app.app_label != 'accounts' and app.app_label != 'crop_management' and app.app_label != 'sap_integration' %}
+        {% if app.app_label != 'accounts' and app.app_label != 'crop_management' %}
           <li class="menu-item"><span class="menu-text" style="font-weight:700;opacity:.85;">{{ app.name }}</span></li>
           {% for model in app.models %}
             {% if model.admin_url %}

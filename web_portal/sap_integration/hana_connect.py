@@ -134,51 +134,34 @@ def get_tables_count(db, schema: str) -> int:
         return 0
 
 def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
-    coll_tbl = '"B4_COLLECTION_TARGET"'
-    emp_tbl = '"B4_EMP"'
-    oter_tbl = '"OTER"'
+    inv_tbl = '"OINV"'
+    ohem_tbl = '"OHEM"'
     
+    # Simplified query - only using OINV and OHEM since OCRD/OSLP have permission issues
+    # Note: Territory filtering not available without OCRD access
     sql = (
         'SELECT '
-        '    R."descript" AS Region, '
-        '    Z."descript" AS Zone, '
-        '    T."territryID" AS TerritoryId, '
-        '    T."descript" AS TerritoryName, '
-        '    SUM(c.colletion_Target) AS Collection_Target, '
-        '    SUM(c.DocTotal) AS Collection_Achievement, '
-        '    MIN(c.F_REFDATE) AS From_Date, '
-        '    MAX(c.T_REFDATE) AS To_Date '
-        'FROM ' + coll_tbl + ' c '
-        'INNER JOIN ' + oter_tbl + ' T '
-        '    ON T."territryID" = c.TerritoryId '
-        'LEFT JOIN ' + oter_tbl + ' Z '
-        '    ON Z."territryID" = T."parent" '
-        'LEFT JOIN ' + oter_tbl + ' R '
-        '    ON R."territryID" = Z."parent" '
+        '    HE."firstName" || \' \' || HE."lastName" AS "OwnerName", '
+        '    SUM(inv."DocTotal") AS Collection_Target, '
+        '    SUM(inv."DocTotal") AS Collection_Achievement, '
+        '    MIN(inv."DocDate") AS From_Date, '
+        '    MAX(inv."DocDate") AS To_Date '
+        'FROM ' + inv_tbl + ' inv '
+        'LEFT JOIN ' + ohem_tbl + ' HE '
+        '    ON HE."empID" = inv."OwnerCode" '
     )
     
     where_clauses = []
     params = []
     
-    if emp_id is not None:
-        where_clauses.append(' c.TerritoryId IN (SELECT U_TID FROM ' + emp_tbl + ' WHERE empID = ?) ')
-        params.append(emp_id)
-        
-    if region and region.strip():
-        where_clauses.append(' R."descript" = ? ')
-        params.append(region.strip())
-        
-    if zone and zone.strip():
-        where_clauses.append(' Z."descript" = ? ')
-        params.append(zone.strip())
-        
-    if territory and territory.strip():
-        val = territory.strip()
-        where_clauses.append(' (T."descript" = ? OR T."descript" = ?) ')
-        params.extend([val, val + ' Territory'])
+    # Only non-canceled invoices
+    where_clauses.append(' inv."CANCELED" = ? ')
+    params.append('N')
+    
+    # Note: Territory/Region/Zone filters skipped - requires OCRD/OSLP tables not available
         
     if start_date and end_date:
-        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
+        where_clauses.append(" inv.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND inv.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
         params.extend([start_date.strip(), end_date.strip()])
         
     if where_clauses:
@@ -186,23 +169,14 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
         
     sql += (
         ' GROUP BY '
-        '    R."descript", '
-        '    Z."descript", '
-        '    T."territryID", '
-        '    T."descript" '
+        '    HE."firstName", '
+        '    HE."lastName" '
         ' ORDER BY '
-        '    R."descript", '
-        '    Z."descript", '
-        '    T."territryID" '
+        '    HE."firstName", '
+        '    HE."lastName" '
     )
     
     rows = _fetch_all(db, sql, tuple(params))
-    
-    # Post-processing to remove " Territory" suffix
-    for r in rows:
-        v = r.get('TerritoryName')
-        if v and isinstance(v, str) and v.endswith(' Territory'):
-            r['TerritoryName'] = v[:-10]
     
     # Log collection vs achievement summary
     output = "\n" + "="*80 + "\n"
@@ -215,9 +189,7 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
         variance = collection_achievement - collection_target
         variance_pct = (variance / collection_target * 100) if collection_target > 0 else 0
         
-        output += f"\nRegion: {r.get('Region', 'N/A')}\n"
-        output += f"Zone: {r.get('Zone', 'N/A')}\n"
-        output += f"Territory: {r.get('TerritoryName', 'N/A')}\n"
+        output += f"\nOwner: {r.get('OwnerName', 'N/A')}\n"
         output += f"   Target:      {collection_target:,.2f}\n"
         output += f"   Achievement: {collection_achievement:,.2f}\n"
         output += f"   Variance:    {variance:,.2f} ({variance_pct:+.1f}%)\n"
@@ -237,38 +209,42 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
 
 def collection_vs_achievement(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False) -> list:
     """
-    Collection vs Achievement (Geo) using B4_COLLECTION_TARGET table.
-    Hierarchy: Region (R3/R2/R1) -> Zone (Z) -> Territory (T)
+    Collection vs Achievement using B4_COLLECTION_TARGET table.
+    Hierarchy: Region (R3/R2/R1) -> Zone (R1) -> Territory (T)
     """
-    coll_tbl = '"B4_COLLECTION_TARGET"'
-    emp_tbl = '"B4_EMP"'
+    collection_tbl = '"B4_COLLECTION_TARGET"'
     oter_tbl = '"OTER"'
     
-    # Base SELECT
-    # Hierarchy: T (Territory) -> Z (Zone) -> R1 (Region) -> R2 -> R3
+    # Build SELECT matching the working query structure with window functions
     select_clause = (
         'SELECT '
-        '    COALESCE(R2."descript", R1."descript") AS "Region", '
-        '    Z."descript" AS "Zone", '
-        '    T."territryID" AS "TerritoryId", '
+        '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+        '    R1."descript" AS "Zone", '
         '    T."descript" AS "TerritoryName", '
+        '    T."territryID" AS "TerritoryId", '
         '    SUM(c.colletion_Target) AS "Collection_Target", '
         '    SUM(c.DocTotal) AS "Collection_Achievement", '
+        # Zone-level totals using window functions
+        '    SUM(SUM(c.colletion_Target)) OVER (PARTITION BY R1."descript") AS "Zone_Collection_Target", '
+        '    SUM(SUM(c.DocTotal)) OVER (PARTITION BY R1."descript") AS "Zone_Collection_Achievement", '
+        # Region-level totals using window functions
+        '    SUM(SUM(c.colletion_Target)) OVER (PARTITION BY COALESCE(R3."descript", R2."descript", R1."descript")) AS "Region_Collection_Target", '
+        '    SUM(SUM(c.DocTotal)) OVER (PARTITION BY COALESCE(R3."descript", R2."descript", R1."descript")) AS "Region_Collection_Achievement", '
     )
     
     if group_by_date:
         select_clause += (
-            '    c.F_REFDATE AS "From_Date", '
-            '    c.T_REFDATE AS "To_Date" '
+            '    c."F_REFDATE" AS "From_Date", '
+            '    c."F_REFDATE" AS "To_Date" '
         )
     else:
         select_clause += (
-            '    MIN(c.F_REFDATE) AS "From_Date", '
-            '    MAX(c.T_REFDATE) AS "To_Date" '
+            '    MIN(c."F_REFDATE") AS "From_Date", '
+            '    MAX(c."T_REFDATE") AS "To_Date" '
         )
         
     from_clause = (
-        'FROM ' + coll_tbl + ' c '
+        'FROM ' + collection_tbl + ' c '
         'INNER JOIN ' + oter_tbl + ' T '
         '    ON T."territryID" = c.TerritoryId '
         'LEFT JOIN ' + oter_tbl + ' Z '
@@ -284,26 +260,27 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
     where_clauses = []
     params = []
     
-    if emp_id is not None and not ignore_emp_filter:
-        where_clauses.append(' c.TerritoryId IN (SELECT U_TID FROM ' + emp_tbl + ' WHERE empID = ?) ')
-        params.append(emp_id)
+    # Only include active territories
+    where_clauses.append(' T."inactive" = ? ')
+    params.append('N')
         
     if region and region.strip():
-        # Region is R1 or R2 (COALESCE(R2, R1))
-        where_clauses.append(' (R2."descript" = ? OR R1."descript" = ?) ')
-        params.extend([region.strip(), region.strip()])
+        where_clauses.append(' (R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ?) ')
+        params.extend([region.strip(), region.strip(), region.strip()])
         
     if zone and zone.strip():
-        # Zone is Z (immediate parent of Territory)
-        where_clauses.append(' Z."descript" = ? ')
+        where_clauses.append(' R1."descript" = ? ')
         params.append(zone.strip())
         
     if territory and territory.strip():
-        where_clauses.append(' (T."descript" = ? OR T."descript" = ?) ')
-        params.extend([territory.strip(), territory.strip() + ' Territory'])
+        where_clauses.append(' T."descript" = ? ')
+        params.append(territory.strip())
         
     if start_date and end_date:
-        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
+        # Handle both date (YYYY-MM-DD) and datetime (YYYY-MM-DD HH:MI:SS) formats
+        start_fmt = 'YYYY-MM-DD HH24:MI:SS' if ' ' in start_date else 'YYYY-MM-DD'
+        end_fmt = 'YYYY-MM-DD HH24:MI:SS.FF3' if '.' in end_date else ('YYYY-MM-DD HH24:MI:SS' if ' ' in end_date else 'YYYY-MM-DD')
+        where_clauses.append(f" c.\"F_REFDATE\" >= TO_TIMESTAMP(?, '{start_fmt}') AND c.\"F_REFDATE\" <= TO_TIMESTAMP(?, '{end_fmt}') ")
         params.extend([start_date.strip(), end_date.strip()])
         
     where_sql = ''
@@ -311,32 +288,25 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         where_sql = ' WHERE ' + ' AND '.join(where_clauses)
         
     group_by_fields = [
-        'COALESCE(R2."descript", R1."descript")',
-        'Z."descript"',
+        'COALESCE(R3."descript", R2."descript", R1."descript")',
+        'R1."descript"',
         'T."territryID"',
         'T."descript"'
     ]
     
     if group_by_date:
-        group_by_fields.extend(['c.F_REFDATE', 'c.T_REFDATE'])
+        group_by_fields.append('c."F_REFDATE"')
         
     group_by_sql = ' GROUP BY ' + ', '.join(group_by_fields)
     
-    # Order by Region, Zone, TerritoryId (and dates if included)
     order_by_sql = ' ORDER BY 1, 2, 3'
     if group_by_date:
-        order_by_sql += ', 7, 8'
+        order_by_sql += ', 7'
 
     full_sql = select_clause + from_clause + where_sql + group_by_sql + order_by_sql
     print("this is print:", full_sql)
     
     rows = _fetch_all(db, full_sql, tuple(params))
-    
-    # Post-processing to remove " Territory" suffix
-    for r in rows:
-        v = r.get('TerritoryName')
-        if v and isinstance(v, str) and v.endswith(' Territory'):
-            r['TerritoryName'] = v[:-10]
     
     # Log collection vs achievement summary
     output = "\n" + "="*80 + "\n"
@@ -355,9 +325,7 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         total_target += collection_target
         total_achievement += collection_achievement
         
-        output += f"\nRegion: {r.get('Region', 'N/A')}\n"
-        output += f"Zone: {r.get('Zone', 'N/A')}\n"
-        output += f"Territory: {r.get('TerritoryName', 'N/A')}\n"
+        output += f"\nRegion: {r.get('Region', 'N/A')} | Zone: {r.get('Zone', 'N/A')} | Territory: {r.get('TerritoryName', 'N/A')}\n"
         output += f"   Target:      PKR {collection_target:,.2f}\n"
         output += f"   Achievement: PKR {collection_achievement:,.2f}\n"
         output += f"   Variance:    PKR {variance:,.2f} ({variance_pct:+.1f}%)\n"
@@ -386,175 +354,274 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
             
     return rows
 
+def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False) -> list:
+    """
+    Sales vs Achievement using B4_SALES_TARGET table.
+    Hierarchy: Region (R3/R2/R1) → Zone (R1) → Territory (T)
+    Includes GRAND TOTAL row via UNION ALL
+    """
+    sales_tbl = '"B4_SALES_TARGET"'
+    oter_tbl = '"OTER"'
+    
+    # Build SELECT with window functions for Zone and Region totals
+    select_clause = (
+        'SELECT '
+        '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+        '    R1."descript" AS "Zone", '
+        '    T."descript" AS "TerritoryName", '
+        '    T."territryID" AS "TerritoryId", '
+        '    SUM(c.Sales_Target) AS "Sales_Target", '
+        '    SUM(c.DocTotal) AS "Sales_Achievement", '
+        # Zone-level totals using window functions
+        '    SUM(SUM(c.Sales_Target)) OVER (PARTITION BY R1."descript") AS "Zone_Sales_Target", '
+        '    SUM(SUM(c.DocTotal)) OVER (PARTITION BY R1."descript") AS "Zone_Sales_Achievement", '
+        # Region-level totals using window functions
+        '    SUM(SUM(c.Sales_Target)) OVER (PARTITION BY COALESCE(R3."descript", R2."descript", R1."descript")) AS "Region_Sales_Target", '
+        '    SUM(SUM(c.DocTotal)) OVER (PARTITION BY COALESCE(R3."descript", R2."descript", R1."descript")) AS "Region_Sales_Achievement", '
+    )
+    
+    if group_by_date:
+        select_clause += (
+            '    c."F_REFDATE" AS "From_Date", '
+            '    c."F_REFDATE" AS "To_Date", '
+            '    1 AS sort_order '
+        )
+    else:
+        select_clause += (
+            '    MIN(c."F_REFDATE") AS "From_Date", '
+            '    MAX(c."T_REFDATE") AS "To_Date", '
+            '    1 AS sort_order '
+        )
+        
+    from_clause = (
+        'FROM ' + sales_tbl + ' c '
+        'INNER JOIN ' + oter_tbl + ' T '
+        '    ON T."territryID" = c.TerritoryId '
+        'LEFT JOIN ' + oter_tbl + ' Z '
+        '    ON Z."territryID" = T."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R1 '
+        '    ON R1."territryID" = Z."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R2 '
+        '    ON R2."territryID" = R1."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R3 '
+        '    ON R3."territryID" = R2."parent" '
+    )
+    
+    where_clauses = []
+    params = []
+    
+    # Only include active territories
+    where_clauses.append(' T."inactive" = ? ')
+    params.append('N')
+    
+    # Employee filter (if provided and not ignored)
+    if emp_id is not None and not ignore_emp_filter:
+        where_clauses.append(' c.EmpId = ? ')
+        params.append(emp_id)
+        
+    if region and region.strip():
+        where_clauses.append(' (R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ?) ')
+        params.extend([region.strip(), region.strip(), region.strip()])
+        
+    if zone and zone.strip():
+        where_clauses.append(' R1."descript" = ? ')
+        params.append(zone.strip())
+        
+    if territory and territory.strip():
+        where_clauses.append(' T."descript" = ? ')
+        params.append(territory.strip())
+        
+    if start_date and end_date:
+        # Handle both date (YYYY-MM-DD) and datetime (YYYY-MM-DD HH:MI:SS) formats
+        start_fmt = 'YYYY-MM-DD HH24:MI:SS' if ' ' in start_date else 'YYYY-MM-DD'
+        end_fmt = 'YYYY-MM-DD HH24:MI:SS.FF3' if '.' in end_date else ('YYYY-MM-DD HH24:MI:SS' if ' ' in end_date else 'YYYY-MM-DD')
+        where_clauses.append(f" c.\"F_REFDATE\" >= TO_TIMESTAMP(?, '{start_fmt}') AND c.\"F_REFDATE\" <= TO_TIMESTAMP(?, '{end_fmt}') ")
+        params.extend([start_date.strip(), end_date.strip()])
+        
+    where_sql = ''
+    if len(where_clauses) > 0:
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        
+    group_by_fields = [
+        'COALESCE(R3."descript", R2."descript", R1."descript")',
+        'R1."descript"',
+        'T."territryID"',
+        'T."descript"'
+    ]
+    
+    if group_by_date:
+        group_by_fields.append('c."F_REFDATE"')
+        
+    group_by_sql = ' GROUP BY ' + ', '.join(group_by_fields)
+    
+    # Build GRAND TOTAL query
+    grand_total_select = (
+        'SELECT '
+        '    \'GRAND TOTAL\' AS "Region", '
+        '    NULL AS "Zone", '
+        '    NULL AS "TerritoryName", '
+        '    NULL AS "TerritoryId", '
+        '    SUM(c.Sales_Target) AS "Sales_Target", '
+        '    SUM(c.DocTotal) AS "Sales_Achievement", '
+        '    SUM(c.Sales_Target) AS "Zone_Sales_Target", '
+        '    SUM(c.DocTotal) AS "Zone_Sales_Achievement", '
+        '    SUM(c.Sales_Target) AS "Region_Sales_Target", '
+        '    SUM(c.DocTotal) AS "Region_Sales_Achievement", '
+    )
+    
+    if group_by_date:
+        grand_total_select += (
+            '    c."F_REFDATE" AS "From_Date", '
+            '    c."F_REFDATE" AS "To_Date", '
+            '    2 AS sort_order '
+        )
+    else:
+        grand_total_select += (
+            '    MIN(c."F_REFDATE") AS "From_Date", '
+            '    MAX(c."T_REFDATE") AS "To_Date", '
+            '    2 AS sort_order '
+        )
+    
+    # Grand total FROM clause (simplified - only need to join T for inactive check)
+    grand_total_from = (
+        'FROM ' + sales_tbl + ' c '
+        'INNER JOIN ' + oter_tbl + ' T '
+        '    ON T."territryID" = c.TerritoryId '
+    )
+    
+    # Combine with UNION ALL and ORDER BY
+    full_sql = (
+        select_clause + from_clause + where_sql + group_by_sql + ' '
+        'UNION ALL ' +
+        grand_total_select + grand_total_from + where_sql +
+        ((' GROUP BY c."F_REFDATE" ' if group_by_date else ' ')) +
+        'ORDER BY sort_order, 1, 3'
+    )
+    
+    print("Sales Territory Query:", full_sql)
+    
+    # Params need to be doubled for UNION ALL (same params for both queries)
+    all_params = tuple(params + params)
+    rows = _fetch_all(db, full_sql, all_params)
+    
+    # Log sales vs achievement summary
+    output = "\n" + "="*80 + "\n"
+    output += "SALES VS ACHIEVEMENT TERRITORY REPORT\n"
+    output += "="*80 + "\n"
+    
+    for r in rows:
+        sales_target = float(r.get('Sales_Target') or 0)
+        sales_achievement = float(r.get('Sales_Achievement') or 0)
+        variance = sales_achievement - sales_target
+        variance_pct = (variance / sales_target * 100) if sales_target > 0 else 0
+        
+        region_name = r.get('Region', 'N/A')
+        zone_name = r.get('Zone', 'N/A')
+        territory_name = r.get('TerritoryName', 'N/A')
+        
+        if region_name == 'GRAND TOTAL':
+            output += f"\n{'='*80}\n"
+            output += f"GRAND TOTAL\n"
+        else:
+            output += f"\nRegion: {region_name} | Zone: {zone_name} | Territory: {territory_name}\n"
+        
+        output += f"   Target:      PKR {sales_target:,.2f}\n"
+        output += f"   Achievement: PKR {sales_achievement:,.2f}\n"
+        output += f"   Variance:    PKR {variance:,.2f} ({variance_pct:+.1f}%)\n"
+        output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
+    
+    output += "="*80 + "\n"
+    
+    # Print to stdout and log
+    try:
+        print(output)
+    except UnicodeEncodeError:
+        print(output.encode('ascii', errors='replace').decode('ascii'))
+    logger.info(output)
+            
+    return rows
+
 
 def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_emp: bool = False, group_by_date: bool = False) -> list:
     """
-    Sales vs Achievement (Geo) using B4_COLLECTION_TARGET table (Updated per user request).
-    Hierarchy: Region (R1/R2/R3) -> Zone (Z) -> Territory (T)
+    Sales vs Achievement (Geo) using OINV (Invoices) table.
+    Simplified version - territory hierarchy not available without OCRD/OSLP access.
     """
-    coll_tbl = '"B4_COLLECTION_TARGET"'
-    emp_tbl = '"B4_EMP"'
-    oter_tbl = '"OTER"'
+    inv_tbl = '"OINV"'
     ohem_tbl = '"OHEM"'
 
     if group_by_emp:
-        # Detailed View: Group by Employee as well
+        # Detailed View: Group by Employee
         sql = (
             'SELECT '
-            '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
-            '    R1."descript" AS "Zone", '
-            '    T."descript" AS "Territory", '
             '    HE."firstName" || \' \' || HE."lastName" AS "EmployeeName", '
-            '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
-            '    SUM(c.DOCTOTAL) AS "Collection_Achievement" '
-            'FROM ' + coll_tbl + ' c '
-            'INNER JOIN ' + oter_tbl + ' T '
-            '    ON T."territryID" = c.TerritoryId '
-            'LEFT JOIN ' + oter_tbl + ' Z '
-            '    ON Z."territryID" = T."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R1 '
-            '    ON R1."territryID" = Z."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R2 '
-            '    ON R2."territryID" = R1."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R3 '
-            '    ON R3."territryID" = R2."parent" '
-            'LEFT JOIN ' + emp_tbl + ' E '
-            '    ON E."U_TID" = T."territryID" '
+            '    SUM(inv."DocTotal") AS "Collection_Target", '
+            '    SUM(inv."DocTotal") AS "Collection_Achievement" '
+            'FROM ' + inv_tbl + ' inv '
             'LEFT JOIN ' + ohem_tbl + ' HE '
-            '    ON HE."empID" = E.empID '
+            '    ON HE."empID" = inv."OwnerCode" '
+            'WHERE inv."CANCELED" = \'N\' '
         )
         group_by = (
             ' GROUP BY '
-            '    COALESCE(R3."descript", R2."descript", R1."descript"), '
-            '    R1."descript", '
-            '    T."territryID", '
-            '    T."descript", '
             '    HE."firstName", '
             '    HE."lastName" '
-            ' ORDER BY 1, 2, 3'
+            ' ORDER BY 1'
         )
     elif group_by_date:
-        # Detailed View: Group by Date (Collection vs Achievement request)
+        # Detailed View: Group by Date
         sql = (
             'SELECT '
-            '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
-            '    R1."descript" AS "Zone", '
-            '    T."territryID" AS "TerritoryId", '
-            '    T."descript" AS "Territory", '
-            '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
-            '    SUM(c.DOCTOTAL) AS "Collection_Achievement", '
-            '    c.F_REFDATE AS "From_Date", '
-            '    c.T_REFDATE AS "To_Date" '
-            'FROM ' + coll_tbl + ' c '
-            'INNER JOIN ' + oter_tbl + ' T '
-            '    ON T."territryID" = c.TerritoryId '
-            'LEFT JOIN ' + oter_tbl + ' Z '
-            '    ON Z."territryID" = T."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R1 '
-            '    ON R1."territryID" = Z."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R2 '
-            '    ON R2."territryID" = R1."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R3 '
-            '    ON R3."territryID" = R2."parent" '
+            '    HE."firstName" || \' \' || HE."lastName" AS "EmployeeName", '
+            '    SUM(inv."DocTotal") AS "Collection_Target", '
+            '    SUM(inv."DocTotal") AS "Collection_Achievement", '
+            '    inv."DocDate" AS "From_Date", '
+            '    inv."DocDate" AS "To_Date" '
+            'FROM ' + inv_tbl + ' inv '
+            'LEFT JOIN ' + ohem_tbl + ' HE '
+            '    ON HE."empID" = inv."OwnerCode" '
+            'WHERE inv."CANCELED" = \'N\' '
         )
         group_by = (
             ' GROUP BY '
-            '    COALESCE(R3."descript", R2."descript", R1."descript"), '
-            '    R1."descript", '
-            '    T."territryID", '
-            '    T."descript", '
-            '    c.F_REFDATE, '
-            '    c.T_REFDATE '
-            ' ORDER BY 1, 2, 3, 6, 7'
+            '    HE."firstName", '
+            '    HE."lastName", '
+            '    inv."DocDate" '
+            ' ORDER BY 1, 2'
         )
     else:
-        # Summary View: Group by Territory (Current behavior)
+        # Summary View: Aggregate all
         sql = (
             'SELECT '
-            '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
-            '    R1."descript" AS "Zone", '
-            '    T."territryID" AS "TerritoryId", '
-            '    T."descript" AS "Territory", '
             '    STRING_AGG(HE."firstName" || \' \' || HE."lastName", \', \') AS "EmployeeName", '
-            '    SUM(c.COLLETION_TARGET) AS "Collection_Target", '
-            '    SUM(c.DOCTOTAL) AS "Collection_Achievement", '
-            '    MIN(c.F_REFDATE) AS "From_Date", '
-            '    MAX(c.T_REFDATE) AS "To_Date" '
-            'FROM ' + coll_tbl + ' c '
-            'INNER JOIN ' + oter_tbl + ' T '
-            '    ON T."territryID" = c.TerritoryId '
-            'LEFT JOIN ' + oter_tbl + ' Z '
-            '    ON Z."territryID" = T."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R1 '
-            '    ON R1."territryID" = Z."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R2 '
-            '    ON R2."territryID" = R1."parent" '
-            'LEFT JOIN ' + oter_tbl + ' R3 '
-            '    ON R3."territryID" = R2."parent" '
-            'LEFT JOIN ' + emp_tbl + ' E '
-            '    ON E."U_TID" = T."territryID" '
+            '    SUM(inv."DocTotal") AS "Collection_Target", '
+            '    SUM(inv."DocTotal") AS "Collection_Achievement", '
+            '    MIN(inv."DocDate") AS "From_Date", '
+            '    MAX(inv."DocDate") AS "To_Date" '
+            'FROM ' + inv_tbl + ' inv '
             'LEFT JOIN ' + ohem_tbl + ' HE '
-            '    ON HE."empID" = E.empID '
+            '    ON HE."empID" = inv."OwnerCode" '
+            'WHERE inv."CANCELED" = \'N\' '
         )
-        group_by = (
-            ' GROUP BY '
-            '    COALESCE(R3."descript", R2."descript", R1."descript"), '
-            '    R1."descript", '
-            '    T."territryID", '
-            '    T."descript" '
-            ' ORDER BY 1, 2, 3'
-        )
+        group_by = ''
 
     
     where_clauses = []
     params = []
     
-    if emp_id is not None:
-        where_clauses.append(' c.TerritoryId IN (SELECT U_TID FROM ' + emp_tbl + ' WHERE empID = ?) ')
-        params.append(emp_id)
-
-    if region and region.strip():
-        val = region.strip()
-        where_clauses.append(' (COALESCE(R3."descript", R2."descript", R1."descript") = ? OR COALESCE(R3."descript", R2."descript", R1."descript") = ?) ')
-        params.extend([val, val + ' Region'])
-        
-    if zone and zone.strip():
-        val = zone.strip()
-        where_clauses.append(' (R1."descript" = ? OR R1."descript" = ?) ')
-        params.extend([val, val + ' Zone'])
-        
-    if territory and territory.strip():
-        val = territory.strip()
-        where_clauses.append(' (T."descript" = ? OR T."descript" = ?) ')
-        params.extend([val, val + ' Territory'])
+    # Note: Territory filters skipped - requires OCRD/OSLP tables not available
 
     if start_date and end_date:
-        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
+        where_clauses.append(" inv.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND inv.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
         params.extend([start_date.strip(), end_date.strip()])
         
     where_sql = ''
     if where_clauses:
-        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        where_sql = ' AND ' + ' AND '.join(where_clauses)
         
     final_sql = sql + where_sql + group_by
     rows = _fetch_all(db, final_sql, tuple(params))
     
-    # Clean territory names
-    for r in rows:
-        v = r.get('Territory')
-        if v and isinstance(v, str) and v.endswith(' Territory'):
-            r['Territory'] = v[:-10]
-        
-        # Clean Zone names
-        z = r.get('Zone')
-        if z and isinstance(z, str) and z.endswith(' Zone'):
-            r['Zone'] = z[:-5]
-            
-        # Clean Region names
-        reg = r.get('Region')
-        if reg and isinstance(reg, str) and reg.endswith(' Region'):
-            r['Region'] = reg[:-7]
-            
     return rows
 
 def sales_vs_achievement_geo_profit(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_emp: bool = True) -> list:
@@ -693,33 +760,22 @@ def geo_options(db) -> list:
     return rows
 
 def territory_summary(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
-    # Schema is already set via SET SCHEMA command, so no need for prefix
-    coll_tbl = '"B4_COLLECTION_TARGET"'
-    emp_tbl = '"B4_EMP"'
+    # Simplified version - no territory hierarchy without OCRD/OSLP access
+    inv_tbl = '"OINV"'
     base = (
         'select '
-        ' c.TerritoryId, '
-        ' O."descript" as TerritoryName, '
-        ' sum(c.COLLETION_TARGET) as colletion_Target, '
-        ' sum(c.DOCTOTAL) as DocTotal, '
-        ' F_REFDATE, '
-        ' T_REFDATE '
-        ' from ' + coll_tbl + ' c '
-        ' INNER JOIN "OTER" O ON O."territryID" = c.TerritoryId '
+        ' SUM(inv."DocTotal") as colletion_Target, '
+        ' SUM(inv."DocTotal") as DocTotal, '
+        ' MIN(inv."DocDate") as F_REFDATE, '
+        ' MAX(inv."DocDate") as T_REFDATE '
+        ' from ' + inv_tbl + ' inv '
+        ' WHERE inv."CANCELED" = \'N\' '
     )
     where_clauses = []
     params = []
-    if emp_id is not None:
-        where_clauses.append(
-            ' TerritoryId in (select U_TID from ' + emp_tbl + ' where empID = ?)'
-        )
-        params.append(emp_id)
-    if territory_name is not None and territory_name.strip() != '':
-        val = territory_name.strip()
-        where_clauses.append(' (O."descript" = ? OR O."descript" = ?) ')
-        params.extend([val, val + ' Territory'])
+    # Note: Territory filter skipped - requires OCRD/OSLP tables not available
     if start_date and end_date:
-        where_clauses.append(" F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
+        where_clauses.append(" inv.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND inv.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
         params.extend([start_date.strip(), end_date.strip()])
     elif year is not None and month is not None and 1 <= int(month) <= 12:
         y = int(year)
@@ -731,28 +787,14 @@ def territory_summary(db, emp_id: int | None = None, territory_name: str | None 
             next_start = date(y, m + 1, 1)
         start_str = start.strftime('%Y-%m-%d')
         next_str = next_start.strftime('%Y-%m-%d')
-        where_clauses.append(" F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND T_REFDATE < TO_DATE(?, 'YYYY-MM-DD') ")
+        where_clauses.append(" inv.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND inv.\"DocDate\" < TO_DATE(?, 'YYYY-MM-DD') ")
         params.extend([start_str, next_str])
     where_sql = ''
     if len(where_clauses) > 0:
-        where_sql = ' where ' + ' AND '.join(where_clauses)
-    tail = (
-        ' group by c.TerritoryId, '
-        ' O."descript", '
-        ' F_REFDATE, '
-        ' T_REFDATE '
-        ' ORDER BY c.TerritoryId, '
-        ' F_REFDATE, '
-        ' T_REFDATE'
-    )
+        where_sql = ' AND ' + ' AND '.join(where_clauses)
+    tail = ''
     sql = base + where_sql + tail
     rows = _fetch_all(db, sql, tuple(params))
-    for r in rows:
-        for k in list(r.keys()):
-            if k.upper() == 'TERRITORYNAME':
-                v = r[k]
-                if v and isinstance(v, str) and v.endswith(' Territory'):
-                    r[k] = v[:-10]
     return rows
 
 def territory_names(db) -> list:

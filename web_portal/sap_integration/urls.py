@@ -31,6 +31,7 @@ from .views import (
     recommended_products_api,
     # Projects endpoint
     projects_list_api,
+    policy_detail_api,
     # Product Catalog with Document Display
     product_catalog_list_view,
     product_document_view,
@@ -76,6 +77,7 @@ urlpatterns = [
     
     # Policies endpoint
     path('policies/', projects_list_api, name='projects_list_api'),
+    path('policies/detail/', policy_detail_api, name='policy_detail_api'),
     
     # Product Catalog with Document Display (Web Pages)
     path('products/', product_catalog_list_view, name='product_catalog_list'),

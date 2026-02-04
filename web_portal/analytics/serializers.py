@@ -111,3 +111,5 @@ class CollectionAnalyticsResponseSerializer(serializers.Serializer):
     data = CollectionRegionSerializer(many=True)
     pagination = serializers.DictField()
     filters = serializers.DictField()
+    user_id = serializers.IntegerField(required=False, allow_null=True)
+    employee_id = serializers.CharField(required=False, allow_null=True)
