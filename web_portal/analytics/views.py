@@ -633,7 +633,18 @@ class CollectionAnalyticsView(APIView):
     
     @swagger_auto_schema(
         tags=["SAP"],
+        operation_summary="Collection Analytics - Payment Receipts vs Target",
         operation_description="""
+        📊 **COLLECTION ANALYTICS** - Track actual payments received against collection targets
+        
+        🔑 **What This Endpoint Measures:**
+        - ✅ **Collection Target**: Expected payment receipts from customers
+        - ✅ **Collection Achievement**: Actual payments received/collected
+        - ✅ **Focus**: Money IN (customer payments, receipts)
+        - ✅ **Use Case**: Track cash flow, payment collection performance, receivables
+        
+        ⚠️ **Not For Sales Data** - Use `/sap/sales-vs-achievement-territory/` for sales orders/invoices
+        
         Get detailed collection vs achievement analytics with hierarchical data (Region → Zone → Territory).
         
         **User & Employee Tracking:**
@@ -789,47 +800,48 @@ class CollectionAnalyticsView(APIView):
             # 1. Handle database parameter for schema selection
             db_param = (request.GET.get('database') or request.GET.get('company') or '').strip()
             
-            # Get database options from settings
+            # Get database options from Company model
             db_options = {}
             try:
-                db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-                if db_setting:
-                    if isinstance(db_setting.value, dict):
-                        db_options = db_setting.value
-                    elif isinstance(db_setting.value, str):
-                        import json
-                        try:
-                            db_options = json.loads(db_setting.value)
-                        except:
-                            pass
-            except Exception:
-                pass
+                from FieldAdvisoryService.models import Company
+                companies = Company.objects.filter(is_active=True)
+                for company in companies:
+                    # Map Company_name to schema name (name field)
+                    db_options[company.Company_name] = company.name
+            except Exception as e:
+                # Fallback to settings if Company model is not available
+                try:
+                    db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                    if db_setting:
+                        if isinstance(db_setting.value, dict):
+                            db_options = db_setting.value
+                        elif isinstance(db_setting.value, str):
+                            import json
+                            try:
+                                db_options = json.loads(db_setting.value)
+                            except:
+                                pass
+                except Exception:
+                    pass
             
-            # Fallback
-            if not db_options:
-                db_options = {'4B-ORANG': '4B-ORANG_APP', '4B-BIO': '4B-BIO_APP'}
-                
             # Clean options
             cleaned_options = {}
             for k, v in db_options.items():
                 cleaned_options[str(k).strip().strip('"').strip("'")] = str(v).strip().strip('"').strip("'")
             db_options = cleaned_options
             
+            # Select schema based on db_param
             if db_param and db_param in db_options:
                 cfg['schema'] = db_options[db_param]
             elif db_param:
-                norm = db_param.strip().upper().replace('-APP', '_APP')
-                if '4B-BIO' in norm:
-                    cfg['schema'] = '4B-BIO_APP'
-                elif '4B-ORANG' in norm:
-                    cfg['schema'] = '4B-ORANG_APP'
-                else:
-                    cfg['schema'] = db_param
+                # Try to find matching company by name field
+                cfg['schema'] = db_param
             else:
-                cfg['schema'] = '4B-BIO_APP'
+                # Use first available company schema or default
+                cfg['schema'] = list(db_options.values())[0] if db_options else '4B-BIO_APP'
             
             # Parameters
-            period = (request.GET.get('period') or '').strip().lower()
+            period = (request.GET.get('period') or 'monthly').strip().lower()
             start_date = (request.GET.get('start_date') or '').strip()
             end_date = (request.GET.get('end_date') or '').strip()
             
@@ -970,6 +982,17 @@ class CollectionAnalyticsView(APIView):
                         print(f"Second row data: {data[1]}")
                     print(f"=== END DEBUG ===")
                 
+                # Helper function to clean region/zone/territory names
+                def clean_geo_name(name):
+                    """Remove ' Region', ' Zone', ' Territory' suffixes from location names"""
+                    if not name or not isinstance(name, str):
+                        return name
+                    # Remove common suffixes
+                    for suffix in [' Region', ' Zone', ' Territory']:
+                        if name.endswith(suffix):
+                            return name[:-len(suffix)].strip()
+                    return name
+                
                 # Build Hierarchy (Region → Zone → Territory)
                 hierarchy = {}
                 for row in (data or []):
@@ -979,6 +1002,11 @@ class CollectionAnalyticsView(APIView):
                     reg = row.get('Region') or 'All Regions'
                     zon = row.get('Zone') or 'All Zones'
                     ter = row.get('TerritoryName') or row.get('Territory') or 'All Territories'
+                    
+                    # Clean the names to remove suffixes
+                    reg = clean_geo_name(reg)
+                    zon = clean_geo_name(zon)
+                    ter = clean_geo_name(ter)
                     
                     target = 0.0
                     ach = 0.0
@@ -1146,15 +1174,12 @@ class CollectionAnalyticsView(APIView):
                 user_id = None
                 employee_id = None
                 
-                # Only include user_id and employee_id if user_id or emp_id parameter was explicitly provided
-                if user_id_param or emp_id_param:
-                    if request.user.is_authenticated:
-                        user_id = request.user.id
-                    try:
-                        if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
-                            employee_id = request.user.sales_profile.employee_code
-                    except Exception:
-                        pass
+                # Return the queried user's info, not the authenticated user making the request
+                if user_id_param:
+                    user_id = int(user_id_param) if user_id_param else None
+                    employee_id = emp_val  # The employee code we fetched from the queried user
+                elif emp_id_param:
+                    employee_id = emp_val  # The employee ID that was provided
                 
                 return Response({
                     'success': True,

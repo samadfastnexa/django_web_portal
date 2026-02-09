@@ -15,8 +15,8 @@ class Cart(models.Model):
         related_name='cart',
         help_text="User who owns this cart"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
     
     class Meta:
         verbose_name = "Cart"
@@ -41,7 +41,7 @@ class Cart(models.Model):
         """Remove items that have been in cart for more than 24 hours"""
         expiry_time = timezone.now() - timedelta(days=1)
         expired_items = self.items.filter(
-            created_at__lt=expiry_time,
+            created_date__lt=expiry_time,
             is_active=True
         )
         count = expired_items.count()
@@ -88,16 +88,16 @@ class CartItem(models.Model):
         default=True,
         help_text="Is this item still active in cart?"
     )
-    created_at = models.DateTimeField(
+    created_date = models.DateTimeField(
         auto_now_add=True,
         help_text="When this item was added to cart"
     )
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_date = models.DateTimeField(auto_now=True)
     
     class Meta:
         verbose_name = "Cart Item"
         verbose_name_plural = "Cart Items"
-        ordering = ['-created_at']
+        ordering = ['-created_date']
         unique_together = [['cart', 'product_item_code', 'is_active']]
     
     def __str__(self):
@@ -106,7 +106,7 @@ class CartItem(models.Model):
     def is_expired(self):
         """Check if this item has been in cart for more than 24 hours"""
         expiry_time = timezone.now() - timedelta(days=1)
-        return self.created_at < expiry_time
+        return self.created_date < expiry_time
     
     def get_subtotal(self):
         """Calculate subtotal for this item"""
@@ -122,11 +122,8 @@ class Order(models.Model):
     """
     STATUS_CHOICES = [
         ('pending', 'Pending'),
-        ('processing', 'Processing'),
-        ('confirmed', 'Confirmed'),
-        ('shipped', 'Shipped'),
+        ('inprogress', 'In Progress'),
         ('delivered', 'Delivered'),
-        ('cancelled', 'Cancelled'),
     ]
     
     PAYMENT_STATUS_CHOICES = [
@@ -134,6 +131,13 @@ class Order(models.Model):
         ('partially_paid', 'Partially Paid'),
         ('paid', 'Paid'),
         ('refunded', 'Refunded'),
+    ]
+    
+    PAYMENT_METHOD_CHOICES = [
+        ('cod', 'Cash on Delivery'),
+        ('jazzcash', 'JazzCash'),
+        ('easypaisa', 'Easypaisa'),
+        ('credit_card', 'Credit Card (Visa/Mastercard)'),
     ]
     
     user = models.ForeignKey(
@@ -176,10 +180,70 @@ class Order(models.Model):
         null=True,
         help_text="Order notes or special instructions"
     )
+    
+    # Customer/Consumer Details
+    customer_first_name = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Customer's first name"
+    )
+    customer_last_name = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Customer's last name"
+    )
+    customer_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Customer's phone number"
+    )
+    customer_email = models.EmailField(
+        blank=True,
+        null=True,
+        help_text="Customer's email address"
+    )
+    
+    # Shipping Details
     shipping_address = models.TextField(
         blank=True,
         null=True,
-        help_text="Shipping address"
+        help_text="Shipping address (street address)"
+    )
+    shipping_area = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Area/Locality"
+    )
+    shipping_city = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="City"
+    )
+    shipping_postal_code = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Postal Code / ZIP Code"
+    )
+    
+    # Payment Details
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_METHOD_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Selected payment method"
+    )
+    payment_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Phone number for mobile wallet payments (JazzCash/Easypaisa)"
     )
     
     # SAP Integration
@@ -200,8 +264,8 @@ class Order(models.Model):
     )
     
     # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
     completed_at = models.DateTimeField(
         blank=True,
         null=True,
@@ -211,7 +275,7 @@ class Order(models.Model):
     class Meta:
         verbose_name = "Order"
         verbose_name_plural = "Orders"
-        ordering = ['-created_at']
+        ordering = ['-created_date']
         permissions = [
             ('view_order_history', 'Can view order history'),
             ('manage_orders', 'Can manage orders'),
@@ -284,7 +348,7 @@ class OrderItem(models.Model):
         null=True,
         help_text="Item-specific notes"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_date = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         verbose_name = "Order Item"
@@ -411,11 +475,11 @@ class Payment(models.Model):
     )
     
     # Timestamps
-    created_at = models.DateTimeField(
+    created_date = models.DateTimeField(
         auto_now_add=True,
         help_text="When payment was initiated"
     )
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_date = models.DateTimeField(auto_now=True)
     completed_at = models.DateTimeField(
         blank=True,
         null=True,
@@ -425,7 +489,7 @@ class Payment(models.Model):
     class Meta:
         verbose_name = "Payment"
         verbose_name_plural = "Payments"
-        ordering = ['-created_at']
+        ordering = ['-created_date']
         permissions = [
             ('view_payment_history', 'Can view payment history'),
             ('process_payments', 'Can process payments'),
@@ -451,3 +515,49 @@ class Payment(models.Model):
         if reason:
             self.notes = f"{self.notes}\nFailure reason: {reason}" if self.notes else f"Failure reason: {reason}"
         self.save()
+
+
+class OrderStatusHistory(models.Model):
+    """
+    Audit trail for order status changes.
+    Tracks who changed the status and when.
+    """
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='status_history',
+        help_text="Order this status change belongs to"
+    )
+    old_status = models.CharField(
+        max_length=20,
+        choices=Order.STATUS_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Previous status"
+    )
+    new_status = models.CharField(
+        max_length=20,
+        choices=Order.STATUS_CHOICES,
+        help_text="New status"
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="User who changed the status"
+    )
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Optional notes for this status change"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Order Status History"
+        verbose_name_plural = "Order Status Histories"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Order {self.order.order_number}: {self.old_status} -> {self.new_status}"
