@@ -633,25 +633,131 @@ class CollectionAnalyticsView(APIView):
     
     @swagger_auto_schema(
         tags=["SAP"],
-        operation_description="Get detailed collection vs achievement analytics with various filters",
+        operation_description="""
+        Get detailed collection vs achievement analytics with hierarchical data (Region → Zone → Territory).
+        
+        **User & Employee Tracking:**
+        - Response always includes `user_id` (portal user) and `employee_id` (from sales_profile)
+        - Use `user_id` parameter to fetch data for a specific portal user (auto-fetches their employee_code)
+        - Use `emp_id` parameter for direct SAP employee ID lookup
+        
+        **Date Filtering Options:**
+        
+        *Quick Period Filters (Recommended):*
+        - `period=today` - Today's collection data only (Feb 3, 2026)
+        - `period=monthly` - Current month to date (Feb 1 - Feb 3, 2026)
+        - `period=yearly` - Current year to date (Jan 1 - Feb 3, 2026)
+        
+        *Custom Date Range:*
+        - Use `start_date` and `end_date` for specific date ranges
+        - Format: YYYY-MM-DD
+        - Note: `period` parameter overrides custom dates if both provided
+        
+        **Parameter Priority:**
+        1. **Employee Filter**: `emp_id` (highest) → `user_id` → authenticated user
+        2. **Date Filter**: `period` (highest) → `start_date/end_date` → default range
+        
+        **Usage Examples:**
+        
+        *Quick Date Filters:*
+        - Today's performance: `?database=4B-BIO&period=today`
+        - This month's data: `?database=4B-BIO&period=monthly`
+        - Year-to-date: `?database=4B-BIO&period=yearly`
+        
+        *User-Specific Queries:*
+        - User's monthly data: `?database=4B-BIO&user_id=123&period=monthly`
+        - Employee's today: `?database=4B-BIO&emp_id=456&period=today`
+        
+        *Custom Filters:*
+        - Custom date range: `?database=4B-BIO&start_date=2026-01-01&end_date=2026-01-31`
+        - Regional filter: `?database=4B-BIO&region=North&zone=Zone1&period=monthly`
+        - In millions: `?database=4B-BIO&period=yearly&in_millions=true`
+        
+        *Combined Filters:*
+        - `?database=4B-BIO&user_id=123&period=monthly&region=North&in_millions=true`
+        - `?database=4B-BIO&emp_id=456&period=today&zone=Zone1`
+        
+        **Response Structure:**
+        - `user_id`: Portal user ID
+        - `employee_id`: Employee code from sales_profile
+        - `data`: Hierarchical collection data (Region → Zone → Territory)
+        - `totals`: Grand total target and achievement across all regions
+        - `pagination`: Page information and navigation
+        - `filters`: Applied filters for reference
+        """,
         manual_parameters=[
-            openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g. 4B-BIO-app)", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('end_date', openapi.IN_QUERY, description="End date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('region', openapi.IN_QUERY, description="Region filter", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('zone', openapi.IN_QUERY, description="Zone filter", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('territory', openapi.IN_QUERY, description="Territory filter", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('group_by_date', openapi.IN_QUERY, description="Group by date range", type=openapi.TYPE_BOOLEAN, required=False),
-            openapi.Parameter('ignore_emp_filter', openapi.IN_QUERY, description="Ignore employee filter (Admin only)", type=openapi.TYPE_BOOLEAN, required=False),
-            openapi.Parameter('in_millions', openapi.IN_QUERY, description="Convert to millions", type=openapi.TYPE_BOOLEAN, required=False),
-            openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, default=1),
-            openapi.Parameter('page_size', openapi.IN_QUERY, description="Page size", type=openapi.TYPE_INTEGER, default=10),
+            openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('user_id', openapi.IN_QUERY, description="Portal User ID - Automatically fetches employee_code from user's sales_profile. Example: user_id=123", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('emp_id', openapi.IN_QUERY, description="SAP Employee ID - Direct employee ID, overrides user_id if both provided. Example: emp_id=456", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('period', openapi.IN_QUERY, description="Quick date filter - 'today' (current day), 'monthly' (current month), 'yearly' (current year). Overrides start_date/end_date if provided.", type=openapi.TYPE_STRING, enum=['today', 'monthly', 'yearly'], required=False),
+            openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date for collection period. Format: YYYY-MM-DD. Example: 2026-01-01. Ignored if 'period' is provided.", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('end_date', openapi.IN_QUERY, description="End date for collection period. Format: YYYY-MM-DD. Example: 2026-01-31. Ignored if 'period' is provided.", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('region', openapi.IN_QUERY, description="Filter by region name. Example: North, South", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('zone', openapi.IN_QUERY, description="Filter by zone name. Example: Zone1, Zone2", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('territory', openapi.IN_QUERY, description="Filter by territory name. Example: Territory1", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('group_by_date', openapi.IN_QUERY, description="Group results by date range. Default: false", type=openapi.TYPE_BOOLEAN, required=False),
+            openapi.Parameter('ignore_emp_filter', openapi.IN_QUERY, description="Ignore employee filter to get all data (Admin/Manager use). Default: false", type=openapi.TYPE_BOOLEAN, required=False),
+            openapi.Parameter('in_millions', openapi.IN_QUERY, description="Convert target and achievement values to millions for readability. Default: false", type=openapi.TYPE_BOOLEAN, required=False),
+            openapi.Parameter('page', openapi.IN_QUERY, description="Page number for pagination. Default: 1", type=openapi.TYPE_INTEGER, default=1),
+            openapi.Parameter('page_size', openapi.IN_QUERY, description="Number of items per page. Default: 10", type=openapi.TYPE_INTEGER, default=10),
         ],
         responses={
             200: openapi.Response(
-                description="Collection analytics data",
-                schema=CollectionAnalyticsResponseSerializer
+                description="Collection analytics data with user tracking and hierarchical structure",
+                schema=CollectionAnalyticsResponseSerializer,
+                examples={
+                    'application/json': {
+                        'success': True,
+                        'user_id': 123,
+                        'employee_id': 'EMP001',
+                        'count': 3,
+                        'data': [
+                            {
+                                'name': 'North Region',
+                                'target': 1500000.00,
+                                'achievement': 1200000.00,
+                                'from_date': '2026-01-01',
+                                'to_date': '2026-01-31',
+                                'zones': [
+                                    {
+                                        'name': 'Zone 1',
+                                        'target': 800000.00,
+                                        'achievement': 650000.00,
+                                        'from_date': '2026-01-01',
+                                        'to_date': '2026-01-31',
+                                        'territories': [
+                                            {
+                                                'name': 'Territory A',
+                                                'target': 400000.00,
+                                                'achievement': 350000.00,
+                                                'from_date': '2026-01-01',
+                                                'to_date': '2026-01-31'
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ],
+                        'pagination': {
+                            'page': 1,
+                            'num_pages': 1,
+                            'has_next': False,
+                            'has_prev': False,
+                            'count': 3,
+                            'page_size': 10
+                        },
+                        'filters': {
+                            'company': '4B-BIO',
+                            'region': '',
+                            'zone': '',
+                            'territory': ''
+                        },
+                        'totals': {
+                            'target': 1500000.00,
+                            'achievement': 1200000.00
+                        }
+                    }
+                }
             )
         }
     )
@@ -723,17 +829,65 @@ class CollectionAnalyticsView(APIView):
                 cfg['schema'] = '4B-BIO_APP'
             
             # Parameters
+            period = (request.GET.get('period') or '').strip().lower()
             start_date = (request.GET.get('start_date') or '').strip()
             end_date = (request.GET.get('end_date') or '').strip()
+            
+            # Handle period parameter (overrides start_date/end_date)
+            from datetime import datetime, date
+            today = date.today()
+            
+            if period:
+                if period == 'today':
+                    start_date = today.strftime('%Y-%m-%d')
+                    end_date = today.strftime('%Y-%m-%d')
+                elif period == 'monthly':
+                    # First day of current month to today
+                    start_date = today.replace(day=1).strftime('%Y-%m-%d')
+                    end_date = today.strftime('%Y-%m-%d')
+                elif period == 'yearly':
+                    # First day of current year to today
+                    start_date = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+                    end_date = today.strftime('%Y-%m-%d')
+            
+            # If no period and no dates provided, default to today
+            if not start_date and not end_date:
+                start_date = today.strftime('%Y-%m-%d')
+                end_date = today.strftime('%Y-%m-%d')
+            
             region = (request.GET.get('region') or '').strip()
             zone = (request.GET.get('zone') or '').strip()
             territory = (request.GET.get('territory') or '').strip()
             in_millions = (request.GET.get('in_millions') or '').strip().lower() in ('true', '1', 'yes', 'y')
             group_by_date = (request.GET.get('group_by_date') or '').strip().lower() in ('true', '1', 'yes', 'y')
             ignore_emp_filter = (request.GET.get('ignore_emp_filter') or '').strip().lower() in ('true', '1', 'yes', 'y')
+            
+            # Handle user_id parameter to fetch employee_code
+            user_id_param = request.GET.get('user_id', '').strip()
             emp_id_param = request.GET.get('emp_id', '').strip()
             
             emp_val = None
+            employee_code_from_user = None
+            
+            # If user_id is provided, fetch employee_code from that user's sales_profile
+            if user_id_param:
+                try:
+                    from accounts.models import User
+                    user_id_int = int(user_id_param)
+                    target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
+                    if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
+                        employee_code_from_user = target_user.sales_profile.employee_code
+                        # Convert employee_code to integer if it's numeric
+                        if employee_code_from_user:
+                            try:
+                                emp_val = int(employee_code_from_user)
+                            except ValueError:
+                                # If employee_code is not numeric, try to use it as-is
+                                pass
+                except Exception:
+                    pass
+            
+            # emp_id parameter overrides user_id if both are provided
             if emp_id_param:
                 try:
                     emp_val = int(emp_id_param)
@@ -770,8 +924,8 @@ class CollectionAnalyticsView(APIView):
                     cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
                     cur.close()
                 
-                # Fetch data using sales_vs_achievement_geo_inv (SAP endpoint logic)
-                data = sales_vs_achievement_geo_inv(
+                # Fetch data using collection_vs_achievement function
+                data = collection_vs_achievement(
                     conn,
                     emp_id=sap_emp_id,
                     region=region or None,
@@ -780,7 +934,7 @@ class CollectionAnalyticsView(APIView):
                     start_date=start_date or None,
                     end_date=end_date or None,
                     group_by_date=group_by_date,
-                    group_by_emp=False 
+                    ignore_emp_filter=ignore_emp_filter
                 )
                 
                 # Process data
@@ -806,15 +960,25 @@ class CollectionAnalyticsView(APIView):
                             scaled.append(row)
                     data = scaled
                 
-                # Build Hierarchy
+                # Debug: Log first few rows to see what data we're getting
+                if data and len(data) > 0:
+                    print(f"\n=== DEBUG: First row from collection_vs_achievement ===")
+                    print(f"Total rows returned: {len(data)}")
+                    print(f"First row keys: {list(data[0].keys())}")
+                    print(f"First row data: {data[0]}")
+                    if len(data) > 1:
+                        print(f"Second row data: {data[1]}")
+                    print(f"=== END DEBUG ===")
+                
+                # Build Hierarchy (Region → Zone → Territory)
                 hierarchy = {}
                 for row in (data or []):
                     if not isinstance(row, dict):
                         continue
                     
-                    reg = row.get('Region') or 'Unknown Region'
-                    zon = row.get('Zone') or 'Unknown Zone'
-                    ter = row.get('TerritoryName') or row.get('Territory') or 'Unknown Territory'
+                    reg = row.get('Region') or 'All Regions'
+                    zon = row.get('Zone') or 'All Zones'
+                    ter = row.get('TerritoryName') or row.get('Territory') or 'All Territories'
                     
                     target = 0.0
                     ach = 0.0
@@ -978,8 +1142,24 @@ class CollectionAnalyticsView(APIView):
                     'page_size': page_size
                 }
                 
+                # Get user_id and employee_id only if explicitly provided
+                user_id = None
+                employee_id = None
+                
+                # Only include user_id and employee_id if user_id or emp_id parameter was explicitly provided
+                if user_id_param or emp_id_param:
+                    if request.user.is_authenticated:
+                        user_id = request.user.id
+                    try:
+                        if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
+                            employee_id = request.user.sales_profile.employee_code
+                    except Exception:
+                        pass
+                
                 return Response({
                     'success': True,
+                    'user_id': user_id,
+                    'employee_id': employee_id,
                     'count': (paginator.count if paginator else len(final_list or [])),
                     'data': paged_rows,
                     'pagination': pagination,

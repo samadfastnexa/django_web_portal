@@ -1531,6 +1531,29 @@ class CompanyAdmin(admin.ModelAdmin):
     list_display = ('Company_name', 'name', 'email', 'contact_number', 'is_active')
     search_fields = ('Company_name', 'name', 'email')
     list_filter = ('is_active',)
+    
+    fieldsets = (
+        ('Company Information', {
+            'fields': ('Company_name', 'description', 'is_active')
+        }),
+        ('HANA Database Schema', {
+            'fields': ('name',),
+            'description': '<strong>Note:</strong> The "Name" field represents the HANA database schema name (e.g., 4B-BIO_APP, 4B-ORANG_APP). This value is used in HANA Connect for database connections.'
+        }),
+        ('Contact Information', {
+            'fields': ('email', 'contact_number', 'address')
+        }),
+        ('Location', {
+            'fields': ('latitude', 'longitude'),
+            'classes': ('collapse',)
+        }),
+        ('Additional Information', {
+            'fields': ('remarks', 'created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    readonly_fields = ('created_at', 'updated_at')
 class _CompanySessionResolver:
     def _get_selected_company(self, request):
         try:

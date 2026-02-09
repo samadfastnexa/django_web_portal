@@ -33,6 +33,10 @@ class BaseInfoModel(BaseAuditModel):
 
 class Company(BaseInfoModel):
     Company_name = models.CharField(max_length=100)
+    name = models.CharField(
+        max_length=100, 
+        help_text="Schema name (e.g., 4B-BIO_APP, 4B-ORANG_APP). This is used for HANA database connections."
+    )
 
     def __str__(self):
         return self.Company_name  # or self.name if BaseInfoModel has 'name'

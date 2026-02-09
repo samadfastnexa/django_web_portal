@@ -145,6 +145,13 @@ DATABASES = {
         'PASSWORD': config('DB_PASSWORD', default='samad'),
         'HOST': config('DB_HOST', default='127.0.0.1'),
         'PORT': config('DB_PORT', default='3306'),
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            'charset': 'utf8mb4',
+            'use_unicode': True,
+        },
+        'CONN_MAX_AGE': 600,  # Connection pooling: keep connections alive for 10 minutes
+        'ATOMIC_REQUESTS': False,  # Only wrap writes in transactions
     }
 }
 
@@ -216,6 +223,14 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',  # ✅ must be inside the list
     ],
     'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%S%z',
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+    ),
+    'DEFAULT_PARSER_CLASSES': (
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.MultiPartParser',
+        'rest_framework.parsers.FormParser',
+    ),
 }
 
 # Logging Configuration for HANA Reports and Debugging
@@ -312,4 +327,24 @@ WEATHER_API_KEY = "36c4dcfbb24443b18b2112951252507"
 # ==============================================================================
 KINDWISE_API_ENABLED = config('KINDWISE_API_ENABLED', cast=bool, default=True)
 KINDWISE_API_KEY = config('KINDWISE_API_KEY', default='K3heryGSyoR6KdYJML6UXGjiQXA9FFqQzBBMycxLT7TLnJG5H9')
+
+# ==============================================================================
+# CACHING CONFIGURATION - Performance Optimization
+# ==============================================================================
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000,
+            'CULL_FREQUENCY': 3,
+        }
+    }
+}
+
+# Session configuration for better performance
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Database-backed sessions
+SESSION_CACHE_ALIAS = 'default'
+SESSION_COOKIE_AGE = 86400  # 24 hours
+SESSION_SAVE_EVERY_REQUEST = False  # Only save when session is modified
 

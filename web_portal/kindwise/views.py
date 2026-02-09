@@ -174,7 +174,7 @@ def identify_view(request):
     - Without user_id: Returns all identification records (Admin use)
     - With user_id: Returns records for specific user only
     
-    Results are ordered by most recent first.
+    Results are ordered by most recent first and support pagination.
     """,
     manual_parameters=[
         openapi.Parameter(
@@ -183,16 +183,35 @@ def identify_view(request):
             type=openapi.TYPE_INTEGER,
             description="User ID to filter records (optional - omit to get all records)",
             required=False
+        ),
+        openapi.Parameter(
+            name="page",
+            in_=openapi.IN_QUERY,
+            type=openapi.TYPE_INTEGER,
+            description="Page number (default: 1)",
+            required=False
+        ),
+        openapi.Parameter(
+            name="page_size",
+            in_=openapi.IN_QUERY,
+            type=openapi.TYPE_INTEGER,
+            description="Number of items per page (default: 10, max: 100)",
+            required=False
         )
     ],
     responses={
         200: openapi.Response(
-            description="List of identification records",
+            description="Paginated list of identification records",
             examples={
                 "application/json": {
                     "user_id": 5,
                     "user_name": "John Doe",
-                    "count": 2,
+                    "count": 25,
+                    "page": 1,
+                    "page_size": 10,
+                    "total_pages": 3,
+                    "next": "http://localhost:8000/api/kindwise/records/?user_id=1&page=2",
+                    "previous": None,
                     "results": [
                         {
                             "id": 10,
@@ -218,8 +237,19 @@ def identify_view(request):
 @api_view(['GET'])
 @csrf_exempt
 def records_by_user(request):
-    """Get all Kindwise identification records or filter by specific user"""
+    """Get all Kindwise identification records or filter by specific user with pagination"""
+    from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+    
     user_id = request.GET.get('user_id')
+    page_number = request.GET.get('page', 1)
+    page_size = request.GET.get('page_size', 10)
+    
+    # Validate and limit page_size
+    try:
+        page_size = int(page_size)
+        page_size = min(max(1, page_size), 100)  # Limit between 1 and 100
+    except (ValueError, TypeError):
+        page_size = 10
     
     try:
         if user_id:
@@ -244,8 +274,8 @@ def records_by_user(request):
                     status=404
                 )
             
-            # Get records for specific user
-            qs = KindwiseIdentification.objects.filter(user_id=user_id).values(
+            # Get records for specific user, ordered by most recent first
+            qs = KindwiseIdentification.objects.filter(user_id=user_id).order_by('-created_at').values(
                 'id', 'status', 'created_at', 'image_name', 'response_payload'
             )
             
@@ -255,20 +285,80 @@ def records_by_user(request):
                     'user_id': int(user_id),
                     'user_name': user_name,
                     'count': 0,
+                    'page': 1,
+                    'page_size': page_size,
+                    'total_pages': 0,
+                    'next': None,
+                    'previous': None,
                     'results': []
                 }, status=200)
+            
+            # Paginate results
+            paginator = Paginator(qs, page_size)
+            total_count = paginator.count
+            total_pages = paginator.num_pages
+            
+            try:
+                page_obj = paginator.page(page_number)
+            except PageNotAnInteger:
+                page_obj = paginator.page(1)
+                page_number = 1
+            except EmptyPage:
+                page_obj = paginator.page(paginator.num_pages)
+                page_number = paginator.num_pages
+            
+            # Build next and previous URLs
+            base_url = request.build_absolute_uri(request.path)
+            next_url = None
+            previous_url = None
+            
+            if page_obj.has_next():
+                next_url = f"{base_url}?user_id={user_id}&page={page_obj.next_page_number()}&page_size={page_size}"
+            
+            if page_obj.has_previous():
+                previous_url = f"{base_url}?user_id={user_id}&page={page_obj.previous_page_number()}&page_size={page_size}"
             
             return JsonResponse({
                 'user_id': int(user_id),
                 'user_name': user_name,
-                'count': qs.count(),
-                'results': list(qs)
+                'count': total_count,
+                'page': int(page_number),
+                'page_size': page_size,
+                'total_pages': total_pages,
+                'next': next_url,
+                'previous': previous_url,
+                'results': list(page_obj)
             }, safe=False)
         else:
-            # Get all records (no user filter)
-            qs = KindwiseIdentification.objects.all().values(
+            # Get all records (no user filter), ordered by most recent first
+            qs = KindwiseIdentification.objects.all().order_by('-created_at').values(
                 'id', 'user_id', 'status', 'created_at', 'image_name', 'response_payload'
             )
+            
+            # Paginate results
+            paginator = Paginator(qs, page_size)
+            total_count = paginator.count
+            total_pages = paginator.num_pages
+            
+            try:
+                page_obj = paginator.page(page_number)
+            except PageNotAnInteger:
+                page_obj = paginator.page(1)
+                page_number = 1
+            except EmptyPage:
+                page_obj = paginator.page(paginator.num_pages)
+                page_number = paginator.num_pages
+            
+            # Build next and previous URLs
+            base_url = request.build_absolute_uri(request.path)
+            next_url = None
+            previous_url = None
+            
+            if page_obj.has_next():
+                next_url = f"{base_url}?page={page_obj.next_page_number()}&page_size={page_size}"
+            
+            if page_obj.has_previous():
+                previous_url = f"{base_url}?page={page_obj.previous_page_number()}&page_size={page_size}"
             
             return JsonResponse({
                 'message': 'All identification records',
