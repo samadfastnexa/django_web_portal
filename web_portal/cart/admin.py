@@ -4,9 +4,9 @@ from .models import Cart, CartItem, Order, OrderItem, Payment
 
 @admin.register(Cart)
 class CartAdmin(admin.ModelAdmin):
-    list_display = ['id', 'user', 'get_total_items', 'created_at', 'updated_at']
+    list_display = ['id', 'user', 'get_total_items', 'created_date', 'updated_date']
     search_fields = ['user__email', 'user__username']
-    readonly_fields = ['created_at', 'updated_at']
+    readonly_fields = ['created_date', 'updated_date']
     
     def get_total_items(self, obj):
         return obj.get_total_items()
@@ -16,7 +16,7 @@ class CartAdmin(admin.ModelAdmin):
 class CartItemInline(admin.TabularInline):
     model = CartItem
     extra = 0
-    readonly_fields = ['created_at', 'updated_at']
+    readonly_fields = ['created_date', 'updated_date']
 
 
 @admin.register(CartItem)
@@ -30,11 +30,11 @@ class CartItemAdmin(admin.ModelAdmin):
         'unit_price',
         'is_active',
         'is_expired',
-        'created_at'
+        'created_date'
     ]
-    list_filter = ['is_active', 'created_at']
+    list_filter = ['is_active', 'created_date']
     search_fields = ['product_item_code', 'product_name', 'cart__user__email']
-    readonly_fields = ['created_at', 'updated_at']
+    readonly_fields = ['created_date', 'updated_date']
     
     def is_expired(self, obj):
         return obj.is_expired()
@@ -45,7 +45,7 @@ class CartItemAdmin(admin.ModelAdmin):
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
-    readonly_fields = ['subtotal', 'created_at']
+    readonly_fields = ['subtotal', 'created_date']
 
 
 @admin.register(Order)
@@ -58,9 +58,9 @@ class OrderAdmin(admin.ModelAdmin):
         'total_amount',
         'paid_amount',
         'is_synced_to_sap',
-        'created_at'
+        'created_date'
     ]
-    list_filter = ['status', 'payment_status', 'is_synced_to_sap', 'created_at']
+    list_filter = ['status', 'payment_status', 'is_synced_to_sap', 'created_date']
     search_fields = [
         'order_number',
         'user__email',
@@ -69,8 +69,8 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     readonly_fields = [
         'order_number',
-        'created_at',
-        'updated_at',
+        'created_date',
+        'updated_date',
         'get_total_items',
         'get_total_quantity'
     ]
@@ -108,8 +108,8 @@ class OrderAdmin(admin.ModelAdmin):
         }),
         ('Timestamps', {
             'fields': (
-                'created_at',
-                'updated_at',
+                'created_date',
+                'updated_date',
                 'completed_at',
             )
         }),
@@ -134,15 +134,15 @@ class OrderItemAdmin(admin.ModelAdmin):
         'quantity',
         'unit_price',
         'subtotal',
-        'created_at'
+        'created_date'
     ]
     search_fields = [
         'order__order_number',
         'product_item_code',
         'product_name'
     ]
-    readonly_fields = ['subtotal', 'created_at']
-    list_filter = ['created_at']
+    readonly_fields = ['subtotal', 'created_date']
+    list_filter = ['created_date']
 
 
 @admin.register(Payment)
@@ -155,10 +155,10 @@ class PaymentAdmin(admin.ModelAdmin):
         'amount',
         'status',
         'jazzcash_response_code',
-        'created_at',
+        'created_date',
         'completed_at',
     ]
-    list_filter = ['payment_method', 'status', 'created_at', 'completed_at']
+    list_filter = ['payment_method', 'status', 'created_date', 'completed_at']
     search_fields = [
         'transaction_id',
         'jazzcash_transaction_id',
@@ -169,8 +169,8 @@ class PaymentAdmin(admin.ModelAdmin):
     ]
     readonly_fields = [
         'transaction_id',
-        'created_at',
-        'updated_at',
+        'created_date',
+        'updated_date',
         'completed_at',
         'raw_response',
     ]
@@ -210,8 +210,8 @@ class PaymentAdmin(admin.ModelAdmin):
         }),
         ('Timestamps', {
             'fields': (
-                'created_at',
-                'updated_at',
+                'created_date',
+                'updated_date',
                 'completed_at',
             )
         }),

@@ -217,17 +217,10 @@ def hana_connect_admin(request):
         # Fallback to default options if Company model not accessible
         pass
     
-    # Fallback to default options if no companies found
-    if not db_options:
-        db_options = {
-            '4B-ORANG_APP': '4B-ORANG_APP',
-            '4B-BIO_APP': '4B-BIO_APP'
-        }
-    
     # Set default selected key if not provided
-    if not selected_db_key:
-        # Use first company or default to 4B-BIO_APP
-        selected_db_key = list(db_options.keys())[0] if db_options else '4B-BIO_APP'
+    if not selected_db_key and db_options:
+        # Use first company from database
+        selected_db_key = list(db_options.keys())[0]
     
     # Clean up keys and values - remove any embedded quotes
     cleaned_options = {}
@@ -241,7 +234,7 @@ def hana_connect_admin(request):
     selected_db_key = selected_db_key.strip().strip('"').strip("'")
     
     # Get the schema based on selected database
-    selected_schema = db_options.get(selected_db_key, os.environ.get('HANA_SCHEMA') or '4B-BIO_APP')
+    selected_schema = db_options.get(selected_db_key, os.environ.get('HANA_SCHEMA') or '')
     
     # Debug logging
     print(f"DEBUG hana_connect_admin:")
@@ -265,6 +258,20 @@ def hana_connect_admin(request):
     result = None
     error = None
     error_fields = {}
+    
+    # Extract filter parameters for diagnostics
+    emp_id_param = (request.GET.get('emp_id') or '').strip()
+    user_id_param = (request.GET.get('user_id') or '').strip()
+    period_param = (request.GET.get('period') or '').strip()
+    start_date_param = (request.GET.get('start_date') or '').strip()
+    end_date_param = (request.GET.get('end_date') or '').strip()
+    region_param = (request.GET.get('region') or '').strip()
+    zone_param = (request.GET.get('zone') or '').strip()
+    territory_param = (request.GET.get('territory') or '').strip()
+    in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
+    group_by_date_param = (request.GET.get('group_by_date') or '').strip().lower()
+    ignore_emp_filter_param = (request.GET.get('ignore_emp_filter') or '').strip().lower()
+    
     diagnostics = {
         'python': sys.executable,
         'hdbcli_import': False,
@@ -277,6 +284,17 @@ def hana_connect_admin(request):
         'action': action,
         'selected_db': selected_db_key,
         'selected_schema': selected_schema,
+        'emp_id': emp_id_param,
+        'user_id': user_id_param,
+        'period': period_param,
+        'start_date': start_date_param,
+        'end_date': end_date_param,
+        'region': region_param,
+        'zone': zone_param,
+        'territory': territory_param,
+        'in_millions': (in_millions_param in ('true','1','yes','y')),
+        'group_by_date': (group_by_date_param in ('true','1','yes','y')),
+        'ignore_emp_filter': (ignore_emp_filter_param in ('true','1','yes','y')),
     }
     if action:
         def _sanitize_error(msg):
@@ -425,7 +443,7 @@ def hana_connect_admin(request):
                                 diagnostics['month'] = None
                                 diagnostics['start_date'] = (start_date_param or '').strip()
                                 diagnostics['end_date'] = (end_date_param or '').strip()
-                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                                diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                                 request._territory_options = territory_options
                         except Exception as e_ts:
                             error = str(e_ts)
@@ -438,6 +456,16 @@ def hana_connect_admin(request):
                     elif action == 'list_territories':
                         try:
                             data = territories_all(conn)
+                            # Helper function to clean region/zone/territory names
+                            def clean_geo_name(name):
+                                if not name or not isinstance(name, str):
+                                    return name
+                                # Remove common suffixes (case-insensitive, preserve original case for the rest)
+                                for suffix in [' Region', ' Zone', ' Territory']:
+                                    if name.endswith(suffix):
+                                        return name[:-len(suffix)].strip()
+                                return name
+                            
                             # Build hierarchical Region -> Zone -> Territory structure with aggregated totals
                             hierarchy = {}
                             for row in (data or []):
@@ -446,6 +474,11 @@ def hana_connect_admin(request):
                                 reg = row.get('Region', 'Unknown Region')
                                 zon = row.get('Zone', 'Unknown Zone')
                                 ter = row.get('Territory', 'Unknown Territory')
+                                
+                                # Clean the names
+                                reg = clean_geo_name(reg)
+                                zon = clean_geo_name(zon)
+                                ter = clean_geo_name(ter)
                                 sal = 0.0
                                 ach = 0.0
                                 try:
@@ -496,8 +529,12 @@ def hana_connect_admin(request):
                                 error = 'No territories found'
                             # Diagnostics: show available OTER columns to help mapping
                             try:
-                                diagnostics['oter_columns'] = table_columns(conn, cfg['schema'] or '4B-ORANG_APP', 'OTER')
-                                diagnostics['schema_used'] = cfg['schema'] or '4B-ORANG_APP'
+                                if cfg['schema']:
+                                    diagnostics['oter_columns'] = table_columns(conn, cfg['schema'], 'OTER')
+                                    diagnostics['schema_used'] = cfg['schema']
+                                else:
+                                    diagnostics['oter_columns'] = []
+                                    diagnostics['schema_used'] = 'No schema set'
                             except Exception:
                                 diagnostics['oter_columns'] = []
                         except Exception as e_lt:
@@ -541,15 +578,21 @@ def hana_connect_admin(request):
                             top_param = request.GET.get('top')
                             db_param = (request.GET.get('database') or '').strip()
                             
-                            # Handle database parameter for admin view
+                            # Handle database parameter for admin view - Get schema from Company model
                             if db_param:
-                                norm = db_param.strip().upper().replace('-APP', '_APP')
-                                if '4B-BIO' in norm:
-                                    cfg['schema'] = '4B-BIO_APP'
-                                elif '4B-ORANG' in norm:
-                                    cfg['schema'] = '4B-ORANG_APP'
-                                else:
-                                    cfg['schema'] = db_param
+                                schema_from_db = None
+                                try:
+                                    companies = Company.objects.filter(is_active=True)
+                                    for company in companies:
+                                        if company.Company_name == db_param or company.name == db_param:
+                                            schema_from_db = company.name
+                                            break
+                                except Exception:
+                                    pass
+                                
+                                # Use schema from Company model if found, otherwise use db_param directly
+                                cfg['schema'] = schema_from_db if schema_from_db else db_param
+                                
                                 # Reconnect with new schema
                                 try:
                                     conn.close()
@@ -595,7 +638,7 @@ def hana_connect_admin(request):
                             mo_val = None
                             if error is None:
                                 data = sales_vs_achievement(conn, emp_val, (territory_param or '').strip() or None, yr_val, mo_val, (start_date_param or '').strip() or None, (end_date_param or '').strip() or None)
-                                if in_millions_param in ('', 'true','1','yes','y'):
+                                if in_millions_param in ('true','1','yes','y'):
                                     scaled = []
                                     for row in data or []:
                                         if isinstance(row, dict):
@@ -641,7 +684,7 @@ def hana_connect_admin(request):
                                 diagnostics['month'] = None
                                 diagnostics['start_date'] = (start_date_param or '').strip()
                                 diagnostics['end_date'] = (end_date_param or '').strip()
-                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                                diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                                 request._territory_options = territory_options
                         except Exception as e_sa:
                             error = str(e_sa)
@@ -666,7 +709,7 @@ def hana_connect_admin(request):
                                 data = sales_vs_achievement_geo(conn, emp_val, (region_param or '').strip() or None, (zone_param or '').strip() or None, (territory_param or '').strip() or None, (start_date_param or '').strip() or None, (end_date_param or '').strip() or None)
                                 
                                 # Scaling to millions if requested
-                                if in_millions_param in ('', 'true','1','yes','y'):
+                                if in_millions_param in ('true','1','yes','y'):
                                     scaled = []
                                     for row in data or []:
                                         if isinstance(row, dict):
@@ -712,16 +755,18 @@ def hana_connect_admin(request):
                                 diagnostics['region'] = (region_param or '').strip()
                                 diagnostics['zone'] = (zone_param or '').strip()
                                 diagnostics['territory'] = (territory_param or '').strip()
-                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                                diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                                 
                         except Exception as e_geo:
                             error = str(e_geo)
                     elif action == 'collection_vs_achievement':
                         try:
                             emp_id_param = request.GET.get('emp_id')
+                            user_id_param = request.GET.get('user_id')
                             region_param = request.GET.get('region')
                             zone_param = request.GET.get('zone')
                             territory_param = request.GET.get('territory')
+                            period_param = (request.GET.get('period') or 'monthly').strip().lower()
                             start_date_param = request.GET.get('start_date')
                             end_date_param = request.GET.get('end_date')
                             in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
@@ -729,7 +774,42 @@ def hana_connect_admin(request):
                             
                             is_detailed = detailed_view_param in ('true', '1', 'yes', 'on')
                             
+                            # Handle period parameter - only set dates if they're not explicitly provided
+                            from datetime import date
+                            today = date.today()
+                            
+                            # Only apply period-based dates if start_date and end_date are not provided
+                            if period_param and not start_date_param and not end_date_param:
+                                if period_param == 'today':
+                                    start_date_param = today.strftime('%Y-%m-%d')
+                                    end_date_param = today.strftime('%Y-%m-%d')
+                                elif period_param == 'monthly':
+                                    # First day of current month to today
+                                    start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
+                                    end_date_param = today.strftime('%Y-%m-%d')
+                                elif period_param == 'yearly':
+                                    # First day of current year to today
+                                    start_date_param = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+                                    end_date_param = today.strftime('%Y-%m-%d')
+                            
+                            # Handle user_id parameter to fetch employee_code from sales_profile
                             emp_val = None
+                            if user_id_param:
+                                try:
+                                    from accounts.models import User
+                                    user_id_int = int(user_id_param)
+                                    target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
+                                    if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
+                                        employee_code = target_user.sales_profile.employee_code
+                                        if employee_code:
+                                            try:
+                                                emp_val = int(employee_code)
+                                            except ValueError:
+                                                pass
+                                except Exception as e_user:
+                                    error = f'Invalid user_id: {str(e_user)}'
+                            
+                            # emp_id overrides user_id if both provided
                             if emp_id_param is not None and emp_id_param != '':
                                 try:
                                     emp_val = int(emp_id_param)
@@ -737,7 +817,7 @@ def hana_connect_admin(request):
                                     error = 'Invalid emp_id'
                             
                             if error is None:
-                                data = sales_vs_achievement_geo_inv(
+                                data = collection_vs_achievement(
                                     conn,
                                     emp_id=emp_val,
                                     region=(region_param or '').strip() or None,
@@ -745,11 +825,11 @@ def hana_connect_admin(request):
                                     territory=(territory_param or '').strip() or None,
                                     start_date=(start_date_param or '').strip() or None,
                                     end_date=(end_date_param or '').strip() or None,
-                                    group_by_emp=False,
-                                    group_by_date=is_detailed
+                                    group_by_date=is_detailed,
+                                    ignore_emp_filter=False
                                 )
                                 
-                                if in_millions_param in ('', 'true','1','yes','y'):
+                                if in_millions_param in ('true','1','yes','y'):
                                     scaled = []
                                     for row in data or []:
                                         if isinstance(row, dict):
@@ -773,14 +853,29 @@ def hana_connect_admin(request):
                                             scaled.append(row)
                                     data = scaled
 
+                                # Helper function to clean region/zone/territory names
+                                def clean_geo_name(name):
+                                    if not name or not isinstance(name, str):
+                                        return name
+                                    # Remove common suffixes (case-insensitive, preserve original case for the rest)
+                                    for suffix in [' Region', ' Zone', ' Territory']:
+                                        if name.endswith(suffix):
+                                            return name[:-len(suffix)].strip()
+                                    return name
+
                                 # Hierarchical Transformation
                                 hierarchy = {}
                                 for row in (data or []):
                                     if not isinstance(row, dict):
                                         continue
-                                    reg = row.get('Region', 'Unknown Region')
-                                    zon = row.get('Zone', 'Unknown Zone')
-                                    ter = row.get('Territory', 'Unknown Territory')
+                                    reg = row.get('Region') or 'All Regions'
+                                    zon = row.get('Zone') or 'All Zones'
+                                    ter = row.get('TerritoryName') or row.get('Territory') or 'All Territories'
+                                    
+                                    # Clean the names
+                                    reg = clean_geo_name(reg)
+                                    zon = clean_geo_name(zon)
+                                    ter = clean_geo_name(ter)
                                     
                                     # Handle Date Range
                                     date_range_str = ""
@@ -875,12 +970,14 @@ def hana_connect_admin(request):
                                     request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                                     
                                 diagnostics['emp_id'] = emp_val
+                                diagnostics['user_id'] = user_id_param or ''
+                                diagnostics['period'] = period_param
                                 diagnostics['start_date'] = (start_date_param or '').strip()
                                 diagnostics['end_date'] = (end_date_param or '').strip()
                                 diagnostics['region'] = (region_param or '').strip()
                                 diagnostics['zone'] = (zone_param or '').strip()
                                 diagnostics['territory'] = (territory_param or '').strip()
-                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                                diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                                 diagnostics['detailed_view'] = is_detailed
                                 
                         except Exception as e_coll:
@@ -920,7 +1017,7 @@ def hana_connect_admin(request):
                             )
                             
                             # Scaling to millions if requested
-                            if in_millions_param in ('', 'true','1','yes','y'):
+                            if in_millions_param in ('true','1','yes','y'):
                                 scaled = []
                                 for row in data or []:
                                     if isinstance(row, dict):
@@ -947,6 +1044,16 @@ def hana_connect_admin(request):
                                 data = scaled
                             
                             # Hierarchical Transformation
+                            # Helper function to clean region/zone/territory names
+                            def clean_geo_name(name):
+                                if not name or not isinstance(name, str):
+                                    return name
+                                # Remove common suffixes
+                                for suffix in [' Region', ' Zone', ' Territory']:
+                                    if name.endswith(suffix):
+                                        return name[:-len(suffix)].strip()
+                                return name
+                            
                             hierarchy = {}
                             for row in (data or []):
                                 if not isinstance(row, dict):
@@ -954,6 +1061,12 @@ def hana_connect_admin(request):
                                 reg = row.get('Region', 'Unknown Region')
                                 zon = row.get('Zone', 'Unknown Zone')
                                 ter = row.get('Territory', 'Unknown Territory')
+                                
+                                # Clean the names
+                                reg = clean_geo_name(reg)
+                                zon = clean_geo_name(zon)
+                                ter = clean_geo_name(ter)
+                                
                                 sal = 0.0
                                 ach = 0.0
                                 try:
@@ -1034,7 +1147,7 @@ def hana_connect_admin(request):
                             diagnostics['region'] = (region_param or '').strip()
                             diagnostics['zone'] = (zone_param or '').strip()
                             diagnostics['territory'] = (territory_param or '').strip()
-                            diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                            diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                             diagnostics['group_by_emp'] = group_by_emp
                             
                         except Exception as e_geo_inv:
@@ -1048,7 +1161,7 @@ def hana_connect_admin(request):
                             end_date_param = request.GET.get('end_date')
                             in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
                             
-                            data = sales_vs_achievement_geo_inv(
+                            data = collection_vs_achievement(
                                 conn,
                                 emp_id=None,
                                 region=(region_param or '').strip() or None,
@@ -1056,10 +1169,11 @@ def hana_connect_admin(request):
                                 territory=(territory_param or '').strip() or None,
                                 start_date=(start_date_param or '').strip() or None,
                                 end_date=(end_date_param or '').strip() or None,
-                                group_by_emp=False
+                                group_by_date=False,
+                                ignore_emp_filter=True
                             )
                             
-                            if in_millions_param in ('', 'true','1','yes','y'):
+                            if in_millions_param in ('true','1','yes','y'):
                                 scaled = []
                                 for row in data or []:
                                     if isinstance(row, dict):
@@ -1094,6 +1208,16 @@ def hana_connect_admin(request):
                                         cleaned.append(row)
                                 data = cleaned
                             
+                            # Helper function to clean region/zone/territory names
+                            def clean_geo_name(name):
+                                if not name or not isinstance(name, str):
+                                    return name
+                                # Remove common suffixes (case-insensitive, preserve original case for the rest)
+                                for suffix in [' Region', ' Zone', ' Territory']:
+                                    if name.endswith(suffix):
+                                        return name[:-len(suffix)].strip()
+                                return name
+                            
                             hierarchy = {}
                             for row in (data or []):
                                 if not isinstance(row, dict):
@@ -1112,6 +1236,11 @@ def hana_connect_admin(request):
                                 if ter is None: ter = row.get('TerritoryName')
                                 if ter is None: ter = row.get('TERRITORYNAME')
                                 if ter is None: ter = 'Unknown Territory'
+                                
+                                # Clean the names
+                                reg = clean_geo_name(reg)
+                                zon = clean_geo_name(zon)
+                                ter = clean_geo_name(ter)
                                 sal = 0.0
                                 ach = 0.0
                                 try:
@@ -1131,14 +1260,14 @@ def hana_connect_admin(request):
                                 except Exception:
                                     pass
                                 if reg not in hierarchy:
-                                    hierarchy[reg] = {'name': reg or 'Unknown Region', 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                    hierarchy[reg] = {'name': reg or 'Unknown', 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
                                 hierarchy[reg]['sales'] += sal
                                 hierarchy[reg]['achievement'] += ach
                                 if zon not in hierarchy[reg]['zones']:
-                                    hierarchy[reg]['zones'][zon] = {'name': zon or 'Unknown Zone', 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                    hierarchy[reg]['zones'][zon] = {'name': zon or 'Unknown', 'sales': 0.0, 'achievement': 0.0, 'territories': []}
                                 hierarchy[reg]['zones'][zon]['sales'] += sal
                                 hierarchy[reg]['zones'][zon]['achievement'] += ach
-                                hierarchy[reg]['zones'][zon]['territories'].append({'name': ter or 'Unknown Territory', 'sales': sal, 'achievement': ach})
+                                hierarchy[reg]['zones'][zon]['territories'].append({'name': ter or 'Unknown', 'sales': sal, 'achievement': ach})
                             final_list = []
                             for r_name in sorted(hierarchy.keys()):
                                 r_data = hierarchy[r_name]
@@ -1179,7 +1308,7 @@ def hana_connect_admin(request):
                             diagnostics['region'] = (region_param or '').strip()
                             diagnostics['zone'] = (zone_param or '').strip()
                             diagnostics['territory'] = (territory_param or '').strip()
-                            diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                            diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                         except Exception as e_svat:
                             error = str(e_svat)
                     elif action == 'collection_vs_achievement':
@@ -1235,6 +1364,16 @@ def hana_connect_admin(request):
                                         scaled.append(row)
                                 data = scaled
 
+                            # Helper function to clean region/zone/territory names
+                            def clean_geo_name(name):
+                                if not name or not isinstance(name, str):
+                                    return name
+                                # Remove common suffixes (case-insensitive, preserve original case for the rest)
+                                for suffix in [' Region', ' Zone', ' Territory']:
+                                    if name.endswith(suffix):
+                                        return name[:-len(suffix)].strip()
+                                return name
+
                             hierarchy = {}
                             for row in (data or []):
                                 if not isinstance(row, dict):
@@ -1242,6 +1381,11 @@ def hana_connect_admin(request):
                                 reg = row.get('Region', 'Unknown Region')
                                 zon = row.get('Zone', 'Unknown Zone')
                                 ter = row.get('TerritoryName', 'Unknown Territory')
+                                
+                                # Clean the names
+                                reg = clean_geo_name(reg)
+                                zon = clean_geo_name(zon)
+                                ter = clean_geo_name(ter)
                                 sal = 0.0
                                 ach = 0.0
                                 try:
@@ -1322,7 +1466,7 @@ def hana_connect_admin(request):
                             diagnostics['region'] = (region_param or '').strip()
                             diagnostics['zone'] = (zone_param or '').strip()
                             diagnostics['territory'] = (territory_param or '').strip()
-                            diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                            diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                             diagnostics['group_by_date'] = (group_by_date_param in ('true', '1', 'yes', 'on'))
                             diagnostics['ignore_emp_filter'] = (ignore_emp_filter_param in ('true', '1', 'yes', 'on'))
                         except Exception as e_cva:
@@ -1362,7 +1506,7 @@ def hana_connect_admin(request):
                             )
                             
                             # Scaling to millions if requested
-                            if in_millions_param in ('', 'true','1','yes','y'):
+                            if in_millions_param in ('true','1','yes','y'):
                                 scaled = []
                                 for row in data or []:
                                     if isinstance(row, dict):
@@ -1387,6 +1531,16 @@ def hana_connect_admin(request):
                                 data = scaled
                             
                             # Hierarchical Transformation
+                            # Helper function to clean region/zone/territory names
+                            def clean_geo_name(name):
+                                if not name or not isinstance(name, str):
+                                    return name
+                                # Remove common suffixes
+                                for suffix in [' Region', ' Zone', ' Territory']:
+                                    if name.endswith(suffix):
+                                        return name[:-len(suffix)].strip()
+                                return name
+                            
                             hierarchy = {}
                             for row in (data or []):
                                 if not isinstance(row, dict):
@@ -1394,6 +1548,12 @@ def hana_connect_admin(request):
                                 reg = row.get('Region', 'Unknown Region')
                                 zon = row.get('Zone', 'Unknown Zone')
                                 ter = row.get('Territory', 'Unknown Territory')
+                                
+                                # Clean the names
+                                reg = clean_geo_name(reg)
+                                zon = clean_geo_name(zon)
+                                ter = clean_geo_name(ter)
+                                
                                 sal = 0.0
                                 ach = 0.0
                                 try:
@@ -1472,7 +1632,7 @@ def hana_connect_admin(request):
                             diagnostics['region'] = (region_param or '').strip()
                             diagnostics['zone'] = (zone_param or '').strip()
                             diagnostics['territory'] = (territory_param or '').strip()
-                            diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                            diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                             diagnostics['group_by_emp'] = group_by_emp
                             
                         except Exception as e_geo_prof:
@@ -1500,7 +1660,7 @@ def hana_connect_admin(request):
                             if error is None:
                                 from .hana_connect import sales_vs_achievement_by_emp
                                 data = sales_vs_achievement_by_emp(conn, emp_val, (territory_param or '').strip() or None, yr_val, mo_val, (start_date_param or '').strip() or None, (end_date_param or '').strip() or None)
-                                if in_millions_param in ('', 'true','1','yes','y'):
+                                if in_millions_param in ('true','1','yes','y'):
                                     scaled = []
                                     for row in data or []:
                                         if isinstance(row, dict):
@@ -1595,7 +1755,7 @@ def hana_connect_admin(request):
                                 diagnostics['month'] = None
                                 diagnostics['start_date'] = (start_date_param or '').strip()
                                 diagnostics['end_date'] = (end_date_param or '').strip()
-                                diagnostics['in_millions'] = (in_millions_param in ('', 'true','1','yes','y'))
+                                diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                                 request._territory_options = territory_options
                         except Exception as e_sa_emp:
                             error = str(e_sa_emp)
@@ -1665,15 +1825,21 @@ def hana_connect_admin(request):
                             search_param = request.GET.get('search')
                             db_param = (request.GET.get('database') or '').strip()
                             
-                            # Handle database parameter for admin view
+                            # Handle database parameter for admin view - Get schema from Company model
                             if db_param:
-                                norm = db_param.strip().upper().replace('-APP', '_APP')
-                                if '4B-BIO' in norm:
-                                    cfg['schema'] = '4B-BIO_APP'
-                                elif '4B-ORANG' in norm:
-                                    cfg['schema'] = '4B-ORANG_APP'
-                                else:
-                                    cfg['schema'] = db_param
+                                schema_from_db = None
+                                try:
+                                    companies = Company.objects.filter(is_active=True)
+                                    for company in companies:
+                                        if company.Company_name == db_param or company.name == db_param:
+                                            schema_from_db = company.name
+                                            break
+                                except Exception:
+                                    pass
+                                
+                                # Use schema from Company model if found, otherwise use db_param directly
+                                cfg['schema'] = schema_from_db if schema_from_db else db_param
+                                
                                 # Reconnect with new schema
                                 try:
                                     conn.close()
@@ -1881,6 +2047,8 @@ def hana_connect_admin(request):
     territory_options = getattr(request, '_territory_options', [])
     selected_territory = (request.GET.get('territory') or '').strip()
     current_emp_id = (request.GET.get('emp_id') or '').strip()
+    current_user_id = (request.GET.get('user_id') or '').strip()
+    current_period = (request.GET.get('period') or '').strip()
     current_year = ''
     current_month = ''
     current_start_date = (request.GET.get('start_date') or '').strip()
@@ -2026,12 +2194,15 @@ def hana_connect_admin(request):
         {
             'result_json': result_json,
             'error': error,
+            'diagnostics': diagnostics,
             'diagnostics_json': diag_json,
             'territory_options': territory_options,
             'geo_options': geo_options,
             'selected_territory': selected_territory,
             'current_action': action,
             'current_emp_id': current_emp_id,
+            'current_user_id': current_user_id,
+            'current_period': current_period,
             'current_year': current_year,
             'current_month': current_month,
             'current_start_date': current_start_date,
@@ -3082,21 +3253,31 @@ def sales_vs_achievement_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': os.environ.get('HANA_SCHEMA') or '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
+    
+    # Get database options from Company model
     db_param = (request.query_params.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    db_options = {}
+    try:
+        companies = Company.objects.filter(is_active=True)
+        for company in companies:
+            # Map Company_name to schema name (name field)
+            db_options[company.Company_name] = company.name
+    except Exception:
+        pass
+    
+    # Select schema based on db_param
+    if db_param and db_param in db_options:
+        cfg['schema'] = db_options[db_param]
+    elif db_param:
+        # Try to use db_param directly as schema name
+        cfg['schema'] = db_param
     else:
-        cfg['schema'] = '4B-BIO_APP'
+        # Use first available company schema
+        cfg['schema'] = list(db_options.values())[0] if db_options else ''
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
     territory = (request.query_params.get('territory') or '').strip()
@@ -3359,18 +3540,28 @@ def sales_vs_achievement_geo_inv_api(request):
         _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
     except Exception:
         pass
-    cfg = {'host': os.environ.get('HANA_HOST') or '', 'port': os.environ.get('HANA_PORT') or '30015', 'user': os.environ.get('HANA_USER') or '', 'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP', 'encrypt': os.environ.get('HANA_ENCRYPT') or '', 'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or ''}
+    cfg = {'host': os.environ.get('HANA_HOST') or '', 'port': os.environ.get('HANA_PORT') or '30015', 'user': os.environ.get('HANA_USER') or '', 'schema': os.environ.get('HANA_SCHEMA') or '', 'encrypt': os.environ.get('HANA_ENCRYPT') or '', 'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or ''}
+    
+    # Get database options from Company model
     db_param = (request.query_params.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    db_options = {}
+    try:
+        companies = Company.objects.filter(is_active=True)
+        for company in companies:
+            # Map Company_name to schema name (name field)
+            db_options[company.Company_name] = company.name
+    except Exception:
+        pass
+    
+    # Select schema based on db_param
+    if db_param and db_param in db_options:
+        cfg['schema'] = db_options[db_param]
+    elif db_param:
+        # Try to use db_param directly as schema name
+        cfg['schema'] = db_param
     else:
-        cfg['schema'] = '4B-BIO_APP'
+        # Use first available company schema
+        cfg['schema'] = list(db_options.values())[0] if db_options else ''
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
     region = (request.query_params.get('region') or '').strip()
@@ -3512,7 +3703,19 @@ def sales_vs_achievement_geo_inv_api(request):
 
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
+    operation_summary="Sales Analytics - Orders/Invoices vs Target",
     operation_description="""
+    📈 **SALES ANALYTICS** - Track sales orders and invoices against sales targets
+    
+    🔑 **What This Endpoint Measures:**
+    - ✅ **Sales Target**: Expected sales/order value targets
+    - ✅ **Sales Achievement**: Actual sales orders placed/invoiced
+    - ✅ **Focus**: Orders OUT (sales orders, invoices, bookings)
+    - ✅ **Use Case**: Track sales performance, order volume, revenue generation
+    - ✅ **Data Source**: B4_SALES_TARGET table in SAP HANA
+    
+    ⚠️ **Not For Collection Data** - Use `/analytics/collection/` for payment receipts/collections
+    
     Get Sales vs Achievement data with hierarchical structure (Region → Zone → Territory).
     
     **User & Employee Tracking:**
@@ -3551,6 +3754,7 @@ def sales_vs_achievement_geo_inv_api(request):
         openapi.Parameter('zone', openapi.IN_QUERY, description="Filter by zone name", type=openapi.TYPE_STRING),
         openapi.Parameter('territory', openapi.IN_QUERY, description="Filter by territory name", type=openapi.TYPE_STRING),
         openapi.Parameter('in_millions', openapi.IN_QUERY, description="Convert values to millions for readability. Default: false", type=openapi.TYPE_BOOLEAN),
+        openapi.Parameter('group_by_emp', openapi.IN_QUERY, description="Group results by employee. Returns employee-wise breakdown. Default: false", type=openapi.TYPE_BOOLEAN, default=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number. Default: 1", type=openapi.TYPE_INTEGER, default=1),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page. Default: 10", type=openapi.TYPE_INTEGER, default=10),
     ],
@@ -3565,21 +3769,32 @@ def sales_vs_achievement_territory_api(request):
         _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
     except Exception:
         pass
-    cfg = {'host': os.environ.get('HANA_HOST') or '', 'port': os.environ.get('HANA_PORT') or '30015', 'user': os.environ.get('HANA_USER') or '', 'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP', 'encrypt': os.environ.get('HANA_ENCRYPT') or '', 'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or ''}
+    cfg = {'host': os.environ.get('HANA_HOST') or '', 'port': os.environ.get('HANA_PORT') or '30015', 'user': os.environ.get('HANA_USER') or '', 'schema': os.environ.get('HANA_SCHEMA') or '', 'encrypt': os.environ.get('HANA_ENCRYPT') or '', 'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or ''}
+    
+    # Get database options from Company model
     db_param = (request.query_params.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    db_options = {}
+    try:
+        from FieldAdvisoryService.models import Company
+        companies = Company.objects.filter(is_active=True)
+        for company in companies:
+            # Map Company_name to schema name (name field)
+            db_options[company.Company_name] = company.name
+    except Exception:
+        pass
+    
+    # Select schema based on db_param
+    if db_param and db_param in db_options:
+        cfg['schema'] = db_options[db_param]
+    elif db_param:
+        # Try to use db_param directly as schema name
+        cfg['schema'] = db_param
     else:
-        cfg['schema'] = '4B-BIO_APP'
+        # Use first available company schema or default
+        cfg['schema'] = list(db_options.values())[0] if db_options else '4B-BIO_APP'
     
     # Handle period parameter
-    period = (request.query_params.get('period') or '').strip().lower()
+    period = (request.query_params.get('period') or 'monthly').strip().lower()
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
     
@@ -3636,6 +3851,11 @@ def sales_vs_achievement_territory_api(request):
     zone = (request.query_params.get('zone') or '').strip()
     territory = (request.query_params.get('territory') or '').strip()
     in_millions_param = (request.query_params.get('in_millions') or '').strip().lower()
+    
+    # Handle group_by_emp parameter for employee-wise grouping
+    group_by_emp_param = (request.query_params.get('group_by_emp') or '').strip().lower()
+    group_by_emp = group_by_emp_param in ('true', '1', 'yes', 'y')
+    
     try:
         from hdbcli import dbapi
         pwd = os.environ.get('HANA_PASSWORD','')
@@ -3652,7 +3872,7 @@ def sales_vs_achievement_territory_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             # Use the new sales_vs_achievement_territory function with B4_SALES_TARGET
-            data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=False)
+            data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=False, group_by_emp=group_by_emp)
             if in_millions_param in ('true','1','yes','y'):
                 scaled = []
                 for row in data or []:
@@ -3698,84 +3918,155 @@ def sales_vs_achievement_territory_api(request):
                     else:
                         scaled.append(row)
                 data = scaled
-            hierarchy = {}
-            total_sales = 0.0
-            total_achievement = 0.0
-            for row in (data or []):
-                if not isinstance(row, dict):
-                    continue
-                # Skip the GRAND TOTAL row in hierarchy building (will add separately)
-                if row.get('Region') == 'GRAND TOTAL':
-                    continue
+            
+            # Helper function to clean region/zone/territory names
+            def clean_geo_name(name):
+                """Remove ' Region', ' Zone', ' Territory' suffixes from location names"""
+                if not name or not isinstance(name, str):
+                    return name
+                # Remove common suffixes
+                for suffix in [' Region', ' Zone', ' Territory']:
+                    if name.endswith(suffix):
+                        return name[:-len(suffix)].strip()
+                return name
+            
+            # Handle employee-wise grouping differently
+            if group_by_emp:
+                # For employee-wise data, return a flat list with employee details
+                emp_list = []
+                total_sales = 0.0
+                total_achievement = 0.0
+                
+                for row in (data or []):
+                    if not isinstance(row, dict):
+                        continue
                     
-                reg = row.get('Region') or 'Unknown Region'
-                zon = row.get('Zone') or 'Unknown Zone'
-                ter = row.get('TerritoryName') or row.get('Territory') or 'Unknown Territory'
+                    emp_id_val = row.get('EmpId')
+                    reg = row.get('Region') or 'N/A'
+                    zon = row.get('Zone') or 'N/A'
+                    ter = row.get('TerritoryName') or 'N/A'
+                    
+                    # Clean the names to remove suffixes
+                    reg = clean_geo_name(reg)
+                    zon = clean_geo_name(zon)
+                    ter = clean_geo_name(ter)
+                    
+                    sal = 0.0
+                    ach = 0.0
+                    try:
+                        sal = float(row.get('Sales_Target') or 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        ach = float(row.get('Sales_Achievement') or 0.0)
+                    except Exception:
+                        pass
+                    
+                    total_sales += sal
+                    total_achievement += ach
+                    
+                    emp_list.append({
+                        'emp_id': emp_id_val,
+                        'region': reg,
+                        'zone': zon,
+                        'territory': ter,
+                        'sales_target': round(sal, 2),
+                        'sales_achievement': round(ach, 2),
+                        'variance': round(ach - sal, 2),
+                        'variance_pct': round((ach - sal) / sal * 100, 2) if sal > 0 else 0,
+                        'from_date': row.get('From_Date'),
+                        'to_date': row.get('To_Date'),
+                    })
                 
-                # Territory-level values
-                sal = 0.0
-                ach = 0.0
-                try:
-                    v = row.get('Sales_Target')
-                    sal = float(v or 0.0)
-                except Exception:
-                    pass
-                try:
-                    v = row.get('Sales_Achievement')
-                    ach = float(v or 0.0)
-                except Exception:
-                    pass
+                final_list = emp_list
+            else:
+                # Original hierarchical grouping
+                hierarchy = {}
+                total_sales = 0.0
+                total_achievement = 0.0
+                for row in (data or []):
+                    if not isinstance(row, dict):
+                        continue
+                    # Skip the GRAND TOTAL row in hierarchy building (will add separately)
+                    if row.get('Region') == 'GRAND TOTAL':
+                        continue
+                        
+                    reg = row.get('Region') or 'Unknown Region'
+                    zon = row.get('Zone') or 'Unknown Zone'
+                    ter = row.get('TerritoryName') or row.get('Territory') or 'Unknown Territory'
+                    
+                    # Clean the names to remove suffixes
+                    reg = clean_geo_name(reg)
+                    zon = clean_geo_name(zon)
+                    ter = clean_geo_name(ter)
+                    
+                    # Territory-level values
+                    sal = 0.0
+                    ach = 0.0
+                    try:
+                        v = row.get('Sales_Target')
+                        sal = float(v or 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        v = row.get('Sales_Achievement')
+                        ach = float(v or 0.0)
+                    except Exception:
+                        pass
+                    
+                    # Window function values (pre-calculated by SQL)
+                    zone_sal = 0.0
+                    zone_ach = 0.0
+                    region_sal = 0.0
+                    region_ach = 0.0
+                    try:
+                        zone_sal = float(row.get('Zone_Sales_Target') or 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        zone_ach = float(row.get('Zone_Sales_Achievement') or 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        region_sal = float(row.get('Region_Sales_Target') or 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        region_ach = float(row.get('Region_Sales_Achievement') or 0.0)
+                    except Exception:
+                        pass
+                    
+                    total_sales += sal
+                    total_achievement += ach
+                    
+                    # Use window function values for region totals (not summing)
+                    if reg not in hierarchy:
+                        hierarchy[reg] = {'name': reg, 'sales': region_sal, 'achievement': region_ach, 'zones': {}}
+                    
+                    # Use window function values for zone totals (not summing)
+                    if zon not in hierarchy[reg]['zones']:
+                        hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': zone_sal, 'achievement': zone_ach, 'territories': []}
+                    
+                    hierarchy[reg]['zones'][zon]['territories'].append({'name': ter, 'sales': sal, 'achievement': ach})
                 
-                # Window function values (pre-calculated by SQL)
-                zone_sal = 0.0
-                zone_ach = 0.0
-                region_sal = 0.0
-                region_ach = 0.0
-                try:
-                    zone_sal = float(row.get('Zone_Sales_Target') or 0.0)
-                except Exception:
-                    pass
-                try:
-                    zone_ach = float(row.get('Zone_Sales_Achievement') or 0.0)
-                except Exception:
-                    pass
-                try:
-                    region_sal = float(row.get('Region_Sales_Target') or 0.0)
-                except Exception:
-                    pass
-                try:
-                    region_ach = float(row.get('Region_Sales_Achievement') or 0.0)
-                except Exception:
-                    pass
+                final_list = []
+                for r_name in sorted(hierarchy.keys()):
+                    r_data = hierarchy[r_name]
+                    zones_list = []
+                    for z_name in sorted(r_data['zones'].keys()):
+                        z_data = r_data['zones'][z_name]
+                        z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                        zones_list.append(z_data)
+                    r_data['zones'] = zones_list
+                    final_list.append(r_data)
                 
-                total_sales += sal
-                total_achievement += ach
-                
-                # Use window function values for region totals (not summing)
-                if reg not in hierarchy:
-                    hierarchy[reg] = {'name': reg, 'sales': region_sal, 'achievement': region_ach, 'zones': {}}
-                
-                # Use window function values for zone totals (not summing)
-                if zon not in hierarchy[reg]['zones']:
-                    hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': zone_sal, 'achievement': zone_ach, 'territories': []}
-                
-                hierarchy[reg]['zones'][zon]['territories'].append({'name': ter, 'sales': sal, 'achievement': ach})
-            final_list = []
-            for r_name in sorted(hierarchy.keys()):
-                r_data = hierarchy[r_name]
-                zones_list = []
-                for z_name in sorted(r_data['zones'].keys()):
-                    z_data = r_data['zones'][z_name]
-                    z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
-                    zones_list.append(z_data)
-                r_data['zones'] = zones_list
-                final_list.append(r_data)
-            for r in final_list:
-                r['sales'] = round(r['sales'], 2)
-                r['achievement'] = round(r['achievement'], 2)
-                for z in r['zones']:
-                    z['sales'] = round(z['sales'], 2)
-                    z['achievement'] = round(z['achievement'], 2)
+                for r in final_list:
+                    r['sales'] = round(r['sales'], 2)
+                    r['achievement'] = round(r['achievement'], 2)
+                    for z in r['zones']:
+                        z['sales'] = round(z['sales'], 2)
+                        z['achievement'] = round(z['achievement'], 2)
+            
             page_param = (request.query_params.get('page') or '1').strip()
             page_size_param = (request.query_params.get('page_size') or '').strip()
             try:
@@ -3800,25 +4091,9 @@ def sales_vs_achievement_territory_api(request):
                 page_obj = None
             pagination = {'page': (page_obj.number if page_obj else 1), 'num_pages': (paginator.num_pages if paginator else 1), 'has_next': (page_obj.has_next() if page_obj else False), 'has_prev': (page_obj.has_previous() if page_obj else False), 'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)), 'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)), 'count': (paginator.count if paginator else len(final_list or [])), 'page_size': page_size}
             
-            # Get user_id and employee_id - only populate if user_id or emp_id params were provided
-            user_id = None
-            employee_id = None
-            
-            if user_id_param or emp_id_param:
-                if request.user.is_authenticated:
-                    user_id = request.user.id
-                
-                # Try to fetch employee_id from sales_profile
-                try:
-                    if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
-                        employee_id = request.user.sales_profile.employee_code
-                except Exception:
-                    pass
-            
-            return Response({
+            # Build response with user and employee information
+            response_data = {
                 'success': True,
-                'user_id': user_id,
-                'employee_id': employee_id,
                 'count': (paginator.count if paginator else len(final_list or [])),
                 'data': paged_rows,
                 'pagination': pagination,
@@ -3826,7 +4101,16 @@ def sales_vs_achievement_territory_api(request):
                     'sales': round(total_sales, 2),
                     'achievement': round(total_achievement, 2),
                 },
-            }, status=status.HTTP_200_OK)
+            }
+            
+            # Add user and employee info if user_id or emp_id was provided
+            if user_id_param:
+                response_data['user_id'] = int(user_id_param) if user_id_param else None
+                response_data['employee_id'] = emp_val  # The fetched employee code
+            elif emp_id_param:
+                response_data['employee_id'] = emp_val
+            
+            return Response(response_data, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()
