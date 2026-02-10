@@ -18,6 +18,7 @@ from .serializers import (
     CartItemSerializer,
     AddToCartSerializer,
     UpdateCartItemSerializer,
+    CheckoutSerializer,
     OrderSerializer,
     OrderListSerializer,
     CreateOrderSerializer,
@@ -47,12 +48,14 @@ class CartViewSet(viewsets.ViewSet):
     
     Provides endpoints for:
     - Viewing cart
+    - Listing cart items with pagination and filters
     - Adding items to cart
     - Updating item quantity
     - Removing items
     - Clearing cart
     """
     permission_classes = [IsAuthenticated]
+    pagination_class = None  # Will be set dynamically for items endpoint
     
     def get_or_create_cart(self, user):
         """Get or create cart for user"""
@@ -61,14 +64,238 @@ class CartViewSet(viewsets.ViewSet):
         cart.clear_expired_items()
         return cart
     
+    def validate_user_access(self, request, user_id):
+        """Validate user access - ensure user can only access their own cart unless superuser"""
+        # Convert user_id to integer
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError):
+            return None, Response(
+                {'error': 'Invalid user_id format. Must be an integer.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if authenticated user matches the requested user_id or is superuser
+        if not request.user.is_superuser and request.user.id != user_id:
+            return None, Response(
+                {'error': 'You do not have permission to access this user\'s cart.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get the user object
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            user = User.objects.get(id=user_id)
+            return user, None
+        except User.DoesNotExist:
+            return None, Response(
+                {'error': f'User with id {user_id} does not exist.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
     @swagger_auto_schema(
-        operation_description="Get current user's cart",
-        responses={200: CartSerializer()}
+        operation_id='get_user_cart',
+        operation_description="Get user's cart with summary. Requires user_id parameter for identification.",
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="User ID (required). Users can only access their own cart unless they are superusers.",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'include_expired',
+                openapi.IN_QUERY,
+                description="Include expired items (default: false)",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+        ],
+        responses={
+            200: CartSerializer(),
+            400: "Bad request - missing or invalid user_id",
+            401: "Unauthorized - authentication required",
+            403: "Forbidden - cannot access another user's cart",
+            404: "Not found - user does not exist"
+        },
+        tags=["06. Shopping Cart"]
     )
     def list(self, request):
-        """Get user's cart"""
-        cart = self.get_or_create_cart(request.user)
+        """Get user's cart with user_id validation"""
+        # Get user_id from query params
+        user_id = request.query_params.get('user_id')
+        
+        # Validate user_id is provided
+        if not user_id:
+            return Response(
+                {'error': 'user_id parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate user access
+        user, error_response = self.validate_user_access(request, user_id)
+        if error_response:
+            return error_response
+        
+        # Get or create cart for the validated user
+        cart = self.get_or_create_cart(user)
+        
+        # Option to include expired items
+        include_expired = request.query_params.get('include_expired', 'false').lower() == 'true'
+        if not include_expired:
+            cart.clear_expired_items()
+        
         serializer = CartSerializer(cart)
+        return Response(serializer.data)
+    
+    @swagger_auto_schema(
+        operation_description="List cart items with pagination and filtering. Requires user_id parameter.",
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="User ID (required)",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'is_active',
+                openapi.IN_QUERY,
+                description="Filter by active status (true/false, default: true)",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+            openapi.Parameter(
+                'product_item_code',
+                openapi.IN_QUERY,
+                description="Filter by product item code",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'search',
+                openapi.IN_QUERY,
+                description="Search in product name or item code",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'ordering',
+                openapi.IN_QUERY,
+                description="Order by field (created_date, -created_date, product_name, -product_name, unit_price, -unit_price)",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'page',
+                openapi.IN_QUERY,
+                description="Page number (default: 1)",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'page_size',
+                openapi.IN_QUERY,
+                description="Items per page (default: 10, max: 100)",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                'Paginated cart items',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, format='uri', nullable=True),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING, format='uri', nullable=True),
+                        'results': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                    }
+                )
+            ),
+            400: "Bad request - missing or invalid user_id",
+            403: "Forbidden - cannot access another user's cart",
+            404: "Not found - user does not exist"
+        },
+        tags=["06. Shopping Cart"]
+    )
+    @action(detail=False, methods=['get'])
+    def items(self, request):
+        """List cart items with pagination and filters"""
+        # Get user_id from query params
+        user_id = request.query_params.get('user_id')
+        
+        # Validate user_id is provided
+        if not user_id:
+            return Response(
+                {'error': 'user_id parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate user access
+        user, error_response = self.validate_user_access(request, user_id)
+        if error_response:
+            return error_response
+        
+        # Get cart
+        cart = self.get_or_create_cart(user)
+        
+        # Start with cart items queryset
+        queryset = cart.items.all()
+        
+        # Filter by active status (default: true)
+        is_active = request.query_params.get('is_active', 'true').lower()
+        if is_active == 'true':
+            queryset = queryset.filter(is_active=True)
+        elif is_active == 'false':
+            queryset = queryset.filter(is_active=False)
+        
+        # Filter by product item code
+        product_item_code = request.query_params.get('product_item_code')
+        if product_item_code:
+            queryset = queryset.filter(product_item_code__icontains=product_item_code)
+        
+        # Search in product name or item code
+        search = request.query_params.get('search')
+        if search:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(product_name__icontains=search) | 
+                Q(product_item_code__icontains=search)
+            )
+        
+        # Ordering
+        ordering = request.query_params.get('ordering', '-created_date')
+        allowed_ordering = ['created_date', '-created_date', 'product_name', '-product_name', 'unit_price', '-unit_price', 'quantity', '-quantity']
+        if ordering in allowed_ordering:
+            queryset = queryset.order_by(ordering)
+        else:
+            queryset = queryset.order_by('-created_date')
+        
+        # Pagination
+        from rest_framework.pagination import PageNumberPagination
+        paginator = PageNumberPagination()
+        
+        # Custom page size
+        page_size = request.query_params.get('page_size')
+        if page_size:
+            try:
+                page_size = int(page_size)
+                if page_size > 100:
+                    page_size = 100
+                paginator.page_size = page_size
+            except ValueError:
+                pass
+        
+        page = paginator.paginate_queryset(queryset, request)
+        if page is not None:
+            serializer = CartItemSerializer(page, many=True, context={'database': request.query_params.get('database', '4B-BIO')})
+            return paginator.get_paginated_response(serializer.data)
+        
+        serializer = CartItemSerializer(queryset, many=True, context={'database': request.query_params.get('database', '4B-BIO')})
         return Response(serializer.data)
     
     @swagger_auto_schema(
@@ -78,7 +305,8 @@ class CartViewSet(viewsets.ViewSet):
             201: CartItemSerializer(),
             400: "Bad request",
             403: "Permission denied"
-        }
+        },
+        tags=["06. Shopping Cart"]
     )
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, CanAddToCart])
     def add_item(self, request):
@@ -86,7 +314,18 @@ class CartViewSet(viewsets.ViewSet):
         serializer = AddToCartSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        cart = self.get_or_create_cart(request.user)
+        cart_id = serializer.validated_data['cart_id']
+        user_id = serializer.validated_data['user_id']
+        
+        # Validate cart existence and ownership
+        cart = get_object_or_404(Cart, id=cart_id, user_id=user_id)
+        
+        # Security check: Ensure the authenticated user owns the cart or has permission
+        if not request.user.is_superuser and cart.user != request.user:
+            return Response({'error': 'You do not have permission to access this cart'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Clean expired items
+        cart.clear_expired_items()
         
         # Check if item already exists in cart
         existing_item = CartItem.objects.filter(
@@ -95,15 +334,20 @@ class CartViewSet(viewsets.ViewSet):
             is_active=True
         ).first()
         
+        database = serializer.validated_data.get('database', '4B-BIO')
+        
         if existing_item:
             # Update quantity if item exists
             existing_item.quantity += serializer.validated_data.get('quantity', 1)
             existing_item.save()
-            item_serializer = CartItemSerializer(existing_item)
+            item_serializer = CartItemSerializer(existing_item, context={'database': database})
             return Response(
                 {
                     'message': 'Item quantity updated in cart',
-                    'item': item_serializer.data
+                    'cart_id': cart.id,
+                    'user_id': cart.user.id,
+                    'item': item_serializer.data,
+                    'updated_date': timezone.now().isoformat(),
                 },
                 status=status.HTTP_200_OK
             )
@@ -117,24 +361,57 @@ class CartViewSet(viewsets.ViewSet):
                 unit_price=serializer.validated_data.get('unit_price'),
                 notes=serializer.validated_data.get('notes', ''),
             )
-            item_serializer = CartItemSerializer(cart_item)
+            item_serializer = CartItemSerializer(cart_item, context={'database': database})
             return Response(
                 {
                     'message': 'Item added to cart',
-                    'item': item_serializer.data
+                    'cart_id': cart.id,
+                    'user_id': cart.user.id,
+                    'item': item_serializer.data,
+                    'created_date': timezone.now().isoformat(),
                 },
                 status=status.HTTP_201_CREATED
             )
     
     @swagger_auto_schema(
         operation_description="Update cart item quantity",
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="User ID (required)",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
         request_body=UpdateCartItemSerializer,
-        responses={200: CartItemSerializer()}
+        responses={
+            200: CartItemSerializer(),
+            400: "Bad request - missing or invalid user_id",
+            403: "Forbidden - cannot access another user's cart",
+            404: "Not found - item or user does not exist"
+        },
+        tags=["06. Shopping Cart"]
     )
     @action(detail=False, methods=['patch'], url_path='update-item/(?P<item_id>[^/.]+)')
     def update_item(self, request, item_id=None):
-        """Update cart item quantity"""
-        cart = self.get_or_create_cart(request.user)
+        """Update cart item quantity with user_id validation"""
+        # Get user_id from query params
+        user_id = request.query_params.get('user_id')
+        
+        # Validate user_id is provided
+        if not user_id:
+            return Response(
+                {'error': 'user_id parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate user access
+        user, error_response = self.validate_user_access(request, user_id)
+        if error_response:
+            return error_response
+        
+        cart = self.get_or_create_cart(user)
         cart_item = get_object_or_404(CartItem, id=item_id, cart=cart, is_active=True)
         
         serializer = UpdateCartItemSerializer(data=request.data)
@@ -148,61 +425,336 @@ class CartViewSet(viewsets.ViewSet):
         item_serializer = CartItemSerializer(cart_item)
         return Response({
             'message': 'Cart item updated',
-            'item': item_serializer.data
+            'cart_id': cart.id,
+            'user_id': user.id,
+            'item': item_serializer.data,
+            'updated_date': timezone.now().isoformat(),
         })
     
     @swagger_auto_schema(
         operation_description="Remove item from cart",
-        responses={200: "Item removed successfully"}
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="User ID (required)",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
+        responses={
+            200: "Item removed successfully",
+            400: "Bad request - missing or invalid user_id",
+            403: "Forbidden - cannot access another user's cart",
+            404: "Not found - item or user does not exist"
+        },
+        tags=["06. Shopping Cart"]
     )
     @action(detail=False, methods=['delete'], url_path='remove-item/(?P<item_id>[^/.]+)')
     def remove_item(self, request, item_id=None):
-        """Remove item from cart"""
-        cart = self.get_or_create_cart(request.user)
+        """Remove item from cart with user_id validation"""
+        # Get user_id from query params
+        user_id = request.query_params.get('user_id')
+        
+        # Validate user_id is provided
+        if not user_id:
+            return Response(
+                {'error': 'user_id parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate user access
+        user, error_response = self.validate_user_access(request, user_id)
+        if error_response:
+            return error_response
+        
+        cart = self.get_or_create_cart(user)
         cart_item = get_object_or_404(CartItem, id=item_id, cart=cart, is_active=True)
         
         cart_item.is_active = False
         cart_item.save()
         
         return Response({
-            'message': 'Item removed from cart'
+            'message': 'Item removed from cart',
+            'cart_id': cart.id,
+            'user_id': user.id,
+            'removed_date': timezone.now().isoformat(),
         }, status=status.HTTP_200_OK)
     
     @swagger_auto_schema(
         operation_description="Clear all items from cart",
-        responses={200: "Cart cleared successfully"}
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['user_id', 'cart_id'],
+            properties={
+                'user_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='User ID'),
+                'cart_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Cart ID'),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                'Cart cleared successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'cart_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'cleared_items_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'cleared_date': openapi.Schema(type=openapi.TYPE_STRING, format='date-time'),
+                    }
+                )
+            ),
+            400: "Bad request - missing cart_id or user_id",
+            403: "Forbidden - cannot access another user's cart",
+            404: "Not found - cart or user does not exist"
+        },
+        tags=["06. Shopping Cart"]
     )
     @action(detail=False, methods=['post'])
     def clear(self, request):
-        """Clear all items from cart"""
-        cart = self.get_or_create_cart(request.user)
+        """Clear all items from cart with validation"""
+        cart_id = request.data.get('cart_id')
+        user_id = request.data.get('user_id')
+        
+        if not cart_id:
+            return Response({'error': 'cart_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not user_id:
+            return Response({'error': 'user_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate user access
+        user, error_response = self.validate_user_access(request, user_id)
+        if error_response:
+            return error_response
+            
+        cart = get_object_or_404(Cart, id=cart_id, user_id=user_id)
+            
+        # Soft delete items (set is_active to False)
+        cleared_items_count = cart.items.filter(is_active=True).count()
         cart.items.filter(is_active=True).update(is_active=False)
         
         return Response({
-            'message': 'Cart cleared successfully'
+            'message': 'Cart cleared successfully',
+            'cart_id': cart.id,
+            'user_id': cart.user.id,
+            'cleared_items_count': cleared_items_count,
+            'cleared_date': timezone.now().isoformat(),
         }, status=status.HTTP_200_OK)
     
     @swagger_auto_schema(
         operation_description="Get count of items in cart",
-        responses={200: openapi.Response(
-            'Cart item count',
-            schema=openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                properties={
-                    'total_items': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'total_quantity': openapi.Schema(type=openapi.TYPE_INTEGER),
-                }
-            )
-        )}
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="User ID (required)",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                'Cart item count',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'cart_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'total_items': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'total_quantity': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    }
+                )
+            ),
+            400: "Bad request - missing or invalid user_id",
+            403: "Forbidden - cannot access another user's cart",
+            404: "Not found - user does not exist"
+        },
+        tags=["06. Shopping Cart"]
     )
     @action(detail=False, methods=['get'])
     def count(self, request):
-        """Get cart item count"""
-        cart = self.get_or_create_cart(request.user)
+        """Get cart item count with user_id validation"""
+        # Get user_id from query params
+        user_id = request.query_params.get('user_id')
+        
+        # Validate user_id is provided
+        if not user_id:
+            return Response(
+                {'error': 'user_id parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate user access
+        user, error_response = self.validate_user_access(request, user_id)
+        if error_response:
+            return error_response
+        
+        cart = self.get_or_create_cart(user)
         return Response({
+            'cart_id': cart.id,
+            'user_id': user.id,
             'total_items': cart.get_total_items(),
             'total_quantity': cart.get_total_quantity(),
         })
+    
+    @swagger_auto_schema(
+        operation_description="Checkout - Convert cart to order with normalized cart and consumer details",
+        request_body=CheckoutSerializer,
+        responses={
+            201: openapi.Response(
+                'Order created successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'order': openapi.Schema(type=openapi.TYPE_OBJECT),
+                        'cart_details': openapi.Schema(type=openapi.TYPE_OBJECT),
+                        'consumer_details': openapi.Schema(type=openapi.TYPE_OBJECT),
+                    }
+                )
+            ),
+            400: "Bad request (empty cart or validation error)"
+        },
+        tags=["06. Shopping Cart"]
+    )
+    @transaction.atomic
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, CanAddToCart])
+    def checkout(self, request):
+        """
+        Checkout - Create order from cart with normalized data.
+        Returns order with cart details and consumer details.
+        Order status will be 'pending' by default.
+        """
+        serializer = CheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Get user's cart
+        try:
+            cart = Cart.objects.get(user=request.user)
+        except Cart.DoesNotExist:
+            return Response(
+                {'error': 'Cart is empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Clean expired items
+        cart.clear_expired_items()
+        
+        # Get active cart items
+        cart_items = cart.items.filter(is_active=True)
+        
+        if not cart_items.exists():
+            return Response(
+                {'error': 'Cart is empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Generate unique order number
+        order_number = f"ORD-{uuid.uuid4().hex[:8].upper()}-{timezone.now().strftime('%Y%m%d')}"
+        
+        # Normalize cart details
+        cart_details = {
+            'cart_id': cart.id,
+            'total_items': cart.get_total_items(),
+            'total_quantity': cart.get_total_quantity(),
+            'items': []
+        }
+        
+        # Normalize consumer details
+        consumer_details = {
+            'user_id': request.user.id,
+            'first_name': serializer.validated_data.get('customer_first_name', ''),
+            'last_name': serializer.validated_data.get('customer_last_name', ''),
+            'email': serializer.validated_data.get('customer_email', '') or request.user.email,
+            'phone': serializer.validated_data.get('customer_phone', ''),
+            'shipping_address': serializer.validated_data.get('shipping_address', ''),
+            'shipping_area': serializer.validated_data.get('shipping_area', ''),
+            'shipping_city': serializer.validated_data.get('shipping_city', ''),
+            'shipping_postal_code': serializer.validated_data.get('shipping_postal_code', ''),
+            'payment_method': serializer.validated_data.get('payment_method', ''),
+            'payment_phone': serializer.validated_data.get('payment_phone', ''),
+        }
+        
+        # Create order with pending status and all customer details
+        order = Order.objects.create(
+            user=request.user,
+            order_number=order_number,
+            status='pending',  # Default status as per requirements
+            # Customer details
+            customer_first_name=consumer_details['first_name'],
+            customer_last_name=consumer_details['last_name'],
+            customer_phone=consumer_details['phone'],
+            customer_email=consumer_details['email'],
+            # Shipping details
+            shipping_address=consumer_details['shipping_address'],
+            shipping_area=consumer_details['shipping_area'],
+            shipping_city=consumer_details['shipping_city'],
+            shipping_postal_code=consumer_details['shipping_postal_code'],
+            # Payment details
+            payment_method=consumer_details['payment_method'],
+            payment_phone=consumer_details['payment_phone'],
+            # Order notes
+            notes=serializer.validated_data.get('notes', ''),
+        )
+        
+        # Record initial status in history
+        OrderStatusHistory.objects.create(
+            order=order,
+            new_status='pending',
+            changed_by=request.user,
+            notes="Order placed via checkout"
+        )
+        
+        # Create order items from cart items and build cart details
+        total_amount = 0
+        database = serializer.validated_data.get('database', '4B-BIO')
+        
+        for cart_item in cart_items:
+            subtotal = cart_item.get_subtotal()
+            
+            # Create order item
+            OrderItem.objects.create(
+                order=order,
+                product_item_code=cart_item.product_item_code,
+                product_name=cart_item.product_name,
+                quantity=cart_item.quantity,
+                unit_price=cart_item.unit_price or 0,
+                subtotal=subtotal,
+                notes=cart_item.notes,
+            )
+            
+            # Add to cart details with product images
+            cart_details['items'].append({
+                'product_item_code': cart_item.product_item_code,
+                'product_name': cart_item.product_name,
+                'quantity': cart_item.quantity,
+                'unit_price': str(cart_item.unit_price) if cart_item.unit_price else '0',
+                'subtotal': str(subtotal),
+                'product_image_url': f"/media/product_images/{database}/{cart_item.product_item_code}.jpg",
+                'product_description_urdu_url': f"/media/product_images/{database}/{cart_item.product_item_code}-urdu.jpg",
+            })
+            
+            total_amount += subtotal
+        
+        # Update order total
+        order.total_amount = total_amount
+        order.save()
+        
+        # Clear cart
+        cart_items.update(is_active=False)
+        
+        # Prepare response with normalized data
+        order_serializer = OrderSerializer(order)
+        
+        return Response(
+            {
+                'message': 'Order created successfully',
+                'order': order_serializer.data,
+                'cart_details': cart_details,
+                'consumer_details': consumer_details,
+            },
+            status=status.HTTP_201_CREATED
+        )
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -220,6 +772,10 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Get orders based on user permissions"""
+        # Short-circuit during Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Order.objects.none()
+        
         user = self.request.user
         
         # Superusers and users with manage_orders permission see all orders
@@ -237,15 +793,69 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     @swagger_auto_schema(
         operation_description="Get user's order history",
-        responses={200: OrderListSerializer(many=True)}
+        manual_parameters=[
+            openapi.Parameter('status', openapi.IN_QUERY, description="Filter by order status (pending, confirmed, processing, shipped, delivered, cancelled)", type=openapi.TYPE_STRING),
+            openapi.Parameter('payment_status', openapi.IN_QUERY, description="Filter by payment status (pending, partial, paid, refunded, failed)", type=openapi.TYPE_STRING),
+            openapi.Parameter('from_date', openapi.IN_QUERY, description="Filter orders from date (YYYY-MM-DD)", type=openapi.TYPE_STRING, format=openapi.FORMAT_DATE),
+            openapi.Parameter('to_date', openapi.IN_QUERY, description="Filter orders to date (YYYY-MM-DD)", type=openapi.TYPE_STRING, format=openapi.FORMAT_DATE),
+            openapi.Parameter('search', openapi.IN_QUERY, description="Search by order number", type=openapi.TYPE_STRING),
+            openapi.Parameter('payment_method', openapi.IN_QUERY, description="Filter by payment method (cod, jazzcash, easypaisa, credit_card)", type=openapi.TYPE_STRING),
+            openapi.Parameter('city', openapi.IN_QUERY, description="Filter by shipping city", type=openapi.TYPE_STRING),
+        ],
+        responses={200: OrderListSerializer(many=True)},
+        tags=["08. Orders"]
     )
     def list(self, request, *args, **kwargs):
-        """List user's orders"""
-        return super().list(request, *args, **kwargs)
+        """List user's orders with optional filters"""
+        queryset = self.get_queryset()
+        
+        # Filter by status
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        # Filter by payment status
+        payment_status_filter = request.query_params.get('payment_status')
+        if payment_status_filter:
+            queryset = queryset.filter(payment_status=payment_status_filter)
+        
+        # Filter by date range
+        from_date = request.query_params.get('from_date')
+        if from_date:
+            queryset = queryset.filter(created_date__gte=from_date)
+        
+        to_date = request.query_params.get('to_date')
+        if to_date:
+            queryset = queryset.filter(created_date__lte=to_date)
+        
+        # Search by order number
+        search = request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(order_number__icontains=search)
+        
+        # Filter by payment method
+        payment_method = request.query_params.get('payment_method')
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+        
+        # Filter by city
+        city = request.query_params.get('city')
+        if city:
+            queryset = queryset.filter(shipping_city__icontains=city)
+        
+        # Paginate and serialize
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
     @swagger_auto_schema(
         operation_description="Get order details",
-        responses={200: OrderSerializer()}
+        responses={200: OrderSerializer()},
+        tags=["08. Orders"]
     )
     def retrieve(self, request, *args, **kwargs):
         """Get order details"""
@@ -257,7 +867,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         responses={
             201: OrderSerializer(),
             400: "Bad request (empty cart or validation error)"
-        }
+        },
+        tags=["08. Orders"]
     )
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -289,11 +900,24 @@ class OrderViewSet(viewsets.ModelViewSet):
         # Generate unique order number
         order_number = f"ORD-{uuid.uuid4().hex[:8].upper()}-{timezone.now().strftime('%Y%m%d')}"
         
-        # Create order
+        # Create order with all customer, shipping, and payment details
         order = Order.objects.create(
             user=request.user,
             order_number=order_number,
+            # Customer details
+            customer_first_name=serializer.validated_data.get('customer_first_name', ''),
+            customer_last_name=serializer.validated_data.get('customer_last_name', ''),
+            customer_phone=serializer.validated_data.get('customer_phone', ''),
+            customer_email=serializer.validated_data.get('customer_email', ''),
+            # Shipping details
             shipping_address=serializer.validated_data.get('shipping_address', ''),
+            shipping_area=serializer.validated_data.get('shipping_area', ''),
+            shipping_city=serializer.validated_data.get('shipping_city', ''),
+            shipping_postal_code=serializer.validated_data.get('shipping_postal_code', ''),
+            # Payment details
+            payment_method=serializer.validated_data.get('payment_method'),
+            payment_phone=serializer.validated_data.get('payment_phone', ''),
+            # Order notes
             notes=serializer.validated_data.get('notes', ''),
         )
         
@@ -332,16 +956,28 @@ class OrderViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(
         operation_description="Update order status (requires manage_orders permission)",
         request_body=UpdateOrderStatusSerializer,
-        responses={200: OrderSerializer()}
+        responses={200: OrderSerializer()},
+        tags=["08. Orders"]
     )
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, CanManageOrders])
     def update_status(self, request, pk=None):
-        """Update order status"""
+        """Update order status with validation and audit trail"""
         order = self.get_object()
         serializer = UpdateOrderStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        order.status = serializer.validated_data['status']
+        old_status = order.status
+        new_status = serializer.validated_data['status']
+        
+        if old_status == new_status:
+            return Response({'message': 'Order is already in this status'}, status=status.HTTP_200_OK)
+            
+        # Transition validation logic
+        # Example: delivered cannot go back to pending
+        if old_status == 'delivered' and new_status in ['pending', 'inprogress']:
+            return Response({'error': 'Cannot change status of a delivered order'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        order.status = new_status
         
         # Mark as completed if status is delivered
         if order.status == 'delivered' and not order.completed_at:
@@ -349,16 +985,26 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         order.save()
         
+        # Record in status history (Audit Trail)
+        OrderStatusHistory.objects.create(
+            order=order,
+            old_status=old_status,
+            new_status=new_status,
+            changed_by=request.user,
+            notes=request.data.get('notes', f"Status changed from {old_status} to {new_status}")
+        )
+        
         order_serializer = OrderSerializer(order)
         return Response({
-            'message': 'Order status updated',
+            'message': 'Order status updated successfully',
             'order': order_serializer.data
         })
     
     @swagger_auto_schema(
         operation_description="Update payment information (requires manage_orders permission)",
         request_body=UpdatePaymentSerializer,
-        responses={200: OrderSerializer()}
+        responses={200: OrderSerializer()},
+        tags=["08. Orders"]
     )
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, CanManageOrders])
     def update_payment(self, request, pk=None):
@@ -397,7 +1043,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                     'unpaid_amount': openapi.Schema(type=openapi.TYPE_NUMBER),
                 }
             )
-        )}
+        )},
+        tags=["08. Orders"]
     )
     @action(detail=False, methods=['get'])
     def statistics(self, request):
@@ -460,12 +1107,52 @@ class PaymentViewSet(viewsets.ModelViewSet):
     
     @swagger_auto_schema(
         operation_description="Get payment history",
+        manual_parameters=[
+            openapi.Parameter('status', openapi.IN_QUERY, description="Filter by payment status (pending, processing, completed, failed, cancelled, refunded)", type=openapi.TYPE_STRING),
+            openapi.Parameter('payment_method', openapi.IN_QUERY, description="Filter by payment method (jazzcash, bank_transfer, cash)", type=openapi.TYPE_STRING),
+            openapi.Parameter('from_date', openapi.IN_QUERY, description="Filter payments from date (YYYY-MM-DD)", type=openapi.TYPE_STRING, format=openapi.FORMAT_DATE),
+            openapi.Parameter('to_date', openapi.IN_QUERY, description="Filter payments to date (YYYY-MM-DD)", type=openapi.TYPE_STRING, format=openapi.FORMAT_DATE),
+            openapi.Parameter('order_id', openapi.IN_QUERY, description="Filter by order ID", type=openapi.TYPE_INTEGER),
+        ],
         responses={200: PaymentListSerializer(many=True)},
         tags=["07. Payments"]
     )
     def list(self, request, *args, **kwargs):
-        """List user's payments"""
-        return super().list(request, *args, **kwargs)
+        """List user's payments with optional filters"""
+        queryset = self.get_queryset()
+        
+        # Filter by status
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        # Filter by payment method
+        payment_method = request.query_params.get('payment_method')
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+        
+        # Filter by order
+        order_id = request.query_params.get('order_id')
+        if order_id:
+            queryset = queryset.filter(order_id=order_id)
+        
+        # Filter by date range
+        from_date = request.query_params.get('from_date')
+        if from_date:
+            queryset = queryset.filter(created_date__gte=from_date)
+        
+        to_date = request.query_params.get('to_date')
+        if to_date:
+            queryset = queryset.filter(created_date__lte=to_date)
+        
+        # Paginate and serialize
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
     @swagger_auto_schema(
         operation_description="Get payment details",

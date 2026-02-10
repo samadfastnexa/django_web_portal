@@ -211,14 +211,22 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
     """
     Collection vs Achievement using B4_COLLECTION_TARGET table.
     Hierarchy: Region (R3/R2/R1) -> Zone (R1) -> Territory (T)
+    Employee data comes from B4_EMP table joined through territory relationship
     """
     collection_tbl = '"B4_COLLECTION_TARGET"'
     oter_tbl = '"OTER"'
+    emp_tbl = '"B4_EMP"'
     
     # Build SELECT matching the working query structure with window functions
-    select_clause = (
-        'SELECT '
+    select_clause = 'SELECT '
+    
+    # Always include employee ID if emp_id is provided
+    if emp_id is not None:
+        select_clause += '    E.empID AS "EmployeeID", '
+    
+    select_clause += (
         '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+        '    COALESCE(R3."inactive", R2."inactive", R1."inactive") AS "inactive", '
         '    R1."descript" AS "Zone", '
         '    T."descript" AS "TerritoryName", '
         '    T."territryID" AS "TerritoryId", '
@@ -247,6 +255,17 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         'FROM ' + collection_tbl + ' c '
         'INNER JOIN ' + oter_tbl + ' T '
         '    ON T."territryID" = c.TerritoryId '
+    )
+    
+    # Add employee join if emp_id is provided
+    if emp_id is not None:
+        from_clause += (
+            'INNER JOIN ' + emp_tbl + ' E '
+            '    ON E.U_TID = T."territryID" '
+            '    AND E.empID = ? '
+        )
+    
+    from_clause += (
         'LEFT JOIN ' + oter_tbl + ' Z '
         '    ON Z."territryID" = T."parent" '
         'LEFT JOIN ' + oter_tbl + ' R1 '
@@ -259,6 +278,10 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
     
     where_clauses = []
     params = []
+    
+    # Add emp_id to params first if provided (for the JOIN condition)
+    if emp_id is not None:
+        params.append(emp_id)
     
     # Only include active territories
     where_clauses.append(' T."inactive" = ? ')
@@ -280,19 +303,26 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         # Handle both date (YYYY-MM-DD) and datetime (YYYY-MM-DD HH:MI:SS) formats
         start_fmt = 'YYYY-MM-DD HH24:MI:SS' if ' ' in start_date else 'YYYY-MM-DD'
         end_fmt = 'YYYY-MM-DD HH24:MI:SS.FF3' if '.' in end_date else ('YYYY-MM-DD HH24:MI:SS' if ' ' in end_date else 'YYYY-MM-DD')
-        where_clauses.append(f" c.\"F_REFDATE\" >= TO_TIMESTAMP(?, '{start_fmt}') AND c.\"F_REFDATE\" <= TO_TIMESTAMP(?, '{end_fmt}') ")
+        where_clauses.append(f" c.\"F_REFDATE\" BETWEEN TO_TIMESTAMP(?, '{start_fmt}') AND TO_TIMESTAMP(?, '{end_fmt}') ")
         params.extend([start_date.strip(), end_date.strip()])
         
     where_sql = ''
     if len(where_clauses) > 0:
         where_sql = ' WHERE ' + ' AND '.join(where_clauses)
         
-    group_by_fields = [
+    group_by_fields = []
+    
+    # Add employee ID to GROUP BY if provided
+    if emp_id is not None:
+        group_by_fields.append('E.empID')
+    
+    group_by_fields.extend([
         'COALESCE(R3."descript", R2."descript", R1."descript")',
+        'COALESCE(R3."inactive", R2."inactive", R1."inactive")',
         'R1."descript"',
         'T."territryID"',
         'T."descript"'
-    ]
+    ])
     
     if group_by_date:
         group_by_fields.append('c."F_REFDATE"')
@@ -354,19 +384,29 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
             
     return rows
 
-def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False) -> list:
+def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False, group_by_emp: bool = False) -> list:
     """
     Sales vs Achievement using B4_SALES_TARGET table.
     Hierarchy: Region (R3/R2/R1) → Zone (R1) → Territory (T)
     Includes GRAND TOTAL row via UNION ALL
+    Employee data comes from B4_EMP table joined through territory
     """
     sales_tbl = '"B4_SALES_TARGET"'
     oter_tbl = '"OTER"'
+    emp_tbl = '"B4_EMP"'
     
     # Build SELECT with window functions for Zone and Region totals
     select_clause = (
         'SELECT '
+    )
+    
+    # Always include employee ID if emp_id is provided
+    if emp_id is not None:
+        select_clause += '    E.empID AS "EmployeeID", '
+    
+    select_clause += (
         '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
+        '    COALESCE(R3."inactive", R2."inactive", R1."inactive") AS "inactive", '
         '    R1."descript" AS "Zone", '
         '    T."descript" AS "TerritoryName", '
         '    T."territryID" AS "TerritoryId", '
@@ -397,6 +437,17 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
         'FROM ' + sales_tbl + ' c '
         'INNER JOIN ' + oter_tbl + ' T '
         '    ON T."territryID" = c.TerritoryId '
+    )
+    
+    # Add employee join if emp_id is provided
+    if emp_id is not None:
+        from_clause += (
+            'INNER JOIN ' + emp_tbl + ' E '
+            '    ON E.U_TID = T."territryID" '
+            '    AND E.empID = ? '
+        )
+    
+    from_clause += (
         'LEFT JOIN ' + oter_tbl + ' Z '
         '    ON Z."territryID" = T."parent" '
         'LEFT JOIN ' + oter_tbl + ' R1 '
@@ -410,14 +461,13 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     where_clauses = []
     params = []
     
+    # Add emp_id to params first if provided (for the JOIN condition)
+    if emp_id is not None:
+        params.append(emp_id)
+    
     # Only include active territories
     where_clauses.append(' T."inactive" = ? ')
     params.append('N')
-    
-    # Employee filter (if provided and not ignored)
-    if emp_id is not None and not ignore_emp_filter:
-        where_clauses.append(' c.EmpId = ? ')
-        params.append(emp_id)
         
     if region and region.strip():
         where_clauses.append(' (R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ?) ')
@@ -435,19 +485,26 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
         # Handle both date (YYYY-MM-DD) and datetime (YYYY-MM-DD HH:MI:SS) formats
         start_fmt = 'YYYY-MM-DD HH24:MI:SS' if ' ' in start_date else 'YYYY-MM-DD'
         end_fmt = 'YYYY-MM-DD HH24:MI:SS.FF3' if '.' in end_date else ('YYYY-MM-DD HH24:MI:SS' if ' ' in end_date else 'YYYY-MM-DD')
-        where_clauses.append(f" c.\"F_REFDATE\" >= TO_TIMESTAMP(?, '{start_fmt}') AND c.\"F_REFDATE\" <= TO_TIMESTAMP(?, '{end_fmt}') ")
+        where_clauses.append(f" c.\"F_REFDATE\" BETWEEN TO_TIMESTAMP(?, '{start_fmt}') AND TO_TIMESTAMP(?, '{end_fmt}') ")
         params.extend([start_date.strip(), end_date.strip()])
         
     where_sql = ''
     if len(where_clauses) > 0:
         where_sql = ' WHERE ' + ' AND '.join(where_clauses)
         
-    group_by_fields = [
+    group_by_fields = []
+    
+    # Add employee ID to GROUP BY if provided
+    if emp_id is not None:
+        group_by_fields.append('E.empID')
+    
+    group_by_fields.extend([
         'COALESCE(R3."descript", R2."descript", R1."descript")',
+        'COALESCE(R3."inactive", R2."inactive", R1."inactive")',
         'R1."descript"',
         'T."territryID"',
         'T."descript"'
-    ]
+    ])
     
     if group_by_date:
         group_by_fields.append('c."F_REFDATE"')
@@ -455,9 +512,15 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     group_by_sql = ' GROUP BY ' + ', '.join(group_by_fields)
     
     # Build GRAND TOTAL query
-    grand_total_select = (
-        'SELECT '
+    grand_total_select = 'SELECT '
+    
+    # Add employee ID if provided
+    if emp_id is not None:
+        grand_total_select += f'    {emp_id} AS "EmployeeID", '
+    
+    grand_total_select += (
         '    \'GRAND TOTAL\' AS "Region", '
+        '    NULL AS "inactive", '
         '    NULL AS "Zone", '
         '    NULL AS "TerritoryName", '
         '    NULL AS "TerritoryId", '
@@ -482,23 +545,37 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
             '    2 AS sort_order '
         )
     
-    # Grand total FROM clause (simplified - only need to join T for inactive check)
+    # Grand total FROM clause - same joins as main query
     grand_total_from = (
         'FROM ' + sales_tbl + ' c '
         'INNER JOIN ' + oter_tbl + ' T '
         '    ON T."territryID" = c.TerritoryId '
     )
     
+    # Add employee join for grand total if emp_id is provided
+    if emp_id is not None:
+        grand_total_from += (
+            'INNER JOIN ' + emp_tbl + ' E '
+            '    ON E.U_TID = T."territryID" '
+            '    AND E.empID = ? '
+        )
+    
+    # Build the grand total GROUP BY clause
+    grand_total_group_by = ''
+    if group_by_date:
+        grand_total_group_by = ' GROUP BY c."F_REFDATE" '
+    
     # Combine with UNION ALL and ORDER BY
     full_sql = (
         select_clause + from_clause + where_sql + group_by_sql + ' '
         'UNION ALL ' +
         grand_total_select + grand_total_from + where_sql +
-        ((' GROUP BY c."F_REFDATE" ' if group_by_date else ' ')) +
-        'ORDER BY sort_order, 1, 3'
+        grand_total_group_by +
+        'ORDER BY sort_order, 2, 4'
     )
     
     print("Sales Territory Query:", full_sql)
+    print("Query Params:", params)
     
     # Params need to be doubled for UNION ALL (same params for both queries)
     all_params = tuple(params + params)
