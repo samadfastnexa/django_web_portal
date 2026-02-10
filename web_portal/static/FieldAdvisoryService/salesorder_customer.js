@@ -9,7 +9,7 @@
     var childSel = document.querySelector('select.sap-child-customer-lov');
     if(!childSel || !cardCode) return;
     var db = getSelectedDB();
-    var url = '/api/child_customers/?father_card=' + encodeURIComponent(cardCode);
+    var url = '/api/field/api/child_customers/?father_card=' + encodeURIComponent(cardCode);
     if(db){ url += '&database=' + encodeURIComponent(db); }
     fetchJSON(url).then(function(resp){
       var children = (resp && resp.children) ? resp.children : [];
