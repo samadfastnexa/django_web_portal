@@ -69,6 +69,7 @@ urlpatterns = [
     path('api/sap/health/', hana_health_api, name='hana_health_api'),
     path('api/sap/count-tables/', hana_count_tables_api, name='hana_count_tables_api'),
     path('api/sap/select-oitm/', select_oitm_api, name='select_oitm_api'),
+    # Product description endpoints moved to sap_integration/urls.py
     path('admin/', admin_site.urls),  # Use custom admin site
     
     # Swagger
