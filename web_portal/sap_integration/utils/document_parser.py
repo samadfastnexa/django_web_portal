@@ -282,33 +282,56 @@ def get_product_document_path(product_urdu_name, product_urdu_ext, database_name
     Args:
         product_urdu_name: Document filename (without extension)
         product_urdu_ext: Document file extension
-        database_name: Database name (4B-BIO_APP or 4B-ORANG_APP)
+        database_name: Database/schema name from Company model (e.g., 4B-BIO_APP, 4B-ORANG_APP, 4B-AGRI_LIVE)
     
     Returns:
         Full file path or None if not found
     """
     from django.conf import settings
+    import glob
     
-    # Determine folder based on database name
-    if '4B-BIO' in database_name.upper():
-        folder_name = '4B-BIO'
-    elif '4B-ORANG' in database_name.upper():
-        folder_name = '4B-ORANG'
-    else:
-        folder_name = '4B-ORANG'  # Default
-    
-    # Build file path
     media_root = settings.MEDIA_ROOT
-    file_path = os.path.join(media_root, 'product_images', folder_name, f'{product_urdu_name}.{product_urdu_ext}')
+    product_images_dir = os.path.join(media_root, 'product_images')
     
-    if os.path.exists(file_path):
-        return file_path
+    # Dynamically determine possible folders to search
+    possible_folders = []
     
-    # Try alternative extensions
-    base_path = os.path.join(media_root, 'product_images', folder_name, product_urdu_name)
-    for ext in ['docx', 'doc', 'DOCX', 'DOC']:
-        alt_path = f'{base_path}.{ext}'
-        if os.path.exists(alt_path):
-            return alt_path
+    if database_name:
+        # Extract folder name from database name by removing common suffixes
+        # Examples: 4B-BIO_APP -> 4B-BIO, 4B-ORANG_APP -> 4B-ORANG, 4B-AGRI_LIVE -> 4B-AGRI
+        folder_name = database_name.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
+        
+        # If extracted folder exists, prioritize it
+        folder_path = os.path.join(product_images_dir, folder_name)
+        if os.path.exists(folder_path) and os.path.isdir(folder_path):
+            possible_folders.append(folder_name)
+    
+    # Get all available folders in product_images directory dynamically
+    try:
+        all_folders = [d for d in os.listdir(product_images_dir) 
+                      if os.path.isdir(os.path.join(product_images_dir, d)) and not d.startswith('.')]
+        # Add any folders not already in the list
+        for folder in all_folders:
+            if folder not in possible_folders:
+                possible_folders.append(folder)
+    except Exception:
+        # Fallback: if we can't read directory, try common patterns
+        if not possible_folders:
+            possible_folders = ['4B-BIO', '4B-ORANG', '4B-AGRI']
+    
+    # Try each folder
+    for folder in possible_folders:
+        # Try with provided extension
+        file_path = os.path.join(product_images_dir, folder, f'{product_urdu_name}.{product_urdu_ext}')
+        
+        if os.path.exists(file_path):
+            return file_path
+        
+        # Try alternative extensions
+        base_path = os.path.join(product_images_dir, folder, product_urdu_name)
+        for ext in ['docx', 'doc', 'DOCX', 'DOC', 'pdf', 'PDF']:
+            alt_path = f'{base_path}.{ext}'
+            if os.path.exists(alt_path):
+                return alt_path
     
     return None

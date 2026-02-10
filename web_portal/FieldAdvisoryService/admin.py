@@ -258,22 +258,27 @@ def get_hana_connection(selected_db_key=None):
         from preferences.models import Setting
 
         # Resolve schema based on selected_db_key
-        # Priority: 1. Direct mapping from selected_db_key, 2. Database settings, 3. Fallback
+        # Priority: 1. Direct lookup from Company model, 2. Database settings, 3. Fallback
         schema = None
         
-        # FIRST: Try direct mapping from selected_db_key (most reliable)
+        # FIRST: Try to find schema from Company model (most reliable and dynamic)
         if selected_db_key:
-            key_upper = str(selected_db_key).strip().upper()
-            print(f"[HANA] selected_db_key: {selected_db_key} (upper: {key_upper})")
-            
-            if '4B-ORANG' in key_upper or 'ORANG' in key_upper:
-                schema = '4B-ORANG_APP'
-                print(f"[HANA] Direct mapping: {selected_db_key} -> {schema}")
-            elif '4B-BIO' in key_upper or 'BIO' in key_upper:
-                schema = '4B-BIO_APP'
-                print(f"[HANA] Direct mapping: {selected_db_key} -> {schema}")
+            try:
+                # Try to find company by Company_name (display name) first
+                company = Company.objects.filter(Company_name=selected_db_key, is_active=True).first()
+                
+                # If not found, try by schema name field
+                if not company:
+                    company = Company.objects.filter(name=selected_db_key, is_active=True).first()
+                
+                # If found, use its schema name
+                if company:
+                    schema = company.name
+                    print(f"[HANA] Found company from model: {company.Company_name} -> schema: {schema}")
+            except Exception as e:
+                print(f"[HANA] Error looking up company from model: {e}")
         
-        # SECOND: Try database settings if no direct match
+        # SECOND: Try database settings if no schema found yet
         if not schema:
             try:
                 db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
@@ -364,6 +369,36 @@ def get_hana_connection(selected_db_key=None):
         import traceback
         traceback.print_exc()
         return None
+
+
+class _CompanySessionResolver:
+    def _get_selected_company(self, request):
+        """Get the selected company dynamically from session without hardcoded mappings."""
+        try:
+            db_key = request.session.get('selected_db') or request.GET.get('company_db')
+            if not db_key:
+                # Fallback to first active company if no selection
+                return Company.objects.filter(is_active=True).first()
+            
+            # Try to find company by Company_name (display name) first
+            comp = Company.objects.filter(Company_name=db_key, is_active=True).first()
+            
+            # If not found, try by schema name field
+            if not comp:
+                comp = Company.objects.filter(name=db_key, is_active=True).first()
+            
+            # If still not found, try partial match on Company_name
+            if not comp:
+                comp = Company.objects.filter(Company_name__icontains=db_key, is_active=True).first()
+            
+            # If still not found, try partial match on schema name
+            if not comp:
+                comp = Company.objects.filter(name__icontains=db_key, is_active=True).first()
+            
+            return comp
+        except Exception as e:
+            print(f"Error getting selected company: {e}")
+            return None
 
 
 class SalesOrderForm(forms.ModelForm):
@@ -763,7 +798,7 @@ class SalesOrderLineInline(admin.TabularInline):
 
 
 @admin.register(SalesOrder, site=admin_site)
-class SalesOrderAdmin(admin.ModelAdmin):
+class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
     form = SalesOrderForm
     list_display = ('id', 'portal_order_id', 'card_code', 'card_name', 'doc_date', 'status', 'is_posted_to_sap', 'sap_doc_num', 'created_at')
     list_filter = ('status', 'is_posted_to_sap', 'doc_date', 'created_at')
@@ -774,7 +809,7 @@ class SalesOrderAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Database Selection', {
             'fields': ('current_database',),
-            'description': 'Current active database. Use the global DB selector at the top-right to switch between companies (4B-BIO / 4B-ORANG).'
+            'description': 'Current active database. Use the global DB selector at the top-right to switch between companies.'
         }),
         ('Basic Information', {
             'fields': ('portal_order_id', 'staff', 'dealer', 'status', 'created_at')
@@ -821,6 +856,28 @@ class SalesOrderAdmin(admin.ModelAdmin):
             'FieldAdvisoryService/salesorder_customer.js',
             'FieldAdvisoryService/salesorder_policy.js',
         )
+    
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """Filter dealers based on selected company database."""
+        if db_field.name == 'dealer':
+            # Get the selected company from session
+            selected_company = self._get_selected_company(request)
+            
+            if selected_company:
+                # Filter dealers by the selected company
+                kwargs['queryset'] = Dealer.objects.filter(
+                    company=selected_company,
+                    is_active=True
+                ).select_related('user', 'company')
+                print(f"[SalesOrderAdmin] Filtering dealers for company: {selected_company.Company_name} (schema: {selected_company.name})")
+            else:
+                # If no company selected, show all active dealers
+                kwargs['queryset'] = Dealer.objects.filter(
+                    is_active=True
+                ).select_related('user', 'company')
+                print("[SalesOrderAdmin] No company selected, showing all dealers")
+        
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
     
     def get_form(self, request, obj=None, **kwargs):
         base_form = super().get_form(request, obj, **kwargs)
@@ -875,19 +932,31 @@ class SalesOrderAdmin(admin.ModelAdmin):
         
         # Get selected database from various sources
         request = getattr(self, '_current_request', None)
-        selected_db = '4B-BIO'  # Default
+        selected_db = None
         
         if request:
             # Try session first
             if hasattr(request, 'session'):
-                selected_db = request.session.get('selected_db', '4B-BIO')
+                selected_db = request.session.get('selected_db')
             # Try GET param
-            if request.GET.get('company_db'):
+            if not selected_db and request.GET.get('company_db'):
                 selected_db = request.GET.get('company_db')
         
-        # Get display name from settings
-        db_options = {'4B-BIO': '4B-BIO (Bio Company)', '4B-ORANG': '4B-ORANG (Orang Company)'}
-        display_name = db_options.get(selected_db, selected_db)
+        # Get display name from Company model dynamically
+        display_name = selected_db or 'No database selected'
+        
+        if selected_db:
+            try:
+                # Try to get the company display name
+                company = Company.objects.filter(Company_name=selected_db, is_active=True).first()
+                if not company:
+                    company = Company.objects.filter(name=selected_db, is_active=True).first()
+                
+                if company:
+                    display_name = f"{company.Company_name} ({company.name})"
+            except Exception as e:
+                # If lookup fails, just use the selected_db value
+                display_name = selected_db
         
         return format_html(
             '<div style=\"padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); '
@@ -1554,15 +1623,6 @@ class CompanyAdmin(admin.ModelAdmin):
     )
     
     readonly_fields = ('created_at', 'updated_at')
-class _CompanySessionResolver:
-    def _get_selected_company(self, request):
-        try:
-            db_key = request.session.get('selected_db', '4B-BIO')
-            schema = '4B-BIO_APP' if db_key == '4B-BIO' else ('4B-ORANG_APP' if db_key == '4B-ORANG' else '4B-BIO_APP')
-            comp = Company.objects.filter(name=schema).first() or Company.objects.filter(Company_name=schema).first()
-            return comp
-        except Exception:
-            return None
 
 @admin.register(Region, site=admin_site)
 class RegionAdmin(admin.ModelAdmin, _CompanySessionResolver):

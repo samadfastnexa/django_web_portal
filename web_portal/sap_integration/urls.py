@@ -36,6 +36,9 @@ from .views import (
     product_catalog_list_view,
     product_document_view,
     product_document_api,
+    # Product Description APIs
+    get_product_description_api,
+    download_product_description_api,
 )
 
 urlpatterns = [
@@ -85,4 +88,8 @@ urlpatterns = [
     
     # Product Document API (Swagger)
     path('product-document/<str:item_code>/', product_document_api, name='product_document_api'),
+    
+    # Product Description APIs
+    path('product-description/', get_product_description_api, name='get_product_description_api'),
+    path('product-description-download/', download_product_description_api, name='download_product_description_api'),
 ]

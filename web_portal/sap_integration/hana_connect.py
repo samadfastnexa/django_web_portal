@@ -1045,7 +1045,7 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
         'LEFT JOIN ATC1 PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."Line" = 0 '
         'LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."Line" = 1 '
-        'WHERE T0."Series" = \'72\' '
+        'WHERE T0."Series" = \'77\' '
         'AND T0."validFor" = \'Y\' '
     )
     params = []
@@ -1083,16 +1083,12 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     # Execute query
     results = _fetch_all(db, sql, tuple(params) if params else None)
     
-    # Extract database name from schema name string
-    # Database names are like: 4B-BIO_APP, 4B-ORANG_APP
-    # We need to extract the prefix (4B-BIO or 4B-ORANG) for folder names
-    db_name = schema_name.upper() if schema_name else ''
-    if '4B-BIO' in db_name:
-        folder_name = '4B-BIO'
-    elif '4B-ORANG' in db_name:
-        folder_name = '4B-ORANG'
-    else:
-        folder_name = 'default'
+    # Extract folder name from schema/database name dynamically
+    # Examples: 4B-BIO_APP -> 4B-BIO, 4B-ORANG_APP -> 4B-ORANG, 4B-AGRI_LIVE -> 4B-AGRI
+    folder_name = 'default'
+    if schema_name:
+        # Remove common suffixes to get folder name
+        folder_name = schema_name.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
     
     # Add image URLs to each product using actual filenames from SAP attachments
     # Images stored in media/product_images/{folder_name}/{FileName}.{FileExt}
@@ -1983,9 +1979,9 @@ def item_lov_by_policy(db, doc_entry: str) -> list:
     return _fetch_all(db, sql, (doc_entry,))
 
 def unit_price_by_policy(db, doc_entry: str, item_code: str) -> dict:
-    """Get unit price (U_frp) by policy DocEntry and ItemCode"""
+    """Get unit price (U_np) by policy DocEntry and ItemCode"""
     sql = (
-        'SELECT T1."U_frp" '
+        'SELECT T1."U_np" '
         'FROM "@PL1" T0 '
         'INNER JOIN "@PLR4" T1 ON T0."DocEntry" = T1."DocEntry" '
         'WHERE T0."DocEntry" = ? '

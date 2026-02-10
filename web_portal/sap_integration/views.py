@@ -16,11 +16,12 @@ from pathlib import Path
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse
+from django.http import JsonResponse, FileResponse, HttpResponse
 import os
 import json
 import re
 import logging
+import mimetypes
 from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, sales_vs_achievement_territory, unit_price_by_policy
 from django.conf import settings
 from pathlib import Path
@@ -66,7 +67,7 @@ def get_hana_schema_from_request(request):
             except Company.DoesNotExist:
                 pass
 
-        # If still not found, map common keys like '4B-ORANG'/'4B-BIO' to active companies
+        # If still not found, map common keys like '4B-ORANG'/'4B-BIO'/'4B-AGRI' to active companies
         if 'ORANG' in token:
             company = Company.objects.filter(is_active=True, Company_name__icontains='ORANG').first()
             if company:
@@ -76,6 +77,11 @@ def get_hana_schema_from_request(request):
             company = Company.objects.filter(is_active=True, Company_name__icontains='BIO').first()
             if company:
                 logger.info(f"[DB RESOLVER] Fallback mapped to BIO company: {company.Company_name}")
+                return company.Company_name
+        if 'AGRI' in token:
+            company = Company.objects.filter(is_active=True, Company_name__icontains='AGRI').first()
+            if company:
+                logger.info(f"[DB RESOLVER] Fallback mapped to AGRI company: {company.Company_name}")
                 return company.Company_name
 
     session_db = request.session.get('selected_db', '').strip()
@@ -93,7 +99,16 @@ def get_hana_schema_from_request(request):
     except Exception:
         pass
 
-    return '4B-BIO_APP'
+    # Only use Company model - no environment variable fallback
+    try:
+        company = Company.objects.filter(is_active=True).first()
+        if company:
+            return company.Company_name
+    except Exception:
+        pass
+    
+    logger.warning("[DB RESOLVER] No active company found in Company model. Database operations may fail.")
+    return None
 
 
 def get_valid_company_schemas():
@@ -104,7 +119,10 @@ def get_valid_company_schemas():
             return schemas
     except Exception:
         pass
-    return ['4B-BIO_APP', '4B-ORANG_APP']
+    
+    # Return empty list if no companies found - no hardcoded defaults
+    logger.warning("[VALID_SCHEMAS] No active companies found in database")
+    return []
 
 @staff_member_required
 def sales_order_admin(request):
@@ -234,7 +252,16 @@ def hana_connect_admin(request):
     selected_db_key = selected_db_key.strip().strip('"').strip("'")
     
     # Get the schema based on selected database
-    selected_schema = db_options.get(selected_db_key, os.environ.get('HANA_SCHEMA') or '')
+    selected_schema = db_options.get(selected_db_key, '')
+    
+    # If not found in db_options, use the selected_db_key directly as the schema
+    # This allows using schema names like 4B-AGRI_LIVE even if not in Company model
+    if not selected_schema and selected_db_key:
+        selected_schema = selected_db_key
+    
+    # Final fallback to environment variable
+    if not selected_schema:
+        selected_schema = os.environ.get('HANA_SCHEMA', '')
     
     # Debug logging
     print(f"DEBUG hana_connect_admin:")
@@ -1880,7 +1907,7 @@ def hana_connect_admin(request):
                             else:
                                 price_row = unit_price_by_policy(conn, doc_entry, item_code)
                                 if price_row:
-                                    price_val = price_row.get('U_frp') if isinstance(price_row, dict) else None
+                                    price_val = price_row.get('U_np') if isinstance(price_row, dict) else None
                                     try:
                                         price_val = float(price_val) if price_val is not None else price_val
                                     except Exception:
@@ -2070,7 +2097,8 @@ def hana_connect_admin(request):
                 temp_conn = dbapi.connect(**kwargs)
                 if cfg['schema']:
                     cur = temp_conn.cursor()
-                    cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                    schema_name = cfg['schema']
+                    cur.execute(f'SET SCHEMA "{schema_name}"')
                     cur.close()
                 customer_options = customer_lov(temp_conn)
                 temp_conn.close()
@@ -2093,7 +2121,8 @@ def hana_connect_admin(request):
                 temp_conn = dbapi.connect(**kwargs)
                 if cfg['schema']:
                     cur = temp_conn.cursor()
-                    cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                    schema_name = cfg['schema']
+                    cur.execute(f'SET SCHEMA "{schema_name}"')
                     cur.close()
                 item_options = item_lov(temp_conn, search=None)
                 temp_conn.close()
@@ -2116,7 +2145,8 @@ def hana_connect_admin(request):
                 temp_conn = dbapi.connect(**kwargs)
                 if cfg['schema']:
                     cur = temp_conn.cursor()
-                    cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                    schema_name = cfg['schema']
+                    cur.execute(f'SET SCHEMA "{schema_name}"')
                     cur.close()
                 project_options = projects_lov(temp_conn, search=None)
                 temp_conn.close()
@@ -4152,21 +4182,13 @@ def sales_vs_achievement_by_emp_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    db_param = (request.query_params.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
-    else:
-        cfg['schema'] = '4B-BIO_APP'
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
+    
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
     territory = (request.query_params.get('territory') or '').strip()
@@ -4350,21 +4372,13 @@ def territory_summary_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    db_param = (request.query_params.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
-    else:
-        cfg['schema'] = '4B-BIO_APP'
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
+    
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
     territory = (request.query_params.get('territory') or '').strip()
@@ -4636,30 +4650,14 @@ def get_policy_customer_balance_data(request, card_code=None):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    db_param = (getattr(request, 'query_params', {}).get('database') if hasattr(request, 'query_params') else None) or request.GET.get('database', '')
-    db_param = (db_param or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
-    else:
-        try:
-            from preferences.models import Setting
-            s = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-            if s and s.value:
-                cfg['schema'] = str(s.value).strip()
-            else:
-                cfg['schema'] = os.environ.get('SAP_COMPANY_DB') or cfg['schema'] or '4B-BIO_APP'
-        except Exception:
-            cfg['schema'] = os.environ.get('SAP_COMPANY_DB') or cfg['schema'] or '4B-BIO_APP'
+    # Use shared helper to resolve schema from Company model
+    if not cfg['schema']:
+        cfg['schema'] = get_hana_schema_from_request(request)
+    
     try:
         from hdbcli import dbapi
         pwd = os.environ.get('HANA_PASSWORD','')
@@ -5001,7 +4999,8 @@ def select_oitm_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             cur = conn.cursor()
-            sql = f'SELECT * FROM "{cfg["schema"]}"."OITM"' if cfg['schema'] else 'SELECT * FROM "OITM"'
+            sch = cfg['schema']
+            sql = f'SELECT * FROM "{sch}"."OITM"' if cfg['schema'] else 'SELECT * FROM "OITM"'
             cur.execute(sql)
             rows = cur.fetchmany(10)
             cols = [d[0] for d in cur.description] if cur.description else []
@@ -5023,6 +5022,666 @@ def select_oitm_api(request):
                 pass
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(tags=['SAP - Products'], 
+    method='get',
+    operation_summary="Get Product Description",
+    operation_description="""Retrieve product description (FreeText field) from SAP HANA for a specific ItemCode.
+    
+This endpoint queries the OITM (Items Master) and ATC1 (Attachments) tables to retrieve:
+- Product ItemCode and ItemName
+- Product description from the FreeText field (searches all attachment lines)
+- Image files (PNG, JPG)
+- Urdu document files (DOCX, PDF)
+- Complete list of all attachments
+
+**Note**: Products can have multiple attachment lines in ATC1. This API searches all lines to find the FreeText description.
+
+**Use Case**: Display detailed product information and descriptions in mobile/web applications.
+
+**Example Request**: 
+```
+GET /api/sap/product-description/?item_code=FG00055&database=4B-AGRI_LIVE
+```
+
+**SQL Query**:
+```sql
+SELECT
+    T0."ItemCode",
+    T0."ItemName",
+    T0."AtcEntry",
+    A1."Line",
+    A1."FreeText",     -- Product description (may be on different lines)
+    A1."FileName",
+    A1."FileExt",
+    A1."U_IMG_C"       -- Attachment category
+FROM OITM T0
+LEFT JOIN ATC1 A1 ON A1."AbsEntry" = T0."AtcEntry"
+WHERE T0."ItemCode" = ?
+ORDER BY A1."Line"
+```
+""",
+    manual_parameters=[
+        openapi.Parameter(
+            'item_code', 
+            openapi.IN_QUERY, 
+            description="Product Item Code (e.g., FG00055, FG00123). **Required**.", 
+            type=openapi.TYPE_STRING, 
+            required=True
+        ),
+        openapi.Parameter(
+            'database', 
+            openapi.IN_QUERY, 
+            description="SAP HANA database/schema name (e.g., 4B-BIO_APP, 4B-ORANG_APP). If not provided, uses default from session or settings.", 
+            type=openapi.TYPE_STRING, 
+            required=False
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="Product description retrieved successfully",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "data": {
+                        "item_code": "FG00055",
+                        "item_name": "Black Gold 5G - 7-Kgs.",
+                        "description": "بلیک گولڈایک مختلف دانے دار زہر ہے، جو بوررز پر بہترین اثر دکھاتا ہے۔",
+                        "atc_entry": 974,
+                        "image_file": "Black-Gold",
+                        "image_ext": "png",
+                        "urdu_file": "بلیک گولڈ 5",
+                        "urdu_ext": "docx",
+                        "attachments": [
+                            {
+                                "line": 1,
+                                "file_name": "Black-Gold",
+                                "file_ext": "png",
+                                "category": "Product Image",
+                                "has_description": False
+                            },
+                            {
+                                "line": 2,
+                                "file_name": "بلیک گولڈ 5",
+                                "file_ext": "docx",
+                                "category": "Product Description Urdu",
+                                "has_description": True
+                            }
+                        ]
+                    }
+                }
+            }
+        ),
+        400: openapi.Response(
+            description="Bad request - missing required parameters",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "item_code parameter is required"
+                }
+            }
+        ),
+        404: openapi.Response(
+            description="Product not found",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "Product with ItemCode FG00055 not found"
+                }
+            }
+        ),
+        500: openapi.Response(
+            description="Server error - database connection or query failed",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "Database connection failed: [error details]"
+                }
+            }
+        )
+    }
+)
+@api_view(['GET'])
+def get_product_description_api(request):
+    """
+    Get product description from SAP HANA
+    
+    Retrieves product information including the FreeText field which contains
+    the detailed product description. Queries OITM and ATC1 tables.
+    
+    Query Parameters:
+        - item_code (required): Product ItemCode
+        - database (optional): SAP HANA schema name
+    
+    Returns:
+        JSON response with product information and description
+    """
+    try:
+        # Load environment variables
+        try:
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+        except Exception:
+            pass
+        
+        # Get parameters from request
+        item_code = request.GET.get('item_code', '').strip()
+        
+        # Validate item_code parameter
+        if not item_code:
+            return Response({
+                'success': False,
+                'error': 'item_code parameter is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Resolve database/schema dynamically from Company table
+        database = get_hana_schema_from_request(request)
+        
+        logger.info(f"Fetching product description for ItemCode: {item_code}, Database: {database}")
+        
+        # Get SAP HANA connection configuration
+        cfg = {
+            'host': os.environ.get('HANA_HOST', ''),
+            'port': os.environ.get('HANA_PORT', '30015'),
+            'user': os.environ.get('HANA_USER', ''),
+            'encrypt': os.environ.get('HANA_ENCRYPT', ''),
+            'ssl_validate': os.environ.get('HANA_SSL_VALIDATE', ''),
+            'schema': database
+        }
+        
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        
+        # Validate configuration
+        if not all([cfg['host'], cfg['port'], cfg['user'], pwd]):
+            logger.error("SAP HANA configuration incomplete")
+            return Response({
+                'success': False,
+                'error': 'SAP HANA configuration is incomplete'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Connect to SAP HANA
+        from hdbcli import dbapi
+        
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'],
+            'password': pwd
+        }
+        
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+        
+        try:
+            conn = dbapi.connect(**kwargs)
+        except Exception as e:
+            logger.error(f"Failed to connect to SAP HANA: {e}")
+            return Response({
+                'success': False,
+                'error': f'Database connection failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        try:
+            # Set schema
+            cur = conn.cursor()
+            if cfg['schema']:
+                # Quote schema name properly (schema names can contain hyphens in HANA)
+                from sap_integration.hana_connect import quote_ident
+                schema_name = cfg['schema']
+                set_schema_sql = f'SET SCHEMA {quote_ident(schema_name)}'
+                cur.execute(set_schema_sql)
+            
+            # Query product description
+            
+            # First, try to get the description from any ATC1 line that has FreeText
+            sql = """
+            SELECT
+                T0."ItemCode",
+                T0."ItemName",
+                T0."AtcEntry",
+                A1."Line",
+                A1."FreeText",
+                A1."FileName",
+                A1."FileExt",
+                A1."U_IMG_C"
+            FROM OITM T0
+            LEFT JOIN ATC1 A1
+                ON A1."AbsEntry" = T0."AtcEntry"
+            WHERE
+                T0."ItemCode" = ?
+            ORDER BY A1."Line"
+            """
+            
+            cur.execute(sql, (item_code,))
+            rows = cur.fetchall()
+            
+            if not rows or not rows[0][0]:
+                logger.warning(f"Product not found: {item_code}")
+                return Response({
+                    'success': False,
+                    'error': f'Product with ItemCode {item_code} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Extract basic product info from first row
+            item_code_result = rows[0][0]
+            item_name = rows[0][1]
+            atc_entry = rows[0][2]
+            
+            # Look through all attachment lines to find FreeText, images, etc.
+            description = None
+            image_file = None
+            image_ext = None
+            urdu_file = None
+            urdu_ext = None
+            all_attachments = []
+            
+            for row in rows:
+                line_num = row[3]
+                free_text = row[4]
+                file_name = row[5]
+                file_ext = row[6]
+                img_category = row[7] if len(row) > 7 else None
+                
+                # Collect all attachment info
+                if file_name and file_ext:
+                    attachment_info = {
+                        'line': line_num,
+                        'file_name': file_name,
+                        'file_ext': file_ext,
+                        'category': img_category,
+                        'has_description': bool(free_text)
+                    }
+                    all_attachments.append(attachment_info)
+                
+                # Get the first FreeText we find (description)
+                if free_text and not description:
+                    description = free_text
+                
+                # Try to identify image and Urdu files by category or pattern
+                if img_category:
+                    if 'image' in img_category.lower() and not image_file:
+                        image_file = file_name
+                        image_ext = file_ext
+                    elif 'urdu' in img_category.lower() and not urdu_file:
+                        urdu_file = file_name
+                        urdu_ext = file_ext
+                elif file_ext in ['jpg', 'jpeg', 'png', 'gif'] and not image_file:
+                    # If no category, try to guess by extension
+                    image_file = file_name
+                    image_ext = file_ext
+                elif file_ext in ['doc', 'docx', 'pdf'] and not urdu_file:
+                    urdu_file = file_name
+                    urdu_ext = file_ext
+            
+            result = {
+                'item_code': item_code_result,
+                'item_name': item_name,
+                'description': description,  # FreeText - Product Description
+                'atc_entry': atc_entry,
+                'image_file': image_file,
+                'image_ext': image_ext,
+                'urdu_file': urdu_file,
+                'urdu_ext': urdu_ext,
+                'attachments': all_attachments  # All attachment details
+            }
+            
+            logger.info(f"Product found: {item_code}, Description: {'Yes' if description else 'No'}")
+            return Response({
+                'success': True,
+                'data': result
+            }, status=status.HTTP_200_OK)
+                
+        finally:
+            try:
+                cur.close()
+                conn.close()
+            except Exception:
+                pass
+            
+    except Exception as e:
+        logger.error(f"Error in get_product_description_api: {e}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(
+    tags=['SAP - Products'], 
+    method='get',
+    operation_summary="Download Product Description Document",
+    operation_description="""Download the product description document file (DOCX/PDF) for a specific ItemCode.
+
+This endpoint:
+1. Queries SAP HANA to find the product's Urdu description document
+2. Locates the file in the media/product_images directory
+3. Serves the file for download if it exists
+4. Returns JSON error if the file is not found
+
+**File Location**: `media/product_images/{company_folder}/{filename}.{extension}`
+
+**Supported Formats**: DOCX, DOC, PDF
+
+**Use Case**: Allow users to download detailed product documentation in Urdu or other languages.
+
+**Note**: This endpoint returns a binary file for download, not JSON.
+
+**Example Request**: 
+```
+GET /api/sap/product-description-download/?item_code=FG00055&database=4B-AGRI_LIVE
+```
+
+**Success Response**: Binary file download (DOCX/PDF)
+
+**Error Response**: JSON with error details
+""",
+    manual_parameters=[
+        openapi.Parameter(
+            'item_code', 
+            openapi.IN_QUERY, 
+            description='Product Item Code (e.g., FG00055). **Required**.', 
+            type=openapi.TYPE_STRING, 
+            required=True
+        ),
+        openapi.Parameter(
+            'database', 
+            openapi.IN_QUERY, 
+            description='SAP HANA database/schema name (e.g., 4B-AGRI_LIVE, 4B-ORANG_APP)', 
+            type=openapi.TYPE_STRING, 
+            required=False
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="File download successful - Returns binary file (DOCX/DOC/PDF)",
+            schema=openapi.Schema(
+                type=openapi.TYPE_FILE,
+                format='binary'
+            )
+        ),
+        404: openapi.Response(
+            description="Product or file not found",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN, example=False),
+                    'error': openapi.Schema(type=openapi.TYPE_STRING, example='File not found: بلیک گولڈ 5.docx'),
+                    'file_name': openapi.Schema(type=openapi.TYPE_STRING, example='بلیک گولڈ 5'),
+                    'file_ext': openapi.Schema(type=openapi.TYPE_STRING, example='docx'),
+                    'item_name': openapi.Schema(type=openapi.TYPE_STRING, example='Black Gold 5G - 7-Kgs.'),
+                }
+            )
+        ),
+        500: openapi.Response(
+            description="Server error",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN, example=False),
+                    'error': openapi.Schema(type=openapi.TYPE_STRING, example='Database connection failed'),
+                }
+            )
+        )
+    },
+    produces=['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/pdf', 'application/msword', 'application/json']
+)
+@api_view(['GET'])
+def download_product_description_api(request):
+    """
+    Download product description document file
+    
+    Query Parameters:
+        - item_code (required): Product ItemCode
+        - database (optional): SAP HANA schema name
+    
+    Returns:
+        File download response or JSON error
+    """
+    try:
+        # Load environment variables
+        try:
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+        except Exception:
+            pass
+        
+        # Get parameters from request
+        item_code = request.GET.get('item_code', '').strip()
+        
+        # Validate item_code parameter
+        if not item_code:
+            return JsonResponse({
+                'success': False,
+                'error': 'item_code parameter is required'
+            }, status=400)
+        
+        # Resolve database/schema dynamically from Company table
+        database = get_hana_schema_from_request(request)
+        
+        logger.info(f"Downloading product description for ItemCode: {item_code}, Database: {database}")
+        
+        # Get SAP HANA connection configuration
+        cfg = {
+            'host': os.environ.get('HANA_HOST', ''),
+            'port': os.environ.get('HANA_PORT', '30015'),
+            'user': os.environ.get('HANA_USER', ''),
+            'encrypt': os.environ.get('HANA_ENCRYPT', ''),
+            'ssl_validate': os.environ.get('HANA_SSL_VALIDATE', ''),
+            'schema': database
+        }
+        
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        
+        # Validate configuration
+        if not all([cfg['host'], cfg['port'], cfg['user'], pwd]):
+            logger.error("SAP HANA configuration incomplete")
+            return JsonResponse({
+                'success': False,
+                'error': 'SAP HANA configuration is incomplete'
+            }, status=500)
+        
+        # Connect to SAP HANA
+        from hdbcli import dbapi
+        
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'],
+            'password': pwd
+        }
+        
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+        
+        try:
+            conn = dbapi.connect(**kwargs)
+        except Exception as e:
+            logger.error(f"Failed to connect to SAP HANA: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Database connection failed: {str(e)}'
+            }, status=500)
+        
+        try:
+            # Set schema
+            cur = conn.cursor()
+            if cfg['schema']:
+                # Quote schema name properly (schema names can contain hyphens in HANA)
+                from sap_integration.hana_connect import quote_ident
+                schema_name = cfg['schema']
+                set_schema_sql = f'SET SCHEMA {quote_ident(schema_name)}'
+                cur.execute(set_schema_sql)
+            
+            # Query product attachment information
+            sql = """
+            SELECT
+                T0."ItemCode",
+                T0."ItemName",
+                A1."Line",
+                A1."FreeText",
+                A1."FileName",
+                A1."FileExt",
+                A1."U_IMG_C"
+            FROM OITM T0
+            LEFT JOIN ATC1 A1
+                ON A1."AbsEntry" = T0."AtcEntry"
+            WHERE
+                T0."ItemCode" = ?
+            ORDER BY A1."Line"
+            """
+            
+            cur.execute(sql, (item_code,))
+            rows = cur.fetchall()
+            
+            if not rows or not rows[0][0]:
+                logger.warning(f"Product not found: {item_code}")
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Product with ItemCode {item_code} not found'
+                }, status=404)
+            
+            # Look for the description document file (DOCX, DOC, PDF)
+            doc_file = None
+            doc_ext = None
+            item_name = rows[0][1]
+            
+            for row in rows:
+                file_name = row[4]
+                file_ext = row[5]
+                img_category = row[6] if len(row) > 6 else None
+                free_text = row[3]
+                
+                # Look for document files with FreeText (description)
+                if file_ext and file_ext.lower() in ['doc', 'docx', 'pdf']:
+                    # Prefer files with FreeText content
+                    if free_text and not doc_file:
+                        doc_file = file_name
+                        doc_ext = file_ext
+                    # Or files marked as description
+                    elif img_category and 'description' in img_category.lower() and not doc_file:
+                        doc_file = file_name
+                        doc_ext = file_ext
+                    # Or any document file as fallback
+                    elif not doc_file:
+                        doc_file = file_name
+                        doc_ext = file_ext
+            
+            if not doc_file or not doc_ext:
+                logger.warning(f"No description document found for product: {item_code}")
+                return JsonResponse({
+                    'success': False,
+                    'error': f'No description document found for product {item_code}. Product may only have images.',
+                    'item_name': item_name
+                }, status=404)
+            
+            # Dynamically determine folder name from database schema
+            # Examples: 4B-BIO_APP -> 4B-BIO, 4B-ORANG_APP -> 4B-ORANG, 4B-AGRI_LIVE -> 4B-AGRI
+            possible_folders = []
+            
+            if database:
+                # Extract folder name by removing common suffixes
+                folder_name = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
+                folder_path = os.path.join(settings.MEDIA_ROOT, 'product_images', folder_name)
+                
+                # If extracted folder exists, prioritize it
+                if os.path.exists(folder_path) and os.path.isdir(folder_path):
+                    possible_folders.append(folder_name)
+            
+            # Get all available folders in product_images directory dynamically
+            product_images_dir = os.path.join(settings.MEDIA_ROOT, 'product_images')
+            try:
+                all_folders = [d for d in os.listdir(product_images_dir) 
+                              if os.path.isdir(os.path.join(product_images_dir, d)) and not d.startswith('.')]
+                # Add any folders not already in the list
+                for folder in all_folders:
+                    if folder not in possible_folders:
+                        possible_folders.append(folder)
+            except Exception:
+                # Fallback: if we can't read directory, try common patterns
+                if not possible_folders:
+                    possible_folders = ['4B-BIO', '4B-ORANG', '4B-AGRI']
+            
+            # Try to find the file in possible folders
+            file_name_with_ext = f"{doc_file}.{doc_ext}"
+            file_path = None
+            folder_name_used = None
+            
+            for folder in possible_folders:
+                test_path = os.path.join(settings.MEDIA_ROOT, 'product_images', folder, file_name_with_ext)
+                logger.info(f"Checking path: {test_path}")
+                if os.path.exists(test_path):
+                    file_path = test_path
+                    folder_name_used = folder
+                    break
+            
+            if not file_path:
+                # File not found in any folder
+                logger.error(f"File not found in any folder: {file_name_with_ext}")
+                searched_paths = [os.path.join(settings.MEDIA_ROOT, 'product_images', f, file_name_with_ext) for f in possible_folders]
+                return JsonResponse({
+                    'success': False,
+                    'error': f'File not found: {file_name_with_ext}',
+                    'file_name': doc_file,
+                    'file_ext': doc_ext,
+                    'searched_folders': possible_folders,
+                    'searched_paths': searched_paths,
+                    'item_name': item_name,
+                    'note': 'The file may not have been uploaded to the media/product_images folder yet.'
+                }, status=404)
+            
+            # Determine content type
+            content_type, _ = mimetypes.guess_type(file_path)
+            if not content_type:
+                # Default content types for common formats
+                ext_lower = doc_ext.lower()
+                if ext_lower == 'docx':
+                    content_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                elif ext_lower == 'doc':
+                    content_type = 'application/msword'
+                elif ext_lower == 'pdf':
+                    content_type = 'application/pdf'
+                else:
+                    content_type = 'application/octet-stream'
+            
+            # Open and serve the file
+            try:
+                file_handle = open(file_path, 'rb')
+                response = FileResponse(file_handle, content_type=content_type)
+                
+                # Set download filename (sanitize for ASCII)
+                safe_filename = f"product_{item_code}_description.{doc_ext}"
+                response['Content-Disposition'] = f'attachment; filename="{safe_filename}"'
+                
+                logger.info(f"Successfully serving file: {file_name_with_ext}")
+                return response
+                
+            except Exception as e:
+                logger.error(f"Error opening file {file_path}: {e}")
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Error reading file: {str(e)}'
+                }, status=500)
+                
+        finally:
+            try:
+                cur.close()
+                conn.close()
+            except Exception:
+                pass
+            
+    except Exception as e:
+        logger.error(f"Error in download_product_description_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': f'An error occurred: {str(e)}'
+        }, status=500)
 
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
@@ -5050,20 +5709,12 @@ def warehouse_for_item_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     item_code = (request.GET.get('item_code') or '').strip()
     search = (request.GET.get('search') or '').strip() or None
@@ -5146,7 +5797,7 @@ def contact_persons_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
@@ -5240,27 +5891,21 @@ def project_balance_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     project_code = (request.GET.get('project_code') or '').strip()
     show_all = (request.GET.get('show_all') or '').strip().lower() in ('true','1','yes')
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     try:
-        page_num = int(page_param) if page_param else 1
+        page_num = int(page_param)
+        if page_num < 1:
+            page_num = 1
     except Exception:
         page_num = 1
     default_page_size = 10
@@ -5332,27 +5977,22 @@ def customer_addresses_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     card_code = (request.GET.get('card_code') or '').strip()
     show_all = (request.GET.get('show_all') or '').strip().lower() in ('true','1','yes')
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     try:
-        page_num = int(page_param) if page_param else 1
+        page_num = int(page_param)
+        if page_num < 1:
+            page_num = 1
     except Exception:
         page_num = 1
     default_page_size = 10
@@ -5420,27 +6060,22 @@ def territories_full_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     status_param = (request.GET.get('status') or '').strip().lower()
     limit_param = (request.GET.get('limit') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     try:
-        page_num = int(page_param) if page_param else 1
+        page_num = int(page_param)
+        if page_num < 1:
+            page_num = 1
     except Exception:
         page_num = 1
     default_page_size = 10
@@ -5512,26 +6147,21 @@ def cwl_full_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     limit_param = (request.GET.get('limit') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     try:
-        page_num = int(page_param) if page_param else 1
+        page_num = int(page_param)
+        if page_num < 1:
+            page_num = 1
     except Exception:
         page_num = 1
     default_page_size = 10
@@ -5604,20 +6234,13 @@ def customer_lov_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
@@ -5695,20 +6318,13 @@ def item_lov_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
@@ -5757,7 +6373,7 @@ def item_lov_api(request):
 @swagger_auto_schema(tags=['SAP Sales Order Form'],
     method='get',
     operation_summary="Item Price by Policy",
-    operation_description="""Get unit price (U_frp) for a specific item in a policy. Use this when item is selected to auto-fill unit price in sales order form.
+    operation_description="""Get unit price (U_np) for a specific item in a policy. Use this when item is selected to auto-fill unit price in sales order form.
     
     **Response Structure:**
     ```json
@@ -5786,7 +6402,7 @@ def item_lov_api(request):
     - Quantity * unit_price calculates line total
     - Price is policy-specific (different policies may have different prices for same item)
     
-    **Price Source:** Queries @PLR4 table joining with policy and item data to get U_frp (Final Rate Price).
+    **Price Source:** Queries @PLR4 table joining with policy and item data to get U_np (Net Price).
     """,
     manual_parameters=[
         openapi.Parameter(
@@ -5815,7 +6431,7 @@ def item_price_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',  # Will be set dynamically below
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
@@ -5850,7 +6466,7 @@ def item_price_api(request):
             price_row = unit_price_by_policy(conn, doc_entry, item_code)
             if not price_row:
                 return Response({'success': True, 'data': None, 'message': 'No price found for given DocEntry and ItemCode'}, status=status.HTTP_200_OK)
-            price_val = price_row.get('U_frp') if isinstance(price_row, dict) else None
+            price_val = price_row.get('U_np') if isinstance(price_row, dict) else None
             try:
                 price_val = float(price_val) if price_val is not None else price_val
             except Exception:
@@ -5936,7 +6552,7 @@ def policy_items_for_customer_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',  # Will be set dynamically below
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
@@ -5994,7 +6610,7 @@ def policy_items_for_customer_api(request):
             cursor = conn.cursor()
             
             # Query to get policy items with optional customer filter
-            # @PLR4 uses U_itc for ItemCode, U_frp for price
+            # @PLR4 uses U_itc for ItemCode, U_np for price
             # Join with OITM for item details
             if card_code:
                 sql_query = """
@@ -6002,7 +6618,7 @@ def policy_items_for_customer_api(request):
                         h."DocEntry" AS policy_doc_entry,
                         l."U_itc" AS ItemCode,
                         i."ItemName",
-                        l."U_frp" AS unit_price,
+                        l."U_np" AS unit_price,
                         i."SalUnitMsr" AS unit_of_measure,
                         r."U_bp" AS bp_code
                     FROM "@PL1" h
@@ -6020,7 +6636,7 @@ def policy_items_for_customer_api(request):
                         h."DocEntry" AS policy_doc_entry,
                         l."U_itc" AS ItemCode,
                         i."ItemName",
-                        l."U_frp" AS unit_price,
+                        l."U_np" AS unit_price,
                         i."SalUnitMsr" AS unit_of_measure
                     FROM "@PL1" h
                     INNER JOIN "@PLR4" l ON h."DocEntry" = l."DocEntry"
@@ -6125,7 +6741,7 @@ def policy_project_link_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',  # Will be set dynamically below
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
@@ -6260,26 +6876,21 @@ def projects_lov_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     try:
-        page_num = int(page_param) if page_param else 1
+        page_num = int(page_param)
+        if page_num < 1:
+            page_num = 1
     except Exception:
         page_num = 1
     default_page_size = 10
@@ -6344,26 +6955,21 @@ def crop_lov_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Handle database parameter
-    db_param = (request.GET.get('database') or '').strip()
-    if db_param:
-        norm = db_param.strip().upper().replace('-APP', '_APP')
-        if '4B-BIO' in norm:
-            cfg['schema'] = '4B-BIO_APP'
-        elif '4B-ORANG' in norm:
-            cfg['schema'] = '4B-ORANG_APP'
-        else:
-            cfg['schema'] = db_param
+    
+    # Use shared helper to resolve schema from Company model
+    cfg['schema'] = get_hana_schema_from_request(request)
     
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     try:
-        page_num = int(page_param) if page_param else 1
+        page_num = int(page_param)
+        if page_num < 1:
+            page_num = 1
     except Exception:
         page_num = 1
     default_page_size = 10
@@ -6438,7 +7044,7 @@ def sales_orders_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',  # Will be set dynamically below
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
@@ -6611,7 +7217,7 @@ def customer_policies_api(request):
         'host': os.environ.get('HANA_HOST') or '',
         'port': os.environ.get('HANA_PORT') or '30015',
         'user': os.environ.get('HANA_USER') or '',
-        'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+        'schema': '',  # Will be set dynamically below
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
@@ -7060,7 +7666,8 @@ def recommended_products_api(request):
         try:
             # Set schema
             cur = conn.cursor()
-            cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+            schema_name = cfg['schema']
+            cur.execute(f'SET SCHEMA "{schema_name}"')
             cur.close()
             
             # Query @ODID table for disease
@@ -7649,38 +8256,11 @@ def policy_detail_api(request):
 
 # ============= Product Catalog with Document Display =============
 
-@swagger_auto_schema(
-    tags=['SAP - Products'],
-    method='get',
-    operation_description="""Get detailed product document with formatted Word content.
-    
-    This endpoint parses Word documents on-the-fly and displays them with full formatting:
-    - Headings (H1, H2, H3, H4)
-    - Text colors and fonts
-    - Tables with cell formatting
-    - Embedded images
-    - RTL (Right-to-Left) support for Urdu text
-    
-    The document is parsed fresh on each request, so changes to the .docx file are reflected immediately.
-    
-    Parser Methods:
-    - mammoth (default): Automatic conversion with smart formatting
-    - custom: Detailed control over all formatting elements
-    """,
-    manual_parameters=[
-        openapi.Parameter('item_code', openapi.IN_PATH, description="Product ItemCode (e.g., FG00292)", type=openapi.TYPE_STRING, required=True),
-        openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('method', openapi.IN_QUERY, description="Parser method: 'mammoth' (recommended) or 'custom'", type=openapi.TYPE_STRING, required=False, default='mammoth'),
-    ],
-    responses={
-        200: openapi.Response(description="HTML page with formatted product document"),
-        404: openapi.Response(description="Product or document not found"),
-        500: openapi.Response(description="Server Error")
-    }
-)
-@api_view(['GET'])
+# Removed from Swagger - this is a web page view, not an API endpoint
+# Use /api/sap/product-description-download/ for file downloads
+# Use /api/sap/product-description/ for JSON response with description text
 def product_document_api(request, item_code):
-    """API endpoint for product document (returns HTML)"""
+    """View product document as formatted HTML page (for browser viewing, not API)"""
     return product_document_view(request, item_code)
 
 def product_catalog_list_view(request):
@@ -7706,8 +8286,9 @@ def product_catalog_list_view(request):
             company = Company.objects.filter(is_active=True).first()
             if company:
                 database = company.Company_name
-        except:
-            database = os.environ.get('HANA_SCHEMA') or '4B-ORANG_APP'
+                logger.info(f"Using first active company: {database}")
+        except Exception as e:
+            logger.warning(f"Could not get company from database: {e}")
     
     products = []
     categories = []
@@ -7741,10 +8322,10 @@ def product_catalog_list_view(request):
         conn = dbapi.connect(**kwargs)
         
         try:
+            cur = conn.cursor()
             if cfg['schema']:
-                cur = conn.cursor()
-                cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
-                cur.close()
+                schema_name = cfg['schema']
+                cur.execute(f'SET SCHEMA "{schema_name}"')
             
             # Get products
             products = products_catalog(
@@ -7786,16 +8367,10 @@ def product_catalog_list_view(request):
 def product_document_view(request, item_code):
     """
     Display product details with parsed Word document content
+    Uses the product description API to get product info and description
     """
-    from .utils.document_parser import parse_product_document, get_product_document_path, WordDocumentParser
-    
-    try:
-        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
-        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
-        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
-        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
-    except Exception:
-        pass
+    from .utils.document_parser import get_product_document_path
+    import json
     
     # Get database from query param
     database = request.GET.get('database', '').strip() or request.session.get('selected_database', '')
@@ -7807,84 +8382,93 @@ def product_document_view(request, item_code):
             company = Company.objects.filter(is_active=True).first()
             if company:
                 database = company.Company_name
-        except:
-            database = os.environ.get('HANA_SCHEMA') or '4B-ORANG_APP'
+                logger.info(f"Using first active company: {database}")
+        except Exception as e:
+            logger.warning(f"Could not get company from database: {e}")
+    
+    logger.info(f"Product document view - ItemCode: {item_code}, Database: {database}")
     
     product = None
-    doc_content = None
-    doc_info = None
     error_msg = None
     file_path = None
+    download_url = None
+    doc_file_name = None
+    doc_file_ext = None
+    product_description = None
     
     try:
-        from hdbcli import dbapi
+        # Call the product description API internally
+        from django.test import RequestFactory
+        factory = RequestFactory()
         
-        cfg = {
-            'host': os.environ.get('HANA_HOST') or '',
-            'port': os.environ.get('HANA_PORT') or '30015',
-            'user': os.environ.get('HANA_USER') or '',
-            'schema': database,
-            'encrypt': os.environ.get('HANA_ENCRYPT') or '',
-            'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
-        }
+        # Create API request with proper GET parameters
+        api_request = factory.get('/api/sap/product-description/', {
+            'item_code': item_code,
+            'database': database
+        })
         
-        pwd = os.environ.get('HANA_PASSWORD', '')
-        kwargs = {
-            'address': cfg['host'],
-            'port': int(cfg['port']),
-            'user': cfg['user'] or '',
-            'password': pwd or ''
-        }
+        # Copy session and user if they exist
+        if hasattr(request, 'session'):
+            api_request.session = request.session
+        if hasattr(request, 'user'):
+            api_request.user = request.user
         
-        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
-            kwargs['encrypt'] = True
-            if cfg['ssl_validate']:
-                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+        logger.info(f"Calling get_product_description_api with item_code={item_code}, database={database}")
         
-        conn = dbapi.connect(**kwargs)
+        # Call the API view
+        api_response = get_product_description_api(api_request)
         
-        try:
-            if cfg['schema']:
-                cur = conn.cursor()
-                cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
-                cur.close()
+        # Render the response before accessing content
+        api_response.render()
+        
+        logger.info(f"API response status: {api_response.status_code}")
+        
+        if api_response.status_code == 200:
+            response_data = json.loads(api_response.content)
             
-            # Get product details
-            products = products_catalog(
-                conn, 
-                schema_name=database,
-                search=item_code
-            )
-            
-            # Find exact match
-            product = next((p for p in products if p.get('ItemCode') == item_code), None)
-            
-            if not product and products:
-                product = products[0]
-        
-        finally:
-            conn.close()
-        
-        # Parse document if available
-        if product:
-            urdu_name = product.get('Product_Urdu_Name')
-            urdu_ext = product.get('Product_Urdu_Ext')
-            
-            if urdu_name and urdu_ext:
-                file_path = get_product_document_path(urdu_name, urdu_ext, database)
+            if response_data.get('success'):
+                data = response_data.get('data', {})
                 
-                if file_path:
-                    # Parse document on-the-fly
-                    doc_content = parse_product_document(file_path, method=parse_method)
+                # Extract description
+                product_description = data.get('description')
+                
+                # Extract document file info
+                doc_file_name = data.get('urdu_file')
+                doc_file_ext = data.get('urdu_ext')
+                
+                # Determine folder for image URL
+                folder = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
+                
+                # Build basic product info for display
+                product = {
+                    'ItemCode': data.get('item_code'),
+                    'ItemName': data.get('item_name'),
+                    'product_image_url': f"/media/product_images/{folder}/{data.get('image_file')}.{data.get('image_ext')}" if data.get('image_file') and data.get('image_ext') else None,
+                }
+                
+                # Build download URL only if document file exists
+                if doc_file_name and doc_file_ext:
+                    file_path = get_product_document_path(doc_file_name, doc_file_ext, database)
                     
-                    # Get document info
-                    parser = WordDocumentParser(file_path)
-                    doc_info = parser.get_document_info()
-                else:
-                    error_msg = f"دستاویز فائل نہیں ملی: {urdu_name}.{urdu_ext}"
+                    if file_path and os.path.exists(file_path):
+                        download_url = f"/api/sap/product-description-download/?item_code={item_code}&database={database}"
+                        logger.info(f"Document file found for {item_code}: {file_path}")
+                    else:
+                        logger.warning(f"Document file not found: {doc_file_name}.{doc_file_ext}")
             else:
-                error_msg = "اس پروڈکٹ کے لیے دستاویز دستیاب نہیں ہے"
-    
+                error_msg = response_data.get('error', 'Failed to load product description')
+                logger.error(f"API returned success=false: {error_msg}")
+        else:
+            # Try to extract error from response
+            try:
+                response_data = json.loads(api_response.content)
+                error_msg = response_data.get('error', f"API returned status {api_response.status_code}")
+                logger.error(f"API error response: {response_data}")
+            except Exception as parse_err:
+                error_msg = f"API returned status {api_response.status_code}"
+                logger.error(f"Could not parse API error response: {parse_err}")
+                logger.error(f"Raw response: {api_response.content[:500]}")
+            
     except Exception as e:
         logger.error(f"Error loading product document: {e}")
         error_msg = str(e)
@@ -7893,12 +8477,17 @@ def product_document_view(request, item_code):
     
     context = {
         'product': product,
-        'doc_content': doc_content,
-        'doc_info': doc_info,
+        'doc_content': None,  # No longer parsing documents
+        'doc_info': None,
         'database': database,
         'parse_method': parse_method,
         'error_msg': error_msg,
         'file_path': file_path,
+        'download_url': download_url,
+        'doc_file_name': doc_file_name,
+        'doc_file_ext': doc_file_ext,
+        'item_code': item_code,
+        'product_description': product_description,
     }
     
     return render(request, 'sap_integration/product_document_detail.html', context)

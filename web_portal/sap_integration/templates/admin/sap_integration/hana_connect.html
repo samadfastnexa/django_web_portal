@@ -2266,6 +2266,12 @@ textContent=count+' active'}
         .product-detail-label{font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase}
         .product-detail-value{font-size:13px;color:#334155;font-weight:600}
         .product-brand{background:#f0f9ff;color:#0369a1;padding:4px 8px;border-radius:6px;font-size:12px;font-weight:600;display:inline-block;margin-top:8px}
+        .product-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #f1f5f9}
+        .product-btn{flex:1;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;text-align:center;transition:all 0.2s ease;cursor:pointer;border:none}
+        .product-btn-primary{background:#0ea5e9;color:white}
+        .product-btn-primary:hover{background:#0284c7;transform:translateY(-1px);box-shadow:0 4px 12px rgba(14,165,233,0.3)}
+        .product-btn-secondary{background:#8b5cf6;color:white}
+        .product-btn-secondary:hover{background:#7c3aed;transform:translateY(-1px);box-shadow:0 4px 12px rgba(139,92,246,0.3)}
         .no-products{text-align:center;padding:60px 20px;color:#64748b}
         .no-products-icon{font-size:64px;margin-bottom:16px;opacity:0.5}
       </style>
@@ -2295,7 +2301,7 @@ textContent=count+' active'}
       
       <div class="products-grid">
         {% for row in result_rows %}
-          <div class="product-card" onclick="showProductDetails(this)" data-product='{{ row|safe }}'>
+          <div class="product-card" data-product='{{ row|safe }}'>
             <div class="product-image-container">
               {% if row.product_image_url %}
                 <img src="{{ row.product_image_url }}" alt="{{ row.ItemName }}" class="product-image" 
@@ -2318,6 +2324,14 @@ textContent=count+' active'}
                   <span class="product-detail-label">Unit</span>
                   <span class="product-detail-value">{{ row.InvntryUom|default:"N/A" }}</span>
                 </div>
+              </div>
+              <div class="product-actions">
+                <a href="/api/sap/products/{{ row.ItemCode }}/?database={{ selected_db_key }}" class="product-btn product-btn-primary" target="_blank" title="View full product details">
+                  📄 View Details
+                </a>
+                <button class="product-btn product-btn-secondary" onclick="showProductJson(this)" title="Show JSON data">
+                  📋 JSON
+                </button>
               </div>
             </div>
           </div>
@@ -2358,9 +2372,10 @@ textContent=count+' active'}
           });
         }
         
-        function showProductDetails(card) {
+        function showProductJson(btn) {
+          const card = btn.closest('.product-card');
           const data = JSON.parse(card.getAttribute('data-product'));
-          let details = 'Product Details:\n\n';
+          let details = 'Product JSON Data:\n\n';
           for (const [key, value] of Object.entries(data)) {
             if (value !== null && value !== '') {
               details += `${key}: ${value}\n`;

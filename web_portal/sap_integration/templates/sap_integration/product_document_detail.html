@@ -163,7 +163,40 @@
     </div>
     
     <div class="container">
-        {% if error_msg %}
+        {% if product_description %}
+        <!-- Product Description from FreeText -->
+        <div class="alert alert-info rtl-content">
+            <h4><i class="fas fa-info-circle"></i> تفصیل پروڈکٹ</h4>
+            <div class="product-description-text" style="white-space: pre-wrap; font-size: 1.1rem; line-height: 1.8;">{{ product_description }}</div>
+        </div>
+        {% endif %}
+        
+        {% if download_url %}
+        <!-- Download Available -->
+        <div class="alert alert-success rtl-content">
+            <h4><i class="fas fa-file-download"></i> دستاویز دستیاب ہے</h4>
+            <p>پروڈکٹ کی تفصیلی دستاویز ڈاؤن لوڈ کرنے کے لیے نیچے دیے گئے بٹن پر کلک کریں۔</p>
+            <div class="text-center mt-3">
+                <a href="{{ download_url }}" class="btn btn-success btn-lg" download>
+                    <i class="fas fa-download"></i> 
+                    دستاویز ڈاؤن لوڈ کریں 
+                    {% if doc_file_name %}
+                    ({{ doc_file_name }}.{{ doc_file_ext }})
+                    {% endif %}
+                </a>
+            </div>
+        </div>
+        {% elif doc_file_name and not download_url %}
+        <!-- Document exists in database but file not found on server -->
+        <div class="alert alert-warning rtl-content">
+            <h4><i class="fas fa-exclamation-triangle"></i> دستاویز فائل نہیں ملی</h4>
+            <p>ڈیٹا بیس میں دستاویز کا ریکارڈ موجود ہے لیکن فائل سرور پر نہیں ملی۔</p>
+            <p><strong>فائل کا نام:</strong> {{ doc_file_name }}.{{ doc_file_ext }}</p>
+        </div>
+        {% endif %}
+        
+        {% if error_msg and not product_description %}
+        <!-- Show error only if there's no description available -->
         <div class="alert alert-danger rtl-content">
             <i class="fas fa-exclamation-triangle"></i> {{ error_msg }}
         </div>
@@ -203,34 +236,24 @@
         </div>
         {% endif %}
         
-        <!-- Method Switch -->
-        {% if doc_content %}
-        <div class="method-switch text-center">
-            <a href="?database={{ database }}&method=mammoth" 
-               class="btn {% if parse_method == 'mammoth' %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                <i class="fas fa-magic"></i> Mammoth Parser (تجویز کردہ)
-            </a>
-            <a href="?database={{ database }}&method=custom" 
-               class="btn {% if parse_method == 'custom' %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                <i class="fas fa-cog"></i> Custom Parser (تفصیلی)
-            </a>
-        </div>
-        {% endif %}
-        
         <!-- Document Content -->
         {% if doc_content %}
-        <div class="product-content">
+        <div class="product-document rtl-content">
             {{ doc_content|safe }}
-        </div>
-        {% else %}
-        <div class="alert alert-warning rtl-content">
-            <i class="fas fa-file-excel"></i> 
-            اس پروڈکٹ کے لیے دستاویز دستیاب نہیں ہے
         </div>
         {% endif %}
         
         <!-- Download Button -->
-        {% if product.product_description_urdu_url %}
+        {% if download_url %}
+        <div class="text-center mt-4 mb-5">
+            <a href="{{ download_url }}" class="btn btn-success btn-lg" download>
+                <i class="fas fa-download"></i> اصل دستاویز ڈاؤن لوڈ کریں
+                {% if doc_file_name %}
+                <br><small>({{ doc_file_name }}.{{ doc_file_ext }})</small>
+                {% endif %}
+            </a>
+        </div>
+        {% elif product.product_description_urdu_url %}
         <div class="text-center mt-4 mb-5">
             <a href="{{ product.product_description_urdu_url }}" class="btn btn-success btn-lg" download>
                 <i class="fas fa-download"></i> اصل دستاویز ڈاؤن لوڈ کریں

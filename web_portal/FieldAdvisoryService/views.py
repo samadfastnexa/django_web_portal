@@ -1462,12 +1462,22 @@ def get_hana_connection(request=None, selected_db_key=None):
         except Exception as e:
             print(f"Error getting schema from settings: {e}")
             schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
+            
+            # Try to get schema from Company model (dynamic, no hardcoding)
             if selected_db_key:
-                key_upper = str(selected_db_key).upper()
-                if key_upper.startswith('4B-ORANG'):
-                    schema = '4B-ORANG_APP'
-                elif key_upper.startswith('4B-BIO'):
-                    schema = '4B-BIO_APP'
+                try:
+                    from FieldAdvisoryService.models import Company
+                    # Try to find company by Company_name (display name) first
+                    company = Company.objects.filter(Company_name=selected_db_key, is_active=True).first()
+                    # If not found, try by schema name field
+                    if not company:
+                        company = Company.objects.filter(name=selected_db_key, is_active=True).first()
+                    # If found, use its schema name
+                    if company:
+                        schema = company.name
+                        print(f"[HANA] Found schema from Company model: {company.Company_name} -> {schema}")
+                except Exception as company_err:
+                    print(f"[HANA] Could not lookup company from model: {company_err}")
 
         # Strip quotes if present
         schema = schema.strip('"\'')
@@ -1669,10 +1679,11 @@ def api_child_customers(request):
     logger = logging.getLogger(__name__)
     
     father_card = request.GET.get('father_card')
+    database = request.GET.get('database')  # Support explicit database parameter
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
-    logger.info(f"API called for child customers: father_card={father_card}, search={search}, page={page_param}, page_size={page_size_param}")
+    logger.info(f"API called for child customers: father_card={father_card}, database={database}, search={search}, page={page_param}, page_size={page_size_param}")
     
     if not father_card:
         logger.error("No father_card provided")
@@ -1681,9 +1692,11 @@ def api_child_customers(request):
     try:
         # Get selected database from session for logging
         selected_db = request.session.get('selected_db') if hasattr(request, 'session') else None
-        logger.info(f"Selected DB from session: {selected_db}")
+        logger.info(f"Selected DB from session: {selected_db}, explicit database: {database}")
         
-        db = get_hana_connection(request)
+        # Use explicit database parameter if provided, otherwise session
+        db_key = database or selected_db
+        db = get_hana_connection(request, db_key)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed - HANA service unavailable', 'children': []}, status=200)
@@ -1763,7 +1776,8 @@ def api_customer_details(request):
     logger = logging.getLogger(__name__)
     
     card_code = request.GET.get('card_code')
-    logger.info(f"API called for customer details: card_code={card_code}")
+    database = request.GET.get('database')  # Support explicit database parameter
+    logger.info(f"API called for customer details: card_code={card_code}, database={database}")
     
     if not card_code:
         logger.error("No card_code provided")
@@ -1772,9 +1786,11 @@ def api_customer_details(request):
     try:
         # Get selected database from session for logging
         selected_db = request.session.get('selected_db') if hasattr(request, 'session') else None
-        logger.info(f"Selected DB from session: {selected_db}")
+        logger.info(f"Selected DB from session: {selected_db}, explicit database: {database}")
         
-        db = get_hana_connection(request)
+        # Use explicit database parameter if provided, otherwise session
+        db_key = database or selected_db
+        db = get_hana_connection(request, db_key)
         if not db:
             logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed'}, status=500)
