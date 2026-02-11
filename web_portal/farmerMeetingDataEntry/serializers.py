@@ -105,6 +105,7 @@ class FarmerAttendanceInputSerializer(serializers.Serializer):
 class MeetingSerializer(serializers.ModelSerializer):
     attendees = serializers.SerializerMethodField(read_only=True)
     attachments = MeetingAttachmentSerializer(many=True, read_only=True)
+    location = serializers.CharField(max_length=200, required=False)
     
      # IDs (writable on create/update)
     company_id   = serializers.IntegerField(source='company_fk_id',   required=False, allow_null=True)
@@ -161,7 +162,7 @@ class MeetingSerializer(serializers.ModelSerializer):
             'zone_id', 'zone_name',
             'territory_id', 'territory_name',
             'date', 'location', 'total_attendees',
-            'key_topics_discussed', 'presence_of_zm', 'presence_of_rsm',
+            'key_topics_discussed', 'products_discussed', 'presence_of_zm', 'presence_of_rsm',
             'feedback_from_attendees', 'suggestions_for_future',
             'attendees', 'attachments',
             # attendee write-only lists (keep as-is)
@@ -354,6 +355,7 @@ class FieldDaySerializer(serializers.ModelSerializer):
     
     # Field mapping for API parameter name
     fsm_name = serializers.CharField(source='title', max_length=200, help_text="Name of FSM", required=False)
+    location = serializers.CharField(max_length=200, required=False)
 
       # IDs (writable on create/update)
     company_id   = serializers.IntegerField(source='company_fk_id',   required=False, allow_null=True)

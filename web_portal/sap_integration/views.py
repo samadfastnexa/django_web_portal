@@ -2919,13 +2919,18 @@ def get_business_partner_detail(request, card_code):
     operation_description="List all policies from SAP Projects (UDF U_pol)",
     manual_parameters=[
         openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter(
             'company',
             openapi.IN_QUERY,
-            description="Optional: Company database key",
+            description="Company database key (alternative to 'database' parameter)",
             type=openapi.TYPE_STRING,
-            required=False,
-            enum=['4B-BIO_APP', '4B-ORANG_APP'],
-            default='4B-ORANG_APP'
+            required=False
         ),
         openapi.Parameter(
             'active',
@@ -3167,13 +3172,18 @@ def list_db_policies(request):
     operation_description="Sync policies from SAP Projects (UDF U_pol) into the database.",
     manual_parameters=[
         openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter(
             'company',
             openapi.IN_QUERY,
-            description="Optional: Company database key",
+            description="Company database key (alternative to 'database' parameter)",
             type=openapi.TYPE_STRING,
-            required=False,
-            enum=['4B-BIO_APP', '4B-ORANG_APP'],
-            default='4B-ORANG_APP'
+            required=False
         )
     ],
     responses={
@@ -3824,15 +3834,16 @@ def sales_vs_achievement_territory_api(request):
         cfg['schema'] = list(db_options.values())[0] if db_options else '4B-BIO_APP'
     
     # Handle period parameter
-    period = (request.query_params.get('period') or 'monthly').strip().lower()
+    period = (request.query_params.get('period') or '').strip().lower()
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
     
-    # Calculate dates based on period
+    # Calculate dates based on period (only if period explicitly provided)
     from datetime import datetime, date
     today = date.today()
     
     if period:
+        # Period parameter explicitly provided - use it
         if period == 'today':
             start_date = today.strftime('%Y-%m-%d')
             end_date = today.strftime('%Y-%m-%d')
@@ -3843,9 +3854,9 @@ def sales_vs_achievement_territory_api(request):
             start_date = today.replace(month=1, day=1).strftime('%Y-%m-%d')
             end_date = today.strftime('%Y-%m-%d')
     
-    # If no period and no dates provided, default to today
-    if not start_date and not end_date:
-        start_date = today.strftime('%Y-%m-%d')
+    # If no period and no dates provided, default to current month
+    if not period and not start_date and not end_date:
+        start_date = today.replace(day=1).strftime('%Y-%m-%d')
         end_date = today.strftime('%Y-%m-%d')
     
     # Handle user_id and emp_id parameters
@@ -3901,8 +3912,19 @@ def sales_vs_achievement_territory_api(request):
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
+            
+            print(f"[DEBUG sales_vs_achievement_territory_api] schema={cfg['schema']}, emp_id={emp_val}, dates={start_date} to {end_date}, period={period if period else 'None'}")
+            
             # Use the new sales_vs_achievement_territory function with B4_SALES_TARGET
             data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=False, group_by_emp=group_by_emp)
+            
+            # Debug: Log first few rows to see what dates we're getting
+            if data and len(data) > 0:
+                print(f"[DEBUG sales_vs_achievement_territory_api] Total rows returned: {len(data)}")
+                print(f"[DEBUG sales_vs_achievement_territory_api] First row: {data[0] if data else 'No data'}")
+                if len(data) > 1:
+                    print(f"[DEBUG sales_vs_achievement_territory_api] Second row: {data[1]}")
+            
             if in_millions_param in ('true','1','yes','y'):
                 scaled = []
                 for row in data or []:
@@ -7844,8 +7866,7 @@ def recommended_products_api(request):
             openapi.IN_QUERY,
             description="Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)",
             type=openapi.TYPE_STRING,
-            required=False,
-            enum=['4B-BIO_APP', '4B-ORANG_APP']
+            required=False
         ),
         openapi.Parameter(
             'active',
@@ -7876,7 +7897,7 @@ def recommended_products_api(request):
             examples={
                 "application/json": {
                     "success": True,
-                    "count": 2,
+                    "count": 3,
                     "database": "4B-ORANG_APP",
                     "data": [
                         {
@@ -7884,14 +7905,24 @@ def recommended_products_api(request):
                             "name": "Cotton Policy 2024",
                             "valid_from": "2024-01-01",
                             "valid_to": "2024-12-31",
-                            "active": "tYES"
+                            "active": "tYES",
+                            "is_valid": False
                         },
                         {
                             "code": "PRJ002",
-                            "name": "Wheat Policy 2024",
-                            "valid_from": "2024-01-15",
-                            "valid_to": "2024-12-31",
-                            "active": "tYES"
+                            "name": "Wheat Policy 2026",
+                            "valid_from": "2026-01-15",
+                            "valid_to": "2026-12-31",
+                            "active": "tYES",
+                            "is_valid": True
+                        },
+                        {
+                            "code": "PRJ003",
+                            "name": "Rice Policy 2027",
+                            "valid_from": "2027-01-01",
+                            "valid_to": "2027-12-31",
+                            "active": "tYES",
+                            "is_valid": True
                         }
                     ]
                 }
@@ -8004,14 +8035,36 @@ def projects_list_api(request):
             columns = [desc[0] for desc in cursor.description]
             results = []
             
+            # Get current date for validation
+            from datetime import date as date_class
+            current_date = date_class.today()
+            
             for row in cursor.fetchall():
                 row_dict = {}
+                valid_to_date = None
+                
                 for i, col in enumerate(columns):
                     value = row[i]
-                    # Convert dates to string
+                    
+                    # Store valid_to date for validation (convert to date object)
+                    if col == 'valid_to' and value is not None:
+                        if isinstance(value, datetime):
+                            valid_to_date = value.date()
+                        elif isinstance(value, date):
+                            valid_to_date = value
+                    
+                    # Convert dates to string for JSON response
                     if isinstance(value, (date, datetime)):
                         value = value.isoformat()
                     row_dict[col] = value
+                
+                # Add is_valid field based on valid_to date
+                if valid_to_date:
+                    row_dict['is_valid'] = current_date <= valid_to_date
+                else:
+                    # If no valid_to date, consider it valid
+                    row_dict['is_valid'] = True
+                
                 results.append(row_dict)
             
             cursor.close()
