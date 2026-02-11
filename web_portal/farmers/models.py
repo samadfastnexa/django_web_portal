@@ -39,7 +39,7 @@ class Farmer(models.Model):
     name = models.CharField(max_length=100, verbose_name=_('Full Name'))  # Keep for backward compatibility
     father_name = models.CharField(max_length=100, blank=True, verbose_name=_('Father Name'))
     date_of_birth = models.DateField(null=True, blank=True, verbose_name=_('Date of Birth'))
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, verbose_name=_('Gender'))
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, verbose_name=_('Gender'))
     cnic = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name=_('CNIC'))
     
     # Contact Information
@@ -49,17 +49,19 @@ class Farmer(models.Model):
     email = models.EmailField(blank=True, verbose_name=_('Email Address'))
     
     # Address Information
-    address = models.TextField(verbose_name=_('Complete Address'))
+    address = models.TextField(blank=True, verbose_name=_('Complete Address'))
     village = models.CharField(max_length=100, verbose_name=_('Village'))
     tehsil = models.CharField(max_length=100, verbose_name=_('Tehsil'))
     district = models.CharField(max_length=100, verbose_name=_('District'))
-    province = models.CharField(max_length=100, verbose_name=_('Province/State'))
+    province = models.CharField(max_length=100, blank=True, verbose_name=_('Province/State'))
     
     # Education
     education_level = models.CharField(max_length=20, choices=EDUCATION_CHOICES, default='primary', verbose_name=_('Education Level'))
     
     # Farm Details
     total_land_area = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text=_('Total land area in acres'), verbose_name=_('Total Land Area (acres)'))
+    current_crops_and_acreage = models.TextField(blank=True, null=True, verbose_name=_('Total Current Crops Sown and Acreage'), help_text=_('Details of current crops sown with acreage information'))
+    crop_calendar = models.TextField(blank=True, null=True, verbose_name=_('Crop Calendar'), help_text=_('Planned crop calendar and rotation schedule'))
     
     # Registration and Status
     registration_date = models.DateTimeField(auto_now_add=True, verbose_name=_('Registration Date'))

@@ -26,7 +26,8 @@ class FarmerListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'farmer_id', 'first_name', 'last_name', 'full_name',
             'primary_phone', 'village', 'district', 'total_land_area',
-            'education_level', 'registration_date', 'age', 'profile_picture'
+            'education_level', 'registration_date', 'age', 'profile_picture',
+            'current_crops_and_acreage', 'crop_calendar'
         ]
 
 
@@ -44,6 +45,7 @@ class FarmerDetailSerializer(serializers.ModelSerializer):
             'primary_phone', 'secondary_phone', 'email',
             'address', 'village', 'tehsil', 'district', 'province',
             'education_level', 'total_land_area',
+            'current_crops_and_acreage', 'crop_calendar',
             'registration_date', 'last_updated',
             'registered_by', 'registered_by_name', 'notes', 'profile_picture'
         ]
@@ -62,6 +64,7 @@ class FarmerCreateUpdateSerializer(serializers.ModelSerializer):
             'primary_phone', 'secondary_phone', 'email',
             'address', 'village', 'tehsil', 'district', 'province',
             'education_level', 'total_land_area',
+            'current_crops_and_acreage', 'crop_calendar',
             'notes', 'profile_picture'
         ]
         read_only_fields = ['id', 'registration_date', 'last_updated']
