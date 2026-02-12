@@ -194,6 +194,7 @@ class MeetingScheduleAttendanceSerializer(serializers.ModelSerializer):
 class MeetingScheduleSerializer(serializers.ModelSerializer):
     attendees = MeetingScheduleAttendanceSerializer(many=True, read_only=True, help_text="List of meeting attendees")
     fsm_name = serializers.CharField(required=False)
+    location = serializers.CharField(max_length=200, required=False)
     
     # Write-only ID fields for creating/updating
     company_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)

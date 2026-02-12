@@ -415,7 +415,7 @@ class MeetingSchedule(models.Model):
     zone = models.ForeignKey('FieldAdvisoryService.Zone', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_zone')
     territory = models.ForeignKey('FieldAdvisoryService.Territory', on_delete=models.SET_NULL, null=True, blank=True, related_name='meeting_schedules_territory')
     date = models.DateTimeField()
-    location = models.CharField(max_length=200)
+    location = models.CharField(max_length=200, blank=True)
     total_attendees = models.PositiveIntegerField(default=0)
     key_topics_discussed = models.TextField(default="Not specified")
     presence_of_zm = models.BooleanField(default=False)

@@ -25,9 +25,10 @@ class Meeting(models.Model):
     territory_fk = models.ForeignKey(Territory, on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_territory')
     
     date = models.DateTimeField()
-    location = models.CharField(max_length=200, default="Not specified")
+    location = models.CharField(max_length=200, default="Not specified", blank=True)
     total_attendees = models.PositiveIntegerField(default=0)
     key_topics_discussed = models.TextField(default="Not specified")
+    products_discussed = models.TextField(blank=True, null=True, help_text="Products discussed during the meeting")
     presence_of_zm = models.BooleanField(default=False)
     presence_of_rsm = models.BooleanField(default=False)
     feedback_from_attendees = models.TextField(blank=True, null=True)
@@ -153,7 +154,7 @@ class FieldDay(models.Model):
     )
     
     date = models.DateTimeField()
-    location = models.CharField(max_length=200)
+    location = models.CharField(max_length=200, blank=True)
     total_participants = models.PositiveIntegerField(default=0, help_text="Total number of participants in the field day")
     demonstrations_conducted = models.PositiveIntegerField(default=0, help_text="Number of demonstrations conducted")
     feedback = models.TextField(blank=True, null=True)

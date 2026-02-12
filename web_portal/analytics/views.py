@@ -31,6 +31,7 @@ try:
     from sap_integration.hana_connect import (
         sales_vs_achievement_by_emp,
         sales_vs_achievement_geo_inv,
+        sales_vs_achievement_territory,
         collection_vs_achievement,
         _load_env_file as _hana_load_env_file
     )
@@ -60,12 +61,19 @@ class DashboardOverviewView(APIView):
         - Farmer Statistics
         - Today's Visits and Activities
         - Pending Sales Orders
+        
+        **Data Scope**:
+        - If `user_id` or `emp_id` is provided: Returns data for that specific employee
+        - If neither is provided: Returns overall aggregated data for all employees
+        
+        **Default Date Range**: Last month (automatically calculated)
         """,
         manual_parameters=[
-            openapi.Parameter('emp_id', openapi.IN_QUERY, description="Employee ID for SAP data", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('end_date', openapi.IN_QUERY, description="End date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('company', openapi.IN_QUERY, description="Company key (e.g., 4B-BIO)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('user_id', openapi.IN_QUERY, description="Portal User ID - Automatically fetches employee_code from user's sales_profile. If not provided, shows overall data. Example: user_id=123", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('emp_id', openapi.IN_QUERY, description="SAP Employee ID - Direct employee ID, overrides user_id if both provided. If not provided, shows overall data. Example: emp_id=456", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date (YYYY-MM-DD). If not provided, defaults to first day of last month. Example: 2026-01-01", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('end_date', openapi.IN_QUERY, description="End date (YYYY-MM-DD). If not provided, defaults to last day of last month. Example: 2026-01-31", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('company', openapi.IN_QUERY, description="Company key (e.g., 4B-BIO, 4B-AGRI_LIVE)", type=openapi.TYPE_STRING, required=False),
             openapi.Parameter('region', openapi.IN_QUERY, description="Region filter", type=openapi.TYPE_STRING, required=False),
             openapi.Parameter('zone', openapi.IN_QUERY, description="Zone filter", type=openapi.TYPE_STRING, required=False),
             openapi.Parameter('territory', openapi.IN_QUERY, description="Territory filter", type=openapi.TYPE_STRING, required=False),
@@ -83,6 +91,7 @@ class DashboardOverviewView(APIView):
         user = request.user
         
         # Get query parameters
+        user_id_param = request.GET.get('user_id', '').strip()
         emp_id_param = request.GET.get('emp_id', '').strip()
         start_date_param = request.GET.get('start_date', '').strip()
         end_date_param = request.GET.get('end_date', '').strip()
@@ -92,67 +101,83 @@ class DashboardOverviewView(APIView):
         territory_param = request.GET.get('territory', '').strip()
         in_millions = request.GET.get('in_millions', '').strip().lower() in ('true', '1', 'yes', 'y')
         
-        # Default collection window: 1 Nov 2025 - 30 Nov 2025 when no dates provided
-        if not start_date_param and not end_date_param:
-            start_date_param = '2025-11-01'
-            end_date_param = '2025-11-30'
+        # Handle user_id parameter to fetch employee_code
+        emp_val = None
+        employee_code_from_user = None
         
-        # Fetch SAP sales data (includes company options mapping)
-        sales_data = self._get_sales_vs_achievement(
+        # If user_id is provided, fetch employee_code from that user's sales_profile
+        if user_id_param:
+            try:
+                from accounts.models import User
+                user_id_int = int(user_id_param)
+                target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
+                if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
+                    employee_code_from_user = target_user.sales_profile.employee_code
+                    # Use employee_code as emp_id_param
+                    if employee_code_from_user and not emp_id_param:
+                        emp_id_param = str(employee_code_from_user)
+            except Exception:
+                pass
+        
+        # emp_id parameter overrides user_id if both are provided
+        
+        # Default collection window: last month when no dates provided
+        if not start_date_param and not end_date_param:
+            from datetime import date
+            from calendar import monthrange
+            
+            today = date.today()
+            # Calculate first day of last month
+            if today.month == 1:
+                last_month_year = today.year - 1
+                last_month = 12
+            else:
+                last_month_year = today.year
+                last_month = today.month - 1
+            
+            # First day of last month
+            start_date_param = f"{last_month_year}-{last_month:02d}-01"
+            
+            # Last day of last month
+            last_day = monthrange(last_month_year, last_month)[1]
+            end_date_param = f"{last_month_year}-{last_month:02d}-{last_day}"
+        
+        # Determine if we should show overall data or specific employee data
+        # If no emp_id provided, show overall data by ignoring employee filter
+        show_overall = not emp_id_param
+        
+        # Fetch aggregated totals directly from SAP
+        sales_totals = self._get_sales_totals(
             emp_id_param, start_date_param, end_date_param,
-            company_param, region_param, zone_param, territory_param, in_millions
-        ) or {}
-        sales_list = sales_data.get('sales_vs_achievement', []) or []
-
-        # Fetch SAP collection data
-        collection_data = self._get_collection_vs_achievement(
+            company_param, region_param, zone_param, territory_param
+        )
+        
+        collection_totals = self._get_collection_totals(
             emp_id_param, start_date_param, end_date_param,
-            company_param, region_param, zone_param, territory_param, in_millions,
-            group_by_date=False, ignore_emp_filter=False
-        ) or {}
-        collection_list = collection_data.get('collection_vs_achievement', []) or []
-
-        # Aggregate sales into combined view
-        total_target = 0.0
-        total_achievement = 0.0
-        min_from = None
-        max_to = None
-        for rec in sales_list:
-            try:
-                total_target += float(rec.get('sales_target', 0) or 0)
-            except Exception:
-                pass
-            try:
-                total_achievement += float(rec.get('achievement', 0) or 0)
-            except Exception:
-                pass
-            f_ref = rec.get('from_date')
-            t_ref = rec.get('to_date')
-            if f_ref and (min_from is None or str(f_ref) < str(min_from)):
-                min_from = f_ref
-            if t_ref and (max_to is None or str(t_ref) > str(max_to)):
-                max_to = t_ref
-
-        # Aggregate collection into combined view
-        col_target = 0.0
-        col_achievement = 0.0
-        col_min_from = None
-        col_max_to = None
-        for rec in collection_list:
-            try:
-                col_target += float(rec.get('collection_target', 0) or 0)
-            except Exception:
-                pass
-            try:
-                col_achievement += float(rec.get('collection_achievement', 0) or 0)
-            except Exception:
-                pass
-            f_ref = rec.get('from_date')
-            t_ref = rec.get('to_date')
-            if f_ref and (col_min_from is None or str(f_ref) < str(col_min_from)):
-                col_min_from = f_ref
-            if t_ref and (col_max_to is None or str(t_ref) > str(col_max_to)):
-                col_max_to = t_ref
+            company_param, region_param, zone_param, territory_param,
+            ignore_emp_filter=show_overall
+        )
+        
+        # Get company options
+        company_options = []
+        try:
+            db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+            if db_setting:
+                mapping = db_setting.value if isinstance(db_setting.value, dict) else {}
+                if mapping:
+                    company_options = [
+                        {"key": k.strip(), "schema": str(v).strip()}
+                        for k, v in mapping.items()
+                    ]
+        except Exception:
+            pass
+        
+        # Apply millions conversion if requested
+        if in_millions:
+            sales_totals['target'] = round(sales_totals['target'] / 1000000.0, 2)
+            sales_totals['achievement'] = round(sales_totals['achievement'] / 1000000.0, 2)
+            collection_totals['target'] = round(collection_totals['target'] / 1000000.0, 2)
+            collection_totals['achievement'] = round(collection_totals['achievement'] / 1000000.0, 2)
 
         # Farmer statistics
         farmer_stats = self._get_farmer_stats(user) or {}
@@ -165,6 +190,10 @@ class DashboardOverviewView(APIView):
         # Pending sales orders
         pending_sales = self._get_pending_sales_orders(user) or 0
 
+        # Determine employee info for response
+        emp_display = int(emp_id_param) if emp_id_param and emp_id_param.isdigit() else 0
+        territory_display = 'All Territories' if show_overall else 'Employee Territory'
+        
         # Build response to match requested structure
         response_data = {
             'todays_visits': {
@@ -180,27 +209,30 @@ class DashboardOverviewView(APIView):
                 'last_month_value': 0
             },
             'sales_combined': {
-                'EMPID': 0,
+                'EMPID': emp_display,
                 'TERRITORYID': 0,
-                'TERRITORYNAME': 'All Territories',
-                'SALES_TARGET': total_target,
-                'ACCHIVEMENT': total_achievement,
-                'F_REFDATE': min_from,
-                'T_REFDATE': max_to,
+                'TERRITORYNAME': territory_display,
+                'SALES_TARGET': sales_totals['target'],
+                'ACCHIVEMENT': sales_totals['achievement'],
+                'F_REFDATE': sales_totals.get('from_date') or start_date_param,
+                'T_REFDATE': sales_totals.get('to_date') or end_date_param,
                 'SALES_TARGET_LAST_MONTH': 0,
                 'ACCHIVEMENT_LAST_MONTH': 0
             },
             'collection_combined': {
-                'TERRITORYNAME': 'All Territories',
-                'COLLECTION_TARGET': col_target,
-                'COLLECTION_ACHIEVEMENT': col_achievement,
-                'F_REFDATE': col_min_from,
-                'T_REFDATE': col_max_to,
+                'TERRITORYNAME': territory_display,
+                'COLLECTION_TARGET': collection_totals['target'],
+                'COLLECTION_ACHIEVEMENT': collection_totals['achievement'],
+                'F_REFDATE': collection_totals.get('from_date') or start_date_param,
+                'T_REFDATE': collection_totals.get('to_date') or end_date_param,
                 'COLLECTION_TARGET_LAST_MONTH': 0,
                 'COLLECTION_ACHIEVEMENT_LAST_MONTH': 0
             },
-            'company_options': sales_data.get('company_options') or collection_data.get('company_options', []),
-            'selected_company': sales_data.get('selected_company', company_param)
+            'company_options': company_options,
+            'selected_company': company_param,
+            'is_overall_data': show_overall,
+            'employee_id': emp_display if not show_overall else None,
+            'user_id': int(user_id_param) if user_id_param and user_id_param.isdigit() else None
         }
 
         return Response(response_data, status=status.HTTP_200_OK)
@@ -577,6 +609,321 @@ class DashboardOverviewView(APIView):
         """Get pending sales orders count"""
         return SalesOrder.objects.filter(staff=user, status='pending').count()
 
+    def _get_collection_totals(self, emp_id, start_date, end_date, company, region, zone, territory, ignore_emp_filter=False):
+        """Get collection totals directly from SAP - matching collection analytics endpoint logic"""
+        if not SAP_AVAILABLE:
+            return {'target': 0.0, 'achievement': 0.0, 'from_date': start_date, 'to_date': end_date}
+        
+        try:
+            # Load environment variables
+            for path in [
+                os.path.join(os.path.dirname(__file__), '..', 'sap_integration', '.env'),
+                os.path.join(str(settings.BASE_DIR), '.env'),
+                os.path.join(str(settings.BASE_DIR), '..', '.env'),
+                os.path.join(os.getcwd(), '.env')
+            ]:
+                try:
+                    _hana_load_env_file(path)
+                except Exception:
+                    pass
+            
+            from hdbcli import dbapi
+            
+            # Get connection parameters
+            host = os.environ.get('HANA_HOST', '')
+            port = os.environ.get('HANA_PORT', '30015')
+            user_name = os.environ.get('HANA_USER', '')
+            password = os.environ.get('HANA_PASSWORD', '')
+            schema = os.environ.get('HANA_SCHEMA', '4B-BIO_APP')
+            
+            # Get company schema mapping from Company model (matching collection analytics endpoint)
+            db_options = {}
+            try:
+                from FieldAdvisoryService.models import Company
+                companies = Company.objects.filter(is_active=True)
+                for comp in companies:
+                    # Map Company_name to schema name (name field)
+                    db_options[comp.Company_name] = comp.name
+            except Exception as e:
+                # Fallback to settings if Company model is not available
+                try:
+                    db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                    if db_setting:
+                        if isinstance(db_setting.value, dict):
+                            db_options = db_setting.value
+                        elif isinstance(db_setting.value, str):
+                            import json
+                            try:
+                                db_options = json.loads(db_setting.value)
+                            except:
+                                pass
+                except Exception:
+                    pass
+            
+            # Clean options and select schema based on company param
+            cleaned_options = {}
+            for k, v in db_options.items():
+                cleaned_options[str(k).strip().strip('"').strip("'")] = str(v).strip().strip('"').strip("'")
+            db_options = cleaned_options
+            
+            # Select schema based on company parameter
+            if company and company in db_options:
+                schema = db_options[company]
+            elif company:
+                # Try to find matching company by name field
+                schema = company
+            else:
+                # Use first available company schema or default
+                schema = list(db_options.values())[0] if db_options else '4B-BIO_APP'
+            
+            print(f"[DEBUG _get_collection_totals] emp_id={emp_id}, company={company}, schema={schema}, dates={start_date} to {end_date}, ignore_emp_filter={ignore_emp_filter}")
+            
+            # Connect to HANA
+            encrypt = str(os.environ.get('HANA_ENCRYPT', '')).strip().lower() in ('true', '1', 'yes')
+            ssl_validate = str(os.environ.get('HANA_SSL_VALIDATE', '')).strip().lower() in ('true', '1', 'yes')
+            
+            kwargs = {
+                'address': host,
+                'port': int(port),
+                'user': user_name,
+                'password': password
+            }
+            if encrypt:
+                kwargs['encrypt'] = True
+                kwargs['sslValidateCertificate'] = ssl_validate if ssl_validate else False
+            
+            conn = dbapi.connect(**kwargs)
+            
+            if schema:
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{schema}"')
+                cur.close()
+            
+            # Parse emp_id
+            emp_val = None
+            if emp_id and not ignore_emp_filter:
+                try:
+                    emp_val = int(emp_id)
+                except Exception:
+                    pass
+            
+            # Get collection data using the correct function
+            data = collection_vs_achievement(
+                conn,
+                emp_id=emp_val,
+                region=region or None,
+                zone=zone or None,
+                territory=territory or None,
+                start_date=start_date or None,
+                end_date=end_date or None,
+                group_by_date=False,
+                ignore_emp_filter=ignore_emp_filter
+            )
+            
+            conn.close()
+            
+            # Aggregate totals
+            total_target = 0.0
+            total_achievement = 0.0
+            min_from = None
+            max_to = None
+            
+            for row in (data or []):
+                if isinstance(row, dict):
+                    try:
+                        total_target += float(row.get('Collection_Target', 0) or 0)
+                    except Exception:
+                        pass
+                    try:
+                        total_achievement += float(row.get('Collection_Achievement', 0) or 0)
+                    except Exception:
+                        pass
+                    
+                    row_from = row.get('From_Date')
+                    row_to = row.get('To_Date')
+                    if row_from and (min_from is None or str(row_from) < str(min_from)):
+                        min_from = row_from
+                    if row_to and (max_to is None or str(row_to) > str(max_to)):
+                        max_to = row_to
+            
+            result = {
+                'target': round(total_target, 2),
+                'achievement': round(total_achievement, 2),
+                'from_date': min_from or start_date,
+                'to_date': max_to or end_date
+            }
+            
+            print(f"[DEBUG _get_collection_totals] Result: target={result['target']}, achievement={result['achievement']}, rows_processed={len(data or [])}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error fetching collection totals: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'target': 0.0, 'achievement': 0.0, 'from_date': start_date, 'to_date': end_date}
+    
+    def _get_sales_totals(self, emp_id, start_date, end_date, company, region, zone, territory):
+        """Get sales totals directly from SAP"""
+        if not SAP_AVAILABLE:
+            return {'target': 0.0, 'achievement': 0.0, 'from_date': start_date, 'to_date': end_date}
+        
+        try:
+            # Load environment variables
+            for path in [
+                os.path.join(os.path.dirname(__file__), '..', 'sap_integration', '.env'),
+                os.path.join(str(settings.BASE_DIR), '.env'),
+                os.path.join(str(settings.BASE_DIR), '..', '.env'),
+                os.path.join(os.getcwd(), '.env')
+            ]:
+                try:
+                    _hana_load_env_file(path)
+                except Exception:
+                    pass
+            
+            from hdbcli import dbapi
+            
+            # Get connection parameters
+            host = os.environ.get('HANA_HOST', '')
+            port = os.environ.get('HANA_PORT', '30015')
+            user_name = os.environ.get('HANA_USER', '')
+            password = os.environ.get('HANA_PASSWORD', '')
+            schema = os.environ.get('HANA_SCHEMA', '4B-BIO_APP')
+            
+            # Get company schema mapping from Company model (matching collection analytics endpoint)
+            db_options = {}
+            try:
+                from FieldAdvisoryService.models import Company
+                companies = Company.objects.filter(is_active=True)
+                for comp in companies:
+                    # Map Company_name to schema name (name field)
+                    db_options[comp.Company_name] = comp.name
+            except Exception as e:
+                # Fallback to settings if Company model is not available
+                try:
+                    db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                    if db_setting:
+                        if isinstance(db_setting.value, dict):
+                            db_options = db_setting.value
+                        elif isinstance(db_setting.value, str):
+                            import json
+                            try:
+                                db_options = json.loads(db_setting.value)
+                            except:
+                                pass
+                except Exception:
+                    pass
+            
+            # Clean options and select schema based on company param
+            cleaned_options = {}
+            for k, v in db_options.items():
+                cleaned_options[str(k).strip().strip('"').strip("'")] = str(v).strip().strip('"').strip("'")
+            db_options = cleaned_options
+            
+            # Select schema based on company parameter
+            if company and company in db_options:
+                schema = db_options[company]
+            elif company:
+                # Try to find matching company by name field
+                schema = company
+            else:
+                # Use first available company schema or default
+                schema = list(db_options.values())[0] if db_options else '4B-BIO_APP'
+            
+            print(f"[DEBUG _get_sales_totals] emp_id={emp_id}, company={company}, schema={schema}, dates={start_date} to {end_date}")
+            
+            # Connect to HANA
+            encrypt = str(os.environ.get('HANA_ENCRYPT', '')).strip().lower() in ('true', '1', 'yes')
+            ssl_validate = str(os.environ.get('HANA_SSL_VALIDATE', '')).strip().lower() in ('true', '1', 'yes')
+            
+            kwargs = {
+                'address': host,
+                'port': int(port),
+                'user': user_name,
+                'password': password
+            }
+            if encrypt:
+                kwargs['encrypt'] = True
+                kwargs['sslValidateCertificate'] = ssl_validate if ssl_validate else False
+            
+            conn = dbapi.connect(**kwargs)
+            
+            if schema:
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{schema}"')
+                cur.close()
+            
+            # Parse emp_id
+            emp_val = None
+            if emp_id:
+                try:
+                    emp_val = int(emp_id)
+                except Exception:
+                    pass
+            
+            # Get sales data using sales_vs_achievement_territory (same as /sap/sales-vs-achievement-territory endpoint)
+            data = sales_vs_achievement_territory(
+                conn,
+                emp_id=emp_val,
+                region=region or None,
+                zone=zone or None,
+                territory=territory or None,
+                start_date=start_date or None,
+                end_date=end_date or None,
+                group_by_date=False,
+                ignore_emp_filter=False,
+                group_by_emp=False
+            )
+            
+            conn.close()
+            
+            # Aggregate totals - Skip GRAND TOTAL row to avoid double counting
+            total_target = 0.0
+            total_achievement = 0.0
+            min_from = None
+            max_to = None
+            rows_processed = 0
+            
+            for row in (data or []):
+                if isinstance(row, dict):
+                    # Skip the GRAND TOTAL row to avoid double counting
+                    if row.get('Region') == 'GRAND TOTAL':
+                        continue
+                    
+                    rows_processed += 1
+                    try:
+                        total_target += float(row.get('Sales_Target', 0) or 0)
+                    except Exception:
+                        pass
+                    try:
+                        total_achievement += float(row.get('Sales_Achievement', 0) or 0)
+                    except Exception:
+                        pass
+                    
+                    row_from = row.get('From_Date')
+                    row_to = row.get('To_Date')
+                    if row_from and (min_from is None or str(row_from) < str(min_from)):
+                        min_from = row_from
+                    if row_to and (max_to is None or str(row_to) > str(max_to)):
+                        max_to = row_to
+            
+            result = {
+                'target': round(total_target, 2),
+                'achievement': round(total_achievement, 2),
+                'from_date': min_from or start_date,
+                'to_date': max_to or end_date
+            }
+            
+            print(f"[DEBUG _get_sales_totals] Result: target={result['target']}, achievement={result['achievement']}, rows_processed={rows_processed}/{len(data or [])}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error fetching sales totals: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'target': 0.0, 'achievement': 0.0, 'from_date': start_date, 'to_date': end_date}
+
 
 class SalesAnalyticsView(APIView):
     """
@@ -841,15 +1188,16 @@ class CollectionAnalyticsView(APIView):
                 cfg['schema'] = list(db_options.values())[0] if db_options else '4B-BIO_APP'
             
             # Parameters
-            period = (request.GET.get('period') or 'monthly').strip().lower()
+            period = (request.GET.get('period') or '').strip().lower()
             start_date = (request.GET.get('start_date') or '').strip()
             end_date = (request.GET.get('end_date') or '').strip()
             
-            # Handle period parameter (overrides start_date/end_date)
+            # Handle period parameter (overrides start_date/end_date only if explicitly provided)
             from datetime import datetime, date
             today = date.today()
             
             if period:
+                # Period parameter explicitly provided - use it
                 if period == 'today':
                     start_date = today.strftime('%Y-%m-%d')
                     end_date = today.strftime('%Y-%m-%d')
@@ -862,9 +1210,9 @@ class CollectionAnalyticsView(APIView):
                     start_date = today.replace(month=1, day=1).strftime('%Y-%m-%d')
                     end_date = today.strftime('%Y-%m-%d')
             
-            # If no period and no dates provided, default to today
-            if not start_date and not end_date:
-                start_date = today.strftime('%Y-%m-%d')
+            # If no period and no dates provided, default to current month
+            if not period and not start_date and not end_date:
+                start_date = today.replace(day=1).strftime('%Y-%m-%d')
                 end_date = today.strftime('%Y-%m-%d')
             
             region = (request.GET.get('region') or '').strip()
@@ -935,6 +1283,8 @@ class CollectionAnalyticsView(APIView):
                     cur = conn.cursor()
                     cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
                     cur.close()
+                
+                print(f"[DEBUG CollectionAnalyticsView] schema={cfg['schema']}, emp_id={sap_emp_id}, dates={start_date} to {end_date}, period={period if period else 'None'}")
                 
                 # Fetch data using collection_vs_achievement function
                 data = collection_vs_achievement(

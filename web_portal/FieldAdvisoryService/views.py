@@ -62,7 +62,7 @@ class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
         openapi.Parameter('zone_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Zone ID'),
         openapi.Parameter('region_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Region ID'),
         openapi.Parameter('date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True, description='Meeting date (YYYY-MM-DD)'),
-        openapi.Parameter('location', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='Meeting location'),
+        openapi.Parameter('location', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Meeting location'),
         openapi.Parameter('total_attendees', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Total number of attendees'),
         openapi.Parameter('key_topics_discussed', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Key topics discussed'),
         openapi.Parameter('presence_of_zm', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, required=False, description='Presence of Zone Manager'),
