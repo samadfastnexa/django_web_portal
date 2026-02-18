@@ -55,7 +55,7 @@ def export_farmer_meeting_to_excel(modeladmin, request, queryset):
     
     # Headers - Meeting Info
     main_headers = [
-        'ID', 'FSM Name', 'Date', 'Company', 'Region', 'Zone', 'Territory',
+        'ID', 'FSM Name', 'Date', 'Company',
         'Location', 'Total Attendees', 'ZM Present', 'RSM Present',
         'Key Topics', 'Feedback', 'Suggestions'
     ]
@@ -91,9 +91,6 @@ def export_farmer_meeting_to_excel(modeladmin, request, queryset):
             meeting.id, meeting.fsm_name,
             meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
             meeting.company_fk.Company_name if meeting.company_fk else '',
-            meeting.region_fk.name if meeting.region_fk else '',
-            meeting.zone_fk.name if meeting.zone_fk else '',
-            meeting.territory_fk.name if meeting.territory_fk else '',
             meeting.location, meeting.total_attendees,
             'Yes' if meeting.presence_of_zm else 'No',
             'Yes' if meeting.presence_of_rsm else 'No',
@@ -285,9 +282,6 @@ def export_field_day_to_excel(modeladmin, request, queryset):
             ('Title', field_day.title),
             ('Date', field_day.date.strftime('%Y-%m-%d %H:%M') if field_day.date else ''),
             ('Company', field_day.company_fk.Company_name if field_day.company_fk else ''),
-            ('Region', field_day.region_fk.name if field_day.region_fk else ''),
-            ('Zone', field_day.zone_fk.name if field_day.zone_fk else ''),
-            ('Territory', field_day.territory_fk.name if field_day.territory_fk else ''),
             ('Total Participants', field_day.total_participants),
             ('Demonstrations Conducted', field_day.demonstrations_conducted),
             ('User', field_day.user.username if field_day.user else ''),

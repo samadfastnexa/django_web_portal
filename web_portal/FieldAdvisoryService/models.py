@@ -42,6 +42,7 @@ class Company(BaseInfoModel):
         return self.Company_name  # or self.name if BaseInfoModel has 'name'
     
     class Meta:
+        db_table = 'fieldadvisoryservice_company'
         verbose_name = "Company"
         verbose_name_plural = "Companies"
     
@@ -58,6 +59,9 @@ class Region(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.company.name})"
+    
+    class Meta:
+        db_table = 'fieldadvisoryservice_region'
 
 class Zone(models.Model):
     company = models.ForeignKey('Company', on_delete=models.PROTECT)
@@ -73,6 +77,9 @@ class Zone(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.region.name} - {self.company.name})"
+    
+    class Meta:
+        db_table = 'fieldadvisoryservice_zone'
 
 
 class Territory(models.Model):
@@ -105,6 +112,7 @@ class Territory(models.Model):
         return f"{self.name} ({self.zone.name} - {self.company.name})"
     
     class Meta:
+        db_table = 'fieldadvisoryservice_territory'
         verbose_name = "Territory"
         verbose_name_plural = "Territories"
 
@@ -219,6 +227,7 @@ class Dealer(models.Model):
         null=True,
     )
     class Meta:
+        db_table = 'fieldadvisoryservice_dealer'
         constraints = [
             UniqueConstraint(fields=['user'], name='unique_user_dealer')
         ]
@@ -393,6 +402,7 @@ class DealerRequest(models.Model):
         return f"{self.business_name} ({self.status}) by {self.owner_name}"
 
     class Meta:
+        db_table = 'fieldadvisoryservice_dealerrequest'
         verbose_name = "Dealer Request"
         verbose_name_plural = "Dealer Requests"
         permissions = [
@@ -442,6 +452,7 @@ class MeetingSchedule(models.Model):
         return f"{self.meeting_id} - Meeting on {self.date} at {self.location}"
     
     class Meta:
+        db_table = 'fieldadvisoryservice_meetingschedule'
         ordering = ['-id']
         verbose_name = "Field Advisory Meeting"
         verbose_name_plural = "Field Advisory Meetings"
@@ -453,6 +464,9 @@ class MeetingScheduleAttendance(models.Model):
     contact_number = models.CharField(max_length=15, blank=True)
     acreage = models.FloatField(default=0.0)
     crop = models.CharField(max_length=100, blank=True)
+    
+    class Meta:
+        db_table = 'fieldadvisoryservice_meetingscheduleattendance'
 
 class SalesOrder(models.Model):
     STATUS_CHOICES = (
@@ -562,6 +576,7 @@ class SalesOrder(models.Model):
         return f"Order #{self.id} - {self.card_name} - {self.status}"
     
     class Meta:
+        db_table = 'fieldadvisoryservice_salesorder'
         ordering = ['-id']
         verbose_name = "Sales Order"
         verbose_name_plural = "Sales Orders"
@@ -610,6 +625,7 @@ class SalesOrderLine(models.Model):
         return f"Line {self.line_num}: {self.item_code} - {self.quantity}"
     
     class Meta:
+        db_table = 'fieldadvisoryservice_salesorderline'
         ordering = ['line_num']
         verbose_name = "Sales Order Line"
         verbose_name_plural = "Sales Order Lines"
@@ -622,3 +638,6 @@ class SalesOrderAttachment(models.Model):
 
     def __str__(self):
         return self.file.name
+    
+    class Meta:
+        db_table = 'fieldadvisoryservice_salesorderattachment'

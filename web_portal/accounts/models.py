@@ -25,6 +25,7 @@ class Role(models.Model):
     # permissions = models.ManyToManyField(Permission, related_name='roles')
     
     class Meta:
+        db_table = 'accounts_role'
         permissions = [
             ('manage_roles', 'Can manage roles and permissions'),
         ]
@@ -65,6 +66,7 @@ class DesignationModel(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
+        db_table = 'accounts_designationmodel'
         ordering = ['level', 'name']
         verbose_name = "Designation"
         verbose_name_plural = "Designations"
@@ -184,6 +186,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
     
     class Meta:
+        db_table = 'accounts_user'
         permissions = [
             ('manage_users', 'Can add/edit users'),
             ('view_user_reports', 'Can view user reports'),
@@ -402,6 +405,7 @@ class SalesStaffProfile(models.Model):
         super().delete(*args, **kwargs)
     
     class Meta:
+        db_table = 'accounts_salesstaffprofile'
         permissions = [
             ('manage_sales_staff', 'Can manage sales staff profiles'),
             ('view_hierarchy', 'Can view reporting hierarchy'),

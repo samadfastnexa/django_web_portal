@@ -19,6 +19,7 @@ class KindwiseIdentification(models.Model):
 	created_at = models.DateTimeField(auto_now_add=True)
 
 	class Meta:
+		db_table = 'kindwise_kindwiseidentification'
 		ordering = ['-created_at']
 
 	def __str__(self):

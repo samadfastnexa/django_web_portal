@@ -13,10 +13,15 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from datetime import timedelta
 import os
-from decouple import config, Csv
-# from decouple import config
+from decouple import Config, RepositoryEnv, Csv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Explicitly configure .env file location
+ENV_FILE = BASE_DIR.parent / '.env'
+config = Config(RepositoryEnv(str(ENV_FILE)))
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -27,6 +32,22 @@ MEDIA_ROOT = BASE_DIR / 'media'
 #   Production: 'https://yourdomain.com'
 #   Environment variable: config('BASE_URL', default='http://localhost:8000')
 BASE_URL = config('BASE_URL', default='http://localhost:8000')
+
+# ============== .ENV LOADING CHECK (Remove after verification) ==============
+print("\n" + "="*70)
+print("🔍 CHECKING .ENV FILE LOADING")
+print("="*70)
+print(f"📁 .env file path: {ENV_FILE}")
+print(f"✓ .env exists: {ENV_FILE.exists()}")
+if ENV_FILE.exists():
+    print(f"📏 .env file size: {ENV_FILE.stat().st_size} bytes")
+print(f"📊 Loaded values:")
+print(f"   BASE_URL: {BASE_URL}")
+print(f"   HANA_HOST: {config('HANA_HOST', default='NOT_LOADED')}")
+print(f"   SAP_B1S_HOST: {config('SAP_B1S_HOST', default='NOT_LOADED')}")
+print(f"   CORS_ALLOWED_ORIGINS: {config('CORS_ALLOWED_ORIGINS', default='NOT_LOADED')}")
+print("="*70 + "\n")
+# ============================================================================
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
