@@ -14,6 +14,9 @@ class Complaint(models.Model):
     message = models.TextField()
     image = models.ImageField(upload_to='complaint_images/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'complaints_complaint'
    
     def __str__(self):
         return f"{self.complaint_id} - {self.user.email}"

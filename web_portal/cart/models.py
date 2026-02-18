@@ -19,6 +19,7 @@ class Cart(models.Model):
     updated_date = models.DateTimeField(auto_now=True)
     
     class Meta:
+        db_table = 'cart_cart'
         verbose_name = "Cart"
         verbose_name_plural = "Carts"
         permissions = [
@@ -95,6 +96,7 @@ class CartItem(models.Model):
     updated_date = models.DateTimeField(auto_now=True)
     
     class Meta:
+        db_table = 'cart_cartitem'
         verbose_name = "Cart Item"
         verbose_name_plural = "Cart Items"
         ordering = ['-created_date']
@@ -273,6 +275,7 @@ class Order(models.Model):
     )
     
     class Meta:
+        db_table = 'cart_order'
         verbose_name = "Order"
         verbose_name_plural = "Orders"
         ordering = ['-created_date']
@@ -351,6 +354,7 @@ class OrderItem(models.Model):
     created_date = models.DateTimeField(auto_now_add=True)
     
     class Meta:
+        db_table = 'cart_orderitem'
         verbose_name = "Order Item"
         verbose_name_plural = "Order Items"
         ordering = ['id']
@@ -487,6 +491,7 @@ class Payment(models.Model):
     )
     
     class Meta:
+        db_table = 'cart_payment'
         verbose_name = "Payment"
         verbose_name_plural = "Payments"
         ordering = ['-created_date']
@@ -555,6 +560,7 @@ class OrderStatusHistory(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'cart_orderstatushistory'
         verbose_name = "Order Status History"
         verbose_name_plural = "Order Status Histories"
         ordering = ['-created_at']

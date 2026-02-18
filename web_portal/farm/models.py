@@ -26,6 +26,7 @@ class Farm(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True, help_text="Soft delete timestamp")
 
     class Meta:
+        db_table = 'farm_farm'
         ordering = ['-created_at']
 
     def soft_delete(self):

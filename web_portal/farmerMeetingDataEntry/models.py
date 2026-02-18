@@ -56,6 +56,7 @@ class Meeting(models.Model):
         return f"{self.id} - {self.user_id.username if self.user_id else 'No User'}"
     
     class Meta:
+        db_table = 'farmermeetingdataentry_meeting'
         ordering = ['-id']
         verbose_name = "Farmer Advisory Meeting"
         verbose_name_plural = "Farmer Advisory Meetings"
@@ -115,6 +116,9 @@ class MeetingAttachment(models.Model):
     )
     uploaded_at = models.DateTimeField(auto_now_add=True) 
 
+    class Meta:
+        db_table = 'farmermeetingdataentry_meetingattachment'
+
     def __str__(self):
         return os.path.basename(self.file.name)
     
@@ -170,6 +174,7 @@ class FieldDay(models.Model):
         return f"{self.id} - {self.title}"
     
     class Meta:
+        db_table = 'farmermeetingdataentry_fieldday'
         ordering = ['-id']
         verbose_name = "Field Day"
         verbose_name_plural = "Field Days"
@@ -196,6 +201,9 @@ class FieldDayAttendance(models.Model):
     crop = models.CharField(max_length=100, blank=True, 
                           verbose_name="Crop",
                           help_text="Crop discussed/demonstrated (deprecated - use crops relationship)")
+    
+    class Meta:
+        db_table = 'farmermeetingdataentry_fielddayattendance'
 
 
 class FieldDayAttendanceCrop(models.Model):
@@ -233,3 +241,6 @@ class FieldDayAttachment(models.Model):
 
     def __str__(self):
         return os.path.basename(self.file.name)
+    
+    class Meta:
+        db_table = 'farmermeetingdataentry_fielddayattachment'
