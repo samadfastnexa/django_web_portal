@@ -8509,7 +8509,8 @@ def product_document_view(request, item_code):
                         download_url = f"/api/sap/product-description-download/?item_code={item_code}&database={database}"
                         # logger.info(f"Document file found for {item_code}: {file_path}")
                     else:
-                        ## logger.warning(f"Document file not found: {doc_file_name}.{doc_file_ext}")
+                        pass
+                        # logger.warning(f"Document file not found: {doc_file_name}.{doc_file_ext}")
             else:
                 error_msg = response_data.get('error', 'Failed to load product description')
                 # logger.error(f"API returned success=false: {error_msg}")
