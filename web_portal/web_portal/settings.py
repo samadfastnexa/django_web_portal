@@ -283,12 +283,12 @@ LOGGING = {
     'loggers': {
         'hana': {
             'handlers': ['console', 'file'],
-            'level': 'INFO',
+            'level': 'WARNING',  # Changed from INFO to WARNING - only show warnings/errors
             'propagate': False,
         },
         'django': {
             'handlers': ['console'],
-            'level': 'INFO',
+            'level': 'WARNING',  # Changed from INFO to WARNING - only show warnings/errors
             'propagate': False,
         },
     },
