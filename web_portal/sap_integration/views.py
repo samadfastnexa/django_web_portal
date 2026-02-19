@@ -8342,7 +8342,8 @@ def product_catalog_list_view(request):
                 database = company.Company_name
                 # logger.info(f"Using first active company: {database}")
         except Exception as e:
-           # logger.warning(f"Could not get company from database: {e}")
+            pass
+            # logger.warning(f"Could not get company from database: {e}")
     
     products = []
     categories = []
@@ -8508,23 +8509,23 @@ def product_document_view(request, item_code):
                         download_url = f"/api/sap/product-description-download/?item_code={item_code}&database={database}"
                         # logger.info(f"Document file found for {item_code}: {file_path}")
                     else:
-                       # logger.warning(f"Document file not found: {doc_file_name}.{doc_file_ext}")
+                        # logger.warning(f"Document file not found: {doc_file_name}.{doc_file_ext}")
             else:
                 error_msg = response_data.get('error', 'Failed to load product description')
-                #logger.error(f"API returned success=false: {error_msg}")
+                # logger.error(f"API returned success=false: {error_msg}")
         else:
             # Try to extract error from response
             try:
                 response_data = json.loads(api_response.content)
                 error_msg = response_data.get('error', f"API returned status {api_response.status_code}")
-               # logger.error(f"API error response: {response_data}")
+                # logger.error(f"API error response: {response_data}")
             except Exception as parse_err:
                 error_msg = f"API returned status {api_response.status_code}"
-               # logger.error(f"Could not parse API error response: {parse_err}")
-               # logger.error(f"Raw response: {api_response.content[:500]}")
+                # logger.error(f"Could not parse API error response: {parse_err}")
+                # logger.error(f"Raw response: {api_response.content[:500]}")
             
     except Exception as e:
-        #logger.error(f"Error loading product document: {e}")
+        # logger.error(f"Error loading product document: {e}")
         error_msg = str(e)
         import traceback
         traceback.print_exc()
