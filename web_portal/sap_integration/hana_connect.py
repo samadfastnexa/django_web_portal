@@ -178,32 +178,32 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
     
     rows = _fetch_all(db, sql, tuple(params))
     
-    # Log collection vs achievement summary
-    output = "\n" + "="*80 + "\n"
-    output += "COLLECTION VS ACHIEVEMENT REPORT\n"
-    output += "="*80 + "\n"
-    
-    for r in rows:
-        collection_target = float(r.get('Collection_Target') or 0)
-        collection_achievement = float(r.get('Collection_Achievement') or 0)
-        variance = collection_achievement - collection_target
-        variance_pct = (variance / collection_target * 100) if collection_target > 0 else 0
-        
-        output += f"\nOwner: {r.get('OwnerName', 'N/A')}\n"
-        output += f"   Target:      {collection_target:,.2f}\n"
-        output += f"   Achievement: {collection_achievement:,.2f}\n"
-        output += f"   Variance:    {variance:,.2f} ({variance_pct:+.1f}%)\n"
-        output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
-    
-    output += "="*80 + "\n"
-    
-    # Print to stdout and log (handle Unicode encoding for Windows console)
-    try:
-        print(output)
-    except UnicodeEncodeError:
-        # Fallback for Windows console - encode to ASCII with fallback
-        print(output.encode('ascii', errors='replace').decode('ascii'))
-    logger.info(output)
+    # DEBUG: Uncomment to see collection vs achievement report
+    # output = "\n" + "="*80 + "\n"
+    # output += "COLLECTION VS ACHIEVEMENT REPORT\n"
+    # output += "="*80 + "\n"
+    # 
+    # for r in rows:
+    #     collection_target = float(r.get('Collection_Target') or 0)
+    #     collection_achievement = float(r.get('Collection_Achievement') or 0)
+    #     variance = collection_achievement - collection_target
+    #     variance_pct = (variance / collection_target * 100) if collection_target > 0 else 0
+    #     
+    #     output += f"\nOwner: {r.get('OwnerName', 'N/A')}\n"
+    #     output += f"   Target:      {collection_target:,.2f}\n"
+    #     output += f"   Achievement: {collection_achievement:,.2f}\n"
+    #     output += f"   Variance:    {variance:,.2f} ({variance_pct:+.1f}%)\n"
+    #     output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
+    # 
+    # output += "="*80 + "\n"
+    # 
+    # # Print to stdout and log (handle Unicode encoding for Windows console)
+    # try:
+    #     print(output)
+    # except UnicodeEncodeError:
+    #     # Fallback for Windows console - encode to ASCII with fallback
+    #     print(output.encode('ascii', errors='replace').decode('ascii'))
+    # logger.info(output)
             
     return rows
 
@@ -334,53 +334,54 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         order_by_sql += ', 7'
 
     full_sql = select_clause + from_clause + where_sql + group_by_sql + order_by_sql
-    print("this is print:", full_sql)
+    # DEBUG: Uncomment to see SQL query
+    # print("this is print:", full_sql)
     
     rows = _fetch_all(db, full_sql, tuple(params))
     
-    # Log collection vs achievement summary
-    output = "\n" + "="*80 + "\n"
-    output += "COLLECTION VS ACHIEVEMENT REPORT (collection_vs_achievement)\n"
-    output += "="*80 + "\n"
-    
-    total_target = 0
-    total_achievement = 0
-    
-    for r in rows:
-        collection_target = float(r.get('Collection_Target') or 0)
-        collection_achievement = float(r.get('Collection_Achievement') or 0)
-        variance = collection_achievement - collection_target
-        variance_pct = (variance / collection_target * 100) if collection_target > 0 else 0
-        
-        total_target += collection_target
-        total_achievement += collection_achievement
-        
-        output += f"\nRegion: {r.get('Region', 'N/A')} | Zone: {r.get('Zone', 'N/A')} | Territory: {r.get('TerritoryName', 'N/A')}\n"
-        output += f"   Target:      PKR {collection_target:,.2f}\n"
-        output += f"   Achievement: PKR {collection_achievement:,.2f}\n"
-        output += f"   Variance:    PKR {variance:,.2f} ({variance_pct:+.1f}%)\n"
-        output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
-    
-    # Print totals
-    if rows:
-        total_variance = total_achievement - total_target
-        total_variance_pct = (total_variance / total_target * 100) if total_target > 0 else 0
-        output += f"\n{'-'*80}\n"
-        output += f"TOTAL:\n"
-        output += f"   Target:      PKR {total_target:,.2f}\n"
-        output += f"   Achievement: PKR {total_achievement:,.2f}\n"
-        output += f"   Variance:    PKR {total_variance:,.2f} ({total_variance_pct:+.1f}%)\n"
-        output += f"{'-'*80}\n"
-    
-    output += "="*80 + "\n"
-    
-    # Print to stdout and log (handle Unicode encoding for Windows console)
-    try:
-        print(output)
-    except UnicodeEncodeError:
-        # Fallback for Windows console - encode to ASCII with fallback
-        print(output.encode('ascii', errors='replace').decode('ascii'))
-    logger.info(output)
+    # DEBUG: Uncomment to see detailed collection vs achievement report
+    # output = "\n" + "="*80 + "\n"
+    # output += "COLLECTION VS ACHIEVEMENT REPORT (collection_vs_achievement)\n"
+    # output += "="*80 + "\n"
+    # 
+    # total_target = 0
+    # total_achievement = 0
+    # 
+    # for r in rows:
+    #     collection_target = float(r.get('Collection_Target') or 0)
+    #     collection_achievement = float(r.get('Collection_Achievement') or 0)
+    #     variance = collection_achievement - collection_target
+    #     variance_pct = (variance / collection_target * 100) if collection_target > 0 else 0
+    #     
+    #     total_target += collection_target
+    #     total_achievement += collection_achievement
+    #     
+    #     output += f"\nRegion: {r.get('Region', 'N/A')} | Zone: {r.get('Zone', 'N/A')} | Territory: {r.get('TerritoryName', 'N/A')}\n"
+    #     output += f"   Target:      PKR {collection_target:,.2f}\n"
+    #     output += f"   Achievement: PKR {collection_achievement:,.2f}\n"
+    #     output += f"   Variance:    PKR {variance:,.2f} ({variance_pct:+.1f}%)\n"
+    #     output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
+    # 
+    # # Print totals
+    # if rows:
+    #     total_variance = total_achievement - total_target
+    #     total_variance_pct = (total_variance / total_target * 100) if total_target > 0 else 0
+    #     output += f"\n{'-'*80}\n"
+    #     output += f"TOTAL:\n"
+    #     output += f"   Target:      PKR {total_target:,.2f}\n"
+    #     output += f"   Achievement: PKR {total_achievement:,.2f}\n"
+    #     output += f"   Variance:    PKR {total_variance:,.2f} ({total_variance_pct:+.1f}%)\n"
+    #     output += f"{'-'*80}\n"
+    # 
+    # output += "="*80 + "\n"
+    # 
+    # # Print to stdout and log (handle Unicode encoding for Windows console)
+    # try:
+    #     print(output)
+    # except UnicodeEncodeError:
+    #     # Fallback for Windows console - encode to ASCII with fallback
+    #     print(output.encode('ascii', errors='replace').decode('ascii'))
+    # logger.info(output)
             
     return rows
 
@@ -574,47 +575,48 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
         'ORDER BY sort_order, 2, 4'
     )
     
-    print("Sales Territory Query:", full_sql)
-    print("Query Params:", params)
+    # DEBUG: Uncomment to see SQL query and parameters
+    # print("Sales Territory Query:", full_sql)
+    # print("Query Params:", params)
     
     # Params need to be doubled for UNION ALL (same params for both queries)
     all_params = tuple(params + params)
     rows = _fetch_all(db, full_sql, all_params)
     
-    # Log sales vs achievement summary
-    output = "\n" + "="*80 + "\n"
-    output += "SALES VS ACHIEVEMENT TERRITORY REPORT\n"
-    output += "="*80 + "\n"
-    
-    for r in rows:
-        sales_target = float(r.get('Sales_Target') or 0)
-        sales_achievement = float(r.get('Sales_Achievement') or 0)
-        variance = sales_achievement - sales_target
-        variance_pct = (variance / sales_target * 100) if sales_target > 0 else 0
-        
-        region_name = r.get('Region', 'N/A')
-        zone_name = r.get('Zone', 'N/A')
-        territory_name = r.get('TerritoryName', 'N/A')
-        
-        if region_name == 'GRAND TOTAL':
-            output += f"\n{'='*80}\n"
-            output += f"GRAND TOTAL\n"
-        else:
-            output += f"\nRegion: {region_name} | Zone: {zone_name} | Territory: {territory_name}\n"
-        
-        output += f"   Target:      PKR {sales_target:,.2f}\n"
-        output += f"   Achievement: PKR {sales_achievement:,.2f}\n"
-        output += f"   Variance:    PKR {variance:,.2f} ({variance_pct:+.1f}%)\n"
-        output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
-    
-    output += "="*80 + "\n"
-    
-    # Print to stdout and log
-    try:
-        print(output)
-    except UnicodeEncodeError:
-        print(output.encode('ascii', errors='replace').decode('ascii'))
-    logger.info(output)
+    # DEBUG: Uncomment to see sales vs achievement territory report
+    # output = "\n" + "="*80 + "\n"
+    # output += "SALES VS ACHIEVEMENT TERRITORY REPORT\n"
+    # output += "="*80 + "\n"
+    # 
+    # for r in rows:
+    #     sales_target = float(r.get('Sales_Target') or 0)
+    #     sales_achievement = float(r.get('Sales_Achievement') or 0)
+    #     variance = sales_achievement - sales_target
+    #     variance_pct = (variance / sales_target * 100) if sales_target > 0 else 0
+    #     
+    #     region_name = r.get('Region', 'N/A')
+    #     zone_name = r.get('Zone', 'N/A')
+    #     territory_name = r.get('TerritoryName', 'N/A')
+    #     
+    #     if region_name == 'GRAND TOTAL':
+    #         output += f"\n{'='*80}\n"
+    #         output += f"GRAND TOTAL\n"
+    #     else:
+    #         output += f"\nRegion: {region_name} | Zone: {zone_name} | Territory: {territory_name}\n"
+    #     
+    #     output += f"   Target:      PKR {sales_target:,.2f}\n"
+    #     output += f"   Achievement: PKR {sales_achievement:,.2f}\n"
+    #     output += f"   Variance:    PKR {variance:,.2f} ({variance_pct:+.1f}%)\n"
+    #     output += f"   Date Range:  {r.get('From_Date')} to {r.get('To_Date')}\n"
+    # 
+    # output += "="*80 + "\n"
+    # 
+    # # Print to stdout and log
+    # try:
+    #     print(output)
+    # except UnicodeEncodeError:
+    #     print(output.encode('ascii', errors='replace').decode('ascii'))
+    # logger.info(output)
             
     return rows
 
@@ -1461,7 +1463,8 @@ def main():
         logging.basicConfig(level=level, format='%(asctime)s %(levelname)s %(message)s', stream=sys.stdout)
     else:
         logging.basicConfig(level=level, format='%(levelname)s %(message)s', stream=sys.stdout)
-    logger.info('starting')
+    # DEBUG: Uncomment for CLI logging
+    # logger.info('starting')
     user = args.user or os.environ.get('HANA_USER', '')
     password = args.password or os.environ.get('HANA_PASSWORD', '')
     dsn_name = args.dsn or os.environ.get('HANA_DSN', '')
@@ -1482,7 +1485,8 @@ def main():
             action = qs.get('action', '')
         if action == '':
             action = 'select_oitm'
-    logger.info('env loaded dsn=%s host=%s port=%s schema=%s database=%s action=%s', dsn_name, host, port, schema, database, action or '(none)')
+    # DEBUG: Uncomment for CLI logging
+    # logger.info('env loaded dsn=%s host=%s port=%s schema=%s database=%s action=%s', dsn_name, host, port, schema, database, action or '(none)')
     if user == '' or password == '':
         err('Missing credentials. Provide --user and --password or set HANA_USER/HANA_PASSWORD.', 2)
     try:
@@ -1501,31 +1505,34 @@ def main():
         err('Provide --dsn or --host/--port.', 2)
     try:
         import pyodbc
-        logger.info('connecting')
+        # DEBUG: Uncomment for CLI logging
+        # logger.info('connecting')
         conn = pyodbc.connect(conn_str)
-        logger.info('connected')
+        # logger.info('connected')
     except Exception as e:
         msg = str(e)
         if dsn_name and host and (('IM002' in msg) or ('data source name not found' in msg.lower())):
             fallback = _build_conn_str_host(driver, host, port, user, password, database, encrypt, ssl_validate)
             try:
                 import pyodbc
-                logger.info('connecting with fallback')
+                # DEBUG: Uncomment for CLI logging
+                # logger.info('connecting with fallback')
                 conn = pyodbc.connect(fallback)
-                logger.info('connected')
+                # logger.info('connected')
             except Exception as e2:
                 try:
-                    logger.info('connecting with hdbcli')
+                    # logger.info('connecting with hdbcli')
                     conn = _connect_hdbcli(host, port, user, password, database, encrypt, ssl_validate)
-                    logger.info('connected')
+                    # logger.info('connected')
                 except Exception as e3:
                     err(str(e3), 1)
         else:
             try:
                 if host:
-                    logger.info('connecting with hdbcli')
+                    # DEBUG: Uncomment for CLI logging
+                    # logger.info('connecting with hdbcli')
                     conn = _connect_hdbcli(host, port, user, password, database, encrypt, ssl_validate)
-                    logger.info('connected')
+                    # logger.info('connected')
                 else:
                     err(msg, 1)
             except Exception as e4:
@@ -1534,7 +1541,8 @@ def main():
         if schema:
             sch_sql = schema if re.match(r'^[A-Za-z0-9_]+$', schema) else quote_ident(schema)
             cur = conn.cursor()
-            logger.info('setting schema %s', schema)
+            # DEBUG: Uncomment for CLI logging
+            # logger.info('setting schema %s', schema)
             cur.execute('SET SCHEMA ' + sch_sql)
             cur.close()
         if action == 'fetchdata':
@@ -1547,36 +1555,41 @@ def main():
                 'offset': args.offset or (qs.get('offset') if not IS_CLI else None) or '',
                 'schema': schema,
             }
-            logger.info('action fetchdata table=%s limit=%s offset=%s', params['table'], params['limit'], params['offset'])
+            # DEBUG: Uncomment for CLI logging
+            # logger.info('action fetchdata table=%s limit=%s offset=%s', params['table'], params['limit'], params['offset'])
             rows = fetchdata(conn, params)
-            logger.info('rows %d', len(rows))
+            # logger.info('rows %d', len(rows))
             out_json(rows)
             if odbc_available:
                 conn.close()
             sys.exit(0)
         if action == 'select_oitm':
-            logger.info('action select_oitm')
+            # DEBUG: Uncomment for CLI logging
+            # logger.info('action select_oitm')
             rows = select_oitm(conn, schema)
-            logger.info('rows %d', len(rows))
+            # logger.info('rows %d', len(rows))
             out_json(rows)
             conn.close()
             sys.exit(0)
         if action == 'count_tables':
-            logger.info('action count_tables')
+            # DEBUG: Uncomment for CLI logging
+            # logger.info('action count_tables')
             count = get_tables_count(conn, schema)
             out_text(str(count))
             conn.close()
             sys.exit(0)
         if action == 'territory_summary':
-            logger.info('action territory_summary')
+            # DEBUG: Uncomment for CLI logging
+            # logger.info('action territory_summary')
             rows = territory_summary(conn)
-            logger.info('rows %d', len(rows))
+            # logger.info('rows %d', len(rows))
             out_json(rows)
             conn.close()
             sys.exit(0)
-        logger.info('executing query')
+        # DEBUG: Uncomment for CLI logging
+        # logger.info('executing query')
         rows = _fetch_all(conn, query)
-        logger.info('rows %d', len(rows))
+        # logger.info('rows %d', len(rows))
         out_json(rows)
         cur.close()
         conn.close()

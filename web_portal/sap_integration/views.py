@@ -30,7 +30,7 @@ from django.utils.safestring import mark_safe
 from django.core.paginator import Paginator
 from FieldAdvisoryService.models import Company, Region, Zone, Territory
 
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
 
 
 def get_hana_schema_from_request(request):
@@ -56,13 +56,13 @@ def get_hana_schema_from_request(request):
         for candidate in list(variants):
             try:
                 company = Company.objects.get(Company_name=candidate, is_active=True)
-                logger.info(f"[DB RESOLVER] Matched exact company: {company.Company_name} from '{db_param}'")
+                # logger.info(f"[DB RESOLVER] Matched exact company: {company.Company_name} from '{db_param}'")
                 return company.Company_name
             except Company.DoesNotExist:
                 pass
             try:
                 company = Company.objects.get(Company_name__iexact=candidate, is_active=True)
-                logger.info(f"[DB RESOLVER] Matched iexact company: {company.Company_name} from '{db_param}'")
+                # logger.info(f"[DB RESOLVER] Matched iexact company: {company.Company_name} from '{db_param}'")
                 return company.Company_name
             except Company.DoesNotExist:
                 pass
@@ -71,17 +71,17 @@ def get_hana_schema_from_request(request):
         if 'ORANG' in token:
             company = Company.objects.filter(is_active=True, Company_name__icontains='ORANG').first()
             if company:
-                logger.info(f"[DB RESOLVER] Fallback mapped to ORANG company: {company.Company_name}")
+                # logger.info(f"[DB RESOLVER] Fallback mapped to ORANG company: {company.Company_name}")
                 return company.Company_name
         if 'BIO' in token:
             company = Company.objects.filter(is_active=True, Company_name__icontains='BIO').first()
             if company:
-                logger.info(f"[DB RESOLVER] Fallback mapped to BIO company: {company.Company_name}")
+                # logger.info(f"[DB RESOLVER] Fallback mapped to BIO company: {company.Company_name}")
                 return company.Company_name
         if 'AGRI' in token:
             company = Company.objects.filter(is_active=True, Company_name__icontains='AGRI').first()
             if company:
-                logger.info(f"[DB RESOLVER] Fallback mapped to AGRI company: {company.Company_name}")
+                # logger.info(f"[DB RESOLVER] Fallback mapped to AGRI company: {company.Company_name}")
                 return company.Company_name
 
     session_db = request.session.get('selected_db', '').strip()
@@ -263,12 +263,12 @@ def hana_connect_admin(request):
     if not selected_schema:
         selected_schema = os.environ.get('HANA_SCHEMA', '')
     
-    # Debug logging
-    print(f"DEBUG hana_connect_admin:")
-    print(f"  selected_db_key: {selected_db_key}")
-    print(f"  db_options: {db_options}")
-    print(f"  selected_schema: {selected_schema}")
-    print(f"  type(selected_schema): {type(selected_schema)}")
+    # DEBUG: Uncomment to see schema selection details
+    # print(f"DEBUG hana_connect_admin:")
+    # print(f"  selected_db_key: {selected_db_key}")
+    # print(f"  db_options: {db_options}")
+    # print(f"  selected_schema: {selected_schema}")
+    # print(f"  type(selected_schema): {type(selected_schema)}")
     
     cfg = {
         'dsn': os.environ.get('HANA_DSN') or '',
@@ -2413,8 +2413,8 @@ def bp_entry_admin(request):
                     # Log the payload for debugging
                     import logging
                     logger = logging.getLogger('sap')
-                    logger.info(f"SAP BP Payload: {json.dumps(payload, indent=2)}")
-                    logger.info(f"SAP Session: {client.get_session_id()}")
+                    # logger.info(f"SAP BP Payload: {json.dumps(payload, indent=2)}")
+                    # logger.info(f"SAP Session: {client.get_session_id()}")
                     
                     created = client.create_business_partner(payload)
                     # Ensure created is in the expected format
@@ -2640,10 +2640,10 @@ def get_business_partner_data(request, card_code=None):
     try:
         # Get HANA schema from database parameter, session, or company model
         db_param_received = request.GET.get('database', 'NOT PROVIDED')
-        logger.info(f"[BUSINESS_PARTNER] Received database parameter: {db_param_received}")
+        # logger.info(f"[BUSINESS_PARTNER] Received database parameter: {db_param_received}")
         
         hana_schema = get_hana_schema_from_request(request)
-        logger.info(f"[BUSINESS_PARTNER] Using HANA schema: {hana_schema}")
+        # logger.info(f"[BUSINESS_PARTNER] Using HANA schema: {hana_schema}")
         
         # Map HANA schema to company_db_key for SAPClient
         # Extract the key from company name (e.g., 4B-BIO_APP -> 4B-BIO)
@@ -2654,12 +2654,12 @@ def get_business_partner_data(request, card_code=None):
         else:
             company_db_key = '4B-BIO'  # Default fallback
         
-        logger.info(f"[BUSINESS_PARTNER] Using company_db_key: {company_db_key}")
+        # logger.info(f"[BUSINESS_PARTNER] Using company_db_key: {company_db_key}")
         
         # Create SAP client with logging
         try:
             sap_client = SAPClient(company_db_key=company_db_key)
-            logger.info(f"[BUSINESS_PARTNER] SAPClient created successfully with CompanyDB: {sap_client.company_db}")
+            # logger.info(f"[BUSINESS_PARTNER] SAPClient created successfully with CompanyDB: {sap_client.company_db}")
         except Exception as e:
             logger.error(f"[BUSINESS_PARTNER] Failed to create SAPClient: {str(e)}")
             raise
@@ -2694,7 +2694,7 @@ def get_business_partner_data(request, card_code=None):
                     max_records = 500
             
             # Include CardType in select to enable filtering
-            logger.info(f"[BUSINESS_PARTNER] Fetching business partners (limit: {max_records})")
+            # logger.info(f"[BUSINESS_PARTNER] Fetching business partners (limit: {max_records})")
             
             # Fetch records using pagination (SAP returns 20 per request)
             all_rows = []
@@ -2710,7 +2710,7 @@ def get_business_partner_data(request, card_code=None):
                 ) or []
                 
                 if not batch or len(batch) == 0:
-                    logger.info(f"[BUSINESS_PARTNER] End of records reached at skip={skip}")
+                    # logger.info(f"[BUSINESS_PARTNER] End of records reached at skip={skip}")
                     break
                     
                 all_rows.extend(batch)
@@ -2718,7 +2718,7 @@ def get_business_partner_data(request, card_code=None):
                 
                 # Log every 10 batches to reduce spam
                 if batch_count % 10 == 0 or len(batch) < batch_size:
-                    logger.info(f"[BUSINESS_PARTNER] Fetched {batch_count} batches, total: {len(all_rows)} records")
+                    pass  # logger.info(f"[BUSINESS_PARTNER] Fetched {batch_count} batches, total: {len(all_rows)} records")
                 
                 skip += batch_size
                 
@@ -2728,7 +2728,7 @@ def get_business_partner_data(request, card_code=None):
                     break
             
             rows = all_rows
-            logger.info(f"[BUSINESS_PARTNER] Total retrieved: {len(rows)} records from SAP in {batch_count} batches")
+            # logger.info(f"[BUSINESS_PARTNER] Total retrieved: {len(rows)} records from SAP in {batch_count} batches")
             
             # Filter by CardType only if specified (C=Customer, S=Supplier/Vendor)
             # SAP returns "cCustomer" and "cSupplier", so we need to map our parameter
@@ -2741,7 +2741,7 @@ def get_business_partner_data(request, card_code=None):
                 elif card_type_upper == 'S':
                     # Filter for Suppliers/Vendors only (ORV*)
                     rows = [bp for bp in rows if 'supplier' in bp.get('CardType', '').lower()]
-                logger.info(f"[BUSINESS_PARTNER] After CardType={card_type_param} filter: {len(rows)} of {original_count} records")
+                # logger.info(f"[BUSINESS_PARTNER] After CardType={card_type_param} filter: {len(rows)} of {original_count} records")
             
             return Response({
                 "success": True,
@@ -3006,7 +3006,7 @@ def list_policies(request):
         else:
             selected_db = request.session.get('selected_db', '4B-ORANG')
         
-        logger.info(f"[SAP POLICIES] Fetching policies for database: {selected_db}")
+        # logger.info(f"[SAP POLICIES] Fetching policies for database: {selected_db}")
         
         sap_client = SAPClient(company_db_key=selected_db)
         policies = sap_client.get_all_policies()
@@ -3913,17 +3913,18 @@ def sales_vs_achievement_territory_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             
-            print(f"[DEBUG sales_vs_achievement_territory_api] schema={cfg['schema']}, emp_id={emp_val}, dates={start_date} to {end_date}, period={period if period else 'None'}")
+            # DEBUG: Uncomment to see sales territory parameters
+            # print(f"[DEBUG sales_vs_achievement_territory_api] schema={cfg['schema']}, emp_id={emp_val}, dates={start_date} to {end_date}, period={period if period else 'None'}")
             
             # Use the new sales_vs_achievement_territory function with B4_SALES_TARGET
             data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=False, group_by_emp=group_by_emp)
             
-            # Debug: Log first few rows to see what dates we're getting
-            if data and len(data) > 0:
-                print(f"[DEBUG sales_vs_achievement_territory_api] Total rows returned: {len(data)}")
-                print(f"[DEBUG sales_vs_achievement_territory_api] First row: {data[0] if data else 'No data'}")
-                if len(data) > 1:
-                    print(f"[DEBUG sales_vs_achievement_territory_api] Second row: {data[1]}")
+            # DEBUG: Uncomment to see row data structure
+            # if data and len(data) > 0:
+            #     print(f"[DEBUG sales_vs_achievement_territory_api] Total rows returned: {len(data)}")
+            #     print(f"[DEBUG sales_vs_achievement_territory_api] First row: {data[0] if data else 'No data'}")
+            #     if len(data) > 1:
+            #         print(f"[DEBUG sales_vs_achievement_territory_api] Second row: {data[1]}")
             
             if in_millions_param in ('true','1','yes','y'):
                 scaled = []
@@ -5201,7 +5202,7 @@ def get_product_description_api(request):
         # Resolve database/schema dynamically from Company table
         database = get_hana_schema_from_request(request)
         
-        logger.info(f"Fetching product description for ItemCode: {item_code}, Database: {database}")
+        # logger.info(f"Fetching product description for ItemCode: {item_code}, Database: {database}")
         
         # Get SAP HANA connection configuration
         cfg = {
@@ -5351,7 +5352,7 @@ def get_product_description_api(request):
                 'attachments': all_attachments  # All attachment details
             }
             
-            logger.info(f"Product found: {item_code}, Description: {'Yes' if description else 'No'}")
+            # logger.info(f"Product found: {item_code}, Description: {'Yes' if description else 'No'}")
             return Response({
                 'success': True,
                 'data': result
@@ -5485,7 +5486,7 @@ def download_product_description_api(request):
         # Resolve database/schema dynamically from Company table
         database = get_hana_schema_from_request(request)
         
-        logger.info(f"Downloading product description for ItemCode: {item_code}, Database: {database}")
+        # logger.info(f"Downloading product description for ItemCode: {item_code}, Database: {database}")
         
         # Get SAP HANA connection configuration
         cfg = {
@@ -5525,7 +5526,7 @@ def download_product_description_api(request):
         try:
             conn = dbapi.connect(**kwargs)
         except Exception as e:
-            logger.error(f"Failed to connect to SAP HANA: {e}")
+            #logger.error(f"Failed to connect to SAP HANA: {e}")
             return JsonResponse({
                 'success': False,
                 'error': f'Database connection failed: {str(e)}'
@@ -5563,7 +5564,7 @@ def download_product_description_api(request):
             rows = cur.fetchall()
             
             if not rows or not rows[0][0]:
-                logger.warning(f"Product not found: {item_code}")
+               # logger.warning(f"Product not found: {item_code}")
                 return JsonResponse({
                     'success': False,
                     'error': f'Product with ItemCode {item_code} not found'
@@ -5596,7 +5597,7 @@ def download_product_description_api(request):
                         doc_ext = file_ext
             
             if not doc_file or not doc_ext:
-                logger.warning(f"No description document found for product: {item_code}")
+               # logger.warning(f"No description document found for product: {item_code}")
                 return JsonResponse({
                     'success': False,
                     'error': f'No description document found for product {item_code}. Product may only have images.',
@@ -5637,7 +5638,7 @@ def download_product_description_api(request):
             
             for folder in possible_folders:
                 test_path = os.path.join(settings.MEDIA_ROOT, 'product_images', folder, file_name_with_ext)
-                logger.info(f"Checking path: {test_path}")
+                # logger.info(f"Checking path: {test_path}")
                 if os.path.exists(test_path):
                     file_path = test_path
                     folder_name_used = folder
@@ -5645,7 +5646,7 @@ def download_product_description_api(request):
             
             if not file_path:
                 # File not found in any folder
-                logger.error(f"File not found in any folder: {file_name_with_ext}")
+               # logger.error(f"File not found in any folder: {file_name_with_ext}")
                 searched_paths = [os.path.join(settings.MEDIA_ROOT, 'product_images', f, file_name_with_ext) for f in possible_folders]
                 return JsonResponse({
                     'success': False,
@@ -5681,11 +5682,11 @@ def download_product_description_api(request):
                 safe_filename = f"product_{item_code}_description.{doc_ext}"
                 response['Content-Disposition'] = f'attachment; filename="{safe_filename}"'
                 
-                logger.info(f"Successfully serving file: {file_name_with_ext}")
+                # logger.info(f"Successfully serving file: {file_name_with_ext}")
                 return response
                 
             except Exception as e:
-                logger.error(f"Error opening file {file_path}: {e}")
+                #logger.error(f"Error opening file {file_path}: {e}")
                 return JsonResponse({
                     'success': False,
                     'error': f'Error reading file: {str(e)}'
@@ -5699,7 +5700,7 @@ def download_product_description_api(request):
                 pass
             
     except Exception as e:
-        logger.error(f"Error in download_product_description_api: {e}", exc_info=True)
+        #logger.error(f"Error in download_product_description_api: {e}", exc_info=True)
         return JsonResponse({
             'success': False,
             'error': f'An error occurred: {str(e)}'
@@ -6462,7 +6463,7 @@ def item_price_api(request):
     hana_schema = get_hana_schema_from_request(request)
     cfg['schema'] = hana_schema
     
-    logger.info(f"[ITEM_PRICE] Using HANA schema: {hana_schema}")
+    # logger.info(f"[ITEM_PRICE] Using HANA schema: {hana_schema}")
 
     doc_entry = (request.GET.get('doc_entry') or '').strip()
     item_code = (request.GET.get('item_code') or '').strip()
@@ -6583,7 +6584,7 @@ def policy_items_for_customer_api(request):
     hana_schema = get_hana_schema_from_request(request)
     cfg['schema'] = hana_schema
     
-    logger.info(f"[POLICY_ITEMS] Using HANA schema: {hana_schema}")
+    # logger.info(f"[POLICY_ITEMS] Using HANA schema: {hana_schema}")
 
     doc_entry = (request.GET.get('doc_entry') or '').strip()
     card_code = (request.GET.get('card_code') or '').strip()
@@ -7139,16 +7140,16 @@ def set_database(request):
     from django.shortcuts import redirect
     from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
     import logging
-    logger = logging.getLogger(__name__)
+   # logger = logging.getLogger(__name__)
     
     if request.method == 'POST':
         db_key = request.POST.get('database', '4B-BIO')
         request.session['selected_db'] = db_key
         request.session.modified = True  # Force session save
         
-        logger.info(f"Database switched to: {db_key}")
-        logger.info(f"Session key: {request.session.session_key}")
-        logger.info(f"Session data: {dict(request.session.items())}")
+        # logger.info(f"Database switched to: {db_key}")
+        # logger.info(f"Session key: {request.session.session_key}")
+        # logger.info(f"Session data: {dict(request.session.items())}")
         
         next_url = request.POST.get('next', request.META.get('HTTP_REFERER', '/admin/'))
         
@@ -7170,7 +7171,7 @@ def set_database(request):
             parsed.fragment
         ))
         
-        logger.info(f"Redirecting to: {new_url}")
+        # logger.info(f"Redirecting to: {new_url}")
         
         return redirect(new_url)
     return redirect('/admin/')
@@ -7248,7 +7249,7 @@ def customer_policies_api(request):
     hana_schema = get_hana_schema_from_request(request)
     cfg['schema'] = hana_schema
     
-    logger.info(f"[CUSTOMER_POLICIES] Using HANA schema: {hana_schema}")
+    # logger.info(f"[CUSTOMER_POLICIES] Using HANA schema: {hana_schema}")
 
     card_code = (request.GET.get('card_code') or '').strip()
     
@@ -7309,7 +7310,7 @@ def customer_policies_api(request):
                 ORDER BY T1."DocEntry"
             """
             
-            logger.info(f"[CUSTOMER_POLICIES] Querying policies for CardCode: {card_code}")
+            # logger.info(f"[CUSTOMER_POLICIES] Querying policies for CardCode: {card_code}")
             
             cursor.execute(sql_query, [card_code])
             columns = [desc[0] for desc in cursor.description]
@@ -7328,7 +7329,7 @@ def customer_policies_api(request):
                     item_dict[col] = val
                 data.append(item_dict)
 
-            logger.info(f"[CUSTOMER_POLICIES] Found {len(data)} policies for {card_code}")
+            # logger.info(f"[CUSTOMER_POLICIES] Found {len(data)} policies for {card_code}")
 
             # Check if no records found
             if not data:
@@ -7362,7 +7363,7 @@ def customer_policies_api(request):
             except Exception:
                 pass
     except Exception as e:
-        logger.error(f"[CUSTOMER_POLICIES] Error: {str(e)}")
+        #logger.error(f"[CUSTOMER_POLICIES] Error: {str(e)}")
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -7450,7 +7451,7 @@ def disease_list_api(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"[DISEASE_LIST] Error: {str(e)}")
+       # logger.error(f"[DISEASE_LIST] Error: {str(e)}")
         return Response({
             'success': False,
             'error': str(e)
@@ -7544,7 +7545,7 @@ def disease_detail_api(request, disease_id=None):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"[DISEASE_DETAIL] Error: {str(e)}")
+        #logger.error(f"[DISEASE_DETAIL] Error: {str(e)}")
         return Response({
             'success': False,
             'error': str(e)
@@ -7830,7 +7831,7 @@ def recommended_products_api(request):
                         cur.close()
                         
                     except Exception as e:
-                        logger.warning(f"Could not fetch product {prod_code}: {str(e)}")
+                        #logger.warning(f"Could not fetch product {prod_code}: {str(e)}")
                         continue
             
             return Response({
@@ -7847,7 +7848,7 @@ def recommended_products_api(request):
             conn.close()
         
     except Exception as e:
-        logger.error(f"[RECOMMENDED_PRODUCTS] Error: {str(e)}")
+       # logger.error(f"[RECOMMENDED_PRODUCTS] Error: {str(e)}")
         import traceback
         traceback.print_exc()
         return Response({
@@ -7967,7 +7968,7 @@ def projects_list_api(request):
         
         # Get database schema
         schema = get_hana_schema_from_request(request)
-        logger.info(f"[PROJECTS_LIST] Using schema: {schema}")
+        # logger.info(f"[PROJECTS_LIST] Using schema: {schema}")
         
         # Get filter parameters
         active_filter = request.GET.get('active', 'Y').upper()  # Default to active only
@@ -8029,7 +8030,7 @@ def projects_list_api(request):
             
             base_query += ' ORDER BY P."PrjCode"'
             
-            logger.info(f"[PROJECTS_LIST] Executing query with params: {params}")
+            # logger.info(f"[PROJECTS_LIST] Executing query with params: {params}")
             cursor.execute(base_query, params)
             
             columns = [desc[0] for desc in cursor.description]
@@ -8080,7 +8081,7 @@ def projects_list_api(request):
             conn.close()
         
     except Exception as e:
-        logger.error(f"[PROJECTS_LIST] Error: {str(e)}")
+        #logger.error(f"[PROJECTS_LIST] Error: {str(e)}")
         import traceback
         traceback.print_exc()
         return Response({
@@ -8214,7 +8215,7 @@ def policy_detail_api(request):
         
         # Get database schema
         schema = get_hana_schema_from_request(request)
-        logger.info(f"[POLICY_DETAIL] Using schema: {schema}, code: {policy_code}")
+        # logger.info(f"[POLICY_DETAIL] Using schema: {schema}, code: {policy_code}")
         
         if not hana_host or not hana_user or not hana_password:
             return Response({
@@ -8286,7 +8287,7 @@ def policy_detail_api(request):
             
             cursor.close()
             
-            logger.info(f"[POLICY_DETAIL] Successfully retrieved policy: {policy_code}")
+            # logger.info(f"[POLICY_DETAIL] Successfully retrieved policy: {policy_code}")
             
             return Response({
                 'success': True,
@@ -8298,7 +8299,7 @@ def policy_detail_api(request):
             conn.close()
         
     except Exception as e:
-        logger.error(f"[POLICY_DETAIL] Error: {str(e)}")
+        #logger.error(f"[POLICY_DETAIL] Error: {str(e)}")
         import traceback
         traceback.print_exc()
         return Response({
@@ -8339,9 +8340,9 @@ def product_catalog_list_view(request):
             company = Company.objects.filter(is_active=True).first()
             if company:
                 database = company.Company_name
-                logger.info(f"Using first active company: {database}")
+                # logger.info(f"Using first active company: {database}")
         except Exception as e:
-            logger.warning(f"Could not get company from database: {e}")
+           # logger.warning(f"Could not get company from database: {e}")
     
     products = []
     categories = []
@@ -8402,7 +8403,7 @@ def product_catalog_list_view(request):
             conn.close()
             
     except Exception as e:
-        logger.error(f"Error loading products: {e}")
+        #logger.error(f"Error loading products: {e}")
         error_msg = str(e)
     
     context = {
@@ -8435,11 +8436,11 @@ def product_document_view(request, item_code):
             company = Company.objects.filter(is_active=True).first()
             if company:
                 database = company.Company_name
-                logger.info(f"Using first active company: {database}")
+                # logger.info(f"Using first active company: {database}")
         except Exception as e:
             logger.warning(f"Could not get company from database: {e}")
     
-    logger.info(f"Product document view - ItemCode: {item_code}, Database: {database}")
+    # logger.info(f"Product document view - ItemCode: {item_code}, Database: {database}")
     
     product = None
     error_msg = None
@@ -8466,7 +8467,7 @@ def product_document_view(request, item_code):
         if hasattr(request, 'user'):
             api_request.user = request.user
         
-        logger.info(f"Calling get_product_description_api with item_code={item_code}, database={database}")
+        # logger.info(f"Calling get_product_description_api with item_code={item_code}, database={database}")
         
         # Call the API view
         api_response = get_product_description_api(api_request)
@@ -8474,7 +8475,7 @@ def product_document_view(request, item_code):
         # Render the response before accessing content
         api_response.render()
         
-        logger.info(f"API response status: {api_response.status_code}")
+        # logger.info(f"API response status: {api_response.status_code}")
         
         if api_response.status_code == 200:
             response_data = json.loads(api_response.content)
@@ -8505,25 +8506,25 @@ def product_document_view(request, item_code):
                     
                     if file_path and os.path.exists(file_path):
                         download_url = f"/api/sap/product-description-download/?item_code={item_code}&database={database}"
-                        logger.info(f"Document file found for {item_code}: {file_path}")
+                        # logger.info(f"Document file found for {item_code}: {file_path}")
                     else:
-                        logger.warning(f"Document file not found: {doc_file_name}.{doc_file_ext}")
+                       # logger.warning(f"Document file not found: {doc_file_name}.{doc_file_ext}")
             else:
                 error_msg = response_data.get('error', 'Failed to load product description')
-                logger.error(f"API returned success=false: {error_msg}")
+                #logger.error(f"API returned success=false: {error_msg}")
         else:
             # Try to extract error from response
             try:
                 response_data = json.loads(api_response.content)
                 error_msg = response_data.get('error', f"API returned status {api_response.status_code}")
-                logger.error(f"API error response: {response_data}")
+               # logger.error(f"API error response: {response_data}")
             except Exception as parse_err:
                 error_msg = f"API returned status {api_response.status_code}"
-                logger.error(f"Could not parse API error response: {parse_err}")
-                logger.error(f"Raw response: {api_response.content[:500]}")
+               # logger.error(f"Could not parse API error response: {parse_err}")
+               # logger.error(f"Raw response: {api_response.content[:500]}")
             
     except Exception as e:
-        logger.error(f"Error loading product document: {e}")
+        #logger.error(f"Error loading product document: {e}")
         error_msg = str(e)
         import traceback
         traceback.print_exc()
