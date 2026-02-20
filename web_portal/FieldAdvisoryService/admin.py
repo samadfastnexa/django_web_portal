@@ -551,20 +551,22 @@ class SalesOrderForm(forms.ModelForm):
         pay_to = cleaned_data.get('pay_to_code')
         address = cleaned_data.get('address')
         
-        logger.info(f"[FORM CLEAN] === Customer Fields ===")
-        logger.info(f"[FORM CLEAN] card_code: '{card_code}' (type: {type(card_code)})")
-        logger.info(f"[FORM CLEAN] card_name: '{card_name}' (type: {type(card_name)})")
-        logger.info(f"[FORM CLEAN] contact_person_code: '{contact_person}'")
-        logger.info(f"[FORM CLEAN] federal_tax_id: '{federal_tax}'")
-        logger.info(f"[FORM CLEAN] pay_to_code: '{pay_to}'")
-        logger.info(f"[FORM CLEAN] address: '{address}'")
-        logger.info(f"[FORM CLEAN] All cleaned_data keys: {list(cleaned_data.keys())}")
+        # logger.info(f"[FORM CLEAN] === Customer Fields ===")
+        # logger.info(f"[FORM CLEAN] card_code: '{card_code}' (type: {type(card_code)})")
+        # logger.info(f"[FORM CLEAN] card_name: '{card_name}' (type: {type(card_name)})")
+        # logger.info(f"[FORM CLEAN] contact_person_code: '{contact_person}'")
+        # logger.info(f"[FORM CLEAN] federal_tax_id: '{federal_tax}'")
+        # logger.info(f"[FORM CLEAN] pay_to_code: '{pay_to}'")
+        # logger.info(f"[FORM CLEAN] address: '{address}'")
+        # logger.info(f"[FORM CLEAN] All cleaned_data keys: {list(cleaned_data.keys())}")
         
         # CRITICAL: Ensure empty strings are preserved (not converted to None)
         if card_code == '':
-            logger.warning("[FORM CLEAN] ⚠️ card_code is empty string!")
+            # logger.warning("[FORM CLEAN] ⚠️ card_code is empty string!")
+            pass
         if card_name == '':
-            logger.warning("[FORM CLEAN] ⚠️ card_name is empty string!")
+            # logger.warning("[FORM CLEAN] ⚠️ card_name is empty string!")
+            pass
         
         return cleaned_data
 
@@ -1325,21 +1327,21 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"[SAVE_MODEL] Saving SalesOrder #{obj.pk if obj.pk else 'NEW'}")
-        logger.info(f"[SAVE_MODEL] card_code from form.cleaned_data: {form.cleaned_data.get('card_code')}")
-        logger.info(f"[SAVE_MODEL] card_name from form.cleaned_data: {form.cleaned_data.get('card_name')}")
-        logger.info(f"[SAVE_MODEL] address from form.cleaned_data: {form.cleaned_data.get('address')}")
-        logger.info(f"[SAVE_MODEL] card_code from obj BEFORE save: {obj.card_code}")
-        logger.info(f"[SAVE_MODEL] card_name from obj BEFORE save: {obj.card_name}")
+        # logger.info(f"[SAVE_MODEL] Saving SalesOrder #{obj.pk if obj.pk else 'NEW'}")
+        # logger.info(f"[SAVE_MODEL] card_code from form.cleaned_data: {form.cleaned_data.get('card_code')}")
+        # logger.info(f"[SAVE_MODEL] card_name from form.cleaned_data: {form.cleaned_data.get('card_name')}")
+        # logger.info(f"[SAVE_MODEL] address from form.cleaned_data: {form.cleaned_data.get('address')}")
+        # logger.info(f"[SAVE_MODEL] card_code from obj BEFORE save: {obj.card_code}")
+        # logger.info(f"[SAVE_MODEL] card_name from obj BEFORE save: {obj.card_name}")
         
         # Explicitly ensure all customer fields are set from form data
         # CRITICAL: Preserve values even if they're empty strings (don't convert to None)
         if 'card_code' in form.cleaned_data and form.cleaned_data['card_code'] is not None:
             obj.card_code = form.cleaned_data['card_code']
-            logger.info(f"[SAVE_MODEL] Set obj.card_code = '{obj.card_code}'")
+            # logger.info(f"[SAVE_MODEL] Set obj.card_code = '{obj.card_code}'")
         if 'card_name' in form.cleaned_data and form.cleaned_data['card_name'] is not None:
             obj.card_name = form.cleaned_data['card_name']
-            logger.info(f"[SAVE_MODEL] Set obj.card_name = '{obj.card_name}'")
+            # logger.info(f"[SAVE_MODEL] Set obj.card_name = '{obj.card_name}'")
         if 'contact_person_code' in form.cleaned_data and form.cleaned_data['contact_person_code'] is not None:
             obj.contact_person_code = form.cleaned_data['contact_person_code']
         if 'federal_tax_id' in form.cleaned_data and form.cleaned_data['federal_tax_id'] is not None:
@@ -1352,23 +1354,23 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
         # Also ensure child customer fields are saved
         if 'u_s_card_code' in form.cleaned_data and form.cleaned_data['u_s_card_code'] is not None:
             obj.u_s_card_code = form.cleaned_data['u_s_card_code']
-            logger.info(f"[SAVE_MODEL] Set obj.u_s_card_code = '{obj.u_s_card_code}'")
+            # logger.info(f"[SAVE_MODEL] Set obj.u_s_card_code = '{obj.u_s_card_code}'")
         if 'u_s_card_name' in form.cleaned_data and form.cleaned_data['u_s_card_name'] is not None:
             obj.u_s_card_name = form.cleaned_data['u_s_card_name']
-            logger.info(f"[SAVE_MODEL] Set obj.u_s_card_name = '{obj.u_s_card_name}'")
+            # logger.info(f"[SAVE_MODEL] Set obj.u_s_card_name = '{obj.u_s_card_name}'")
         
         # Call parent save_model
         super().save_model(request, obj, form, change)
         
         # Log after save
         obj.refresh_from_db()
-        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - card_code in DB: '{obj.card_code}'")
-        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - card_name in DB: '{obj.card_name}'")
-        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - address in DB: '{obj.address}'")
-        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - contact_person_code in DB: {obj.contact_person_code}")
-        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - federal_tax_id in DB: '{obj.federal_tax_id}'")
-        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - u_s_card_code in DB: '{obj.u_s_card_code}'")
-        logger.info(f"[SAVE_MODEL] ✓ After save and refresh - u_s_card_name in DB: '{obj.u_s_card_name}'")
+        # logger.info(f"[SAVE_MODEL] ✓ After save and refresh - card_code in DB: '{obj.card_code}'")
+        # logger.info(f"[SAVE_MODEL] ✓ After save and refresh - card_name in DB: '{obj.card_name}'")
+        # logger.info(f"[SAVE_MODEL] ✓ After save and refresh - address in DB: '{obj.address}'")
+        # logger.info(f"[SAVE_MODEL] ✓ After save and refresh - contact_person_code in DB: {obj.contact_person_code}")
+        # logger.info(f"[SAVE_MODEL] ✓ After save and refresh - federal_tax_id in DB: '{obj.federal_tax_id}'")
+        # logger.info(f"[SAVE_MODEL] ✓ After save and refresh - u_s_card_code in DB: '{obj.u_s_card_code}'")
+        # logger.info(f"[SAVE_MODEL] ✓ After save and refresh - u_s_card_name in DB: '{obj.u_s_card_name}'")
     
     def get_urls(self):
         """Add custom URL for individual order posting"""
@@ -1392,7 +1394,7 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
         # Entry log and safe order fetch (handles 404s gracefully)
         logger = logging.getLogger(__name__)
         try:
-            logger.info(f"[POST_TO_SAP] Entry: method={request.method}, ajax={request.headers.get('X-Requested-With') == 'XMLHttpRequest'}, order_id={order_id}")
+            # logger.info(f"[POST_TO_SAP] Entry: method={request.method}, ajax={request.headers.get('X-Requested-With') == 'XMLHttpRequest'}, order_id={order_id}")
             # Fetch order and refresh from database to ensure we have latest data
             order = SalesOrder.objects.select_related('staff', 'dealer').get(pk=order_id)
             order.refresh_from_db()
@@ -1407,15 +1409,15 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
         # Log the order data from database
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"[ORDER DATA] Order #{order_id} from database (refreshed):")
-        logger.info(f"  CardCode: '{order.card_code}'")
-        logger.info(f"  CardCode type: {type(order.card_code)}")
-        logger.info(f"  CardCode is None: {order.card_code is None}")
-        logger.info(f"  CardCode is empty string: {order.card_code == ''}")
-        logger.info(f"  CardName: '{order.card_name}'")
-        logger.info(f"  U_SCardCode: '{order.u_s_card_code}'")
-        logger.info(f"  U_SCardName: '{order.u_s_card_name}'")
-        logger.info(f"  DocumentLines: {order.document_lines.count()}")
+        # logger.info(f"[ORDER DATA] Order #{order_id} from database (refreshed):")
+        # logger.info(f"  CardCode: '{order.card_code}'")
+        # logger.info(f"  CardCode type: {type(order.card_code)}")
+        # logger.info(f"  CardCode is None: {order.card_code is None}")
+        # logger.info(f"  CardCode is empty string: {order.card_code == ''}")
+        # logger.info(f"  CardName: '{order.card_name}'")
+        # logger.info(f"  U_SCardCode: '{order.u_s_card_code}'")
+        # logger.info(f"  U_SCardName: '{order.u_s_card_name}'")
+        # logger.info(f"  DocumentLines: {order.document_lines.count()}")
         if order.is_posted_to_sap:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({
@@ -1468,8 +1470,8 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
                 )
             
             # Log the complete payload before posting
-            logger.info(f"[SAP PAYLOAD] Order #{order.id} payload:")
-            logger.info(json.dumps(payload, indent=2, ensure_ascii=False))
+            # logger.info(f"[SAP PAYLOAD] Order #{order.id} payload:")
+            # logger.info(json.dumps(payload, indent=2, ensure_ascii=False))
             
             # Add document lines
             for line in order.document_lines.all().order_by('line_num'):
@@ -1481,7 +1483,7 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
                 vat_group_clean = re.sub(r'[^A-Za-z0-9\-_]', '', vat_group)
                 
                 if not vat_group_clean or vat_group_clean != vat_group:
-                    logger.warning(f"[SAP PAYLOAD] Line {line.line_num}: Invalid/corrupted vat_group {repr(vat_group)} → sanitized to {repr(vat_group_clean)}")
+                    # logger.warning(f"[SAP PAYLOAD] Line {line.line_num}: Invalid/corrupted vat_group {repr(vat_group)} → sanitized to {repr(vat_group_clean)}")
                     if not vat_group_clean:
                         vat_group = "SE"
                     else:
@@ -1492,7 +1494,7 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
                 # Final safety: validate it's a known SAP tax code (fallback list)
                 VALID_TAX_CODES = {'SE', 'AT1', 'ST', 'VAT0', 'VAT5', 'VAT17', 'VAT20'}
                 if vat_group not in VALID_TAX_CODES:
-                    logger.warning(f"[SAP PAYLOAD] Line {line.line_num}: Unknown tax code {repr(vat_group)}, using default 'SE'")
+                    # logger.warning(f"[SAP PAYLOAD] Line {line.line_num}: Unknown tax code {repr(vat_group)}, using default 'SE'")
                     vat_group = "SE"
                 
                 line_data = {
@@ -1524,12 +1526,12 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
                 payload["DocumentLines"].append(line_data)
             
             # Log the complete payload with document lines
-            logger.info(f"[SAP PAYLOAD] Complete payload with {len(payload['DocumentLines'])} lines:")
-            logger.info(json.dumps(payload, indent=2, ensure_ascii=False))
+            # logger.info(f"[SAP PAYLOAD] Complete payload with {len(payload['DocumentLines'])} lines:")
+            # logger.info(json.dumps(payload, indent=2, ensure_ascii=False))
             
             # Post to SAP (this is the blocking call that takes 10-20 seconds)
             selected_db = request.session.get('selected_db', '4B-BIO')
-            logger.info(f"[SAP PAYLOAD] Using company DB: {selected_db}")
+            # logger.info(f"[SAP PAYLOAD] Using company DB: {selected_db}")
             sap_client = SAPClient(company_db_key=selected_db)
             response = sap_client.post('Orders', payload)
             

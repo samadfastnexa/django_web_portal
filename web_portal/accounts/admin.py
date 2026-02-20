@@ -124,21 +124,21 @@ if HAS_DEALER:
 @admin.register(User, site=admin_site)
 class CustomUserAdmin(BaseUserAdmin):
     list_display = [
-        'id', 'username', 'email', 'role', 'is_active', 'is_sales_staff', 'is_dealer'
+        'id', 'username', 'email', 'phone_number', 'company', 'role', 'is_active', 'is_sales_staff', 'is_dealer'
     ]
-    list_filter = ['role', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer']
-    search_fields = ['username', 'email', 'first_name', 'last_name']
+    list_filter = ['role', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer', 'company']
+    search_fields = ['username', 'email', 'first_name', 'last_name', 'phone_number']
     ordering = ['id']
 
-    # ✅ Allow quick edits for role & is_active & is_dealer
-    list_editable = ['role', 'is_active', 'is_dealer']
+    # ✅ Allow quick edits for role, is_active, is_dealer, phone_number, and company
+    list_editable = ['phone_number', 'company', 'role', 'is_active', 'is_dealer']
 
     fieldsets = BaseUserAdmin.fieldsets + (
-        ('Custom Fields', {'fields': ('role', 'profile_image', 'is_sales_staff', 'is_dealer')}),
+        ('Custom Fields', {'fields': ('role', 'phone_number', 'company', 'profile_image', 'is_sales_staff', 'is_dealer')}),
     )
 
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
-        (None, {'fields': ('email', 'role', 'profile_image', 'is_sales_staff', 'is_dealer')}),
+        (None, {'fields': ('email', 'phone_number', 'company', 'role', 'profile_image', 'is_sales_staff', 'is_dealer')}),
     )
 
     # Add DealerInline only if Dealer model is available

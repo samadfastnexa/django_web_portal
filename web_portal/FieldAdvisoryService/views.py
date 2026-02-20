@@ -1684,22 +1684,22 @@ def api_child_customers(request):
     search = (request.GET.get('search') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
-    logger.info(f"API called for child customers: father_card={father_card}, database={database}, search={search}, page={page_param}, page_size={page_size_param}")
+    # logger.info(f"API called for child customers: father_card={father_card}, database={database}, search={search}, page={page_param}, page_size={page_size_param}")
     
     if not father_card:
-        logger.error("No father_card provided")
+        # logger.error("No father_card provided")
         return JsonResponse({'error': 'father_card parameter required'}, status=400)
     
     try:
         # Get selected database from session for logging
         selected_db = request.session.get('selected_db') if hasattr(request, 'session') else None
-        logger.info(f"Selected DB from session: {selected_db}, explicit database: {database}")
+        # logger.info(f"Selected DB from session: {selected_db}, explicit database: {database}")
         
         # Use explicit database parameter if provided, otherwise session
         db_key = database or selected_db
         db = get_hana_connection(request, db_key)
         if not db:
-            logger.error("Database connection failed")
+            # logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed - HANA service unavailable', 'children': []}, status=200)
         
         # Verify current schema
@@ -1708,16 +1708,17 @@ def api_child_customers(request):
             cursor.execute('SELECT CURRENT_SCHEMA FROM DUMMY')
             current_schema = cursor.fetchone()[0]
             cursor.close()
-            logger.info(f"Connected to HANA schema: {current_schema}, fetching child customers for {father_card}")
+            # logger.info(f"Connected to HANA schema: {current_schema}, fetching child customers for {father_card}")
         except Exception as e:
-            logger.warning(f"Could not verify current schema: {e}")
-            logger.info(f"Database connected, fetching child customers for {father_card}")
+            # logger.warning(f"Could not verify current schema: {e}")
+            # logger.info(f"Database connected, fetching child customers for {father_card}")
+            pass
         
         # Get child customers with optional search
         try:
             child_customers = hana_connect.child_card_code(db, father_card, search or None)
         except Exception as e:
-            logger.error(f"Error calling child_card_code: {str(e)}")
+            # logger.error(f"Error calling child_card_code: {str(e)}")
             child_customers = []
         finally:
             try:
@@ -1727,7 +1728,7 @@ def api_child_customers(request):
 
         # Return empty list if no children found
         if not child_customers:
-            logger.info(f"No child customers found for {father_card}")
+            # logger.info(f"No child customers found for {father_card}")
             return JsonResponse({
                 'children': [],
                 'page': 1,
@@ -1753,7 +1754,7 @@ def api_child_customers(request):
 
         paginator = Paginator(child_customers or [], page_size)
         page_obj = paginator.get_page(page_num)
-        logger.info(f"Found {paginator.count} child customers, returning page {page_obj.number}/{paginator.num_pages}")
+        # logger.info(f"Found {paginator.count} child customers, returning page {page_obj.number}/{paginator.num_pages}")
 
         return JsonResponse({
             'children': list(page_obj.object_list),
@@ -1766,7 +1767,7 @@ def api_child_customers(request):
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        logger.error(f"Error in api_child_customers: {str(e)}\n{error_trace}")
+        # logger.error(f"Error in api_child_customers: {str(e)}\n{error_trace}")
         return JsonResponse({'error': str(e), 'trace': error_trace, 'children': []}, status=200)
 
 @staff_member_required
@@ -1778,22 +1779,22 @@ def api_customer_details(request):
     
     card_code = request.GET.get('card_code')
     database = request.GET.get('database')  # Support explicit database parameter
-    logger.info(f"API called for customer details: card_code={card_code}, database={database}")
+    # logger.info(f"API called for customer details: card_code={card_code}, database={database}")
     
     if not card_code:
-        logger.error("No card_code provided")
+        # logger.error("No card_code provided")
         return JsonResponse({'error': 'card_code parameter required'}, status=400)
     
     try:
         # Get selected database from session for logging
         selected_db = request.session.get('selected_db') if hasattr(request, 'session') else None
-        logger.info(f"Selected DB from session: {selected_db}, explicit database: {database}")
+        # logger.info(f"Selected DB from session: {selected_db}, explicit database: {database}")
         
         # Use explicit database parameter if provided, otherwise session
         db_key = database or selected_db
         db = get_hana_connection(request, db_key)
         if not db:
-            logger.error("Database connection failed")
+            # logger.error("Database connection failed")
             return JsonResponse({'error': 'Database connection failed'}, status=500)
         
         # Verify current schema
@@ -1801,10 +1802,11 @@ def api_customer_details(request):
         try:
             cursor.execute('SELECT CURRENT_SCHEMA FROM DUMMY')
             current_schema = cursor.fetchone()[0]
-            logger.info(f"Connected to HANA schema: {current_schema}, fetching details for {card_code}")
+            # logger.info(f"Connected to HANA schema: {current_schema}, fetching details for {card_code}")
         except Exception as e:
-            logger.warning(f"Could not verify current schema: {e}")
-            logger.info(f"Database connected, fetching details for {card_code}")
+            # logger.warning(f"Could not verify current schema: {e}")
+            # logger.info(f"Database connected, fetching details for {card_code}")
+            pass
         
         # Get customer basic info
         customer_query = """
@@ -1820,12 +1822,12 @@ def api_customer_details(request):
         cursor.execute(customer_query, (card_code,))
         customer_result = cursor.fetchone()
         
-        logger.info(f"Customer query result: {customer_result}")
+        # logger.info(f"Customer query result: {customer_result}")
         
         if not customer_result:
             cursor.close()
             db.close()
-            logger.warning(f"Customer not found: {card_code}")
+            # logger.warning(f"Customer not found: {card_code}")
             return JsonResponse({'error': f'Customer not found: {card_code}'}, status=404)
         
         # Get contact person code from OCPR table
@@ -1858,7 +1860,7 @@ def api_customer_details(request):
             if address_result:
                 address = address_result[0]
         
-        logger.info(f"Address query result: {address}")
+        # logger.info(f"Address query result: {address}")
         
         cursor.close()
         db.close()
@@ -1884,11 +1886,11 @@ def api_customer_details(request):
             'address': address if address else ''
         }
         
-        logger.info(f"Returning response: {response_data}")
+        # logger.info(f"Returning response: {response_data}")
         return JsonResponse(response_data)
         
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        logger.error(f"Error in api_customer_details: {str(e)}\n{error_trace}")
+        # logger.error(f"Error in api_customer_details: {str(e)}\n{error_trace}")
         return JsonResponse({'error': str(e), 'trace': error_trace}, status=500)

@@ -125,7 +125,7 @@ class SAPClient:
                             # Debug logging
                             import logging
                             logger = logging.getLogger(__name__)
-                            logger.info(f"SAPClient initialized with company_db_key={company_db_key}, selected company_db={self.company_db}, available options={list(parsed.keys())}")
+                            # logger.info(f"SAPClient initialized with company_db_key={company_db_key}, selected company_db={self.company_db}, available options={list(parsed.keys())}")
                 except Setting.DoesNotExist:
                     pass
             
@@ -274,12 +274,12 @@ class SAPClient:
         # Debug logging
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"[SAP LOGIN] Attempting login with:")
-        logger.info(f"  Host: {self.host}:{self.port}")
-        logger.info(f"  Base Path: {self.base_path}")
-        logger.info(f"  UserName: {self.username}")
-        logger.info(f"  CompanyDB: {self.company_db}")
-        logger.info(f"  Password length: {len(self.password)}")
+        # logger.info(f"[SAP LOGIN] Attempting login with:")
+        # logger.info(f"  Host: {self.host}:{self.port}")
+        # logger.info(f"  Base Path: {self.base_path}")
+        # logger.info(f"  UserName: {self.username}")
+        # logger.info(f"  CompanyDB: {self.company_db}")
+        # logger.info(f"  Password length: {len(self.password)}")
         
         headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
 
@@ -295,11 +295,11 @@ class SAPClient:
 
                 if response.status != 200:
                     error_detail = response_data.decode('utf-8')
-                    logger.error(f"[SAP LOGIN] Failed with status {response.status}")
-                    logger.error(f"[SAP LOGIN] Error response: {error_detail}")
-                    logger.error(f"[SAP LOGIN] Attempted login: UserName={self.username}, CompanyDB={self.company_db}")
-                    logger.error(f"[SAP LOGIN] Host: {self.host}:{self.port}")
-                    logger.error(f"[SAP LOGIN] Base Path: {self.base_path}")
+                    # logger.error(f"[SAP LOGIN] Failed with status {response.status}")
+                    # logger.error(f"[SAP LOGIN] Error response: {error_detail}")
+                    # logger.error(f"[SAP LOGIN] Attempted login: UserName={self.username}, CompanyDB={self.company_db}")
+                    # logger.error(f"[SAP LOGIN] Host: {self.host}:{self.port}")
+                    # logger.error(f"[SAP LOGIN] Base Path: {self.base_path}")
                     raise Exception(f"Login failed with status {response.status}: {error_detail}")
 
                 login_response = json.loads(response_data.decode('utf-8'))
@@ -329,21 +329,21 @@ class SAPClient:
             logger = logging.getLogger(__name__)
             error_str = str(ssl_err)
             
-            logger.error(f"[SAP SSL ERROR during login] {error_str}")
+            # logger.error(f"[SAP SSL ERROR during login] {error_str}")
             
             # If it's an internal error from SAP, retry with exponential backoff
             if 'TLSV1_ALERT_INTERNAL_ERROR' in error_str or 'alert internal error' in error_str:
                 max_retries = 3
                 for attempt in range(1, max_retries):
                     wait_time = 2 ** (attempt - 1)  # 1s, 2s
-                    logger.info(f"[SAP LOGIN] SSL error - retrying in {wait_time}s (attempt {attempt}/{max_retries})...")
+                    # logger.info(f"[SAP LOGIN] SSL error - retrying in {wait_time}s (attempt {attempt}/{max_retries})...")
                     time.sleep(wait_time)
                     try:
                         return do_login(login_data, self.base_path)
                     except ssl.SSLError:
                         if attempt == max_retries - 1:
                             # Last attempt failed
-                            logger.error(f"[SAP LOGIN] Max SSL retries ({max_retries}) reached. Giving up.")
+                            # logger.error(f"[SAP LOGIN] Max SSL retries ({max_retries}) reached. Giving up.")
                             raise Exception(
                                 f"SAP Server SSL Internal Error - The SAP B1 Service Layer at {self.host}:{self.port} is experiencing persistent SSL issues. "
                                 f"Attempted {max_retries} times with exponential backoff. "
@@ -496,21 +496,21 @@ class SAPClient:
             error_str = str(e)
             
             # Log SSL error details
-            logger.error(f"[SAP SSL ERROR - Attempt {attempt + 1}/{max_ssl_retries}] {error_str}")
-            logger.error(f"[SAP SSL ERROR] Host: {self.host}:{self.port}")
+            # logger.error(f"[SAP SSL ERROR - Attempt {attempt + 1}/{max_ssl_retries}] {error_str}")
+            # logger.error(f"[SAP SSL ERROR] Host: {self.host}:{self.port}")
             
             # If it's an internal error from SAP, retry with exponential backoff
             if 'TLSV1_ALERT_INTERNAL_ERROR' in error_str or 'alert internal error' in error_str:
                 if attempt < max_ssl_retries - 1:
                     # Exponential backoff: 1s, 2s, 4s
                     wait_time = 2 ** attempt
-                    logger.info(f"[SAP SSL ERROR] Detected SAP internal SSL error - retrying in {wait_time}s (attempt {attempt + 1}/{max_ssl_retries})...")
+                    # logger.info(f"[SAP SSL ERROR] Detected SAP internal SSL error - retrying in {wait_time}s (attempt {attempt + 1}/{max_ssl_retries})...")
                     time.sleep(wait_time)
                     # Increment attempt counter and retry
                     return self._make_request(method, path, body, retry=True, attempt=attempt + 1, max_ssl_retries=max_ssl_retries)
                 else:
                     # After max retries, provide helpful error message
-                    logger.error(f"[SAP SSL ERROR] Max retries ({max_ssl_retries}) reached. Giving up on SSL recovery.")
+                    # logger.error(f"[SAP SSL ERROR] Max retries ({max_ssl_retries}) reached. Giving up on SSL recovery.")
                     raise Exception(
                         f"SAP Server SSL Internal Error - The SAP B1 Service Layer at {self.host}:{self.port} is experiencing persistent SSL issues. "
                         f"Attempted {max_ssl_retries} times with exponential backoff. "
@@ -520,7 +520,7 @@ class SAPClient:
                     )
             
             # Re-raise other SSL errors
-            logger.error(f"[SAP SSL ERROR] Non-recoverable SSL error: {error_str}")
+            # logger.error(f"[SAP SSL ERROR] Non-recoverable SSL error: {error_str}")
             raise e
         
         finally:
@@ -594,7 +594,7 @@ class SAPClient:
                     (time.time() - self._policies_cache_time < self._POLICIES_CACHE_TTL)):
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.debug(f"[SAP POLICIES] Returning cached policies (age: {time.time() - self._policies_cache_time:.1f}s)")
+                    # logger.debug(f"[SAP POLICIES] Returning cached policies (age: {time.time() - self._policies_cache_time:.1f}s)")
                     return self._policies_cache
         
         # Fetch fresh from SAP
