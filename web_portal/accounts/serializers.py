@@ -14,10 +14,11 @@ User = get_user_model()
 # ----------------------
 class UserListSerializer(serializers.ModelSerializer):
     profile_image = serializers.SerializerMethodField()
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile_image']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone_number', 'company', 'company_name', 'profile_image']
     
     def get_profile_image(self, obj):
         try:
@@ -52,21 +53,21 @@ class UserSignupSerializer(serializers.ModelSerializer):
         validators=[RegexValidator(r'^[A-Za-z\s]+$', 'Only letters and spaces are allowed.')]
     )
     profile_image = serializers.ImageField(required=False)
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+    company = serializers.PrimaryKeyRelatedField(
+        queryset=Company.objects.all(), required=False, allow_null=True
+    )
     is_sales_staff = serializers.BooleanField(required=False)
     is_dealer = serializers.BooleanField(required=False)
 
     # Sales staff fields (optional, allow blank/null)
     employee_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
     # ✅ FIX: HODs must be ForeignKeys, not CharFields
     hod = serializers.PrimaryKeyRelatedField(queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True)
     master_hod = serializers.PrimaryKeyRelatedField(queryset=SalesStaffProfile.objects.all(), write_only=True, required=False, allow_null=True)
    
     address = serializers.CharField(write_only=True, required=False, allow_blank=True)
     designation = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    company = serializers.PrimaryKeyRelatedField(
-        queryset=Company.objects.all(), write_only=True, required=False, allow_null=True
-    )
     region = serializers.PrimaryKeyRelatedField(
         queryset=Region.objects.all(), write_only=True, required=False, allow_null=True
     )
@@ -84,11 +85,12 @@ class UserSignupSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'password',
             'first_name', 'last_name', 'profile_image',
+            'phone_number', 'company',  # ✅ NEW User fields
             'role', 'is_active', 'is_staff',
             'is_sales_staff', 'is_dealer', 'date_joined',
             # SalesStaffProfile fields
-            'employee_code', 'phone_number', 'address', 'designation','company','hod', 'master_hod',
-            'region', 'zone', 'territory','sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
+            'employee_code', 'address', 'designation', 'hod', 'master_hod',
+            'region', 'zone', 'territory', 'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
         read_only_fields = ['id', 'is_staff']
 
@@ -296,6 +298,14 @@ class UserSerializer(serializers.ModelSerializer):
     dealer = serializers.SerializerMethodField()
     profile_image_url = serializers.SerializerMethodField()
     profile_image = serializers.ImageField(write_only=True, required=False, allow_null=True)
+    
+    # ✅ NEW: User fields for phone and company
+    phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    company = serializers.PrimaryKeyRelatedField(
+        queryset=Company.objects.all(), write_only=True, required=False, allow_null=True
+    )
+    company_name = serializers.CharField(source='company.Company_name', read_only=True)
+    
     role = RoleDetailSerializer(read_only=True)
     role_id = serializers.PrimaryKeyRelatedField(
         queryset=Role.objects.all(), source='role', write_only=True, required=False
@@ -306,7 +316,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     # Write-only SalesStaffProfile fields (using ManyToMany field names)
     employee_code = serializers.CharField(write_only=True, required=False)
-    phone_number = serializers.CharField(write_only=True, required=False)
+    profile_phone_number = serializers.CharField(write_only=True, required=False, help_text="Sales staff profile phone (deprecated, use phone_number)")
     address = serializers.CharField(write_only=True, required=False)
     designation = serializers.CharField(write_only=True, required=False)
     date_of_joining = serializers.DateField(write_only=True, required=False, allow_null=True)
@@ -368,10 +378,11 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'password', 'first_name', 'last_name',
             'profile_image', 'profile_image_url',  # Separate read/write fields
+            'phone_number', 'company', 'company_name',  # ✅ NEW User fields
             'role', 'role_id', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer',
             'sales_profile', 'dealer',
             # Extra sales staff input fields (using plural names for M2M)
-            'employee_code', 'phone_number', 'address', 'designation', 'date_of_joining',
+            'employee_code', 'profile_phone_number', 'address', 'designation', 'date_of_joining',
             'companies', 'regions', 'zones', 'territories',  # For backward compatibility in write operations
             'hod', 'master_hod', 'manager',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota',
@@ -422,8 +433,12 @@ class UserSerializer(serializers.ModelSerializer):
         
         # Only enforce validation when explicitly setting is_sales_staff=True
         if is_setting_sales_staff and is_creating:
-            required = ['employee_code', 'phone_number', 'address', 'designation']
+            # Phone can be either user phone_number or profile_phone_number
+            has_phone = attrs.get('phone_number') or attrs.get('profile_phone_number')
+            required = ['employee_code', 'address', 'designation']
             missing = [f for f in required if not attrs.get(f)]
+            if not has_phone:
+                missing.append('phone_number')
             if missing:
                 raise serializers.ValidationError({f: "This field is required for sales staff." for f in missing})
             
@@ -448,15 +463,23 @@ class UserSerializer(serializers.ModelSerializer):
         is_dealer = validated_data.pop('is_dealer', False)
         password = validated_data.pop('password', None)
         
-        # Extract profile data
+        # Extract profile data (profile_phone_number maps to phone_number in SalesStaffProfile)
         profile_fields = [
-            'employee_code', 'phone_number', 'address', 'designation',
+            'employee_code', 'profile_phone_number', 'address', 'designation',
             'companies', 'regions', 'zones', 'territories',
             'hod', 'master_hod',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
         
-        profile_data = {f: validated_data.pop(f, None) for f in profile_fields if f in validated_data}
+        profile_data = {}
+        for f in profile_fields:
+            if f in validated_data:
+                value = validated_data.pop(f)
+                # Map profile_phone_number to phone_number for SalesStaffProfile
+                if f == 'profile_phone_number':
+                    profile_data['phone_number'] = value
+                else:
+                    profile_data[f] = value
 
         # Create user
         user = User(**validated_data)
@@ -489,15 +512,23 @@ class UserSerializer(serializers.ModelSerializer):
         sales_staff_flag = validated_data.pop('is_sales_staff', instance.is_sales_staff)
         is_dealer = validated_data.pop('is_dealer', instance.is_dealer)
 
-        # Extract profile data
+        # Extract profile data (profile_phone_number maps to phone_number in SalesStaffProfile)
         profile_fields = [
-            'employee_code', 'phone_number', 'address', 'designation',
+            'employee_code', 'profile_phone_number', 'address', 'designation',
             'companies', 'regions', 'zones', 'territories',
             'hod', 'master_hod',
             'sick_leave_quota', 'casual_leave_quota', 'others_leave_quota'
         ]
         
-        profile_data = {f: validated_data.pop(f, None) for f in profile_fields if f in validated_data}
+        profile_data = {}
+        for f in profile_fields:
+            if f in validated_data:
+                value = validated_data.pop(f)
+                # Map profile_phone_number to phone_number for SalesStaffProfile
+                if f == 'profile_phone_number':
+                    profile_data['phone_number'] = value
+                else:
+                    profile_data[f] = value
 
         # Update User fields
         for attr, value in validated_data.items():

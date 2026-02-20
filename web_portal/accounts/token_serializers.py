@@ -100,21 +100,31 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
 
         companies_data, default_company_data = [], None
         
-        # Check for Sales Staff Profile
-        profile = getattr(user, "sales_profile", None)
-        if profile:
-            companies_qs = profile.companies.all()
-            for i, c in enumerate(companies_qs):
-                companies_data.append({
-                    "id": c.id,
-                    "name": c.Company_name,
-                    "default": i == 0,
-                })
-                if i == 0:
-                    default_company_data = {"id": c.id, "name": c.Company_name}
+        # Priority 1: Check for direct User.company field (highest priority)
+        if hasattr(user, 'company') and user.company:
+            companies_data.append({
+                "id": user.company.id,
+                "name": user.company.Company_name,
+                "default": True,
+            })
+            default_company_data = {"id": user.company.id, "name": user.company.Company_name}
         
-        # Check for Dealer Profile
-        else:
+        # Priority 2: Check for Sales Staff Profile companies
+        if not companies_data:
+            profile = getattr(user, "sales_profile", None)
+            if profile:
+                companies_qs = profile.companies.all()
+                for i, c in enumerate(companies_qs):
+                    companies_data.append({
+                        "id": c.id,
+                        "name": c.Company_name,
+                        "default": i == 0,
+                    })
+                    if i == 0:
+                        default_company_data = {"id": c.id, "name": c.Company_name}
+        
+        # Priority 3: Check for Dealer Profile company
+        if not companies_data:
             try:
                 from FieldAdvisoryService.models import Dealer
                 dealer = Dealer.objects.filter(user=user).first()
@@ -136,6 +146,9 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
             "default_company": default_company_data,
             "email": user.email,
             "username": user.username,
+            "phone_number": user.phone_number if hasattr(user, 'phone_number') else None,
+            "company": default_company_data.get("name") if default_company_data else None,
+            "company_id": default_company_data.get("id") if default_company_data else None,
             "role": role_name,
             "permissions": permissions,
         }

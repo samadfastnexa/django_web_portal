@@ -249,9 +249,9 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         territory_id = validated_data.pop('territory_id', None)
         
         # Get nested attendees from initial_data since field is read_only
-        logger.warning(f"DEBUG initial_data: {self.initial_data if hasattr(self, 'initial_data') else 'NO initial_data'}")
+        # logger.warning(f"DEBUG initial_data: {self.initial_data if hasattr(self, 'initial_data') else 'NO initial_data'}")
         attendees_data = self.initial_data.get('attendees', None) if hasattr(self, 'initial_data') else None
-        logger.warning(f"DEBUG attendees_data from initial_data: {attendees_data}")
+        # logger.warning(f"DEBUG attendees_data from initial_data: {attendees_data}")
         
         # Handle flat attendee fields
         farmer_ids = validated_data.pop('attendee_farmer_id', [])
@@ -274,13 +274,13 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
         logger = logging.getLogger(__name__)
         
         # Handle nested attendees array if provided
-        logger.warning(f"DEBUG attendees_data: {attendees_data}")
+        # logger.warning(f"DEBUG attendees_data: {attendees_data}")
         if attendees_data:
             for attendee_data in attendees_data:
                 # Make a copy to avoid modifying original dict
                 attendee_data = dict(attendee_data)
                 farmer_id = attendee_data.get('farmer')
-                logger.warning(f"DEBUG farmer_id from attendee_data: {farmer_id}, type: {type(farmer_id)}")
+                # logger.warning(f"DEBUG farmer_id from attendee_data: {farmer_id}, type: {type(farmer_id)}")
                 farmer = None
                 
                 # Look up the Farmer object if farmer ID is provided
@@ -288,9 +288,9 @@ class MeetingScheduleSerializer(serializers.ModelSerializer):
                     try:
                         # Convert to int in case it's a string
                         farmer_id_int = int(farmer_id)
-                        logger.warning(f"DEBUG looking up Farmer with id={farmer_id_int}")
+                        # logger.warning(f"DEBUG looking up Farmer with id={farmer_id_int}")
                         farmer = Farmer.objects.get(id=farmer_id_int)
-                        logger.warning(f"DEBUG found farmer: {farmer}")
+                        # logger.warning(f"DEBUG found farmer: {farmer}")
                         # Set the farmer object for the relationship
                         attendee_data['farmer'] = farmer
                         # Auto-populate farmer_name and contact_number from farmer

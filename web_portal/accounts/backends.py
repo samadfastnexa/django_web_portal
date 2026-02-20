@@ -109,6 +109,14 @@ class EmailOrPhoneBackend(ModelBackend):
         if not normalized_input:
             return None
         
+        # Try User.phone_number field FIRST (new primary method)
+        try:
+            for user in User.objects.all():
+                if user.phone_number and self.normalize_phone(user.phone_number) == normalized_input:
+                    return user
+        except Exception:
+            pass
+        
         # Try Sales Staff Profile
         try:
             from .models import SalesStaffProfile
