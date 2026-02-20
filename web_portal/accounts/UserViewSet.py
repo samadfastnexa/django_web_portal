@@ -63,7 +63,7 @@ class UserViewSet(viewsets.ModelViewSet):
     openapi.Parameter(
         "companies",
         openapi.IN_FORM,
-        description="List of company IDs",
+        description="[SALES STAFF FIELD] List of company IDs (required if is_sales_staff=true)",
         type=openapi.TYPE_ARRAY,
         items=openapi.Items(type=openapi.TYPE_INTEGER),
         required=False
@@ -71,7 +71,7 @@ class UserViewSet(viewsets.ModelViewSet):
     openapi.Parameter(
         "regions",
         openapi.IN_FORM,
-        description="List of region IDs",
+        description="[SALES STAFF FIELD] List of region IDs (required if is_sales_staff=true)",
         type=openapi.TYPE_ARRAY,
         items=openapi.Items(type=openapi.TYPE_INTEGER),
         required=False
@@ -79,7 +79,7 @@ class UserViewSet(viewsets.ModelViewSet):
     openapi.Parameter(
         "zones",
         openapi.IN_FORM,
-        description="List of zone IDs",
+        description="[SALES STAFF FIELD] List of zone IDs (required if is_sales_staff=true)",
         type=openapi.TYPE_ARRAY,
         items=openapi.Items(type=openapi.TYPE_INTEGER),
         required=False
@@ -87,7 +87,7 @@ class UserViewSet(viewsets.ModelViewSet):
     openapi.Parameter(
         "territories",
         openapi.IN_FORM,
-        description="List of territory IDs",
+        description="[SALES STAFF FIELD] List of territory IDs (required if is_sales_staff=true)",
         type=openapi.TYPE_ARRAY,
         items=openapi.Items(type=openapi.TYPE_INTEGER),
         required=False
@@ -99,98 +99,98 @@ class UserViewSet(viewsets.ModelViewSet):
     openapi.Parameter(
         "is_dealer",
         openapi.IN_FORM,
-        description="Set to true if user is a dealer",
+        description="[USER FIELD] Set to true if user is a dealer",
         type=openapi.TYPE_BOOLEAN,
         required=False
     ),
     openapi.Parameter(
         "dealer_business_name",
         openapi.IN_FORM,
-        description="Business/Company Name (required if is_dealer=true)",
+        description="[DEALER FIELD] Business/Company Name (required if is_dealer=true)",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_cnic_number",
         openapi.IN_FORM,
-        description="CNIC Number (13 or 15 digits, required if is_dealer=true)",
+        description="[DEALER FIELD] CNIC Number (13 or 15 digits, required if is_dealer=true)",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_contact_number",
         openapi.IN_FORM,
-        description="Primary Contact Number (required if is_dealer=true)",
+        description="[DEALER FIELD] Primary Contact Number (required if is_dealer=true)",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_mobile_phone",
         openapi.IN_FORM,
-        description="Mobile/WhatsApp Number",
+        description="[DEALER FIELD] Mobile/WhatsApp Number",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_company_id",
         openapi.IN_FORM,
-        description="Company ID (required if is_dealer=true)",
+        description="[DEALER FIELD] Company ID (required if is_dealer=true)",
         type=openapi.TYPE_INTEGER,
         required=False
     ),
     openapi.Parameter(
         "dealer_region_id",
         openapi.IN_FORM,
-        description="Region ID",
+        description="[DEALER FIELD] Region ID",
         type=openapi.TYPE_INTEGER,
         required=False
     ),
     openapi.Parameter(
         "dealer_zone_id",
         openapi.IN_FORM,
-        description="Zone ID",
+        description="[DEALER FIELD] Zone ID",
         type=openapi.TYPE_INTEGER,
         required=False
     ),
     openapi.Parameter(
         "dealer_territory_id",
         openapi.IN_FORM,
-        description="Territory ID",
+        description="[DEALER FIELD] Territory ID",
         type=openapi.TYPE_INTEGER,
         required=False
     ),
     openapi.Parameter(
         "dealer_address",
         openapi.IN_FORM,
-        description="Full Address (required if is_dealer=true)",
+        description="[DEALER FIELD] Full Address (required if is_dealer=true)",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_city",
         openapi.IN_FORM,
-        description="City",
+        description="[DEALER FIELD] City",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_state",
         openapi.IN_FORM,
-        description="State/Province",
+        description="[DEALER FIELD] State/Province",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_federal_tax_id",
         openapi.IN_FORM,
-        description="NTN Number (National Tax Number)",
+        description="[DEALER FIELD] NTN Number (National Tax Number)",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_filer_status",
         openapi.IN_FORM,
-        description="Tax Filer Status",
+        description="[DEALER FIELD] Tax Filer Status ('01' or '02')",
         type=openapi.TYPE_STRING,
         required=False,
         enum=['01', '02']
@@ -198,14 +198,14 @@ class UserViewSet(viewsets.ModelViewSet):
     openapi.Parameter(
         "dealer_govt_license_number",
         openapi.IN_FORM,
-        description="Government License Number",
+        description="[DEALER FIELD] Government License Number",
         type=openapi.TYPE_STRING,
         required=False
     ),
     openapi.Parameter(
         "dealer_license_expiry",
         openapi.IN_FORM,
-        description="License Expiry Date (YYYY-MM-DD)",
+        description="[DEALER FIELD] License Expiry Date (YYYY-MM-DD)",
         type=openapi.TYPE_STRING,
         format='date',
         required=False
@@ -213,21 +213,21 @@ class UserViewSet(viewsets.ModelViewSet):
     openapi.Parameter(
         "dealer_minimum_investment",
         openapi.IN_FORM,
-        description="Minimum Investment Amount",
+        description="[DEALER FIELD] Minimum Investment Amount",
         type=openapi.TYPE_INTEGER,
         required=False
     ),
     openapi.Parameter(
         "dealer_cnic_front_image",
         openapi.IN_FORM,
-        description="CNIC Front Image (JPEG, PNG)",
+        description="[DEALER FIELD] CNIC Front Image (JPEG, PNG)",
         type=openapi.TYPE_FILE,
         required=False
     ),
     openapi.Parameter(
         "dealer_cnic_back_image",
         openapi.IN_FORM,
-        description="CNIC Back Image (JPEG, PNG)",
+        description="[DEALER FIELD] CNIC Back Image (JPEG, PNG)",
         type=openapi.TYPE_FILE,
         required=False
     ),
@@ -292,10 +292,27 @@ class UserViewSet(viewsets.ModelViewSet):
     # Swagger documentation
     @swagger_auto_schema(
         tags=["02. User Management"],
+        operation_description="""
+        List all users with pagination, filtering, and search support.
+        
+        **Filtering Options:**
+        - `is_active`: Filter by active status (true/false)
+        - `role`: Filter by role ID
+        - `is_sales_staff`: Filter by sales staff status
+        - `is_dealer`: Filter by dealer status
+        - `companies`, `regions`, `zones`, `territories`: Filter by location assignments
+        
+        **Search:** Search by username, email, first_name, last_name, phone_number
+        
+        **Ordering:** Order by id, username, email, first_name, last_name, is_active, role
+        """,
         manual_parameters=[
             openapi.Parameter('is_active', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, description="Filter by active status", enum=[True, False]),
             openapi.Parameter('role', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Filter by role ID"),
             openapi.Parameter('is_sales_staff', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, description="Filter by sales staff", enum=[True, False]),
+            openapi.Parameter('is_dealer', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, description="Filter by dealer status", enum=[True, False]),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Search by username, email, name, or phone number"),
+            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Order by field (e.g., 'id', '-email', 'username')"),
             openapi.Parameter(
                 'companies', 
                 openapi.IN_QUERY, 
@@ -324,7 +341,51 @@ class UserViewSet(viewsets.ModelViewSet):
                 items=openapi.Items(type=openapi.TYPE_INTEGER),
                 description="Filter by territory IDs"
             ),
-        ]
+        ],
+        responses={
+            200: openapi.Response(
+                description='List of users',
+                examples={
+                    'application/json': {
+                        'count': 2,
+                        'next': None,
+                        'previous': None,
+                        'results': [
+                            {
+                                'id': 1,
+                                'username': 'admin',
+                                'email': 'admin@example.com',
+                                'phone_number': '03001111111',
+                                'company': 1,
+                                'company_name': '4B-BIO',
+                                'first_name': 'Admin',
+                                'last_name': 'User',
+                                'role': 1,
+                                'is_active': True,
+                                'is_sales_staff': False,
+                                'is_dealer': False,
+                                'profile_image': 'http://localhost:8000/media/profile_images/admin.jpg'
+                            },
+                            {
+                                'id': 2,
+                                'username': 'sales_user',
+                                'email': 'sales@example.com',
+                                'phone_number': '03002222222',
+                                'company': 1,
+                                'company_name': '4B-BIO',
+                                'first_name': 'Sales',
+                                'last_name': 'Staff',
+                                'role': 2,
+                                'is_active': True,
+                                'is_sales_staff': True,
+                                'is_dealer': False,
+                                'profile_image': None
+                            }
+                        ]
+                    }
+                }
+            )
+        }
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -332,11 +393,165 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         tags=["02. User Management"],
+        operation_description="""
+        Create a new user account with optional sales staff or dealer profile.
+        
+        ---
+        
+        ## 👤 USER FIELDS (Required for all users)
+        
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `username` | string | ✅ Yes | Unique username |
+        | `email` | string | ✅ Yes | Email address |
+        | `password` | string | ✅ Yes | Password (min 6 characters) |
+        | `first_name` | string | ✅ Yes | First name (letters only) |
+        | `last_name` | string | ✅ Yes | Last name (letters only) |
+        | `phone_number` | string | ⚪ Optional | Phone number for login (e.g., 03001234567) |
+        | `company` | integer | ⚪ Optional | Company ID this user belongs to |
+        | `profile_image` | file | ⚪ Optional | Profile picture (JPG/PNG, max 5MB) |
+        | `role` | integer | ⚪ Optional | Role ID |
+        | `is_active` | boolean | ⚪ Optional | Active status (default: true) |
+        | `is_sales_staff` | boolean | ⚪ Optional | Create as sales staff (default: false) |
+        | `is_dealer` | boolean | ⚪ Optional | Create as dealer (default: false) |
+        
+        ---
+        
+        ## 💼 SALES STAFF FIELDS (Only if `is_sales_staff=true`)
+        
+        **Basic Information:**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `employee_code` | string | ✅ Yes | Employee code |
+        | `address` | string | ✅ Yes | Full address |
+        | `designation` | string | ✅ Yes | Job designation (CEO, NSM, RSL, etc.) |
+        | `date_of_joining` | date | ⚪ Optional | Joining date (YYYY-MM-DD) |
+        
+        **Location Assignment (M2M Relations):**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `companies` | array[int] | ✅ Yes | Company IDs (at least one) |
+        | `regions` | array[int] | ✅ Yes | Region IDs (at least one) |
+        | `zones` | array[int] | ✅ Yes | Zone IDs (at least one) |
+        | `territories` | array[int] | ✅ Yes | Territory IDs (at least one) |
+        
+        **Reporting Hierarchy:**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `manager` | integer | ⚪ Optional | Direct manager (SalesStaffProfile ID) |
+        | `hod` | integer | ⚪ Optional | Head of Department (SalesStaffProfile ID) |
+        | `master_hod` | integer | ⚪ Optional | Master HOD (SalesStaffProfile ID) |
+        
+        **Leave Quotas:**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `sick_leave_quota` | integer | ⚪ Optional | Sick leave quota (default: 0) |
+        | `casual_leave_quota` | integer | ⚪ Optional | Casual leave quota (default: 0) |
+        | `others_leave_quota` | integer | ⚪ Optional | Other leave quota (default: 0) |
+        
+        ---
+        
+        ## 🏪 DEALER FIELDS (Only if `is_dealer=true`)
+        
+        **Basic Information:**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `dealer_business_name` | string | ✅ Yes | Business/Company name |
+        | `dealer_cnic_number` | string | ✅ Yes | CNIC number (13 or 15 digits) |
+        | `dealer_contact_number` | string | ✅ Yes | Primary contact number |
+        | `dealer_mobile_phone` | string | ⚪ Optional | Mobile/WhatsApp number |
+        | `dealer_address` | string | ✅ Yes | Full address |
+        | `dealer_city` | string | ⚪ Optional | City |
+        | `dealer_state` | string | ⚪ Optional | State/Province |
+        
+        **Location Assignment:**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `dealer_company_id` | integer | ✅ Yes | Company ID |
+        | `dealer_region_id` | integer | ⚪ Optional | Region ID |
+        | `dealer_zone_id` | integer | ⚪ Optional | Zone ID |
+        | `dealer_territory_id` | integer | ⚪ Optional | Territory ID |
+        
+        **Tax & Legal:**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `dealer_federal_tax_id` | string | ⚪ Optional | NTN number |
+        | `dealer_filer_status` | string | ⚪ Optional | Tax filer status ('01' or '02') |
+        | `dealer_govt_license_number` | string | ⚪ Optional | Government license number |
+        | `dealer_license_expiry` | date | ⚪ Optional | License expiry date (YYYY-MM-DD) |
+        
+        **Financial:**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `dealer_minimum_investment` | integer | ⚪ Optional | Minimum investment amount |
+        
+        **CNIC Images:**
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `dealer_cnic_front_image` | file | ⚪ Optional | CNIC front image (JPEG, PNG) |
+        | `dealer_cnic_back_image` | file | ⚪ Optional | CNIC back image (JPEG, PNG) |
+        
+        ---
+        
+        **Authorization:** Requires authentication
+        """,
         manual_parameters=[
-            openapi.Parameter('is_active', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, description="Set user active status (default: true)", required=False),
+            openapi.Parameter('is_active', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, description="[USER FIELD] Set user active status (default: true)", required=False),
+            openapi.Parameter('phone_number', openapi.IN_FORM, type=openapi.TYPE_STRING, description="[USER FIELD] Phone number for login (e.g., 03001234567)", required=False),
+            openapi.Parameter('company', openapi.IN_FORM, type=openapi.TYPE_INTEGER, description="[USER FIELD] Company ID this user belongs to", required=False),
         ] + m2m_parameters + dealer_parameters,
         request_body=None,  # ⛔ important: avoid conflicts with serializer
-        responses={201: UserSerializer}
+        responses={
+            201: openapi.Response(
+                description='User created successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='User ID', example=123),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING, description='Username', example='john_doe'),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email address', example='john@example.com'),
+                        'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number', example='03001234567', nullable=True),
+                        'company': openapi.Schema(type=openapi.TYPE_INTEGER, description='Company ID', example=1, nullable=True),
+                        'company_name': openapi.Schema(type=openapi.TYPE_STRING, description='Company name', example='4B-BIO', nullable=True),
+                        'first_name': openapi.Schema(type=openapi.TYPE_STRING, description='First name', example='John'),
+                        'last_name': openapi.Schema(type=openapi.TYPE_STRING, description='Last name', example='Doe'),
+                        'role': openapi.Schema(type=openapi.TYPE_INTEGER, description='Role ID', example=1, nullable=True),
+                        'is_active': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Active status', example=True),
+                        'is_sales_staff': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Is sales staff', example=False),
+                        'is_dealer': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Is dealer', example=False),
+                        'profile_image': openapi.Schema(type=openapi.TYPE_STRING, description='Profile image URL', example='http://localhost:8000/media/profile_images/user.jpg', nullable=True),
+                    }
+                ),
+                examples={
+                    'application/json': {
+                        'id': 123,
+                        'username': 'john_doe',
+                        'email': 'john@example.com',
+                        'phone_number': '03001234567',
+                        'company': 1,
+                        'company_name': '4B-BIO',
+                        'first_name': 'John',
+                        'last_name': 'Doe',
+                        'role': 1,
+                        'is_active': True,
+                        'is_sales_staff': False,
+                        'is_dealer': False,
+                        'profile_image': 'http://localhost:8000/media/profile_images/john_doe.jpg'
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Bad Request - Validation errors',
+                examples={
+                    'application/json': {
+                        'username': ['A user with that username already exists.'],
+                        'email': ['User with this email already exists.'],
+                        'phone_number': ['User with this phone number already exists.'],
+                        'password': ['This field is required.']
+                    }
+                }
+            )
+        }
     )
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -450,28 +665,84 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         tags=["02. User Management"],
-        operation_description=(
-            "Update a user (PUT /users/{id}/).\n\n"
-            "**Note:** PUT requires all fields. Use PATCH for partial updates.\n\n"
-            "**Profile Image Upload:**\n"
-            "- Supported formats: JPG, JPEG, PNG\n"
-            "- Maximum size: 5MB\n"
-            "- Send as multipart/form-data\n\n"
-            "**Admin/Superuser Restrictions:**\n"
-            "- Only admin/superuser can update `role`, `is_active`, `is_staff`\n"
-            "- Regular users can only update: `first_name`, `last_name`, `profile_image`, `password`\n\n"
-            "**Authorization:** Regular users can only update their own profile."
-        ),
+        operation_description="""
+        Update a user (PUT /users/{id}/).
+        
+        **⚠️ Note:** PUT requires all fields. Use PATCH for partial updates.
+        
+        ---
+        
+        ## 👤 USER FIELDS
+        All user fields can be updated (username, email, first_name, last_name, phone_number, company, profile_image, password, role, is_active).
+        
+        **Regular User Permissions:**
+        - Can update: `first_name`, `last_name`, `profile_image`, `password`, `phone_number`, `company`
+        
+        **Admin/Superuser Only:**
+        - Can update: `role`, `is_active`, `is_staff`, `username`, `email`
+        
+        ---
+        
+        ## 💼 SALES STAFF FIELDS (if `is_sales_staff=true`)
+        Update sales profile fields including employee_code, address, designation, companies, regions, zones, territories, hod, master_hod.
+        
+        ---
+        
+        ## 🏪 DEALER FIELDS (if `is_dealer=true`)
+        Update dealer profile fields including business_name, cnic_number, contact information, location assignment, tax details.
+        
+        ---
+        
+        **Profile Image Upload:**
+        - Supported formats: JPG, JPEG, PNG
+        - Maximum size: 5MB
+        - Send as multipart/form-data
+        
+        **Authorization:** Regular users can only update their own profile.
+        """,
         request_body=UserSerializer,
         manual_parameters=[
             openapi.Parameter(
                 'profile_image',
                 openapi.IN_FORM,
-                description='Profile image file (JPG/PNG, max 5MB)',
+                description='[USER FIELD] Profile image file (JPG/PNG, max 5MB)',
                 type=openapi.TYPE_FILE,
                 required=False
+            ),
+            openapi.Parameter('phone_number', openapi.IN_FORM, type=openapi.TYPE_STRING, description="[USER FIELD] Phone number for login (e.g., 03001234567)", required=False),
+            openapi.Parameter('company', openapi.IN_FORM, type=openapi.TYPE_INTEGER, description="[USER FIELD] Company ID this user belongs to", required=False),
+        ] + m2m_parameters + dealer_parameters,
+        responses={
+            200: openapi.Response(
+                description='User updated successfully',
+                examples={
+                    'application/json': {
+                        'id': 123,
+                        'username': 'john_doe',
+                        'email': 'john@example.com',
+                        'phone_number': '03001234567',
+                        'company': 1,
+                        'company_name': '4B-BIO',
+                        'first_name': 'John',
+                        'last_name': 'Doe',
+                        'role': 1,
+                        'is_active': True,
+                        'is_sales_staff': False,
+                        'is_dealer': False,
+                        'profile_image': 'http://localhost:8000/media/profile_images/john_doe.jpg'
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Bad Request - Validation errors',
+                examples={
+                    'application/json': {
+                        'email': ['User with this email already exists.'],
+                        'phone_number': ['User with this phone number already exists.']
+                    }
+                }
             )
-        ] + m2m_parameters + dealer_parameters
+        }
     )
     @transaction.atomic
     def update(self, request, *args, **kwargs):
@@ -605,48 +876,127 @@ class UserViewSet(viewsets.ModelViewSet):
     # ----------------------
     @swagger_auto_schema(
         tags=["02. User Management"],
-        operation_description=(
-            "Partially update a user profile (PATCH /users/{id}/).\n\n"
-            "**All fields are optional** - only send the fields you want to update.\n\n"
-            "**Profile Image Upload:**\n"
-            "- Supported formats: JPG, JPEG, PNG\n"
-            "- Maximum size: 5MB\n"
-            "- Send as multipart/form-data\n\n"
-            "**Updatable Fields:**\n"
-            "- `first_name`: User's first name\n"
-            "- `last_name`: User's last name\n"
-            "- `profile_image`: Profile picture (image file)\n"
-            "- `password`: New password (will be hashed)\n\n"
-            "**Admin/Superuser Only Fields:**\n"
-            "- `role`: User's role ID\n"
-            "- `is_active`: Account active status\n"
-            "- `is_staff`: Staff status\n"
-            "- `email`: Email address\n"
-            "- `username`: Username\n\n"
-            "**Sales Staff Fields** (if `is_sales_staff=true`):\n"
-            "- `employee_code`, `phone_number`, `address`, `designation`\n"
-            "- `hod`, `master_hod`, `date_of_joining`\n"
-            "- `companies`, `regions`, `zones`, `territories` (M2M relations)\n\n"
-            "**Dealer Fields** (if `is_dealer=true`):\n"
-            "- `dealer_business_name`, `dealer_cnic_number`, `dealer_contact_number`\n"
-            "- `dealer_company_id`, `dealer_region_id`, `dealer_zone_id`, `dealer_territory_id`\n"
-            "- `dealer_address`, `dealer_city`, `dealer_state`\n"
-            "- `dealer_federal_tax_id`, `dealer_filer_status`, `dealer_govt_license_number`\n"
-            "- `dealer_license_expiry`, `dealer_minimum_investment`\n"
-            "- `dealer_cnic_front_image`, `dealer_cnic_back_image`\n\n"
-            "**Authorization:** Regular users can only update their own profile. "
-            "Admins can update any user."
-        ),
+        operation_description="""
+        Partially update a user profile (PATCH /users/{id}/).
+        
+        **✅ All fields are optional** - only send the fields you want to update.
+        
+        ---
+        
+        ## 👤 USER FIELDS (Basic Information)
+        
+        **Regular User Can Update:**
+        - `first_name` - First name
+        - `last_name` - Last name
+        - `profile_image` - Profile picture (JPG/PNG, max 5MB)
+        - `password` - New password (will be hashed)
+        - `phone_number` - Phone number for login
+        - `company` - Company ID this user belongs to
+        
+        **Admin/Superuser Only:**
+        - `role` - User's role ID
+        - `is_active` - Account active status
+        - `is_staff` - Staff status
+        - `email` - Email address
+        - `username` - Username
+        - `is_sales_staff` - Change sales staff status
+        - `is_dealer` - Change dealer status
+        
+        ---
+        
+        ## 💼 SALES STAFF FIELDS (Only if `is_sales_staff=true`)
+        
+        **Profile Information:**
+        - `employee_code` - Employee code
+        - `address` - Full address
+        - `designation` - Job designation
+        - `date_of_joining` - Joining date
+        
+        **Location Assignment:**
+        - `companies` - Company IDs (M2M)
+        - `regions` - Region IDs (M2M)
+        - `zones` - Zone IDs (M2M)
+        - `territories` - Territory IDs (M2M)
+        
+        **Reporting Hierarchy:**
+        - `manager` - Direct manager ID
+        - `hod` - Head of Department ID
+        - `master_hod` - Master HOD ID
+        
+        **Leave Quotas:**
+        - `sick_leave_quota`, `casual_leave_quota`, `others_leave_quota`
+        
+        ---
+        
+        ## 🏪 DEALER FIELDS (Only if `is_dealer=true`)
+        
+        **Basic Information:**
+        - `dealer_business_name` - Business name
+        - `dealer_cnic_number` - CNIC number
+        - `dealer_contact_number` - Contact number
+        - `dealer_mobile_phone` - Mobile/WhatsApp
+        - `dealer_address`, `dealer_city`, `dealer_state`
+        
+        **Location Assignment:**
+        - `dealer_company_id`, `dealer_region_id`, `dealer_zone_id`, `dealer_territory_id`
+        
+        **Tax & Legal:**
+        - `dealer_federal_tax_id` - NTN number
+        - `dealer_filer_status` - Tax filer status
+        - `dealer_govt_license_number`, `dealer_license_expiry`
+        
+        **Financial:**
+        - `dealer_minimum_investment`
+        
+        **Documents:**
+        - `dealer_cnic_front_image`, `dealer_cnic_back_image`
+        
+        ---
+        
+        **Authorization:** Regular users can only update their own profile. Admins can update any user.
+        """,
         request_body=UserSerializer,
         manual_parameters=[
             openapi.Parameter(
                 'profile_image',
                 openapi.IN_FORM,
-                description='Profile image file (JPG/PNG, max 5MB)',
+                description='[USER FIELD] Profile image file (JPG/PNG, max 5MB)',
                 type=openapi.TYPE_FILE,
                 required=False
+            ),
+            openapi.Parameter('phone_number', openapi.IN_FORM, type=openapi.TYPE_STRING, description="[USER FIELD] Phone number for login (e.g., 03001234567)", required=False),
+            openapi.Parameter('company', openapi.IN_FORM, type=openapi.TYPE_INTEGER, description="[USER FIELD] Company ID this user belongs to", required=False),
+        ] + m2m_parameters + dealer_parameters,
+        responses={
+            200: openapi.Response(
+                description='User updated successfully',
+                examples={
+                    'application/json': {
+                        'id': 123,
+                        'username': 'john_doe',
+                        'email': 'john@example.com',
+                        'phone_number': '03001234567',
+                        'company': 1,
+                        'company_name': '4B-BIO',
+                        'first_name': 'John',
+                        'last_name': 'Doe Updated',
+                        'role': 1,
+                        'is_active': True,
+                        'is_sales_staff': False,
+                        'is_dealer': False,
+                        'profile_image': 'http://localhost:8000/media/profile_images/john_doe.jpg'
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Bad Request - Validation errors',
+                examples={
+                    'application/json': {
+                        'phone_number': ['User with this phone number already exists.']
+                    }
+                }
             )
-        ] + m2m_parameters + dealer_parameters
+        }
     )
     def partial_update(self, request, *args, **kwargs):
         """

@@ -107,7 +107,7 @@ def get_hana_schema_from_request(request):
     except Exception:
         pass
     
-    logger.warning("[DB RESOLVER] No active company found in Company model. Database operations may fail.")
+    # logger.warning("[DB RESOLVER] No active company found in Company model. Database operations may fail.")
     return None
 
 
@@ -121,7 +121,7 @@ def get_valid_company_schemas():
         pass
     
     # Return empty list if no companies found - no hardcoded defaults
-    logger.warning("[VALID_SCHEMAS] No active companies found in database")
+    # logger.warning("[VALID_SCHEMAS] No active companies found in database")
     return []
 
 @staff_member_required
@@ -2031,7 +2031,7 @@ def hana_connect_admin(request):
                         if customer_data and isinstance(customer_data, list):
                             customer_list = customer_data
                     except Exception as e:
-                        logger.error(f"Failed to load customer list: {e}")
+                        # logger.error(f"Failed to load customer list: {e}")
                         customer_list = []
                     
                 finally:
@@ -2661,7 +2661,7 @@ def get_business_partner_data(request, card_code=None):
             sap_client = SAPClient(company_db_key=company_db_key)
             # logger.info(f"[BUSINESS_PARTNER] SAPClient created successfully with CompanyDB: {sap_client.company_db}")
         except Exception as e:
-            logger.error(f"[BUSINESS_PARTNER] Failed to create SAPClient: {str(e)}")
+            # logger.error(f"[BUSINESS_PARTNER] Failed to create SAPClient: {str(e)}")
             raise
         
         # If card_code is provided, get specific business partner
@@ -2724,7 +2724,7 @@ def get_business_partner_data(request, card_code=None):
                 
                 # Safety check
                 if batch_count > 500:
-                    logger.warning(f"[BUSINESS_PARTNER] Reached max batch limit (500)")
+                    # logger.warning(f"[BUSINESS_PARTNER] Reached max batch limit (500)")
                     break
             
             rows = all_rows
@@ -3025,7 +3025,7 @@ def list_policies(request):
         }, status=status.HTTP_200_OK)
 
     except socket.timeout:
-        logger.error(f"[SAP POLICIES] Connection timeout - SAP server not responding")
+        # logger.error(f"[SAP POLICIES] Connection timeout - SAP server not responding")
         return Response({
             "success": False,
             "error": "Connection Timeout",
@@ -3039,7 +3039,7 @@ def list_policies(request):
         }, status=status.HTTP_504_GATEWAY_TIMEOUT)
     except socket.error as e:
         error_msg = str(e)
-        logger.error(f"[SAP POLICIES] Network error: {error_msg}")
+        # logger.error(f"[SAP POLICIES] Network error: {error_msg}")
         
         # WinError 10060 is connection timeout
         if "10060" in error_msg or "timed out" in error_msg.lower():
@@ -3069,7 +3069,7 @@ def list_policies(request):
             }, status=status.HTTP_502_BAD_GATEWAY)
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"[SAP POLICIES] Error: {error_msg}")
+        # logger.error(f"[SAP POLICIES] Error: {error_msg}")
         
         # Check for cache refresh failure (SAP internal error)
         if 'cache refresh failure' in error_msg.lower():
@@ -5218,7 +5218,7 @@ def get_product_description_api(request):
         
         # Validate configuration
         if not all([cfg['host'], cfg['port'], cfg['user'], pwd]):
-            logger.error("SAP HANA configuration incomplete")
+            # logger.error("SAP HANA configuration incomplete")
             return Response({
                 'success': False,
                 'error': 'SAP HANA configuration is incomplete'
@@ -5242,7 +5242,7 @@ def get_product_description_api(request):
         try:
             conn = dbapi.connect(**kwargs)
         except Exception as e:
-            logger.error(f"Failed to connect to SAP HANA: {e}")
+            # logger.error(f"Failed to connect to SAP HANA: {e}")
             return Response({
                 'success': False,
                 'error': f'Database connection failed: {str(e)}'
@@ -5283,7 +5283,7 @@ def get_product_description_api(request):
             rows = cur.fetchall()
             
             if not rows or not rows[0][0]:
-                logger.warning(f"Product not found: {item_code}")
+                # logger.warning(f"Product not found: {item_code}")
                 return Response({
                     'success': False,
                     'error': f'Product with ItemCode {item_code} not found'
@@ -5366,7 +5366,7 @@ def get_product_description_api(request):
                 pass
             
     except Exception as e:
-        logger.error(f"Error in get_product_description_api: {e}", exc_info=True)
+        # logger.error(f"Error in get_product_description_api: {e}", exc_info=True)
         return Response({
             'success': False,
             'error': f'An error occurred: {str(e)}'
@@ -5502,7 +5502,7 @@ def download_product_description_api(request):
         
         # Validate configuration
         if not all([cfg['host'], cfg['port'], cfg['user'], pwd]):
-            logger.error("SAP HANA configuration incomplete")
+            # logger.error("SAP HANA configuration incomplete")
             return JsonResponse({
                 'success': False,
                 'error': 'SAP HANA configuration is incomplete'
@@ -8439,7 +8439,8 @@ def product_document_view(request, item_code):
                 database = company.Company_name
                 # logger.info(f"Using first active company: {database}")
         except Exception as e:
-            logger.warning(f"Could not get company from database: {e}")
+            # logger.warning(f"Could not get company from database: {e}")
+            pass
     
     # logger.info(f"Product document view - ItemCode: {item_code}, Database: {database}")
     

@@ -596,6 +596,9 @@ class MyTokenObtainPairView(TokenObtainPairView):
                         'user_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='User ID'),
                         'email': openapi.Schema(type=openapi.TYPE_STRING, description='User email'),
                         'username': openapi.Schema(type=openapi.TYPE_STRING, description='Username'),
+                        'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='User phone number', nullable=True),
+                        'company': openapi.Schema(type=openapi.TYPE_STRING, description='Company name', nullable=True),
+                        'company_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Company ID', nullable=True),
                         'role': openapi.Schema(type=openapi.TYPE_STRING, description='User role name'),
                         'permissions': openapi.Schema(
                             type=openapi.TYPE_ARRAY, 

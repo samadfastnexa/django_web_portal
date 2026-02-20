@@ -172,6 +172,29 @@ class User(AbstractBaseUser, PermissionsMixin):
         ]
     )
 
+    # ✅ NEW: Phone number for login and contact
+    phone_number = models.CharField(
+        max_length=20,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Phone number for login (e.g., 03001234567, +92-300-1234567)",
+        validators=[RegexValidator(
+            r'^[\d\s\-\+\(\)]+$',
+            'Enter a valid phone number (digits, spaces, hyphens, plus, parentheses allowed).'
+        )]
+    )
+
+    # ✅ NEW: Company association
+    company = models.ForeignKey(
+        'FieldAdvisoryService.Company',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='company_users',  # Changed to avoid clash with Company.created_by
+        help_text="Company this user belongs to"
+    )
+
     date_joined = models.DateTimeField(default=timezone.now)
 
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=False)
