@@ -315,11 +315,11 @@ class WeatherTestView(APIView):
             api_key = settings.WEATHER_API_KEY
             
             # Debug: Print the location being used for weather API
-            print(f"[DEBUG] Weather API - Location query: '{location_for_weather}'")
-            print(f"[DEBUG] Weather API - Location name: '{location_name}'")
+            # print(f"[DEBUG] Weather API - Location query: '{location_for_weather}'")
+            # print(f"[DEBUG] Weather API - Location name: '{location_name}'")
             
             url = f"http://api.weatherapi.com/v1/forecast.json?key={api_key}&q={location_for_weather}&days=3&aqi=no&alerts=no"
-            print(f"[DEBUG] Weather API - Full URL: {url.replace(api_key, '***HIDDEN***')}")
+            # print(f"[DEBUG] Weather API - Full URL: {url.replace(api_key, '***HIDDEN***')}")
             
             response = requests.get(url, timeout=10)
             response.raise_for_status()

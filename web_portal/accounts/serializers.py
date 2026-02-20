@@ -382,7 +382,7 @@ class UserSerializer(serializers.ModelSerializer):
             'dealer_govt_license_number', 'dealer_license_expiry', 'dealer_minimum_investment',
             'dealer_cnic_front_image', 'dealer_cnic_back_image'
         ]
-        read_only_fields = ['id', 'is_staff', 'is_active', 'profile_image_url']
+        read_only_fields = ['id', 'is_staff', 'profile_image_url']
         extra_kwargs = {
             'username': {'required': False},
             'email': {'required': False},
