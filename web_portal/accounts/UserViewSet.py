@@ -332,7 +332,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         tags=["02. User Management"],
-        manual_parameters=m2m_parameters + dealer_parameters,
+        manual_parameters=[
+            openapi.Parameter('is_active', openapi.IN_FORM, type=openapi.TYPE_BOOLEAN, description="Set user active status (default: true)", required=False),
+        ] + m2m_parameters + dealer_parameters,
         request_body=None,  # ⛔ important: avoid conflicts with serializer
         responses={201: UserSerializer}
     )
