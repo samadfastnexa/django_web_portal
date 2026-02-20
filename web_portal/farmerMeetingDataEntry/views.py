@@ -518,18 +518,18 @@ class MeetingViewSet(viewsets.ModelViewSet):
     )
     def create(self, request, *args, **kwargs):
         # DEBUG: Log raw request data
-        print("=== FieldDayViewSet CREATE DEBUG ===")
-        print(f"Raw request.data: {request.data}")
-        print(f"attendee_farmer_id: {request.data.get('attendee_farmer_id', 'NOT_PROVIDED')}")
-        print(f"attendee_crop: {request.data.get('attendee_crop', 'NOT_PROVIDED')}")
-        print(f"attendee_farmer_id type: {type(request.data.get('attendee_farmer_id'))}")
-        print(f"attendee_crop type: {type(request.data.get('attendee_crop'))}")
-        if 'attendee_crop' in request.data:
-            crop_data = request.data.get('attendee_crop')
-            if isinstance(crop_data, list):
-                for i, crop in enumerate(crop_data):
-                    print(f"  attendee_crop[{i}]: '{crop}' (type: {type(crop)})")
-        print("=== END DEBUG ===")
+        # print("=== FieldDayViewSet CREATE DEBUG ===")
+        # print(f"Raw request.data: {request.data}")
+        # print(f"attendee_farmer_id: {request.data.get('attendee_farmer_id', 'NOT_PROVIDED')}")
+        # print(f"attendee_crop: {request.data.get('attendee_crop', 'NOT_PROVIDED')}")
+        # print(f"attendee_farmer_id type: {type(request.data.get('attendee_farmer_id'))}")
+        # print(f"attendee_crop type: {type(request.data.get('attendee_crop'))}")
+        # if 'attendee_crop' in request.data:
+        #     crop_data = request.data.get('attendee_crop')
+        #     if isinstance(crop_data, list):
+        #         for i, crop in enumerate(crop_data):
+        #             print(f"  attendee_crop[{i}]: '{crop}' (type: {type(crop)})")
+        # print("=== END DEBUG ===")
         
         # Automatically assign company based on logged-in user's sales profile
         if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
