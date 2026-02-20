@@ -1460,7 +1460,7 @@ def get_hana_connection(request=None, selected_db_key=None):
             elif raw_value and not isinstance(raw_value, dict):
                 schema = str(raw_value).strip().strip('"').strip("'")
         except Exception as e:
-            print(f"Error getting schema from settings: {e}")
+            # print(f"Error getting schema from settings: {e}")
             schema = os.environ.get('HANA_SCHEMA') or os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
             
             # Try to get schema from Company model (dynamic, no hardcoding)
@@ -1475,9 +1475,10 @@ def get_hana_connection(request=None, selected_db_key=None):
                     # If found, use its schema name
                     if company:
                         schema = company.name
-                        print(f"[HANA] Found schema from Company model: {company.Company_name} -> {schema}")
+                        # print(f"[HANA] Found schema from Company model: {company.Company_name} -> {schema}")
                 except Exception as company_err:
-                    print(f"[HANA] Could not lookup company from model: {company_err}")
+                    # print(f"[HANA] Could not lookup company from model: {company_err}")
+                    pass
 
         # Strip quotes if present
         schema = schema.strip('"\'')
@@ -1507,7 +1508,7 @@ def get_hana_connection(request=None, selected_db_key=None):
         
         return conn
     except Exception as e:
-        print(f"Error connecting to HANA: {e}")
+        # print(f"Error connecting to HANA: {e}")
         return None
 
 @require_http_methods(["GET"])

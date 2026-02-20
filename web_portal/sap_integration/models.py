@@ -13,6 +13,7 @@ class Policy(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        db_table = 'sap_integration_policy'
         verbose_name = 'Policy'
         verbose_name_plural = 'Policies'
         ordering = ['-updated_at']
@@ -25,6 +26,7 @@ class Policy(models.Model):
 
 class HanaConnect(models.Model):
     class Meta:
+        db_table = 'sap_integration_hanaconnect'
         managed = False
         verbose_name = 'HANA Connect'
         verbose_name_plural = 'HANA Connect'
@@ -90,6 +92,7 @@ class DiseaseIdentification(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
+        db_table = 'sap_integration_diseaseidentification'
         verbose_name = 'Disease Identification'
         verbose_name_plural = 'Disease Identifications'
         ordering = ['disease_name', 'item_code']
@@ -139,6 +142,7 @@ class RecommendedProduct(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
+        db_table = 'sap_integration_recommendedproduct'
         verbose_name = 'Recommended Product'
         verbose_name_plural = 'Recommended Products'
         ordering = ['disease', 'priority', '-effectiveness_rating']

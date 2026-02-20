@@ -67,6 +67,7 @@ class Crop(models.Model):
     is_active = models.BooleanField(default=True)
     
     class Meta:
+        db_table = 'crop_management_crop'
         verbose_name = _('Crop')
         verbose_name_plural = _('Crops')
         ordering = ['name']
@@ -124,6 +125,7 @@ class CropVariety(models.Model):
     is_active = models.BooleanField(default=True)
     
     class Meta:
+        db_table = 'crop_management_cropvariety'
         verbose_name = _('Crop Variety')
         verbose_name_plural = _('Crop Varieties')
         unique_together = ['crop', 'name']
@@ -206,6 +208,7 @@ class YieldData(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
+        db_table = 'crop_management_yielddata'
         verbose_name = _('Yield Data')
         verbose_name_plural = _('Yield Data')
         unique_together = ['crop', 'variety', 'farm', 'harvest_year', 'harvest_season']
@@ -306,6 +309,7 @@ class FarmingPractice(models.Model):
     is_active = models.BooleanField(default=True)
     
     class Meta:
+        db_table = 'crop_management_farmingpractice'
         verbose_name = _('Farming Practice')
         verbose_name_plural = _('Farming Practices')
         ordering = ['crop__name', 'practice_type', 'priority_level']
@@ -380,6 +384,7 @@ class CropResearch(models.Model):
     is_active = models.BooleanField(default=True)
     
     class Meta:
+        db_table = 'crop_management_cropresearch'
         verbose_name = _('Crop Research')
         verbose_name_plural = _('Crop Research')
         ordering = ['-research_period_start', '-created_at']

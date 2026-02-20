@@ -676,7 +676,8 @@ class DashboardOverviewView(APIView):
                 # Use first available company schema or default
                 schema = list(db_options.values())[0] if db_options else '4B-BIO_APP'
             
-            print(f"[DEBUG _get_collection_totals] emp_id={emp_id}, company={company}, schema={schema}, dates={start_date} to {end_date}, ignore_emp_filter={ignore_emp_filter}")
+            # DEBUG: Uncomment to see collection totals parameters
+            # print(f"[DEBUG _get_collection_totals] emp_id={emp_id}, company={company}, schema={schema}, dates={start_date} to {end_date}, ignore_emp_filter={ignore_emp_filter}")
             
             # Connect to HANA
             encrypt = str(os.environ.get('HANA_ENCRYPT', '')).strip().lower() in ('true', '1', 'yes')
@@ -753,12 +754,14 @@ class DashboardOverviewView(APIView):
                 'to_date': max_to or end_date
             }
             
-            print(f"[DEBUG _get_collection_totals] Result: target={result['target']}, achievement={result['achievement']}, rows_processed={len(data or [])}")
+            # DEBUG: Uncomment to see collection totals result
+            # print(f"[DEBUG _get_collection_totals] Result: target={result['target']}, achievement={result['achievement']}, rows_processed={len(data or [])}")
             
             return result
             
         except Exception as e:
-            print(f"Error fetching collection totals: {e}")
+            # DEBUG: Uncomment to see errors
+            # print(f"Error fetching collection totals: {e}")
             import traceback
             traceback.print_exc()
             return {'target': 0.0, 'achievement': 0.0, 'from_date': start_date, 'to_date': end_date}
@@ -830,7 +833,8 @@ class DashboardOverviewView(APIView):
                 # Use first available company schema or default
                 schema = list(db_options.values())[0] if db_options else '4B-BIO_APP'
             
-            print(f"[DEBUG _get_sales_totals] emp_id={emp_id}, company={company}, schema={schema}, dates={start_date} to {end_date}")
+            # DEBUG: Uncomment to see sales totals parameters
+            # print(f"[DEBUG _get_sales_totals] emp_id={emp_id}, company={company}, schema={schema}, dates={start_date} to {end_date}")
             
             # Connect to HANA
             encrypt = str(os.environ.get('HANA_ENCRYPT', '')).strip().lower() in ('true', '1', 'yes')
@@ -914,12 +918,14 @@ class DashboardOverviewView(APIView):
                 'to_date': max_to or end_date
             }
             
-            print(f"[DEBUG _get_sales_totals] Result: target={result['target']}, achievement={result['achievement']}, rows_processed={rows_processed}/{len(data or [])}")
+            # DEBUG: Uncomment to see sales totals result
+            # print(f"[DEBUG _get_sales_totals] Result: target={result['target']}, achievement={result['achievement']}, rows_processed={rows_processed}/{len(data or [])}")
             
             return result
             
         except Exception as e:
-            print(f"Error fetching sales totals: {e}")
+            # DEBUG: Uncomment to see errors
+            # print(f"Error fetching sales totals: {e}")
             import traceback
             traceback.print_exc()
             return {'target': 0.0, 'achievement': 0.0, 'from_date': start_date, 'to_date': end_date}
@@ -1284,7 +1290,8 @@ class CollectionAnalyticsView(APIView):
                     cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
                     cur.close()
                 
-                print(f"[DEBUG CollectionAnalyticsView] schema={cfg['schema']}, emp_id={sap_emp_id}, dates={start_date} to {end_date}, period={period if period else 'None'}")
+                # DEBUG: Uncomment to see schema and parameters
+                # print(f"[DEBUG CollectionAnalyticsView] schema={cfg['schema']}, emp_id={sap_emp_id}, dates={start_date} to {end_date}, period={period if period else 'None'}")
                 
                 # Fetch data using collection_vs_achievement function
                 data = collection_vs_achievement(
@@ -1322,15 +1329,15 @@ class CollectionAnalyticsView(APIView):
                             scaled.append(row)
                     data = scaled
                 
-                # Debug: Log first few rows to see what data we're getting
-                if data and len(data) > 0:
-                    print(f"\n=== DEBUG: First row from collection_vs_achievement ===")
-                    print(f"Total rows returned: {len(data)}")
-                    print(f"First row keys: {list(data[0].keys())}")
-                    print(f"First row data: {data[0]}")
-                    if len(data) > 1:
-                        print(f"Second row data: {data[1]}")
-                    print(f"=== END DEBUG ===")
+                # DEBUG: Uncomment to see row data structure
+                # if data and len(data) > 0:
+                #     print(f"\n=== DEBUG: First row from collection_vs_achievement ===")
+                #     print(f"Total rows returned: {len(data)}")
+                #     print(f"First row keys: {list(data[0].keys())}")
+                #     print(f"First row data: {data[0]}")
+                #     if len(data) > 1:
+                #         print(f"Second row data: {data[1]}")
+                #     print(f"=== END DEBUG ===")
                 
                 # Helper function to clean region/zone/territory names
                 def clean_geo_name(name):

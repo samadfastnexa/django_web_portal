@@ -500,9 +500,9 @@ class FieldDaySerializer(serializers.ModelSerializer):
         # ✅ Handle farmer linking (Option 1: Link existing farmers)
         if farmer_ids:
             # Debug logging to help identify crop distribution issues
-            print(f"DEBUG: farmer_ids = {farmer_ids}")
-            print(f"DEBUG: crops = {crops}")
-            print(f"DEBUG: acreages = {acreages}")
+            # print(f"DEBUG: farmer_ids = {farmer_ids}")
+            # print(f"DEBUG: crops = {crops}")
+            # print(f"DEBUG: acreages = {acreages}")
             
             # Handle case where crops array is longer than farmer_ids due to comma-separated expansion
             if len(crops) > len(farmer_ids):
@@ -589,8 +589,8 @@ class FieldDaySerializer(serializers.ModelSerializer):
                 farmer_ids = expanded_farmer_ids
                 acreages = expanded_acreages
                 
-                print(f"DEBUG: Expanded farmer_ids = {farmer_ids}")
-                print(f"DEBUG: Expanded acreages = {acreages}")
+                # print(f"DEBUG: Expanded farmer_ids = {farmer_ids}")
+                # print(f"DEBUG: Expanded acreages = {acreages}")
             
             # Group crops by farmer to create consolidated attendance records
             from collections import defaultdict
@@ -606,7 +606,7 @@ class FieldDaySerializer(serializers.ModelSerializer):
                     'acreage': attendee_acreage
                 })
                 
-                print(f"DEBUG: Attendee {i} (farmer_id={farmer_id}) -> crop='{attendee_crop}', acreage={attendee_acreage}")
+                # print(f"DEBUG: Attendee {i} (farmer_id={farmer_id}) -> crop='{attendee_crop}', acreage={attendee_acreage}")
             
             # Create one attendance record per farmer with all their crops
             for farmer_id, crop_list in farmer_crop_data.items():
@@ -616,7 +616,7 @@ class FieldDaySerializer(serializers.ModelSerializer):
                 # Use the first crop as the primary crop
                 primary_crop = crop_list[0]['crop'] if crop_list else ''
                 
-                print(f"DEBUG: Creating consolidated attendance for farmer {farmer_id} with {len(crop_list)} crops, total acreage: {total_acreage}")
+                # print(f"DEBUG: Creating consolidated attendance for farmer {farmer_id} with {len(crop_list)} crops, total acreage: {total_acreage}")
                 
                 try:
                     # Try to get farmer by database ID first (if it's a number)
@@ -664,10 +664,10 @@ class FieldDaySerializer(serializers.ModelSerializer):
         # ✅ Handle manual entry (Option 2: For backward compatibility)
         elif names:
             # Debug logging for manual entry
-            print(f"DEBUG: names = {names}")
-            print(f"DEBUG: contacts = {contacts}")
-            print(f"DEBUG: crops = {crops}")
-            print(f"DEBUG: acreages = {acreages}")
+            # print(f"DEBUG: names = {names}")
+            # print(f"DEBUG: contacts = {contacts}")
+            # print(f"DEBUG: crops = {crops}")
+            # print(f"DEBUG: acreages = {acreages}")
             
             for i, name in enumerate(names):
                 # Get the data for this specific attendee
@@ -675,7 +675,7 @@ class FieldDaySerializer(serializers.ModelSerializer):
                 attendee_acreage = acreages[i] if i < len(acreages) else 0.0
                 attendee_crop = crops[i] if i < len(crops) else ''
                 
-                print(f"DEBUG: Attendee {i} (name={name}) -> crop='{attendee_crop}', contact='{attendee_contact}', acreage={attendee_acreage}")
+                # print(f"DEBUG: Attendee {i} (name={name}) -> crop='{attendee_crop}', contact='{attendee_contact}', acreage={attendee_acreage}")
                 
                 attendance = FieldDayAttendance.objects.create(
                     field_day=field_day,

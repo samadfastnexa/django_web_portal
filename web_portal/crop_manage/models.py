@@ -14,6 +14,7 @@ class Crop(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'crop_manage_crop'
         verbose_name = "Crop"
         verbose_name_plural = "Crops"
 
@@ -32,6 +33,7 @@ class CropStage(models.Model):
     remarks = models.TextField(blank=True, null=True, help_text="Additional notes or instructions")
 
     class Meta:
+        db_table = 'crop_manage_cropstage'
         verbose_name = "Crop Stage"
         verbose_name_plural = "Crop Stages"
 
@@ -48,6 +50,7 @@ class CropStageImage(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'crop_manage_cropstageimage'
         ordering = ["crop_stage", "uploaded_at"]
         verbose_name = "Crop Stage Image"
         verbose_name_plural = "Crop Stage Images"
@@ -69,6 +72,7 @@ class Product(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'crop_manage_product'
         ordering = ["name", "brand"]
         verbose_name = "Product"
         verbose_name_plural = "Products"
@@ -113,6 +117,7 @@ class Trial(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'crop_manage_trial'
         ordering = ["station", "trial_name"]
         verbose_name = "Trial"
         verbose_name_plural = "Trials"
@@ -138,6 +143,7 @@ class TrialTreatment(models.Model):
     others = models.TextField(blank=True, null=True)
 
     class Meta:
+        db_table = 'crop_manage_trialtreatment'
         ordering = ["trial", "label"]
         verbose_name = "Trial Treatment"
         verbose_name_plural = "Trial Treatments"
@@ -160,6 +166,7 @@ class TrialImage(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'crop_manage_trialimage'
         ordering = ["treatment", "image_type", "uploaded_at"]
         verbose_name = "Trial Image"
         verbose_name_plural = "Trial Images"
@@ -185,6 +192,7 @@ class Pest(models.Model):
     notes = models.TextField(blank=True, null=True, help_text="Identification cues, local names, or any remarks")
 
     class Meta:
+        db_table = 'crop_manage_pest'
         ordering = ["category", "name"]
         verbose_name = "Pest"
         verbose_name_plural = "Pests"
@@ -222,6 +230,7 @@ class PestManagementGuideline(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'crop_manage_pestmanagementguideline'
         ordering = ["pest", "crop", "control_category", "type_label"]
         verbose_name = "Pest Management Guideline"
         verbose_name_plural = "Pest Management Guidelines"
@@ -242,6 +251,7 @@ class TrialInitCondition(models.Model):
     notes = models.TextField(blank=True, null=True, help_text="Any remarks about baseline setup and observations")
 
     class Meta:
+        db_table = 'crop_manage_trialinitcondition'
         verbose_name = "Trial Initial Condition"
         verbose_name_plural = "Trial Initial Conditions"
 
@@ -261,6 +271,7 @@ class EnvironmentalCondition(models.Model):
     notes = models.TextField(blank=True, null=True, help_text="Additional weather details or context")
 
     class Meta:
+        db_table = 'crop_manage_environmentalcondition'
         ordering = ['-recorded_at']
         verbose_name = "Environmental Condition"
         verbose_name_plural = "Environmental Conditions"
@@ -280,6 +291,7 @@ class SpeciesPerformanceObservation(models.Model):
     notes = models.TextField(blank=True, null=True, help_text="Extra context: plot conditions, anomalies, etc.")
 
     class Meta:
+        db_table = 'crop_manage_speciesperformanceobservation'
         ordering = ['trial_treatment', 'pest', 'observation_day']
         verbose_name = "Species Performance Observation"
         verbose_name_plural = "Species Performance Observations"
@@ -297,6 +309,7 @@ class DoseResponseObservation(models.Model):
     notes = models.TextField(blank=True, null=True, help_text="Notes about response or variability")
 
     class Meta:
+        db_table = 'crop_manage_doseresponseobservation'
         ordering = ['trial_treatment', 'dose_ml_per_acre', 'observation_day']
         verbose_name = "Dose Response Observation"
         verbose_name_plural = "Dose Response Observations"
@@ -314,6 +327,7 @@ class ComparativePerformance(models.Model):
     notes = models.TextField(blank=True, null=True, help_text="Comparison notes or anomalies")
 
     class Meta:
+        db_table = 'crop_manage_comparativeperformance'
         ordering = ['trial_treatment', 'reference_product', 'observation_day']
         verbose_name = "Comparative Performance"
         verbose_name_plural = "Comparative Performance Records"
@@ -334,6 +348,7 @@ class Recommendation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'crop_manage_recommendation'
         ordering = ['crop', 'pest', 'product']
         verbose_name = "Recommendation"
         verbose_name_plural = "Recommendations"
@@ -356,6 +371,7 @@ class TrialRepetitionPlan(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'crop_manage_trialrepetitionplan'
         ordering = ['crop', 'pest', 'product']
         verbose_name = "Trial Repetition Plan"
         verbose_name_plural = "Trial Repetition Plans"

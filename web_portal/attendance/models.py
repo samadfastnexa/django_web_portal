@@ -30,6 +30,9 @@ class Holiday(models.Model):
     date = models.DateField(unique=True)
     name = models.CharField(max_length=100)
 
+    class Meta:
+        db_table = 'attendance_holiday'
+
     def __str__(self):
         return f"{self.name} ({self.date})"
 
@@ -67,6 +70,9 @@ class Attendance(models.Model):
     source = models.CharField(max_length=50, choices=SOURCE_CHOICES, default="manual")
     created_at = models.DateTimeField(auto_now_add=True)
     _current_user = None  # Temporary holder for request.user
+
+    class Meta:
+        db_table = 'attendance_attendance'
 
     def set_current_user(self, user):
         self._current_user = user
@@ -161,6 +167,9 @@ class AttendanceRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        db_table = 'attendance_attendancerequest'
+
     def clean(self):
         now = timezone.now()
 
@@ -219,6 +228,9 @@ class LeaveRequest(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'attendance_leaverequest'
 
     def clean(self):
         # Validate dates

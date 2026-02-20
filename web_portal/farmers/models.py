@@ -73,6 +73,7 @@ class Farmer(models.Model):
     profile_picture = models.ImageField(upload_to='farmer_profiles/', null=True, blank=True, verbose_name=_('Profile Picture'))
     
     class Meta:
+        db_table = 'farmers_farmer'
         verbose_name = _('Farmer')
         verbose_name_plural = _('Farmers')
         ordering = ['-id']
@@ -180,6 +181,7 @@ class FarmingHistory(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_('Updated At'))
     
     class Meta:
+        db_table = 'farmers_farminghistory'
         verbose_name = _('Farming History')
         verbose_name_plural = _('Farming Histories')
         unique_together = ['farmer', 'year', 'season', 'crop_name']

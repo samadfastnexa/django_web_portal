@@ -368,7 +368,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
         
         # Headers - Meeting Info
         main_headers = [
-            'ID', 'FSM Name', 'Date', 'Company', 'Region', 'Zone', 'Territory',
+            'ID', 'FSM Name', 'Date', 'Company',
             'Location', 'Total Attendees', 'ZM Present', 'RSM Present',
             'Key Topics', 'Feedback', 'Suggestions'
         ]
@@ -404,9 +404,6 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 meeting.id, meeting.fsm_name,
                 meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
                 meeting.company_fk.Company_name if meeting.company_fk else '',
-                meeting.region_fk.name if meeting.region_fk else '',
-                meeting.zone_fk.name if meeting.zone_fk else '',
-                meeting.territory_fk.name if meeting.territory_fk else '',
                 meeting.location, meeting.total_attendees,
                 'Yes' if meeting.presence_of_zm else 'No',
                 'Yes' if meeting.presence_of_rsm else 'No',
@@ -521,18 +518,18 @@ class MeetingViewSet(viewsets.ModelViewSet):
     )
     def create(self, request, *args, **kwargs):
         # DEBUG: Log raw request data
-        print("=== FieldDayViewSet CREATE DEBUG ===")
-        print(f"Raw request.data: {request.data}")
-        print(f"attendee_farmer_id: {request.data.get('attendee_farmer_id', 'NOT_PROVIDED')}")
-        print(f"attendee_crop: {request.data.get('attendee_crop', 'NOT_PROVIDED')}")
-        print(f"attendee_farmer_id type: {type(request.data.get('attendee_farmer_id'))}")
-        print(f"attendee_crop type: {type(request.data.get('attendee_crop'))}")
-        if 'attendee_crop' in request.data:
-            crop_data = request.data.get('attendee_crop')
-            if isinstance(crop_data, list):
-                for i, crop in enumerate(crop_data):
-                    print(f"  attendee_crop[{i}]: '{crop}' (type: {type(crop)})")
-        print("=== END DEBUG ===")
+        # print("=== FieldDayViewSet CREATE DEBUG ===")
+        # print(f"Raw request.data: {request.data}")
+        # print(f"attendee_farmer_id: {request.data.get('attendee_farmer_id', 'NOT_PROVIDED')}")
+        # print(f"attendee_crop: {request.data.get('attendee_crop', 'NOT_PROVIDED')}")
+        # print(f"attendee_farmer_id type: {type(request.data.get('attendee_farmer_id'))}")
+        # print(f"attendee_crop type: {type(request.data.get('attendee_crop'))}")
+        # if 'attendee_crop' in request.data:
+        #     crop_data = request.data.get('attendee_crop')
+        #     if isinstance(crop_data, list):
+        #         for i, crop in enumerate(crop_data):
+        #             print(f"  attendee_crop[{i}]: '{crop}' (type: {type(crop)})")
+        # print("=== END DEBUG ===")
         
         # Automatically assign company based on logged-in user's sales profile
         if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
@@ -966,7 +963,7 @@ class FieldDayViewSet(viewsets.ModelViewSet):
         
         # Headers - Field Day Info
         main_headers = [
-            'ID', 'Title', 'Date', 'Company', 'Region', 'Zone', 'Territory',
+            'ID', 'Title', 'Date', 'Company',
             'Total Participants', 'Demonstrations Conducted', 'User', 'Active', 'Feedback'
         ]
         
@@ -1001,9 +998,6 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                 field_day.id, field_day.title,
                 field_day.date.strftime('%Y-%m-%d %H:%M') if field_day.date else '',
                 field_day.company_fk.Company_name if field_day.company_fk else '',
-                field_day.region_fk.name if field_day.region_fk else '',
-                field_day.zone_fk.name if field_day.zone_fk else '',
-                field_day.territory_fk.name if field_day.territory_fk else '',
                 field_day.total_participants, field_day.demonstrations_conducted,
                 field_day.user.username if field_day.user else '',
                 'Yes' if field_day.is_active else 'No',
