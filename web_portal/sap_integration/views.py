@@ -5340,6 +5340,21 @@ def get_product_description_api(request):
                     urdu_file = file_name
                     urdu_ext = file_ext
             
+            # Extract folder name from schema/database name (e.g., "4B-AGRI_LIVE" -> "4B-AGRI")
+            folder_name = 'default'
+            if database:
+                folder_name = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
+            
+            # Construct product image URL (similar to products_catalog)
+            product_image_url = None
+            if image_file and image_ext:
+                product_image_url = f'/media/product_images/{folder_name}/{image_file}.{image_ext}'
+            
+            # Construct product description Urdu URL
+            product_description_urdu_url = None
+            if urdu_file and urdu_ext:
+                product_description_urdu_url = f'/media/product_images/{folder_name}/{urdu_file}.{urdu_ext}'
+            
             result = {
                 'item_code': item_code_result,
                 'item_name': item_name,
@@ -5349,6 +5364,9 @@ def get_product_description_api(request):
                 'image_ext': image_ext,
                 'urdu_file': urdu_file,
                 'urdu_ext': urdu_ext,
+                'product_image_url': product_image_url,  # Full URL to product image
+                'product_description_urdu_url': product_description_urdu_url,  # Full URL to Urdu description
+                'has_document': bool(description or urdu_file),  # True if has description or Urdu file
                 'attachments': all_attachments  # All attachment details
             }
             
