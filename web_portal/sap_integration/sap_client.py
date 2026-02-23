@@ -827,7 +827,8 @@ class SAPClient:
                 conn.close()
                 
         except Exception as e:
-            print(f"Error fetching diseases from SAP: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            pass
+            # print(f"Error fetching diseases from SAP: {str(e)}")
+            # import traceback
+            # traceback.print_exc()
             return []

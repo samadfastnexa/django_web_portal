@@ -6,6 +6,7 @@ from .views import (
     FarmerAnalyticsView,
     PerformanceMetricsView
 )
+from sap_integration.views import dealer_analytics_api
 
 urlpatterns = [
     # Main dashboard overview - aggregates all data
@@ -17,4 +18,7 @@ urlpatterns = [
     path('collection/', CollectionAnalyticsView.as_view(), name='analytics-collection'),
     path('farmers/', FarmerAnalyticsView.as_view(), name='analytics-farmers'),
     path('performance/', PerformanceMetricsView.as_view(), name='analytics-performance'),
+    
+    # Dealer Analytics
+    path('dealer-analytics/', dealer_analytics_api, name='dealer_analytics_api'),
 ]
