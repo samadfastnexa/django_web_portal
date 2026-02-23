@@ -274,9 +274,10 @@ def get_hana_connection(selected_db_key=None):
                 # If found, use its schema name
                 if company:
                     schema = company.name
-                    print(f"[HANA] Found company from model: {company.Company_name} -> schema: {schema}")
+                    # print(f"[HANA] Found company from model: {company.Company_name} -> schema: {schema}")
             except Exception as e:
-                print(f"[HANA] Error looking up company from model: {e}")
+                pass
+                # print(f"[HANA] Error looking up company from model: {e}")
         
         # SECOND: Try database settings if no schema found yet
         if not schema:
@@ -308,24 +309,25 @@ def get_hana_connection(selected_db_key=None):
 
                 if db_options and selected_db_key:
                     schema = db_options.get(selected_db_key)
-                    print(f"[HANA] From settings: {selected_db_key} -> {schema}")
+                    # print(f"[HANA] From settings: {selected_db_key} -> {schema}")
                 elif db_options and not schema:
                     schema = list(db_options.values())[0]
-                    print(f"[HANA] From settings (first): {schema}")
+                    # print(f"[HANA] From settings (first): {schema}")
                 elif raw_value and not isinstance(raw_value, dict):
                     schema = str(raw_value).strip().strip('"').strip("'")
             except Exception as e:
-                print(f"[HANA] Error getting schema from settings: {e}")
+                pass
+                # print(f"[HANA] Error getting schema from settings: {e}")
         
         # LAST: Fallback to environment variable or default
         if not schema:
             schema = os.environ.get('SAP_COMPANY_DB', '4B-BIO_APP')
-            print(f"[HANA] Fallback to env/default: {schema}")
+            # print(f"[HANA] Fallback to env/default: {schema}")
 
         # Strip quotes if present
         schema = schema.strip("'\"")
         
-        print(f"[HANA] FINAL SCHEMA TO USE: {schema}")
+        # print(f"[HANA] FINAL SCHEMA TO USE: {schema}")
         
         # Connection parameters
         host = os.environ.get('HANA_HOST', '').strip()
@@ -334,11 +336,11 @@ def get_hana_connection(selected_db_key=None):
         password = os.environ.get('HANA_PASSWORD', '').strip()
         
         if not host or not user:
-            print(f"Missing HANA credentials: host={bool(host)}, user={bool(user)}")
+            # print(f"Missing HANA credentials: host={bool(host)}, user={bool(user)}")
             return None
         
         # Connect
-        print(f"Connecting to HANA: {host}:{port} as {user}, schema={schema}")
+        # print(f"Connecting to HANA: {host}:{port} as {user}, schema={schema}")
         conn = dbapi.connect(address=host, port=port, user=user, password=password)
 
         # Set schema and verify
@@ -353,21 +355,23 @@ def get_hana_connection(selected_db_key=None):
                     current_schema = row[0]
                 except Exception:
                     current_schema = None
-            print(f"HANA current schema: {current_schema}")
+            # print(f"HANA current schema: {current_schema}")
         except Exception as e:
-            print(f"Warning: could not verify current schema: {e}")
+            pass
+            # print(f"Warning: could not verify current schema: {e}")
         finally:
             try:
                 cursor.close()
             except Exception:
                 pass
 
-        print("HANA connection successful")
+        # print("HANA connection successful")
         return conn
     except Exception as e:
-        print(f"Error connecting to HANA: {e}")
-        import traceback
-        traceback.print_exc()
+        pass
+        # print(f"Error connecting to HANA: {e}")
+        # import traceback
+        # traceback.print_exc()
         return None
 
 
@@ -397,7 +401,7 @@ class _CompanySessionResolver:
             
             return comp
         except Exception as e:
-            print(f"Error getting selected company: {e}")
+            # print(f"Error getting selected company: {e}")
             return None
 
 
@@ -450,13 +454,13 @@ class SalesOrderForm(forms.ModelForm):
 
         super().__init__(*args, **kwargs)
         
-        print("=== FORM INITIALIZATION DEBUG ===")
-        print(f"[FORM] Selected DB key: {selected_db_key}")
-        print(f"[FORM] Request method: {getattr(self.request, 'method', 'UNKNOWN')}")
-        print(f"[FORM] Request GET params: {dict(self.request.GET) if self.request else 'No request'}")
-        print(f"[FORM] Available fields: {list(self.fields.keys())}")
-        print(f"u_s_card_code field type: {type(self.fields.get('u_s_card_code'))}")
-        print(f"u_s_card_code widget type: {type(self.fields.get('u_s_card_code').widget) if 'u_s_card_code' in self.fields else 'N/A'}")
+        # print("=== FORM INITIALIZATION DEBUG ===")
+        # print(f"[FORM] Selected DB key: {selected_db_key}")
+        # print(f"[FORM] Request method: {getattr(self.request, 'method', 'UNKNOWN')}")
+        # print(f"[FORM] Request GET params: {dict(self.request.GET) if self.request else 'No request'}")
+        # print(f"[FORM] Available fields: {list(self.fields.keys())}")
+        # print(f"u_s_card_code field type: {type(self.fields.get('u_s_card_code'))}")
+        # print(f"u_s_card_code widget type: {type(self.fields.get('u_s_card_code').widget) if 'u_s_card_code' in self.fields else 'N/A'}")
         
         # Populate customer dropdown
         try:
@@ -467,11 +471,11 @@ class SalesOrderForm(forms.ModelForm):
                 except Exception:
                     customers = hana_connect.customer_lov(db)
                 # Log a preview of customer codes to confirm correct company
-                try:
-                    preview = [c.get('CardCode') for c in (customers or [])][:5]
-                    print(f"Customer code preview: {preview}")
-                except Exception:
-                    pass
+                # try:
+                #     preview = [c.get('CardCode') for c in (customers or [])][:5]
+                #     print(f"Customer code preview: {preview}")
+                # except Exception:
+                #     pass
                 customer_choices = [('', '--- Select Customer ---')] + [
                     (c['CardCode'], f"{c['CardCode']} - {c['CardName']}") 
                     for c in customers
@@ -480,10 +484,10 @@ class SalesOrderForm(forms.ModelForm):
                 
                 # If we have a card_code in the instance, load child customers
                 if self.instance and self.instance.card_code:
-                    print(f"Loading child customers for existing card_code: {self.instance.card_code}")
+                    # print(f"Loading child customers for existing card_code: {self.instance.card_code}")
                     try:
                         child_customers = hana_connect.child_card_code(db, self.instance.card_code)
-                        print(f"Found {len(child_customers)} child customers")
+                        # print(f"Found {len(child_customers)} child customers")
                         child_choices = [('', '--- Select Child Customer ---')] + [
                             (c['CardCode'], f"{c['CardCode']} - {c['CardName']}") 
                             for c in child_customers
@@ -491,42 +495,45 @@ class SalesOrderForm(forms.ModelForm):
                         # Set choices on the actual u_s_card_code field
                         if 'u_s_card_code' in self.fields:
                             self.fields['u_s_card_code'].widget.choices = child_choices
-                            print(f"Set {len(child_choices)} choices on u_s_card_code widget")
+                            # print(f"Set {len(child_choices)} choices on u_s_card_code widget")
                     except Exception as e:
-                        print(f"Error loading child customers: {e}")
-                        import traceback
-                        traceback.print_exc()
+                        # print(f"Error loading child customers: {e}")
+                        # import traceback
+                        # traceback.print_exc()
+                        pass
                 else:
-                    print("No card_code in instance, setting default message")
+                    # print("No card_code in instance, setting default message")
                     # Set initial empty choices - will be populated via JavaScript when parent is selected
                     if 'u_s_card_code' in self.fields:
                         self.fields['u_s_card_code'].widget.choices = [('', '--- Select Parent Customer First ---')]
-                        print("Set default message on u_s_card_code")
+                        # print("Set default message on u_s_card_code")
                 
                 db.close()
             else:
-                print("Failed to get HANA connection for customers")
+                pass
+                # print("Failed to get HANA connection for customers")
         except Exception as e:
-            print(f"Error loading customers: {e}")
-            import traceback
-            traceback.print_exc()
+            pass
+            # print(f"Error loading customers: {e}")
+            # import traceback
+            # traceback.print_exc()
         
         # Set help text on child customer field
         if 'u_s_card_code' in self.fields:
             self.fields['u_s_card_code'].help_text = "Select parent customer first to load child customers"
-            print(f"Child customer field widget: {type(self.fields['u_s_card_code'].widget)}")
-            print(f"Child customer field widget attrs: {self.fields['u_s_card_code'].widget.attrs}")
-            print(f"Child customer field is required: {self.fields['u_s_card_code'].required}")
-            print(f"Child customer field is disabled: {self.fields['u_s_card_code'].disabled}")
-        else:
-            print("WARNING: u_s_card_code field not found in form fields!")
+            # print(f"Child customer field widget: {type(self.fields['u_s_card_code'].widget)}")
+            # print(f"Child customer field widget attrs: {self.fields['u_s_card_code'].widget.attrs}")
+            # print(f"Child customer field is required: {self.fields['u_s_card_code'].required}")
+            # print(f"Child customer field is disabled: {self.fields['u_s_card_code'].disabled}")
+        # else:
+            # print("WARNING: u_s_card_code field not found in form fields!")
         
-        if 'u_s_card_name' in self.fields:
-            print(f"Child customer NAME field exists: {type(self.fields['u_s_card_name'].widget)}")
+        # if 'u_s_card_name' in self.fields:
+            # print(f"Child customer NAME field exists: {type(self.fields['u_s_card_name'].widget)}")
         
-        print(f"\n=== FINAL FORM FIELDS ===")
-        print(f"Total fields in form: {len(self.fields)}")
-        print(f"Field names: {list(self.fields.keys())}")
+        # print(f"\n=== FINAL FORM FIELDS ===")
+        # print(f"Total fields in form: {len(self.fields)}")
+        # print(f"Field names: {list(self.fields.keys())}")
         # Add help text for fields - NO styling, NO readonly - let JavaScript handle it
         if 'card_code' in self.fields:
             self.fields['card_code'].help_text = "Select customer from SAP"
@@ -606,7 +613,7 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                 ]
                 if 'item_code' in self.fields:
                     self.fields['item_code'].widget = forms.Select(choices=item_choices, attrs={'class': 'sap-item-lov', 'style': 'width: 400px;'})
-                    print(f"DEBUG: Item LOV loaded with {len(item_choices)} items")
+                    # print(f"DEBUG: Item LOV loaded with {len(item_choices)} items")
                 
                 # Populate tax group dropdown
                 try:
@@ -624,12 +631,12 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                             if code and '\ufffd' not in code and '\xff' not in code:
                                 valid_tax_choices.append((code, f"{code} - {name} ({rate}%)"))
                         except Exception as e:
-                            print(f"WARNING: Skipping corrupted tax code: {e}")
+                            # print(f"WARNING: Skipping corrupted tax code: {e}")
                             continue
                     
                     # Use default 'SE' if no valid codes found
                     if not valid_tax_choices:
-                        print("WARNING: No valid tax codes loaded from SAP, using defaults")
+                        # print("WARNING: No valid tax codes loaded from SAP, using defaults")
                         valid_tax_choices = [
                             ('SE', 'SE - Standard Exempted (0%)'),
                             ('AT1', 'AT1 - Taxable (17%)'),
@@ -640,12 +647,12 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                     if 'vat_group' in self.fields:
                         self.fields['vat_group'].widget = forms.Select(choices=tax_choices, attrs={'class': 'sap-tax-lov', 'style': 'width: 300px;'})
                         self.fields['vat_group'].initial = 'SE'  # Default to Standard Exempted
-                        print(f"DEBUG: Tax LOV loaded with {len(valid_tax_choices)} valid tax codes (set default to 'SE')")
-                    else:
-                        print("DEBUG: vat_group field not in form fields (expected for inline forms)")
+                        # print(f"DEBUG: Tax LOV loaded with {len(valid_tax_choices)} valid tax codes (set default to 'SE')")
+                    # else:
+                        # print("DEBUG: vat_group field not in form fields (expected for inline forms)")
                 
                 except Exception as e:
-                    print(f"ERROR loading tax codes: {e}")
+                    # print(f"ERROR loading tax codes: {e}")
                     # Fallback to safe defaults
                     if 'vat_group' in self.fields:
                         tax_choices = [
@@ -664,28 +671,28 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                 ]
                 if 'project_code' in self.fields:
                     self.fields['project_code'].widget = forms.Select(choices=project_choices, attrs={'class': 'sap-project-lov', 'style': 'width: 350px;'})
-                    print(f"DEBUG: Project LOV loaded with {len(project_choices)} projects")
+                    # print(f"DEBUG: Project LOV loaded with {len(project_choices)} projects")
                 
                 # Populate crop dropdown
                 try:
                     crops = hana_connect.crop_lov(db)
-                    print(f"DEBUG: Loaded {len(crops) if crops else 0} crops from HANA")
-                    if crops:
-                        print(f"DEBUG: First crop sample: {crops[0] if len(crops) > 0 else 'None'}")
+                    # print(f"DEBUG: Loaded {len(crops) if crops else 0} crops from HANA")
+                    # if crops:
+                        # print(f"DEBUG: First crop sample: {crops[0] if len(crops) > 0 else 'None'}")
                     crop_choices = [('', '--- Select Crop ---')] + [
                         (crop['Code'], f"{crop['Code']} - {crop['Name']}") 
                         for crop in crops
                     ]
-                    print(f"DEBUG: Created {len(crop_choices)} crop choices")
+                    # print(f"DEBUG: Created {len(crop_choices)} crop choices")
                     if 'u_crop' in self.fields:
                         self.fields['u_crop'].widget = forms.Select(choices=crop_choices, attrs={'class': 'sap-crop-lov', 'style': 'width: 250px;'})
-                        print(f"DEBUG: Crop widget assigned successfully to u_crop field")
-                    else:
-                        print("DEBUG: u_crop field not found in form fields")
+                        # print(f"DEBUG: Crop widget assigned successfully to u_crop field")
+                    # else:
+                        # print("DEBUG: u_crop field not found in form fields")
                 except Exception as e:
-                    print(f"ERROR loading crops: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    # print(f"ERROR loading crops: {e}")
+                    # import traceback
+                    # traceback.print_exc()
                     # Set empty choices on error
                     if 'u_crop' in self.fields:
                         self.fields['u_crop'].widget = forms.Select(choices=[('', '--- No Crops Available ---')], attrs={'class': 'sap-crop-lov', 'style': 'width: 250px;'})
@@ -709,7 +716,8 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                         attrs={'class': 'sap-warehouse-lov', 'style': 'width: 250px;'}
                     )
                 except Exception as e:
-                    print(f"Error loading warehouses: {e}")
+                    pass
+                    # print(f"Error loading warehouses: {e}")
                 
                 # Policy dropdown will be populated entirely by JavaScript
                 # This allows dynamic loading when customer changes
@@ -719,16 +727,18 @@ class SalesOrderLineInlineForm(forms.ModelForm):
                         choices=[('', '--- Select Policy ---')],
                         attrs={'class': 'sap-policy-lov', 'style': 'width: 400px;'}
                     )
-                    print(f"DEBUG: Policy dropdown initialized with placeholder (JS will populate)")
+                    # print(f"DEBUG: Policy dropdown initialized with placeholder (JS will populate)")
                 
                 db.close()
-                print(f"Loaded {len(item_choices)-1} items, {len(tax_choices)-1} tax codes, {len(project_choices)-1} projects, {len(crop_choices)-1} crops")
+                # print(f"Loaded {len(item_choices)-1} items, {len(tax_choices)-1} tax codes, {len(project_choices)-1} projects, {len(crop_choices)-1} crops")
             else:
-                print("Failed to get HANA connection for LOVs")
+                pass
+                # print("Failed to get HANA connection for LOVs")
         except Exception as e:
-            print(f"Error loading LOVs: {e}")
-            import traceback
-            traceback.print_exc()
+            pass
+            # print(f"Error loading LOVs: {e}")
+            # import traceback
+            # traceback.print_exc()
         
         # Set readonly fields only if they exist in the form
         if 'item_description' in self.fields:
@@ -871,13 +881,13 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
                     company=selected_company,
                     is_active=True
                 ).select_related('user', 'company')
-                print(f"[SalesOrderAdmin] Filtering dealers for company: {selected_company.Company_name} (schema: {selected_company.name})")
+                # print(f"[SalesOrderAdmin] Filtering dealers for company: {selected_company.Company_name} (schema: {selected_company.name})")
             else:
                 # If no company selected, show all active dealers
                 kwargs['queryset'] = Dealer.objects.filter(
                     is_active=True
                 ).select_related('user', 'company')
-                print("[SalesOrderAdmin] No company selected, showing all dealers")
+                # print("[SalesOrderAdmin] No company selected, showing all dealers")
         
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
     
@@ -1882,10 +1892,10 @@ class DealerRequestAdmin(admin.ModelAdmin):
             
             try:
                 # Log payload
-                try:
-                    print("SAP Business Partner payload:", json.dumps(payload, ensure_ascii=False), flush=True)
-                except Exception:
-                    pass
+                # try:
+                #     print("SAP Business Partner payload:", json.dumps(payload, ensure_ascii=False), flush=True)
+                # except Exception:
+                #     pass
                 
                 # Create BP in SAP
                 result = sap.create_business_partner(payload)
@@ -1935,15 +1945,15 @@ class DealerRequestAdmin(admin.ModelAdmin):
                         msg_json = str(result)
                 
                 # Log response
-                try:
-                    logging.getLogger('sap').info(msg_json)
-                except Exception:
-                    pass
+                # try:
+                #     logging.getLogger('sap').info(msg_json)
+                # except Exception:
+                #     pass
                 
-                try:
-                    print("SAP Business Partner response:", msg_json, flush=True)
-                except Exception:
-                    pass
+                # try:
+                #     print("SAP Business Partner response:", msg_json, flush=True)
+                # except Exception:
+                #     pass
                 
                 # Show success message
                 messages.success(request, f"SAP_RESPONSE_JSON:{msg_json}")
@@ -1965,20 +1975,21 @@ class DealerRequestAdmin(admin.ModelAdmin):
                     obj.sap_error = None  # Clear previous errors
                     obj.save(update_fields=['sap_response_json', 'posted_at', 'is_posted_to_sap', 'status', 'sap_card_code', 'sap_doc_entry', 'sap_error'])
                 except Exception as save_err:
-                    print(f"Error saving SAP response: {save_err}", flush=True)
+                    pass
+                    # print(f"Error saving SAP response: {save_err}", flush=True)
                     
             except Exception as e:
                 # Log error
                 error_msg = str(e)
-                try:
-                    logging.getLogger('sap').error(error_msg)
-                except Exception:
-                    pass
+                # try:
+                #     logging.getLogger('sap').error(error_msg)
+                # except Exception:
+                #     pass
                 
-                try:
-                    print("SAP Business Partner error:", error_msg, flush=True)
-                except Exception:
-                    pass
+                # try:
+                #     print("SAP Business Partner error:", error_msg, flush=True)
+                # except Exception:
+                #     pass
                 
                 # Show error message and save to model
                 messages.error(request, f"SAP Business Partner creation failed: {error_msg}")

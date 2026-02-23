@@ -1595,7 +1595,7 @@ def main():
         conn.close()
         sys.exit(0)
     except Exception as e:
-        logger.error('error %s', str(e))
+        # logger.error('error %s', str(e))
         try:
             conn.close()
         except Exception:

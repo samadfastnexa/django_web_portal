@@ -985,7 +985,7 @@ class CollectionAnalyticsView(APIView):
     permission_classes = [IsAuthenticated]
     
     @swagger_auto_schema(
-        tags=["SAP"],
+        tags=["Analytics Dashboard"],
         operation_summary="Collection Analytics - Payment Receipts vs Target",
         operation_description="""
         📊 **COLLECTION ANALYTICS** - Track actual payments received against collection targets
