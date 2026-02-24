@@ -25,6 +25,7 @@ from .views import (
     sales_vs_achievement_geo_inv_api,
     sales_vs_achievement_territory_api,
     customer_policies_api,
+    general_ledger_api,
     # Disease Management endpoints
     disease_list_api,
     disease_detail_api,
@@ -58,6 +59,7 @@ urlpatterns = [
     path('contact-persons/', contact_persons_api, name='contact_persons_api'),
     path('project-balance/', project_balance_api, name='project_balance_api'),
     path('customer-addresses/', customer_addresses_api, name='customer_addresses_api'),
+    path('general-ledger/', general_ledger_api, name='general_ledger_api'),
     path('territories-full/', territories_full_api, name='territories_full_api'),
     path('cwl-full/', cwl_full_api, name='cwl_full_api'),
     path('customer-lov/', customer_lov_api, name='customer_lov_api'),
