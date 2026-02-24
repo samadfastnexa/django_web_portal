@@ -6091,6 +6091,244 @@ def customer_addresses_api(request):
 
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
+    operation_summary="General Ledger",
+    operation_description="Fetch general ledger transactions. NO REQUIRED FIELDS. All parameters are optional filters for account range, date range, business partner, and project. Use user parameter to filter by user's assigned customers.",
+    manual_parameters=[
+        openapi.Parameter('company', openapi.IN_QUERY, description="Optional: Company database key", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date filter (YYYY-MM-DD format)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date filter (YYYY-MM-DD format)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('account_from', openapi.IN_QUERY, description="Filter by Account code range start (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('account_to', openapi.IN_QUERY, description="Filter by Account code range end (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('account', openapi.IN_QUERY, description="Filter by specific Account code (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('business_partner', openapi.IN_QUERY, description="Filter by Business Partner CardCode (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('project', openapi.IN_QUERY, description="Filter by Project code (optional)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('user', openapi.IN_QUERY, description="Optional: User ID or username to filter by user's assigned customers", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('search', openapi.IN_QUERY, description="Search in Account, LineMemo, or Ref1", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Page number (default 1)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page (default 50)", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="Bad Request"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def general_ledger_api(request):
+    """
+    Get General Ledger Report from SAP HANA.
+    NO REQUIRED FIELDS - all parameters are optional filters.
+    """
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+    
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    
+    # Read the 'company' parameter and resolve schema
+    company_param = (request.GET.get('company') or '').strip()
+    if company_param:
+        from django.http import QueryDict
+        modified_get = request.GET.copy()
+        modified_get['database'] = company_param
+        original_get = request.GET
+        request.GET = modified_get
+        cfg['schema'] = get_hana_schema_from_request(request)
+        request.GET = original_get
+    else:
+        cfg['schema'] = get_hana_schema_from_request(request)
+    
+    # Get query parameters
+    start_date = (request.GET.get('start_date') or '').strip()
+    end_date = (request.GET.get('end_date') or '').strip()
+    account = (request.GET.get('account') or '').strip()
+    account_from = (request.GET.get('account_from') or '').strip()
+    account_to = (request.GET.get('account_to') or '').strip()
+    business_partner = (request.GET.get('business_partner') or '').strip()
+    project = (request.GET.get('project') or '').strip()
+    user_param = (request.GET.get('user') or '').strip()
+    search = (request.GET.get('search') or '').strip()
+    page_param = (request.GET.get('page') or '1').strip()
+    page_size_param = (request.GET.get('page_size') or '50').strip()
+    
+    try:
+        page_num = int(page_param)
+        if page_num < 1:
+            page_num = 1
+    except Exception:
+        page_num = 1
+    
+    try:
+        page_size = int(page_size_param) if page_size_param else 50
+        if page_size < 1:
+            page_size = 50
+    except Exception:
+        page_size = 50
+    
+    # Handle user parameter - get assigned customers
+    user_customers = []
+    if user_param:
+        try:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            try:
+                user_id = int(user_param)
+                user_obj = User.objects.get(id=user_id)
+            except ValueError:
+                user_obj = User.objects.get(username=user_param)
+            
+            # Get user's assigned customers
+            if hasattr(user_obj, 'customer_assignments') and hasattr(user_obj.customer_assignments, 'all'):
+                user_customers = list(user_obj.customer_assignments.all().values_list('card_code', flat=True))
+        except Exception:
+            pass
+    
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD','')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true','1','yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true','1','yes'))
+        
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+            
+            # Build the query - join with OCRD to get business partner info
+            query = '''
+                SELECT 
+                    J."TransId",
+                    J."Line_ID",
+                    J."Account",
+                    J."Debit",
+                    J."Credit",
+                    J."RefDate",
+                    J."Ref1",
+                    J."Ref2",
+                    J."LineMemo",
+                    J."Project",
+                    J."ContraAct",
+                    J."FCDebit",
+                    J."FCCredit",
+                    J."FCCurrency",
+                    J."ShortName"
+                FROM "JDT1" J
+                WHERE 1=1
+            '''
+            
+            params = []
+            
+            # Add date filters
+            if start_date:
+                query += ' AND J."RefDate" >= ?'
+                params.append(start_date)
+            
+            if end_date:
+                query += ' AND J."RefDate" <= ?'
+                params.append(end_date)
+            
+            # Add account filter (specific account)
+            if account:
+                query += ' AND J."Account" = ?'
+                params.append(account)
+            
+            # Add account range filter
+            if account_from:
+                query += ' AND J."Account" >= ?'
+                params.append(account_from)
+            
+            if account_to:
+                query += ' AND J."Account" <= ?'
+                params.append(account_to)
+            
+            # Add business partner filter
+            if business_partner:
+                query += ' AND J."ShortName" = ?'
+                params.append(business_partner)
+            
+            # Add user's customers filter
+            if user_customers:
+                placeholders = ','.join(['?' for _ in user_customers])
+                query += f' AND J."ShortName" IN ({placeholders})'
+                params.extend(user_customers)
+            
+            # Add project filter
+            if project:
+                query += ' AND J."Project" = ?'
+                params.append(project)
+            
+            # Add search filter
+            if search:
+                query += ' AND (J."Account" LIKE ? OR J."LineMemo" LIKE ? OR J."Ref1" LIKE ?)'
+                search_pattern = f'%{search}%'
+                params.extend([search_pattern, search_pattern, search_pattern])
+            
+            query += ' ORDER BY J."RefDate" DESC, J."TransId" DESC, J."Line_ID"'
+            
+            cur = conn.cursor()
+            if params:
+                cur.execute(query, params)
+            else:
+                cur.execute(query)
+            
+            columns = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+            cur.close()
+            
+            data = []
+            for row in rows:
+                row_dict = {}
+                for idx, col in enumerate(columns):
+                    val = row[idx]
+                    # Convert date objects to string
+                    if hasattr(val, 'isoformat'):
+                        val = val.isoformat()
+                    # Convert Decimal to float
+                    elif hasattr(val, '__float__'):
+                        try:
+                            val = float(val)
+                        except:
+                            pass
+                    row_dict[col] = val
+                data.append(row_dict)
+            
+            # Paginate results
+            paginator = Paginator(data, page_size)
+            page_obj = paginator.get_page(page_num)
+            
+            return Response({
+                'success': True,
+                'page': page_obj.number,
+                'page_size': page_size,
+                'num_pages': paginator.num_pages,
+                'count': paginator.count,
+                'data': list(page_obj.object_list)
+            }, status=status.HTTP_200_OK)
+            
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+                
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@swagger_auto_schema(tags=['SAP'], 
+    method='get',
     operation_summary="Territories (full)",
     operation_description="List territories with optional status filter and pagination.",
     manual_parameters=[

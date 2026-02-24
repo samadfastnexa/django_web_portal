@@ -62,7 +62,7 @@ logger = logging.getLogger("general_ledger")
     operation_summary='Get General Ledger Report',
     operation_description='Fetch general ledger transactions. **NO REQUIRED FIELDS**. All parameters are optional filters for account range, date range, business partner, and project. Use user parameter to filter by user\'s assigned customers.',
     manual_parameters=[
-        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', default='4B-ORANG_APP', enum=['4B-BIO_APP', '4B-ORANG_APP'], required=False),
+        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', required=False),
         openapi.Parameter('account_from', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Start of account range', required=False),
         openapi.Parameter('account_to', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: End of account range', required=False),
         openapi.Parameter('from_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Start date (YYYY-MM-DD)', required=False),
@@ -122,7 +122,7 @@ def general_ledger_api(request):
     """
     try:
         # Extract query parameters
-        company = request.GET.get('company', '4B-ORANG_APP')
+        company = (request.GET.get('company') or '').strip()
         account_from = request.GET.get('account_from', '').strip()
         account_to = request.GET.get('account_to', '').strip()
         from_date = request.GET.get('from_date', '').strip()
@@ -289,7 +289,7 @@ def general_ledger_api(request):
     operation_summary='Get Chart of Accounts',
     operation_description='Fetch chart of accounts for dropdown/filter',
     manual_parameters=[
-        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', default='4B-ORANG_APP', enum=['4B-BIO_APP', '4B-ORANG_APP']),
+        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', required=False),
         openapi.Parameter('account_type', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Account type filter (A=Assets, L=Liabilities, E=Equity, I=Income, O=Expense)'),
     ],
     responses={
@@ -305,7 +305,7 @@ def chart_of_accounts_api(request):
     Fetch chart of accounts for dropdowns and filters.
     """
     try:
-        company = request.GET.get('company', '4B-ORANG_APP')
+        company = (request.GET.get('company') or '').strip()
         account_type = request.GET.get('account_type', '').strip()
         
         conn = get_hana_connection(company)
@@ -366,7 +366,7 @@ def transaction_types_api(request):
     operation_summary='Get Business Partners LOV',
     operation_description='Get business partners for dropdown filter',
     manual_parameters=[
-        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', default='4B-ORANG_APP', enum=['4B-BIO_APP', '4B-ORANG_APP']),
+        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', required=False),
         openapi.Parameter('bp_type', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='BP type (C=Customer, S=Supplier)'),
     ],
     responses={200: 'Success', 500: 'Error'}
@@ -379,7 +379,7 @@ def business_partners_api(request):
     Get business partners for dropdown filter.
     """
     try:
-        company = request.GET.get('company', '4B-ORANG_APP')
+        company = (request.GET.get('company') or '').strip()
         bp_type = request.GET.get('bp_type', '').strip()
         
         conn = get_hana_connection(company)
@@ -408,7 +408,7 @@ def business_partners_api(request):
     operation_summary='Get Projects LOV',
     operation_description='Get projects for dropdown filter',
     manual_parameters=[
-        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', default='4B-ORANG_APP', enum=['4B-BIO_APP', '4B-ORANG_APP']),
+        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', required=False),
     ],
     responses={200: 'Success', 500: 'Error'}
 )
@@ -420,7 +420,7 @@ def projects_api(request):
     Get projects for dropdown filter.
     """
     try:
-        company = request.GET.get('company', '4B-ORANG_APP')
+        company = (request.GET.get('company') or '').strip()
         
         conn = get_hana_connection(company)
         projects = hana_queries.projects_lov(conn)
@@ -445,7 +445,7 @@ def projects_api(request):
     operation_summary='Export General Ledger to Excel',
     operation_description='Download general ledger report as Excel file with filters applied. Returns formatted XLSX file with headers and styling. Use user parameter to filter by user\'s assigned customers.',
     manual_parameters=[
-        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', default='4B-ORANG_APP', enum=['4B-BIO_APP', '4B-ORANG_APP']),
+        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', required=False),
         openapi.Parameter('account_from', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Start of account range'),
         openapi.Parameter('account_to', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='End of account range'),
         openapi.Parameter('from_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Start date (YYYY-MM-DD)'),
@@ -491,7 +491,7 @@ def export_ledger_excel_api(request):
     
     try:
         # Get filter parameters
-        company = request.GET.get('company', '4B-ORANG_APP')
+        company = (request.GET.get('company') or '').strip()
         account_from = (request.GET.get('account_from') or '').strip()
         account_to = (request.GET.get('account_to') or '').strip()
         from_date = (request.GET.get('from_date') or '').strip()
@@ -655,7 +655,7 @@ def general_ledger_admin(request):
     
     # Get company database options
     db_options = get_company_options()
-    selected_db_key = request.GET.get('company', '4B-BIO')
+    selected_db_key = (request.GET.get('company') or '').strip()
     
     # Get filter parameters
     account_from = (request.GET.get('account_from') or '').strip()
@@ -798,7 +798,7 @@ def export_ledger_csv(request):
     """
     try:
         # Get filter parameters
-        company = request.GET.get('company', '4B-BIO')
+        company = (request.GET.get('company') or '').strip()
         account_from = (request.GET.get('account_from') or '').strip()
         account_to = (request.GET.get('account_to') or '').strip()
         from_date = (request.GET.get('from_date') or '').strip()
@@ -863,7 +863,7 @@ def export_ledger_csv(request):
     operation_summary='Export General Ledger to PDF',
     operation_description='Download general ledger report as PDF file with filters applied. Returns formatted PDF file with headers and styling. Use user parameter to filter by user\'s assigned customers.',
     manual_parameters=[
-        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', default='4B-ORANG_APP', enum=['4B-BIO_APP', '4B-ORANG_APP']),
+        openapi.Parameter('company', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', required=False),
         openapi.Parameter('account_from', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Start of account range'),
         openapi.Parameter('account_to', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='End of account range'),
         openapi.Parameter('from_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Start date (YYYY-MM-DD)'),
@@ -897,7 +897,7 @@ def export_ledger_pdf_api(request):
     
     try:
         # Get filter parameters
-        company = request.GET.get('company', '4B-ORANG_APP')
+        company = (request.GET.get('company') or '').strip()
         account_from = (request.GET.get('account_from') or '').strip()
         account_to = (request.GET.get('account_to') or '').strip()
         from_date = (request.GET.get('from_date') or '').strip()
@@ -1167,7 +1167,7 @@ def export_ledger_pdf(request):
     
     try:
         # Get filter parameters
-        company = request.GET.get('company', '4B-BIO')
+        company = (request.GET.get('company') or '').strip()
         account_from = (request.GET.get('account_from') or '').strip()
         account_to = (request.GET.get('account_to') or '').strip()
         from_date = (request.GET.get('from_date') or '').strip()
