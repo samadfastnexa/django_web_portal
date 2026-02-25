@@ -476,7 +476,11 @@ def hana_connect_admin(request):
                             error = str(e_ts)
                     elif action == 'products_catalog':
                         try:
-                            data = products_catalog(conn, selected_schema)
+                            # Only filter by category server-side; search is handled client-side
+                            # so all matching products are available in the DOM for instant filtering
+                            item_group_param = (request.GET.get('item_group') or '').strip() or None
+                            item_groups_param = (request.GET.get('item_groups') or '').strip() or None
+                            data = products_catalog(conn, selected_schema, search=None, item_group=item_group_param, item_groups=item_groups_param)
                             result = data
                         except Exception as e_pc:
                             error = str(e_pc)
@@ -2174,7 +2178,7 @@ def hana_connect_admin(request):
         page_num = 1
     # Use default page size for products_catalog
     if action == 'products_catalog':
-        default_page_size = 10
+        default_page_size = 10000  # Load all products; client-side filtering handles search
     else:
         default_page_size = 10
         try:
@@ -2218,6 +2222,20 @@ def hana_connect_admin(request):
     
     geo_options = getattr(request, '_geo_options', {'regions': [], 'zones': [], 'territories': []})
     
+    # Build product_categories from result_rows for the filter sidebar
+    product_categories = []
+    if action == 'products_catalog' and result_rows:
+        seen_groups = {}
+        for row in result_rows:
+            if isinstance(row, dict):
+                grp_cod = row.get('ItmsGrpCod')
+                grp_nam = row.get('ItmsGrpNam', '')
+                if grp_cod and grp_cod not in seen_groups:
+                    seen_groups[grp_cod] = {'ItmsGrpCod': grp_cod, 'ItmsGrpNam': grp_nam, 'ProductCount': 0}
+                if grp_cod:
+                    seen_groups[grp_cod]['ProductCount'] += 1
+        product_categories = sorted(seen_groups.values(), key=lambda x: x.get('ItmsGrpNam', ''))
+    
     return render(
         request,
         'admin/sap_integration/hana_connect.html',
@@ -2241,6 +2259,7 @@ def hana_connect_admin(request):
             'result_rows': paged_rows,
             'result_cols': result_cols,
             'table_rows': table_rows,
+            'product_categories': product_categories,
             'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_geo','sales_vs_achievement_geo_inv','sales_vs_achievement_geo_profit','collection_vs_achievement','sales_vs_achievement_by_emp','sales_vs_achievement_territory','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses','products_catalog','item_price')),
             'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
             'customer_options': customer_options,
@@ -4628,6 +4647,34 @@ def products_catalog_api(request):
             # Pass the connection and schema name to products_catalog for image URL generation
             data = products_catalog(conn, cfg['schema'], search, item_group)
             
+            # Fetch prices from @PLR4 for all items in one query
+            price_map = {}
+            try:
+                from sap_integration.hana_connect import _fetch_all
+                price_rows = _fetch_all(conn, 
+                    'SELECT T1."U_itc" AS "ItemCode", T1."U_np" AS "Price" '
+                    'FROM "@PLR4" T1 '
+                    'INNER JOIN "@PL1" T0 ON T0."DocEntry" = T1."DocEntry" '
+                    'WHERE T1."U_itc" IS NOT NULL'
+                )
+                for pr in (price_rows or []):
+                    itc = pr.get('ItemCode', '')
+                    price_val = pr.get('Price', 0)
+                    try:
+                        price_val = float(price_val) if price_val is not None else 0.0
+                    except (ValueError, TypeError):
+                        price_val = 0.0
+                    # Keep the latest/highest price if multiple entries exist for same item
+                    if itc not in price_map or price_val > price_map[itc]:
+                        price_map[itc] = price_val
+            except Exception:
+                pass  # If price fetch fails, all products get price=0
+            
+            # Add price and document detail URLs to each product
+            for product in (data or []):
+                item_code = product.get('ItemCode', '')
+                product['price'] = price_map.get(item_code, 0.0)
+            
             # Add document detail URLs to each product
             from django.urls import reverse
             for product in data:
@@ -4829,25 +4876,32 @@ def policy_customer_balance_list(request):
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Policy Customer Balance by CardCode",
-    operation_description="Get policy-wise customer balance for a specific customer. Provide user parameter to validate that the card_code belongs to that user. Returns 403 if card_code doesn't belong to the specified user.",
+    operation_description="Get policy-wise customer balance. card_code is optional — omit it to return all balances. Provide user parameter to validate that the card_code belongs to that user. Returns 403 if card_code doesn't belong to the specified user.",
     manual_parameters=[
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Optional: Customer CardCode (e.g., ORC00002). If omitted, returns all balances.", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('user', openapi.IN_QUERY, description="Optional: User ID or username to validate card_code belongs to this user. Returns 403 if validation fails.", type=openapi.TYPE_STRING, required=False)
+        openapi.Parameter('user', openapi.IN_QUERY, description="Optional: User ID or username to validate card_code belongs to this user. Returns 403 if validation fails.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('limit', openapi.IN_QUERY, description="Optional: Max records when no card_code is provided (default: 200)", type=openapi.TYPE_INTEGER, required=False),
     ],
     responses={200: openapi.Response(description="OK"), 403: openapi.Response(description="Forbidden - Card code does not belong to user"), 404: openapi.Response(description="User not found"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
-def policy_customer_balance_detail(request, card_code):
+def policy_customer_balance_detail(request, card_code=None):
     """
-    Get policy customer balance for a specific card_code (legacy route).
-    Kept for backward compatibility.
-    Optionally validates that the card_code belongs to a specified user.
+    Get policy customer balance.
+    card_code can be provided via URL path or as a query parameter — both are optional.
+    If neither is provided, returns all balances (or filtered by user).
     """
+    # card_code from path param takes precedence; fall back to query param
+    if not card_code:
+        card_code = (getattr(request, 'query_params', {}).get('card_code') if hasattr(request, 'query_params') else None) or request.GET.get('card_code', '')
+        card_code = (card_code or '').strip() or None
+
     # Validate user if provided
     user_param = (getattr(request, 'query_params', {}).get('user') if hasattr(request, 'query_params') else None) or request.GET.get('user', '')
     user_param = (user_param or '').strip()
     
-    if user_param:
+    if user_param and card_code:
         try:
             from accounts.models import User
             from FieldAdvisoryService.models import Dealer
@@ -4872,7 +4926,7 @@ def policy_customer_balance_detail(request, card_code):
         except Exception as e:
             return Response({'success': False, 'error': f'Error validating user: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    # Delegate to get_policy_customer_balance_data with the card_code
+    # Delegate to get_policy_customer_balance_data
     return get_policy_customer_balance_data(request, card_code=card_code)
 
 @swagger_auto_schema(tags=['SAP'], 
@@ -8990,17 +9044,8 @@ def dealer_analytics_api(request):
                 'error': f'Dealer (user_id: {user_id}) does not have a card_code assigned'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Calculate last month date range
-        today = datetime.now()
-        last_month_end = today.replace(day=1) - timedelta(days=1)
-        last_month_start = last_month_end.replace(day=1)
-        
-        # Count complaints submitted last month by this user
-        complaints_count = Complaint.objects.filter(
-            user_id=user_id,
-            created_at__gte=last_month_start,
-            created_at__lte=last_month_end.replace(hour=23, minute=59, second=59)
-        ).count()
+        # Count all complaints by this user
+        complaints_count = Complaint.objects.filter(user_id=user_id).count()
         
         # Get total Kindwise records for this user
         kindwise_count = KindwiseIdentification.objects.filter(user_id=user_id).count()
@@ -9009,6 +9054,7 @@ def dealer_analytics_api(request):
         database = get_hana_schema_from_request(request)
         
         total_policies = 0
+        total_balance = 0.0
         policies_error = None
         
         try:
@@ -9059,12 +9105,13 @@ def dealer_analytics_api(request):
                             set_schema_sql = f'SET SCHEMA {quote_ident(schema_name)}'
                             cur.execute(set_schema_sql)
                         
-                        # Get policy count using policy_customer_balance
+                        # Get policy count and balance sum using policy_customer_balance
                         from .hana_connect import policy_customer_balance
                         policies_data = policy_customer_balance(conn, dealer.card_code)
                         
                         if policies_data:
                             total_policies = len(policies_data)
+                            total_balance = sum(float(row.get('Balance', 0) or 0) for row in policies_data)
                         
                         cur.close()
                     finally:
@@ -9086,11 +9133,10 @@ def dealer_analytics_api(request):
             'dealer_name': dealer.name,
             'business_name': dealer.business_name or '',
             'analytics': {
-                'complaints_last_month': complaints_count,
+                'total_complaints': complaints_count,
                 'total_policies': total_policies,
                 'total_kindwise_records': kindwise_count,
-                'last_month_start': last_month_start.strftime('%Y-%m-%d'),
-                'last_month_end': last_month_end.strftime('%Y-%m-%d')
+                'total_balance': total_balance,
             }
         }
         

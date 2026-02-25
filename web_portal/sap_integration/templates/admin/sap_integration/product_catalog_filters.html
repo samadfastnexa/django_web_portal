@@ -82,6 +82,7 @@ Includes: Multi-category filtering, search with autocomplete, responsive design
     font-size: 15px;
     transition: all 0.3s ease;
     background: white;
+    box-sizing: border-box;
   }
   
   .search-input:focus {
@@ -416,6 +417,10 @@ Includes: Multi-category filtering, search with autocomplete, responsive design
       <span>Filter Products</span>
     </div>
     <div class="filter-actions">
+      <button class="filter-apply-btn" onclick="applyFilters()" style="background: #417690; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+        <span>✓</span>
+        <span>Apply Filters</span>
+      </button>
       <button class="filter-reset-btn" id="resetFiltersBtn" onclick="resetAllFilters()" disabled>
         <span>↻</span>
         <span>Reset Filters</span>
@@ -446,6 +451,9 @@ Includes: Multi-category filtering, search with autocomplete, responsive design
       </button>
       <div class="autocomplete-dropdown" id="autocompleteDropdown" role="listbox"></div>
     </div>
+    <button onclick="clearTimeout(searchDebounceTimer);currentSearch=document.getElementById('productSearch').value;updateAppliedFilters();runClientFilter();" aria-label="Search" style="background: #417690; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 10px; font-size: 14px; font-weight: 600;">
+      🔍 Search
+    </button>
   </div>
   
   <!-- Category Filters -->
@@ -510,241 +518,236 @@ Includes: Multi-category filtering, search with autocomplete, responsive design
 
 <script>
 // Filter State
-let searchTimeout;
+let searchDebounceTimer = null;
 let currentSearch = '';
 let selectedCategories = [];
-let allProducts = {{ result_rows|safe }};
-let filteredProducts = [...allProducts];
+
+// Get all product cards once on load
+function getAllProductCards() {
+  return Array.from(document.querySelectorAll('.product-card'));
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
-  updateResultsInfo();
-  checkFiltersActive();
-  
-  // Parse URL parameters to restore filters
+  // Restore category filters from URL params only (search is client-side, not in URL)
   const urlParams = new URLSearchParams(window.location.search);
-  const searchParam = urlParams.get('search');
-  const categoriesParam = urlParams.get('item_groups');
-  
-  if (searchParam) {
-    document.getElementById('productSearch').value = searchParam;
-    currentSearch = searchParam;
-    document.getElementById('searchClearBtn').classList.add('active');
-  }
-  
+  const categoriesParam = urlParams.get('item_groups') || '';
+
   if (categoriesParam) {
-    const categories = categoriesParam.split(',');
-    categories.forEach(catId => {
-      const checkbox = document.getElementById('category_' + catId);
+    categoriesParam.split(',').forEach(catId => {
+      const checkbox = document.getElementById('category_' + catId.trim());
       if (checkbox) {
         checkbox.checked = true;
-        selectedCategories.push(catId);
+        selectedCategories.push(catId.trim());
       }
     });
   }
-  
-  updateAppliedFilters();
+
   updateCategoryCount();
+  updateAppliedFilters();
+  checkFiltersActive();
+  runClientFilter();
+  updateResultsInfo();
 });
 
-// Search Input Handler with Debouncing
+// ---------- Client-side filtering ----------
+
+function runClientFilter() {
+  const query = currentSearch.toLowerCase().trim();
+  const cards = getAllProductCards();
+  let visibleCount = 0;
+
+  cards.forEach(card => {
+    // Read from rendered DOM elements - avoids JSON parsing issues with Python dict format
+    const code    = (card.querySelector('.product-code')  || {}).textContent || '';
+    const name    = (card.querySelector('.product-name')  || {}).textContent || '';
+    const badge   = (card.querySelector('.product-badge') || {}).textContent || '';
+    // Also search the raw data-product attribute as a plain string (catches all fields)
+    const rawAttr = card.getAttribute('data-product') || '';
+
+    const searchText = (code + ' ' + name + ' ' + badge + ' ' + rawAttr).toLowerCase();
+
+    // Category: read from data-product attribute string for ItmsGrpCod
+    let grpCod = '';
+    const grpMatch = rawAttr.match(/['"]ItmsGrpCod['"]\s*:\s*['"]?([^,'"}\s]+)['"]?/);
+    if (grpMatch) grpCod = grpMatch[1].trim();
+
+    const matchesSearch   = !query || searchText.includes(query);
+    const matchesCategory = selectedCategories.length === 0 ||
+      selectedCategories.includes(grpCod);
+
+    if (matchesSearch && matchesCategory) {
+      card.style.display = '';
+      visibleCount++;
+    } else {
+      card.style.display = 'none';
+    }
+  });
+
+  // Update count display
+  const countEl = document.getElementById('resultsCount');
+  const filteredEl = document.getElementById('resultsFiltered');
+  const total = cards.length;
+  if (countEl) countEl.textContent = `${visibleCount} Product${visibleCount !== 1 ? 's' : ''}`;
+  if (filteredEl) {
+    filteredEl.textContent = visibleCount < total
+      ? `Filtered from ${total} total products`
+      : 'Showing all products';
+  }
+}
+
+// ---------- Search Input ----------
+
 function handleSearchInput(value) {
   currentSearch = value;
   const clearBtn = document.getElementById('searchClearBtn');
-  
-  if (value) {
-    clearBtn.classList.add('active');
-  } else {
-    clearBtn.classList.remove('active');
-  }
-  
-  // Debounce search
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    applyFilters();
-  }, 500); // 500ms debounce
-  
+  if (clearBtn) clearBtn.classList[value ? 'add' : 'remove']('active');
   checkFiltersActive();
+
+  // Debounce: run client-side filter after 300ms of no typing
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    updateAppliedFilters();
+    runClientFilter();
+  }, 300);
 }
 
-// Clear Search
+function handleSearchKeydown(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    clearTimeout(searchDebounceTimer);
+    currentSearch = document.getElementById('productSearch').value;
+    updateAppliedFilters();
+    runClientFilter();
+  }
+  if (event.key === 'Escape') {
+    clearTimeout(searchDebounceTimer);
+    document.getElementById('productSearch').value = '';
+    currentSearch = '';
+    updateAppliedFilters();
+    runClientFilter();
+    checkFiltersActive();
+  }
+}
+
 function clearSearch() {
-  document.getElementById('productSearch').value = '';
+  clearTimeout(searchDebounceTimer);
+  const input = document.getElementById('productSearch');
+  if (input) { input.value = ''; input.focus(); }
   document.getElementById('searchClearBtn').classList.remove('active');
   currentSearch = '';
-  applyFilters();
+  updateAppliedFilters();
+  runClientFilter();
   checkFiltersActive();
 }
 
-// Search Keyboard Navigation
-function handleSearchKeydown(event) {
-  // Implement keyboard navigation for autocomplete
-  const dropdown = document.getElementById('autocompleteDropdown');
-  if (event.key === 'Escape') {
-    dropdown.classList.remove('active');
-  }
-}
+// ---------- Category Filters ----------
 
-// Category Change Handler
 function handleCategoryChange() {
   selectedCategories = [];
-  document.querySelectorAll('.category-checkbox:checked').forEach(checkbox => {
-    selectedCategories.push(checkbox.value);
+  document.querySelectorAll('.category-checkbox:checked').forEach(cb => {
+    selectedCategories.push(cb.value);
   });
-  
   updateCategoryCount();
   updateAppliedFilters();
-  applyFilters();
   checkFiltersActive();
+  runClientFilter();
 }
 
-// Update Category Count
 function updateCategoryCount() {
-  const count = selectedCategories.length;
-  document.getElementById('selectedCategoryCount').textContent = `(${count} selected)`;
+  const el = document.getElementById('selectedCategoryCount');
+  if (el) el.textContent = `(${selectedCategories.length} selected)`;
 }
 
-// Apply Filters
+// ---------- Apply / Reset (server-side reload only for category filtering) ----------
+
 function applyFilters() {
   showLoading();
-  
-  // Build query parameters
   const params = new URLSearchParams(window.location.search);
-  
-  // Keep existing params like action and company_db
   const action = params.get('action') || 'products_catalog';
   const companyDb = params.get('company_db');
-  
   const newParams = new URLSearchParams();
   newParams.set('action', action);
   if (companyDb) newParams.set('company_db', companyDb);
-  
-  if (currentSearch) {
-    newParams.set('search', currentSearch);
-  }
-  
-  if (selectedCategories.length > 0) {
-    newParams.set('item_groups', selectedCategories.join(','));
-  }
-  
-  // Reload page with filters
+  // Do NOT pass search to server - search is purely client-side
+  if (selectedCategories.length > 0) newParams.set('item_groups', selectedCategories.join(','));
   window.location.href = '?' + newParams.toString();
 }
 
-// Reset All Filters
 function resetAllFilters() {
-  document.getElementById('productSearch').value = '';
-  document.getElementById('searchClearBtn').classList.remove('active');
+  clearTimeout(searchDebounceTimer);
+  const input = document.getElementById('productSearch');
+  if (input) input.value = '';
+  const clearBtn = document.getElementById('searchClearBtn');
+  if (clearBtn) clearBtn.classList.remove('active');
   currentSearch = '';
   selectedCategories = [];
-  
-  document.querySelectorAll('.category-checkbox').forEach(checkbox => {
-    checkbox.checked = false;
-  });
-  
+  document.querySelectorAll('.category-checkbox').forEach(cb => { cb.checked = false; });
   updateCategoryCount();
   updateAppliedFilters();
-  
-  // Reload without filters
-  const params = new URLSearchParams(window.location.search);
-  const action = params.get('action') || 'products_catalog';
-  const companyDb = params.get('company_db');
-  
-  const newParams = new URLSearchParams();
-  newParams.set('action', action);
-  if (companyDb) newParams.set('company_db', companyDb);
-  
-  window.location.href = '?' + newParams.toString();
+  checkFiltersActive();
+  runClientFilter();
 }
 
-// Update Applied Filters Display
+// ---------- UI Helpers ----------
+
 function updateAppliedFilters() {
   const container = document.getElementById('appliedFilters');
   const list = document.getElementById('appliedFiltersList');
+  if (!list) return;
   list.innerHTML = '';
-  
   let hasFilters = false;
-  
-  // Search filter
+
   if (currentSearch) {
     hasFilters = true;
-    const tag = createFilterTag('Search: ' + currentSearch, () => clearSearch());
-    list.appendChild(tag);
+    list.appendChild(createFilterTag('Search: ' + currentSearch, clearSearch));
   }
-  
-  // Category filters
+
   selectedCategories.forEach(catId => {
     hasFilters = true;
     const checkbox = document.getElementById('category_' + catId);
     if (checkbox) {
-      const label = checkbox.nextElementSibling.querySelector('.category-name').textContent;
-      const tag = createFilterTag(label, () => {
+      const nameEl = checkbox.nextElementSibling ? checkbox.nextElementSibling.querySelector('.category-name') : null;
+      const label = nameEl ? nameEl.textContent : catId;
+      list.appendChild(createFilterTag(label, () => {
         checkbox.checked = false;
         handleCategoryChange();
-      });
-      list.appendChild(tag);
+      }));
     }
   });
-  
-  if (hasFilters) {
-    container.classList.add('active');
-  } else {
-    container.classList.remove('active');
-  }
+
+  if (container) container.classList[hasFilters ? 'add' : 'remove']('active');
 }
 
-// Create Filter Tag
 function createFilterTag(text, onRemove) {
   const tag = document.createElement('div');
   tag.className = 'filter-tag';
-  tag.innerHTML = `
-    <span>${text}</span>
-    <button class="filter-tag-remove" aria-label="Remove filter" onclick="event.stopPropagation()">✕</button>
-  `;
-  tag.querySelector('button').onclick = onRemove;
+  tag.innerHTML = `<span>${text}</span><button class="filter-tag-remove" aria-label="Remove filter">✕</button>`;
+  tag.querySelector('button').addEventListener('click', onRemove);
   return tag;
 }
 
-// Check if Filters Active
 function checkFiltersActive() {
-  const hasFilters = currentSearch || selectedCategories.length > 0;
-  document.getElementById('resetFiltersBtn').disabled = !hasFilters;
+  const btn = document.getElementById('resetFiltersBtn');
+  if (btn) btn.disabled = !(currentSearch || selectedCategories.length > 0);
 }
 
-// Update Results Info
 function updateResultsInfo() {
-  const count = filteredProducts.length;
-  const total = allProducts.length;
+  const cards = getAllProductCards();
+  const total = cards.length;
   const countEl = document.getElementById('resultsCount');
   const filteredEl = document.getElementById('resultsFiltered');
-  
-  countEl.textContent = `${count} Product${count !== 1 ? 's' : ''}`;
-  
-  if (count < total) {
-    filteredEl.textContent = `Filtered from ${total} total products`;
-  } else {
-    filteredEl.textContent = 'Showing all products';
-  }
+  if (countEl) countEl.textContent = `${total} Product${total !== 1 ? 's' : ''}`;
+  if (filteredEl) filteredEl.textContent = 'Showing all products';
 }
 
-// Show/Hide Loading
 function showLoading() {
-  document.getElementById('filterLoading').classList.add('active');
+  const el = document.getElementById('filterLoading');
+  if (el) el.classList.add('active');
 }
 
 function hideLoading() {
-  document.getElementById('filterLoading').classList.remove('active');
-}
-
-// Accessibility: Announce filter changes to screen readers
-function announceToScreenReader(message) {
-  const announcement = document.createElement('div');
-  announcement.setAttribute('role', 'status');
-  announcement.setAttribute('aria-live', 'polite');
-  announcement.style.position = 'absolute';
-  announcement.style.left = '-10000px';
-  announcement.textContent = message;
-  document.body.appendChild(announcement);
-  setTimeout(() => document.body.removeChild(announcement), 1000);
+  const el = document.getElementById('filterLoading');
+  if (el) el.classList.remove('active');
 }
 </script>

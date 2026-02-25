@@ -50,6 +50,8 @@ urlpatterns = [
     path('policy-customer-balance/', policy_customer_balance_list, name='policy_customer_balance_list'),
     # Legacy endpoint - card_code in path (kept for backward compatibility)
     path('policy-customer-balance/<str:card_code>/', policy_customer_balance_detail, name='policy_customer_balance_detail'),
+    # Alias without card_code in path (card_code passed as query param)
+    path('policy-customer-balance/detail/', policy_customer_balance_detail, name='policy_customer_balance_detail_query'),
     path('projects/', list_policies, name='sap_policies'),
     # DB-backed policies APIs and page
     path('policy-records/', list_db_policies, name='policy_records'),
