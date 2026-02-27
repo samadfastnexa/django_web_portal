@@ -449,18 +449,17 @@ class SalesOrderViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     Filters data based on user's position in reporting hierarchy.
     """
     queryset = SalesOrder.objects.select_related(
-        'customer',
         'staff',
         'staff__sales_profile',
-        'territory',
-        'territory__zone',
-        'territory__zone__region',
-        'zone',
-        'zone__region',
-        'region'
+        'dealer',
+        'dealer__territory',
+        'dealer__territory__zone',
+        'dealer__territory__zone__region',
+        'dealer__zone',
+        'dealer__zone__region',
+        'dealer__region'
     ).prefetch_related(
-        'lines',
-        'lines__item',
+        'document_lines',
         'attachments'
     ).all()
     serializer_class = SalesOrderSerializer
