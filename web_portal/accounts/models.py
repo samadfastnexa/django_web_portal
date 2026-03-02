@@ -446,3 +446,49 @@ class SalesStaffProfile(models.Model):
         return f"Unassigned ({designation_text})"
 
 
+class PasswordResetOTP(models.Model):
+    """
+    Store OTP for password reset.
+    Works for both email and phone-based reset.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='password_reset_otps'
+    )
+    otp = models.CharField(max_length=6)  # 6-digit OTP
+    identifier = models.CharField(max_length=150)  # Email or phone number used
+    identifier_type = models.CharField(
+        max_length=10,
+        choices=[('email', 'Email'), ('phone', 'Phone')],
+        default='email'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    attempts = models.PositiveIntegerField(default=0)  # Track verification attempts
+
+    class Meta:
+        db_table = 'accounts_password_reset_otp'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'otp', 'is_used']),
+            models.Index(fields=['identifier', 'otp']),
+        ]
+
+    def __str__(self):
+        return f"OTP for {self.identifier} - {'Used' if self.is_used else 'Active'}"
+
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    def is_valid(self):
+        return not self.is_used and not self.is_expired() and self.attempts < 5
+
+    @classmethod
+    def generate_otp(cls):
+        """Generate a random 6-digit OTP"""
+        import random
+        return ''.join([str(random.randint(0, 9)) for _ in range(6)])
+
+

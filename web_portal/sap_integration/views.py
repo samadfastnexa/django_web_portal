@@ -5409,10 +5409,35 @@ def get_product_description_api(request):
             if urdu_file and urdu_ext:
                 product_description_urdu_url = f'/media/product_images/{folder_name}/{urdu_file}.{urdu_ext}'
             
+            # Fetch price from @PLR4 for this item
+            price = 0.0
+            try:
+                from sap_integration.hana_connect import _fetch_all
+                price_rows = _fetch_all(conn, 
+                    'SELECT T1."U_np" AS "Price" '
+                    'FROM "@PLR4" T1 '
+                    'INNER JOIN "@PL1" T0 ON T0."DocEntry" = T1."DocEntry" '
+                    'WHERE T1."U_itc" = ?',
+                    (item_code,)
+                )
+                if price_rows:
+                    # Get the highest price if multiple entries exist
+                    for pr in price_rows:
+                        price_val = pr.get('Price', 0)
+                        try:
+                            price_val = float(price_val) if price_val is not None else 0.0
+                        except (ValueError, TypeError):
+                            price_val = 0.0
+                        if price_val > price:
+                            price = price_val
+            except Exception:
+                pass  # If price fetch fails, use 0
+            
             result = {
                 'item_code': item_code_result,
                 'item_name': item_name,
                 'description': description,  # FreeText - Product Description
+                'price': price,  # Price from @PLR4 or 0 if not found
                 'atc_entry': atc_entry,
                 'image_file': image_file,
                 'image_ext': image_ext,
