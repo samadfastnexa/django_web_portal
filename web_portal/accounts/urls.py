@@ -44,6 +44,9 @@ from .views import (
     PermissionListAPIView,
     user_territories_emp_api,
     OrganogramView,
+    request_password_reset_otp,
+    verify_password_reset_otp,
+    reset_password,
 )
 from .UserViewSet import UserViewSet
 
@@ -59,6 +62,13 @@ urlpatterns = [
     path('signup/', SignupView.as_view(), name='signup'),
     path('login/', MyTokenObtainPairView.as_view(), name='login'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # ----------------------
+    # Password Reset (Forgot Password)
+    # ----------------------
+    path('forgot-password/', request_password_reset_otp, name='forgot_password'),
+    path('forgot-password/verify/', verify_password_reset_otp, name='verify_password_otp'),
+    path('forgot-password/reset/', reset_password, name='reset_password'),
 
     # ----------------------
     # Admin-only controls

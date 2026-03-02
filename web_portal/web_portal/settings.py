@@ -307,6 +307,13 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
+    # Add tolerance for clock skew (2 minutes)
+    'LEEWAY': timedelta(seconds=120),
+    # Token type claim
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
+    # Update last login on token obtain
+    'UPDATE_LAST_LOGIN': True,
 }
 
 # GOOGLE_MAPS_API_KEY = os.getenv('AIzaSyCZcPsEBWJHgYF_m7FClyHKtVkmroi3bdA')
@@ -368,4 +375,18 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Database-backed sessio
 SESSION_CACHE_ALIAS = 'default'
 SESSION_COOKIE_AGE = 86400  # 24 hours
 SESSION_SAVE_EVERY_REQUEST = False  # Only save when session is modified
+
+# ==============================================================================
+# EMAIL CONFIGURATION - Gmail SMTP for Password Reset
+# ==============================================================================
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')  # Your Gmail address
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')  # Gmail App Password
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@fourbrothers.com')
+
+# Password Reset Token Settings
+PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in seconds
 

@@ -1013,3 +1013,387 @@ class OrganogramView(generics.GenericAPIView):
                 node['has_more_subordinates'] = True
         
         return node
+
+
+# ==============================================================================
+# FORGOT PASSWORD APIs
+# ==============================================================================
+
+from django.core.mail import send_mail
+from django.conf import settings as django_settings
+from django.utils import timezone
+from datetime import timedelta
+from .models import PasswordResetOTP
+
+
+@swagger_auto_schema(
+    method='post',
+    tags=['Authentication'],
+    operation_summary="Request Password Reset OTP",
+    operation_description="""
+    Send a 6-digit OTP to user's email or phone for password reset.
+    
+    **Input:** Provide either email OR phone_number (not both).
+    
+    **Process:**
+    1. Find user by email or phone
+    2. Generate 6-digit OTP
+    3. Send OTP via email (phone SMS coming soon)
+    4. OTP expires in 10 minutes
+    
+    **Rate Limit:** Max 3 OTP requests per hour per user.
+    """,
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'email': openapi.Schema(type=openapi.TYPE_STRING, description='User email address'),
+            'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='User phone number'),
+        },
+    ),
+    responses={
+        200: openapi.Response(
+            description="OTP sent successfully",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "message": "OTP sent to your email",
+                    "identifier_type": "email",
+                    "expires_in_minutes": 10
+                }
+            }
+        ),
+        400: "Bad request - invalid input",
+        404: "User not found",
+        429: "Too many requests"
+    }
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def request_password_reset_otp(request):
+    """
+    Request a password reset OTP via email or phone.
+    """
+    email = (request.data.get('email') or '').strip().lower()
+    phone = (request.data.get('phone_number') or '').strip()
+    
+    if not email and not phone:
+        return Response({
+            'success': False,
+            'error': 'Please provide either email or phone_number'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Find user
+    user = None
+    identifier = None
+    identifier_type = None
+    
+    if email:
+        user = User.objects.filter(email__iexact=email).first()
+        identifier = email
+        identifier_type = 'email'
+    elif phone:
+        # Normalize phone number
+        normalized_phone = re.sub(r'[\s\-\(\)\+]', '', phone)
+        user = User.objects.filter(phone_number__icontains=normalized_phone[-10:]).first()
+        if not user:
+            user = User.objects.filter(phone_number=phone).first()
+        identifier = phone
+        identifier_type = 'phone'
+    
+    if not user:
+        return Response({
+            'success': False,
+            'error': 'No account found with this email/phone number'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # Check rate limit (max 3 per hour)
+    one_hour_ago = timezone.now() - timedelta(hours=1)
+    recent_otps = PasswordResetOTP.objects.filter(
+        user=user,
+        created_at__gte=one_hour_ago
+    ).count()
+    
+    if recent_otps >= 3:
+        return Response({
+            'success': False,
+            'error': 'Too many OTP requests. Please try again after 1 hour.'
+        }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+    
+    # Invalidate previous OTPs
+    PasswordResetOTP.objects.filter(user=user, is_used=False).update(is_used=True)
+    
+    # Generate new OTP
+    otp = PasswordResetOTP.generate_otp()
+    expires_at = timezone.now() + timedelta(minutes=10)
+    
+    otp_record = PasswordResetOTP.objects.create(
+        user=user,
+        otp=otp,
+        identifier=identifier,
+        identifier_type=identifier_type,
+        expires_at=expires_at
+    )
+    
+    # Send OTP
+    if identifier_type == 'email':
+        try:
+            send_mail(
+                subject='Password Reset OTP - Four Brothers Portal',
+                message=f'''
+Dear {user.first_name or 'User'},
+
+Your password reset OTP is: {otp}
+
+This OTP will expire in 10 minutes.
+
+If you did not request this, please ignore this email.
+
+Regards,
+Four Brothers Team
+                ''',
+                from_email=django_settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            otp_record.delete()
+            return Response({
+                'success': False,
+                'error': f'Failed to send email. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    else:
+        # Phone SMS - placeholder for future implementation
+        # For now, log the OTP (in production, integrate with SMS gateway)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[SMS OTP] Phone: {phone}, OTP: {otp}")
+        # TODO: Integrate SMS gateway here
+    
+    return Response({
+        'success': True,
+        'message': f'OTP sent to your {identifier_type}',
+        'identifier_type': identifier_type,
+        'expires_in_minutes': 10
+    }, status=status.HTTP_200_OK)
+
+
+@swagger_auto_schema(
+    method='post',
+    tags=['Authentication'],
+    operation_summary="Verify Password Reset OTP",
+    operation_description="""
+    Verify the OTP received via email/phone.
+    
+    **Input:** Provide the identifier (email or phone) and the 6-digit OTP.
+    
+    **On Success:** Returns a reset_token for the final password reset step.
+    
+    **Max Attempts:** 5 attempts per OTP before it gets invalidated.
+    """,
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['identifier', 'otp'],
+        properties={
+            'identifier': openapi.Schema(type=openapi.TYPE_STRING, description='Email or phone number'),
+            'otp': openapi.Schema(type=openapi.TYPE_STRING, description='6-digit OTP'),
+        },
+    ),
+    responses={
+        200: openapi.Response(
+            description="OTP verified successfully",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "message": "OTP verified successfully",
+                    "reset_token": "abc123..."
+                }
+            }
+        ),
+        400: "Invalid OTP or expired",
+        404: "No OTP found"
+    }
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_password_reset_otp(request):
+    """
+    Verify the password reset OTP.
+    """
+    identifier = (request.data.get('identifier') or '').strip().lower()
+    otp_code = (request.data.get('otp') or '').strip()
+    
+    if not identifier or not otp_code:
+        return Response({
+            'success': False,
+            'error': 'identifier and otp are required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Find the OTP record
+    otp_record = PasswordResetOTP.objects.filter(
+        identifier__iexact=identifier,
+        otp=otp_code,
+        is_used=False
+    ).order_by('-created_at').first()
+    
+    if not otp_record:
+        return Response({
+            'success': False,
+            'error': 'Invalid OTP or no pending reset request'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # Check attempts
+    if otp_record.attempts >= 5:
+        otp_record.is_used = True
+        otp_record.save()
+        return Response({
+            'success': False,
+            'error': 'Too many failed attempts. Please request a new OTP.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check expiry
+    if otp_record.is_expired():
+        otp_record.is_used = True
+        otp_record.save()
+        return Response({
+            'success': False,
+            'error': 'OTP has expired. Please request a new one.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Increment attempts
+    otp_record.attempts += 1
+    otp_record.save()
+    
+    # Verify OTP
+    if otp_record.otp != otp_code:
+        remaining = 5 - otp_record.attempts
+        return Response({
+            'success': False,
+            'error': f'Invalid OTP. {remaining} attempts remaining.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Generate reset token (using Django's password reset token generator)
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.http import urlsafe_base64_encode
+    from django.utils.encoding import force_bytes
+    
+    uid = urlsafe_base64_encode(force_bytes(otp_record.user.pk))
+    token = default_token_generator.make_token(otp_record.user)
+    reset_token = f"{uid}:{token}"
+    
+    # Mark OTP as used
+    otp_record.is_used = True
+    otp_record.save()
+    
+    return Response({
+        'success': True,
+        'message': 'OTP verified successfully',
+        'reset_token': reset_token
+    }, status=status.HTTP_200_OK)
+
+
+@swagger_auto_schema(
+    method='post',
+    tags=['Authentication'],
+    operation_summary="Reset Password",
+    operation_description="""
+    Set a new password using the reset token from OTP verification.
+    
+    **Input:** Provide reset_token and new_password.
+    
+    **Password Requirements:**
+    - Minimum 8 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    """,
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['reset_token', 'new_password'],
+        properties={
+            'reset_token': openapi.Schema(type=openapi.TYPE_STRING, description='Token from verify OTP step'),
+            'new_password': openapi.Schema(type=openapi.TYPE_STRING, description='New password (min 8 chars)'),
+            'confirm_password': openapi.Schema(type=openapi.TYPE_STRING, description='Confirm new password'),
+        },
+    ),
+    responses={
+        200: openapi.Response(
+            description="Password reset successfully",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "message": "Password has been reset successfully. You can now login with your new password."
+                }
+            }
+        ),
+        400: "Invalid token or password mismatch",
+    }
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password(request):
+    """
+    Reset password using the reset token.
+    """
+    reset_token = (request.data.get('reset_token') or '').strip()
+    new_password = request.data.get('new_password') or ''
+    confirm_password = request.data.get('confirm_password') or ''
+    
+    if not reset_token or not new_password:
+        return Response({
+            'success': False,
+            'error': 'reset_token and new_password are required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Validate password
+    if len(new_password) < 8:
+        return Response({
+            'success': False,
+            'error': 'Password must be at least 8 characters long'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if confirm_password and new_password != confirm_password:
+        return Response({
+            'success': False,
+            'error': 'Passwords do not match'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Parse reset token
+    try:
+        uid, token = reset_token.split(':')
+    except ValueError:
+        return Response({
+            'success': False,
+            'error': 'Invalid reset token format'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Decode user ID
+    from django.utils.http import urlsafe_base64_decode
+    from django.contrib.auth.tokens import default_token_generator
+    
+    try:
+        user_id = urlsafe_base64_decode(uid).decode()
+        user = User.objects.get(pk=user_id)
+    except (ValueError, User.DoesNotExist, TypeError):
+        return Response({
+            'success': False,
+            'error': 'Invalid reset token'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Verify token
+    if not default_token_generator.check_token(user, token):
+        return Response({
+            'success': False,
+            'error': 'Reset token has expired or is invalid. Please request a new OTP.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Set new password
+    user.set_password(new_password)
+    user.save()
+    
+    # Invalidate all OTPs for this user
+    PasswordResetOTP.objects.filter(user=user).update(is_used=True)
+    
+    return Response({
+        'success': True,
+        'message': 'Password has been reset successfully. You can now login with your new password.'
+    }, status=status.HTTP_200_OK)
