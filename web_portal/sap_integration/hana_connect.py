@@ -1097,6 +1097,12 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     import os
     from django.conf import settings
     
+    # Get the base media directory path
+    try:
+        media_root = settings.MEDIA_ROOT
+    except:
+        media_root = 'media'
+    
     for row in results:
         # Product Image URL (from attachment Line 0)
         img_name = row.get('Product_Image_Name')
@@ -1106,24 +1112,24 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         urdu_name = row.get('Product_Urdu_Name')
         urdu_ext = row.get('Product_Urdu_Ext')
         
-        # Primary: Use Line 0 attachment if available
+        image_url = None
+        
+        # Primary: Use Line 0 attachment if available AND file exists
         if img_name and img_ext:
-            row['product_image_url'] = f'/media/product_images/{folder_name}/{img_name}.{img_ext}'
-        # Fallback 1: Use Line 1 (Urdu) attachment as primary image if Line 0 is missing
-        elif urdu_name and urdu_ext:
-            row['product_image_url'] = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
-        else:
-            # Fallback 2: Try to find image by brand name or item name
-            # Check if file actually exists on disk
+            file_path = os.path.join(media_root, 'product_images', folder_name, f'{img_name}.{img_ext}')
+            if os.path.exists(file_path):
+                image_url = f'/media/product_images/{folder_name}/{img_name}.{img_ext}'
+        
+        # Fallback 1: Use Line 1 (Urdu) attachment as primary image if Line 0 doesn't exist
+        if not image_url and urdu_name and urdu_ext:
+            file_path = os.path.join(media_root, 'product_images', folder_name, f'{urdu_name}.{urdu_ext}')
+            if os.path.exists(file_path):
+                image_url = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
+        
+        # Fallback 2: Try to find image by brand name or item name
+        if not image_url:
             brand_name = row.get('U_BrandName') or ''
             item_name = row.get('ItemName') or ''
-            image_url = None
-            
-            # Get the base media directory path
-            try:
-                media_root = settings.MEDIA_ROOT
-            except:
-                media_root = 'media'
             
             # Try brand name first (more specific)
             if brand_name:
@@ -1134,19 +1140,99 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
                         image_url = f'/media/product_images/{folder_name}/{brand_name}.{ext}'
                         break
             
-            # If no brand image found, try item name
+            # If no brand image found, try item name with smart pattern matching
             if not image_url and item_name:
-                # Clean item name (remove size/weight info in parentheses or after dash)
+                # Clean item name (remove size/weight info in parentheses first)
                 clean_name = item_name.split('(')[0].strip() if '(' in item_name else item_name
-                clean_name = clean_name.split('-')[0].strip() if '-' in clean_name else clean_name.strip()
                 
-                for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG', 'JPEG']:
-                    file_path = os.path.join(media_root, 'product_images', folder_name, f'{clean_name}.{ext}')
-                    if os.path.exists(file_path):
-                        image_url = f'/media/product_images/{folder_name}/{clean_name}.{ext}'
+                # Remove trailing numbers and units (e.g., "Baap 1.5-Ltrs." -> "Baap", "Baap - 200-Ltrs." -> "Baap")
+                # This helps match product variants without duplicating images
+                import re
+                # Pattern matches: optional space/dash, numbers, optional dash, units like Ltr/M l/Kg/Gm, optional 's', optional punctuation
+                clean_name = re.sub(r'\s*[-]?\s*\d+[\d.\-]*\s*[-]?\s*(Ltr|Ml|Kg|Gm|L|ml|kg|gm)s?\.?.*$', '', clean_name, flags=re.IGNORECASE).strip()
+                # Also handle cases like "Brand Name - text" -> "Brand Name"
+                if not clean_name or len(clean_name) < 2:  # If regex removed too much, try simple dash split
+                    clean_name = item_name.split('(')[0].strip()
+                    clean_name = clean_name.split('-')[0].strip()
+                
+                # Extract just the base product name (first word or two, before numbers)
+                # e.g., "Amazone 1.8 EC" -> "Amazone", "Astene 75 SP" -> "Astene"
+                base_name_match = re.match(r'^([A-Za-z]+(?:[- ][A-Za-z]+)?)', clean_name)
+                base_name =base_name_match.group(1).strip() if base_name_match else clean_name
+                
+                # Try multiple variations for better matching
+                search_names = [clean_name, base_name]  # Try both full cleaned name and base name
+                
+                # Also add variations with spaces replaced by hyphens
+                # e.g., "Hunter Star" -> ["Hunter Star", "Hunter-Star"]
+                extended_search_names = []
+                for name in search_names:
+                    extended_search_names.append(name)
+                    if ' ' in name:
+                        extended_search_names.append(name.replace(' ', '-'))
+                search_names = extended_search_names
+                
+                for search_name in search_names:
+                    if image_url:
                         break
-            
-            row['product_image_url'] = image_url
+                        
+                    # First try exact match
+                    for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG', 'JPEG']:
+                        file_path = os.path.join(media_root, 'product_images', folder_name, f'{search_name}.{ext}')
+                        if os.path.exists(file_path):
+                            image_url = f'/media/product_images/{folder_name}/{search_name}.{ext}'
+                            break
+                
+                # If no exact match found, search for any file starting with the base name (case-insensitive)
+                # This allows sharing images across product variants (e.g., Baap-3-Ltr.png for all Baap products)
+                if not image_url:
+                    import glob
+                    product_images_dir = os.path.join(media_root, 'product_images', folder_name)
+                    if os.path.exists(product_images_dir):
+                        # Get all image files in directory
+                        all_files = []
+                        for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
+                            all_files.extend(glob.glob(os.path.join(product_images_dir, f'*{ext}')))
+                        
+                        if all_files:
+                            # Try searching with each search_name
+                            for search_name in search_names:
+                                if image_url:
+                                    break
+                                    
+                                search_name_lower = search_name.lower()
+                                # Normalize both search name and filenames for comparison (handle space/hyphen variations)
+                                search_normalized = search_name_lower.replace(' ', '').replace('-', '')
+                                
+                                # First pass: Try exact prefix match (case-insensitive)
+                                for f in all_files:
+                                    filename_base = os.path.splitext(os.path.basename(f))[0].lower()
+                                    # Also normalize filename for comparison
+                                    filename_normalized = filename_base.replace(' ', '').replace('-', '')
+                                    
+                                    # Check if normalized filename starts with normalized search name
+                                    if filename_normalized.startswith(search_normalized) or filename_base.startswith(search_name_lower):
+                                        image_url = f'/media/product_images/{folder_name}/{os.path.basename(f)}'
+                                        break
+                                
+                                # Second pass: Try with minor spelling variations (remove trailing 'e', 's', etc.)
+                                if not image_url and len(search_name_lower) > 3:
+                                    # Try without trailing 'e' or 's'
+                                    variants = [search_name_lower.rstrip('e'), search_name_lower.rstrip('s'), search_name_lower.rstrip('es')]
+                                    variants = [v for v in variants if len(v) > 2 and v != search_name_lower]
+                                    
+                                    for variant in variants:
+                                        for f in all_files:
+                                            filename_base = os.path.splitext(os.path.basename(f))[0].lower()
+                                            if filename_base.startswith(variant) or variant in filename_base:
+                                                image_url = f'/media/product_images/{folder_name}/{os.path.basename(f)}'
+                                                break
+                                        if image_url:
+                                            break
+                                    if image_url:
+                                        break
+        
+        row['product_image_url'] = image_url
         
         # Urdu URL: Use Line 1 attachment
         if urdu_name and urdu_ext:
