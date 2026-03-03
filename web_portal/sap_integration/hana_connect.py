@@ -1016,7 +1016,36 @@ def get_item_groups(db) -> list:
     )
     return _fetch_all(db, sql, None)
 
-def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None, item_groups: list | None = None, brand: str | None = None) -> list:
+# Cache for file listings per folder to avoid repeated directory scans
+_product_image_cache = {}
+_cache_timestamp = {}
+
+def _get_image_files_cache(folder_path, cache_timeout=300):
+    """Get cached list of image files in a folder. Cache expires after cache_timeout seconds."""
+    import time
+    current_time = time.time()
+    
+    # Check if cache exists and is still valid
+    if folder_path in _product_image_cache:
+        if current_time - _cache_timestamp.get(folder_path, 0) < cache_timeout:
+            return _product_image_cache[folder_path]
+    
+    # Build new cache
+    import os
+    import glob
+    file_set = set()
+    
+    if os.path.exists(folder_path):
+        for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
+            files = glob.glob(os.path.join(folder_path, f'*{ext}'))
+            for f in files:
+                file_set.add(os.path.basename(f).lower())  # Store lowercase for case-insensitive matching
+    
+    _product_image_cache[folder_path] = file_set
+    _cache_timestamp[folder_path] = current_time
+    return file_set
+
+def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None, item_groups: list | None = None, brand: str | None = None, limit: int | None = None, offset: int = 0, fetch_prices: bool = True, only_priced: bool = False) -> dict:
     """
     Fetch products catalog with image URLs based on database name.
     Images are stored in media/product_images/{DB_NAME}/{FileName}.{FileExt}
@@ -1024,11 +1053,47 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     Args:
         db: Database connection object
         schema_name: Schema name (e.g., '4B-BIO_APP', '4B-ORANG_APP')
-        search: Search ItemCode, ItemName
+        search: Search in ItemCode, ItemName, GenericName, or BrandName (e.g., 'baap', 'roshan')
         item_group: Filter by single item group code (deprecated, use item_groups)
         item_groups: Filter by multiple item group codes (comma-separated or list)
         brand: Filter by brand name (not available in this schema)
+        limit: Maximum number of records to return (pagination)
+        offset: Number of records to skip (pagination)
+        fetch_prices: Whether to fetch prices (default True, set False if fetching separately)
+        only_priced: If True, show only products with price > 0 (default False)
+    
+    Returns:
+        dict with 'products' list, 'total_count', 'limit', 'offset'
     """
+    # First, get total count for pagination
+    if only_priced and fetch_prices:
+        # Include price join in count query when filtering by price
+        count_sql = (
+            'SELECT COUNT(*) AS "total" '
+            'FROM OITM T0 '
+            'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
+            'LEFT JOIN ('
+            '    SELECT T1."U_itc", MAX(T1."U_np") AS "U_np" '
+            '    FROM "@PLR4" T1 '
+            '    INNER JOIN "@PL1" T0 ON T0."DocEntry" = T1."DocEntry" '
+            '    WHERE T1."U_itc" IS NOT NULL '
+            '    GROUP BY T1."U_itc"'
+            ') PR ON PR."U_itc" = T0."ItemCode" '
+            'WHERE T0."Series" = \'77\' '
+            'AND T0."validFor" = \'Y\' '
+            'AND COALESCE(PR."U_np", 0) > 0 '
+        )
+    else:
+        count_sql = (
+            'SELECT COUNT(*) AS "total" '
+            'FROM OITM T0 '
+            'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
+            'WHERE T0."Series" = \'77\' '
+            'AND T0."validFor" = \'Y\' '
+        )
+    count_params = []
+    
+    # Build main query with price join
     sql = (
         'SELECT '
         ' T1."ItmsGrpCod", '
@@ -1042,14 +1107,41 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         ' PI."FileName" AS "Product_Image_Name", '
         ' PI."FileExt" AS "Product_Image_Ext", '
         ' PU."FileName" AS "Product_Urdu_Name", '
-        ' PU."FileExt" AS "Product_Urdu_Ext" '
+        ' PU."FileExt" AS "Product_Urdu_Ext"'
+    )
+    
+    # Add price column if requested
+    if fetch_prices:
+        sql += ', COALESCE(PR."U_np", 0) AS "Price" '
+    
+    sql += (
         'FROM OITM T0 '
         'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
         'LEFT JOIN ATC1 PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."Line" = 0 '
         'LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."Line" = 1 '
+    )
+    
+    # Join price data if requested
+    if fetch_prices:
+        sql += (
+            'LEFT JOIN ('
+            '    SELECT T1."U_itc", MAX(T1."U_np") AS "U_np" '
+            '    FROM "@PLR4" T1 '
+            '    INNER JOIN "@PL1" T0 ON T0."DocEntry" = T1."DocEntry" '
+            '    WHERE T1."U_itc" IS NOT NULL '
+            '    GROUP BY T1."U_itc"'
+            ') PR ON PR."U_itc" = T0."ItemCode" '
+        )
+    
+    sql += (
         'WHERE T0."Series" = \'77\' '
         'AND T0."validFor" = \'Y\' '
     )
+    
+    # Add price filter if requested
+    if only_priced and fetch_prices:
+        sql += 'AND COALESCE(PR."U_np", 0) > 0 '
+    
     params = []
     
     # Handle multi-category filtering
@@ -1062,25 +1154,47 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         
         if groups_list:
             placeholders = ','.join(['?' for _ in groups_list])
-            sql += f' AND T0."ItmsGrpCod" IN ({placeholders})'
+            filter_clause = f' AND T0."ItmsGrpCod" IN ({placeholders})'
+            sql += filter_clause
+            count_sql += filter_clause
             params.extend(groups_list)
+            count_params.extend(groups_list)
     elif item_group:
         # Backward compatibility
-        sql += ' AND T0."ItmsGrpCod" = ?'
+        filter_clause = ' AND T0."ItmsGrpCod" = ?'
+        sql += filter_clause
+        count_sql += filter_clause
         params.append(item_group)
+        count_params.append(item_group)
     
-    # Brand filter removed - U_BrandName column may not exist
-    # if brand:
-    #     sql += ' AND T0."U_BrandName" LIKE ?'
-    #     params.append(f'%{brand}%')
-    
-    # Full-text search across standard fields only (ItemCode and ItemName)
+    # Full-text search across all name fields (ItemCode, ItemName, GenericName, BrandName)
+    # Using UPPER() for case-insensitive search, COALESCE to handle NULLs
     if search:
-        sql += ' AND (T0."ItemCode" LIKE ? OR T0."ItemName" LIKE ?)'
+        search_clause = (
+            ' AND ('
+            'UPPER(T0."ItemCode") LIKE UPPER(?) OR '
+            'UPPER(T0."ItemName") LIKE UPPER(?) OR '
+            'UPPER(COALESCE(T0."U_GenericName", \'\')) LIKE UPPER(?) OR '
+            'UPPER(COALESCE(T0."U_BrandName", \'\')) LIKE UPPER(?)'
+            ')'
+        )
+        sql += search_clause
+        count_sql += search_clause
         search_param = f'%{search}%'
-        params.extend([search_param, search_param])
+        params.extend([search_param, search_param, search_param, search_param])
+        count_params.extend([search_param, search_param, search_param, search_param])
+    
+    # Get total count
+    count_result = _fetch_all(db, count_sql, tuple(count_params) if count_params else None)
+    total_count = count_result[0].get('total', 0) if count_result else 0
     
     sql += ' ORDER BY T1."ItmsGrpCod", T0."ItemCode"'
+    
+    # Add pagination
+    if limit is not None and limit > 0:
+        sql += f' LIMIT {int(limit)}'
+    if offset > 0:
+        sql += f' OFFSET {int(offset)}'
     
     # Execute query
     results = _fetch_all(db, sql, tuple(params) if params else None)
@@ -1103,7 +1217,16 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     except:
         media_root = 'media'
     
+    # Build cached list of available files once for all products
+    product_images_dir = os.path.join(media_root, 'product_images', folder_name)
+    available_files = _get_image_files_cache(product_images_dir)
+    
+    # Process all products in a single loop
     for row in results:
+        # Convert price if fetched
+        if fetch_prices:
+            row['price'] = float(row.get('Price', 0.0))
+        
         # Product Image URL (from attachment Line 0)
         img_name = row.get('Product_Image_Name')
         img_ext = row.get('Product_Image_Ext')
@@ -1114,123 +1237,43 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         
         image_url = None
         
-        # Primary: Use Line 0 attachment if available AND file exists
+        # Primary: Use Line 0 attachment if available AND file exists in cache
         if img_name and img_ext:
-            file_path = os.path.join(media_root, 'product_images', folder_name, f'{img_name}.{img_ext}')
-            if os.path.exists(file_path):
+            file_key = f'{img_name}.{img_ext}'.lower()
+            if file_key in available_files:
                 image_url = f'/media/product_images/{folder_name}/{img_name}.{img_ext}'
         
         # Fallback 1: Use Line 1 (Urdu) attachment as primary image if Line 0 doesn't exist
         if not image_url and urdu_name and urdu_ext:
-            file_path = os.path.join(media_root, 'product_images', folder_name, f'{urdu_name}.{urdu_ext}')
-            if os.path.exists(file_path):
+            file_key = f'{urdu_name}.{urdu_ext}'.lower()
+            if file_key in available_files:
                 image_url = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
         
-        # Fallback 2: Try to find image by brand name or item name
+        # Fallback 2: Quick check for brand name or simplified item name
+        # Skip complex regex/fuzzy matching for performance
         if not image_url:
             brand_name = row.get('U_BrandName') or ''
             item_name = row.get('ItemName') or ''
             
-            # Try brand name first (more specific)
+            # Try brand name first (simple exact match only)
             if brand_name:
-                for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG', 'JPEG']:
-                    # Check if file exists
-                    file_path = os.path.join(media_root, 'product_images', folder_name, f'{brand_name}.{ext}')
-                    if os.path.exists(file_path):
+                for ext in ['png', 'jpg', 'jpeg']:
+                    file_key = f'{brand_name}.{ext}'.lower()
+                    if file_key in available_files:
                         image_url = f'/media/product_images/{folder_name}/{brand_name}.{ext}'
                         break
             
-            # If no brand image found, try item name with smart pattern matching
+            # Try simple item name (first word before space/hyphen/parenthesis)
             if not image_url and item_name:
-                # Clean item name (remove size/weight info in parentheses first)
-                clean_name = item_name.split('(')[0].strip() if '(' in item_name else item_name
+                # Extract first word only for simple matching
+                simple_name = item_name.split()[0].split('-')[0].split('(')[0].strip()
                 
-                # Remove trailing numbers and units (e.g., "Baap 1.5-Ltrs." -> "Baap", "Baap - 200-Ltrs." -> "Baap")
-                # This helps match product variants without duplicating images
-                import re
-                # Pattern matches: optional space/dash, numbers, optional dash, units like Ltr/M l/Kg/Gm, optional 's', optional punctuation
-                clean_name = re.sub(r'\s*[-]?\s*\d+[\d.\-]*\s*[-]?\s*(Ltr|Ml|Kg|Gm|L|ml|kg|gm)s?\.?.*$', '', clean_name, flags=re.IGNORECASE).strip()
-                # Also handle cases like "Brand Name - text" -> "Brand Name"
-                if not clean_name or len(clean_name) < 2:  # If regex removed too much, try simple dash split
-                    clean_name = item_name.split('(')[0].strip()
-                    clean_name = clean_name.split('-')[0].strip()
-                
-                # Extract just the base product name (first word or two, before numbers)
-                # e.g., "Amazone 1.8 EC" -> "Amazone", "Astene 75 SP" -> "Astene"
-                base_name_match = re.match(r'^([A-Za-z]+(?:[- ][A-Za-z]+)?)', clean_name)
-                base_name =base_name_match.group(1).strip() if base_name_match else clean_name
-                
-                # Try multiple variations for better matching
-                search_names = [clean_name, base_name]  # Try both full cleaned name and base name
-                
-                # Also add variations with spaces replaced by hyphens
-                # e.g., "Hunter Star" -> ["Hunter Star", "Hunter-Star"]
-                extended_search_names = []
-                for name in search_names:
-                    extended_search_names.append(name)
-                    if ' ' in name:
-                        extended_search_names.append(name.replace(' ', '-'))
-                search_names = extended_search_names
-                
-                for search_name in search_names:
-                    if image_url:
-                        break
-                        
-                    # First try exact match
-                    for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG', 'JPEG']:
-                        file_path = os.path.join(media_root, 'product_images', folder_name, f'{search_name}.{ext}')
-                        if os.path.exists(file_path):
-                            image_url = f'/media/product_images/{folder_name}/{search_name}.{ext}'
+                if simple_name and len(simple_name) > 2:
+                    for ext in ['png', 'jpg', 'jpeg']:
+                        file_key = f'{simple_name}.{ext}'.lower()
+                        if file_key in available_files:
+                            image_url = f'/media/product_images/{folder_name}/{simple_name}.{ext}'
                             break
-                
-                # If no exact match found, search for any file starting with the base name (case-insensitive)
-                # This allows sharing images across product variants (e.g., Baap-3-Ltr.png for all Baap products)
-                if not image_url:
-                    import glob
-                    product_images_dir = os.path.join(media_root, 'product_images', folder_name)
-                    if os.path.exists(product_images_dir):
-                        # Get all image files in directory
-                        all_files = []
-                        for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
-                            all_files.extend(glob.glob(os.path.join(product_images_dir, f'*{ext}')))
-                        
-                        if all_files:
-                            # Try searching with each search_name
-                            for search_name in search_names:
-                                if image_url:
-                                    break
-                                    
-                                search_name_lower = search_name.lower()
-                                # Normalize both search name and filenames for comparison (handle space/hyphen variations)
-                                search_normalized = search_name_lower.replace(' ', '').replace('-', '')
-                                
-                                # First pass: Try exact prefix match (case-insensitive)
-                                for f in all_files:
-                                    filename_base = os.path.splitext(os.path.basename(f))[0].lower()
-                                    # Also normalize filename for comparison
-                                    filename_normalized = filename_base.replace(' ', '').replace('-', '')
-                                    
-                                    # Check if normalized filename starts with normalized search name
-                                    if filename_normalized.startswith(search_normalized) or filename_base.startswith(search_name_lower):
-                                        image_url = f'/media/product_images/{folder_name}/{os.path.basename(f)}'
-                                        break
-                                
-                                # Second pass: Try with minor spelling variations (remove trailing 'e', 's', etc.)
-                                if not image_url and len(search_name_lower) > 3:
-                                    # Try without trailing 'e' or 's'
-                                    variants = [search_name_lower.rstrip('e'), search_name_lower.rstrip('s'), search_name_lower.rstrip('es')]
-                                    variants = [v for v in variants if len(v) > 2 and v != search_name_lower]
-                                    
-                                    for variant in variants:
-                                        for f in all_files:
-                                            filename_base = os.path.splitext(os.path.basename(f))[0].lower()
-                                            if filename_base.startswith(variant) or variant in filename_base:
-                                                image_url = f'/media/product_images/{folder_name}/{os.path.basename(f)}'
-                                                break
-                                        if image_url:
-                                            break
-                                    if image_url:
-                                        break
         
         row['product_image_url'] = image_url
         
@@ -1240,7 +1283,7 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         else:
             row['product_description_urdu_url'] = None
     
-    return results
+    return {'products': results, 'total_count': total_count, 'limit': limit, 'offset': offset}
 
 def policy_customer_balance(db, card_code: str) -> list:
     sql = (
