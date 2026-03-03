@@ -480,7 +480,9 @@ def hana_connect_admin(request):
                             # so all matching products are available in the DOM for instant filtering
                             item_group_param = (request.GET.get('item_group') or '').strip() or None
                             item_groups_param = (request.GET.get('item_groups') or '').strip() or None
-                            data = products_catalog(conn, selected_schema, search=None, item_group=item_group_param, item_groups=item_groups_param)
+                            catalog_result = products_catalog(conn, selected_schema, search=None, item_group=item_group_param, item_groups=item_groups_param)
+                            # Handle new dictionary format - extract products list for backward compatibility
+                            data = catalog_result.get('products', []) if isinstance(catalog_result, dict) else catalog_result
                             result = data
                         except Exception as e_pc:
                             error = str(e_pc)
@@ -4583,8 +4585,9 @@ def territory_summary_api(request):
     """,
     manual_parameters=[
         openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP). Uses default from env if not provided.", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('search', openapi.IN_QUERY, description="Search ItemCode, ItemName, GenericName, or BrandName", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('search', openapi.IN_QUERY, description="Search by ItemCode, ItemName, GenericName, or BrandName (e.g., 'baap', 'roshan', 'FG00023')", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('item_group', openapi.IN_QUERY, description="Filter by item group code", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('only_priced', openapi.IN_QUERY, description="Show only products with price > 0 (true/false)", type=openapi.TYPE_BOOLEAN, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
     ],
@@ -4604,6 +4607,7 @@ def products_catalog_api(request):
     db_name = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
     search = (request.GET.get('search') or '').strip() or None
     item_group = (request.GET.get('item_group') or '').strip() or None
+    only_priced = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     
@@ -4644,55 +4648,42 @@ def products_catalog_api(request):
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
-            # Pass the connection and schema name to products_catalog for image URL generation
-            data = products_catalog(conn, cfg['schema'], search, item_group)
             
-            # Fetch prices from @PLR4 for all items in one query
-            price_map = {}
-            try:
-                from sap_integration.hana_connect import _fetch_all
-                price_rows = _fetch_all(conn, 
-                    'SELECT T1."U_itc" AS "ItemCode", T1."U_np" AS "Price" '
-                    'FROM "@PLR4" T1 '
-                    'INNER JOIN "@PL1" T0 ON T0."DocEntry" = T1."DocEntry" '
-                    'WHERE T1."U_itc" IS NOT NULL'
-                )
-                for pr in (price_rows or []):
-                    itc = pr.get('ItemCode', '')
-                    price_val = pr.get('Price', 0)
-                    try:
-                        price_val = float(price_val) if price_val is not None else 0.0
-                    except (ValueError, TypeError):
-                        price_val = 0.0
-                    # Keep the latest/highest price if multiple entries exist for same item
-                    if itc not in price_map or price_val > price_map[itc]:
-                        price_map[itc] = price_val
-            except Exception:
-                pass  # If price fetch fails, all products get price=0
+            # Pass pagination parameters to products_catalog for database-level pagination
+            result = products_catalog(conn, cfg['schema'], search, item_group, limit=page_size, offset=(page_num-1)*page_size, fetch_prices=True, only_priced=only_priced)
             
-            # Add price and document detail URLs to each product
-            for product in (data or []):
-                item_code = product.get('ItemCode', '')
-                product['price'] = price_map.get(item_code, 0.0)
+            # Extract data from result dictionary
+            data = result.get('products', [])
+            total_count = result.get('total_count', 0)
             
-            # Add document detail URLs to each product
+            # Add document detail URLs to each product (optimize by pre-computing base_url)
             from django.urls import reverse
+            base_url = request.build_absolute_uri('/').rstrip('/')
+            
             for product in data:
                 if product.get('Product_Urdu_Name') and product.get('Product_Urdu_Ext'):
                     # Add API endpoint URL for document detail
                     product['document_detail_url'] = reverse('product_document_detail', kwargs={'item_code': product['ItemCode']})
                     # Add full page URL with database parameter
-                    base_url = request.build_absolute_uri('/')
-                    product['document_detail_page_url'] = f"{base_url.rstrip('/')}{product['document_detail_url']}?database={cfg['schema']}"
+                    product['document_detail_page_url'] = f"{base_url}{product['document_detail_url']}?database={cfg['schema']}"
                     product['has_document'] = True
                 else:
                     product['document_detail_url'] = None
                     product['document_detail_page_url'] = None
                     product['has_document'] = False
             
-            paginator = Paginator(data or [], page_size)
-            page_obj = paginator.get_page(page_num)
-            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'database': cfg['schema'], 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+            # Calculate pagination metadata
+            num_pages = (total_count + page_size - 1) // page_size if page_size > 0 else 1
+            
+            return Response({
+                'success': True, 
+                'page': page_num, 
+                'page_size': page_size, 
+                'num_pages': num_pages, 
+                'count': total_count, 
+                'database': cfg['schema'], 
+                'data': data
+            }, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()
@@ -8062,7 +8053,7 @@ def recommended_products_api(request):
                 # Query by specific item code
                 cur = conn.cursor()
                 cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Description", "U_Disease" '
+                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
                     'FROM "@ODID" WHERE "U_ItemCode" = ?',
                     (item_code,)
                 )
@@ -8072,8 +8063,7 @@ def recommended_products_api(request):
                         'doc_entry': row[0],
                         'item_code': row[1],
                         'item_name': row[2],
-                        'description': row[3],
-                        'disease_name': row[4]
+                        'disease_name': row[3]
                     }
                     product_item_codes = [row[1]]
                 cur.close()
@@ -8081,7 +8071,7 @@ def recommended_products_api(request):
                 # Query by disease name - can return multiple item codes for same disease
                 cur = conn.cursor()
                 cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Description", "U_Disease" '
+                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
                     'FROM "@ODID" WHERE UPPER("U_Disease") = ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") = ?',
                     (disease_name.upper(), disease_name.upper(), disease_name.upper())
                 )
@@ -8092,8 +8082,7 @@ def recommended_products_api(request):
                         'doc_entry': rows[0][0],
                         'item_code': rows[0][1],
                         'item_name': rows[0][2],
-                        'description': rows[0][3],
-                        'disease_name': rows[0][4]
+                        'disease_name': rows[0][3]
                     }
                     # Collect ALL item codes for this disease
                     product_item_codes = [row[1] for row in rows if row[1]]
@@ -8117,13 +8106,8 @@ def recommended_products_api(request):
             
             if product_item_codes:
                 # Extract database folder name for images
-                db_name = hana_schema.upper()
-                if '4B-BIO' in db_name:
-                    folder_name = 'bio'
-                elif '4B-ORANG' in db_name:
-                    folder_name = 'orange'
-                else:
-                    folder_name = 'default'
+                # Examples: 4B-BIO_APP -> 4B-BIO, 4B-ORANG_APP -> 4B-ORANG, 4B-AGRI_LIVE -> 4B-AGRI
+                folder_name = hana_schema.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
                 
                 for idx, prod_code in enumerate(product_item_codes, 1):
                     try:
@@ -8160,17 +8144,17 @@ def recommended_products_api(request):
                             img_file = row[7]
                             img_ext = row[8]
                             if img_file and img_ext:
-                                product_image_url = f'/media/{folder_name}/{img_file}.{img_ext}'
+                                product_image_url = f'/media/product_images/{folder_name}/{img_file}.{img_ext}'
                             else:
                                 # Fallback to product name-based naming (e.g., Badar.jpg, Haryali.jpg, Map.jpg)
-                                product_image_url = f'/media/{folder_name}/{product_name}.jpg'
+                                product_image_url = f'/media/product_images/{folder_name}/{product_name}.jpg'
                             
                             urdu_file = row[9]
                             urdu_ext = row[10]
                             if urdu_file and urdu_ext:
-                                urdu_url = f'/media/{folder_name}/{urdu_file}.{urdu_ext}'
+                                urdu_url = f'/media/product_images/{folder_name}/{urdu_file}.{urdu_ext}'
                             else:
-                                urdu_url = f'/media/{folder_name}/{product_name}-urdu.jpg'
+                                urdu_url = f'/media/product_images/{folder_name}/{product_name}-urdu.jpg'
                             
                             product = {
                                 'priority': idx,
@@ -8199,7 +8183,6 @@ def recommended_products_api(request):
                 'success': True,
                 'disease_name': disease_info['disease_name'],
                 'disease_item_code': disease_info['item_code'],
-                'description': disease_info['description'],
                 'database': hana_schema,
                 'count': len(products_data),
                 'data': products_data
@@ -8744,12 +8727,14 @@ def product_catalog_list_view(request):
                 cur.execute(f'SET SCHEMA "{schema_name}"')
             
             # Get products
-            products = products_catalog(
+            catalog_result = products_catalog(
                 conn, 
                 schema_name=database,
                 search=search,
                 item_group=item_group
             )
+            # Handle new dictionary format
+            products = catalog_result.get('products', []) if isinstance(catalog_result, dict) else catalog_result
             
             # Get unique categories
             categories_dict = {}
