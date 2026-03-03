@@ -8062,7 +8062,7 @@ def recommended_products_api(request):
                 # Query by specific item code
                 cur = conn.cursor()
                 cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Description", "U_Disease" '
+                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
                     'FROM "@ODID" WHERE "U_ItemCode" = ?',
                     (item_code,)
                 )
@@ -8072,8 +8072,7 @@ def recommended_products_api(request):
                         'doc_entry': row[0],
                         'item_code': row[1],
                         'item_name': row[2],
-                        'description': row[3],
-                        'disease_name': row[4]
+                        'disease_name': row[3]
                     }
                     product_item_codes = [row[1]]
                 cur.close()
@@ -8081,7 +8080,7 @@ def recommended_products_api(request):
                 # Query by disease name - can return multiple item codes for same disease
                 cur = conn.cursor()
                 cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Description", "U_Disease" '
+                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
                     'FROM "@ODID" WHERE UPPER("U_Disease") = ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") = ?',
                     (disease_name.upper(), disease_name.upper(), disease_name.upper())
                 )
@@ -8092,8 +8091,7 @@ def recommended_products_api(request):
                         'doc_entry': rows[0][0],
                         'item_code': rows[0][1],
                         'item_name': rows[0][2],
-                        'description': rows[0][3],
-                        'disease_name': rows[0][4]
+                        'disease_name': rows[0][3]
                     }
                     # Collect ALL item codes for this disease
                     product_item_codes = [row[1] for row in rows if row[1]]
@@ -8117,13 +8115,8 @@ def recommended_products_api(request):
             
             if product_item_codes:
                 # Extract database folder name for images
-                db_name = hana_schema.upper()
-                if '4B-BIO' in db_name:
-                    folder_name = 'bio'
-                elif '4B-ORANG' in db_name:
-                    folder_name = 'orange'
-                else:
-                    folder_name = 'default'
+                # Examples: 4B-BIO_APP -> 4B-BIO, 4B-ORANG_APP -> 4B-ORANG, 4B-AGRI_LIVE -> 4B-AGRI
+                folder_name = hana_schema.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
                 
                 for idx, prod_code in enumerate(product_item_codes, 1):
                     try:
@@ -8160,17 +8153,17 @@ def recommended_products_api(request):
                             img_file = row[7]
                             img_ext = row[8]
                             if img_file and img_ext:
-                                product_image_url = f'/media/{folder_name}/{img_file}.{img_ext}'
+                                product_image_url = f'/media/product_images/{folder_name}/{img_file}.{img_ext}'
                             else:
                                 # Fallback to product name-based naming (e.g., Badar.jpg, Haryali.jpg, Map.jpg)
-                                product_image_url = f'/media/{folder_name}/{product_name}.jpg'
+                                product_image_url = f'/media/product_images/{folder_name}/{product_name}.jpg'
                             
                             urdu_file = row[9]
                             urdu_ext = row[10]
                             if urdu_file and urdu_ext:
-                                urdu_url = f'/media/{folder_name}/{urdu_file}.{urdu_ext}'
+                                urdu_url = f'/media/product_images/{folder_name}/{urdu_file}.{urdu_ext}'
                             else:
-                                urdu_url = f'/media/{folder_name}/{product_name}-urdu.jpg'
+                                urdu_url = f'/media/product_images/{folder_name}/{product_name}-urdu.jpg'
                             
                             product = {
                                 'priority': idx,
@@ -8199,7 +8192,6 @@ def recommended_products_api(request):
                 'success': True,
                 'disease_name': disease_info['disease_name'],
                 'disease_item_code': disease_info['item_code'],
-                'description': disease_info['description'],
                 'database': hana_schema,
                 'count': len(products_data),
                 'data': products_data
