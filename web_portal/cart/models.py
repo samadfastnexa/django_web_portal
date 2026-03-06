@@ -39,14 +39,14 @@ class Cart(models.Model):
         return sum(item.quantity for item in self.items.filter(is_active=True))
     
     def clear_expired_items(self):
-        """Remove items that have been in cart for more than 24 hours"""
+        """Soft delete items that have been in cart for more than 24 hours"""
         expiry_time = timezone.now() - timedelta(days=1)
         expired_items = self.items.filter(
             created_date__lt=expiry_time,
             is_active=True
         )
         count = expired_items.count()
-        expired_items.update(is_active=False)
+        expired_items.update(is_active=False)  # Soft delete
         return count
 
 
@@ -100,7 +100,8 @@ class CartItem(models.Model):
         verbose_name = "Cart Item"
         verbose_name_plural = "Cart Items"
         ordering = ['-created_date']
-        unique_together = [['cart', 'product_item_code', 'is_active']]
+        # Only one active item per product in cart
+        unique_together = [['cart', 'product_item_code']]
     
     def __str__(self):
         return f"{self.product_name} (x{self.quantity}) in {self.cart.user.email}'s cart"

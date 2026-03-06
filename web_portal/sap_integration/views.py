@@ -7911,32 +7911,37 @@ def disease_detail_api(request, disease_id=None):
     operation_description="""
     Get recommended products for a specific disease with product images from HANA catalog.
     
-    Returns all active recommended products for the specified disease, enriched with:
-    - Product images from HANA product catalog
-    - Product descriptions (Urdu)
-    - Item group names
-    - Generic names, brand names
+    **How it works:**
+    - Queries SAP @ODID table where each row maps: Product (U_ItemCode) → Disease (U_Disease)
+    - For a disease name search, returns ALL products that treat that disease
+    - Supports partial matching (e.g., "Downy mildew" matches "Downy mildew, Late blight")
+    - Can search by product codes (comma-separated): "FG00051,FG00015,FG00041"
+    
+    **Returns:**
+    - Multiple products if multiple products treat the same disease
+    - Product images from HANA product catalog (OITM table)
+    - Product descriptions (Urdu), item groups, generic names, brand names
     - Units of measure
     """,
     manual_parameters=[
         openapi.Parameter(
             'disease_id',
             openapi.IN_QUERY,
-            description='Disease ID (optional if item_code or disease_name is provided)',
+            description='Disease ID from Django database (optional if item_code or disease_name is provided)',
             type=openapi.TYPE_INTEGER,
             required=False
         ),
         openapi.Parameter(
             'item_code',
             openapi.IN_QUERY,
-            description='Disease item code (optional if disease_id or disease_name is provided)',
+            description='Product code(s) from @ODID table. Can be single (FG00021) or comma-separated (FG00051,FG00015,FG00041)',
             type=openapi.TYPE_STRING,
             required=False
         ),
         openapi.Parameter(
             'disease_name',
             openapi.IN_QUERY,
-            description='Disease name (optional if disease_id or item_code is provided). Example: "Potato virus Y"',
+            description='Disease name to search (partial match). Examples: "Downy mildew", "Late blight", "Wheat rusts"',
             type=openapi.TYPE_STRING,
             required=False
         ),
@@ -7963,26 +7968,52 @@ def disease_detail_api(request, disease_id=None):
             examples={
                 'application/json': {
                     "success": True,
-                    "disease_name": "Potato virus Y",
-                    "disease_item_code": "FG00259",
+                    "disease_name": "Downy mildew",
+                    "disease_item_code": "FG00021",
                     "database": "4B-BIO_APP",
                     "count": 3,
                     "data": [
                         {
-                            "id": 1,
-                            "product_item_code": "FG00100",
-                            "product_name": "Antiviral Spray Pro",
-                            "dosage": "500ml per acre",
-                            "application_method": "Foliar spray",
-                            "timing": "At first sign of symptoms",
                             "priority": 1,
-                            "effectiveness_rating": 8.5,
-                            "product_image_url": "/media/product_images/4B-BIO/FG00100.jpg",
-                            "product_description_urdu_url": "/media/product_images/4B-BIO/FG00100-urdu.jpg",
+                            "product_item_code": "FG00021",
+                            "product_name": "Keeper 50 WP - 500-Gms.",
+                            "dosage": "As per product label",
+                            "application_method": "Follow product instructions",
+                            "timing": "At first symptoms or preventively",
+                            "product_image_url": "/media/product_images/4B-BIO/Keeper.jpg",
+                            "product_description_urdu_url": "/media/product_images/4B-BIO/Keeper-urdu.jpg",
                             "item_group_name": "Fungicides",
-                            "generic_name": "Azoxystrobin 250 SC",
-                            "brand_name": "Antiviral Pro",
-                            "unit_of_measure": "500 ML"
+                            "generic_name": "Copper Oxychloride 50% WP",
+                            "brand_name": "Keeper",
+                            "unit_of_measure": "500 GMS"
+                        },
+                        {
+                            "priority": 2,
+                            "product_item_code": "FG00041",
+                            "product_name": "Shield Plus - 1-Ltr.",
+                            "dosage": "As per product label",
+                            "application_method": "Follow product instructions",
+                            "timing": "At first symptoms or preventively",
+                            "product_image_url": "/media/product_images/4B-BIO/Shield.jpg",
+                            "product_description_urdu_url": "/media/product_images/4B-BIO/Shield-urdu.jpg",
+                            "item_group_name": "Fungicides",
+                            "generic_name": "Mancozeb 75% WP",
+                            "brand_name": "Shield Plus",
+                            "unit_of_measure": "1 LTR"
+                        },
+                        {
+                            "priority": 3,
+                            "product_item_code": "FG00052",
+                            "product_name": "Wilson 50 WP - 350-Gms.",
+                            "dosage": "As per product label",
+                            "application_method": "Follow product instructions",
+                            "timing": "At first symptoms or preventively",
+                            "product_image_url": "/media/product_images/4B-BIO/Wilson.jpg",
+                            "product_description_urdu_url": "/media/product_images/4B-BIO/Wilson-urdu.jpg",
+                            "item_group_name": "Fungicides",
+                            "generic_name": "Metalaxyl 8% + Mancozeb 64% WP",
+                            "brand_name": "Wilson",
+                            "unit_of_measure": "350 GMS"
                         }
                     ]
                 }
@@ -8050,42 +8081,62 @@ def recommended_products_api(request):
             product_item_codes = []
             
             if item_code:
-                # Query by specific item code
+                # Query by product code(s) - can be single or comma-separated list
+                # e.g., "FG00051" or "FG00051,FG00015,FG00041"
+                item_codes = [code.strip() for code in item_code.split(',') if code.strip()]
+                
                 cur = conn.cursor()
+                placeholders = ','.join(['?' for _ in item_codes])
                 cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
-                    'FROM "@ODID" WHERE "U_ItemCode" = ?',
-                    (item_code,)
-                )
-                row = cur.fetchone()
-                if row:
-                    disease_info = {
-                        'doc_entry': row[0],
-                        'item_code': row[1],
-                        'item_name': row[2],
-                        'disease_name': row[3]
-                    }
-                    product_item_codes = [row[1]]
-                cur.close()
-            elif disease_name:
-                # Query by disease name - can return multiple item codes for same disease
-                cur = conn.cursor()
-                cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
-                    'FROM "@ODID" WHERE UPPER("U_Disease") = ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") = ?',
-                    (disease_name.upper(), disease_name.upper(), disease_name.upper())
+                    f'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
+                    f'FROM "@ODID" WHERE "U_ItemCode" IN ({placeholders})',
+                    tuple(item_codes)
                 )
                 rows = cur.fetchall()
                 if rows:
-                    # Use first row for disease info
                     disease_info = {
                         'doc_entry': rows[0][0],
                         'item_code': rows[0][1],
                         'item_name': rows[0][2],
                         'disease_name': rows[0][3]
                     }
-                    # Collect ALL item codes for this disease
-                    product_item_codes = [row[1] for row in rows if row[1]]
+                    # Collect ALL unique product codes
+                    seen = set()
+                    product_item_codes = []
+                    for row in rows:
+                        if row[1] and row[1] not in seen:
+                            seen.add(row[1])
+                            product_item_codes.append(row[1])
+                cur.close()
+            elif disease_name:
+                # Query by disease name - can return multiple product codes for same disease
+                # Note: U_ItemCode in @ODID is the PRODUCT code, not disease code
+                # Each row maps: Product (U_ItemCode) -> Disease (U_Disease)
+                # We search U_Disease to find ALL products that treat this disease
+                cur = conn.cursor()
+                cur.execute(
+                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
+                    'FROM "@ODID" '
+                    'WHERE UPPER("U_Disease") LIKE ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") LIKE ?',
+                    (f'%{disease_name.upper()}%', disease_name.upper(), f'%{disease_name.upper()}%')
+                )
+                rows = cur.fetchall()
+                if rows:
+                    # Use first row for disease info (primary disease match)
+                    disease_info = {
+                        'doc_entry': rows[0][0],
+                        'item_code': rows[0][1],  # First product code
+                        'item_name': rows[0][2],
+                        'disease_name': rows[0][3]
+                    }
+                    # Collect ALL unique product codes (U_ItemCode) for this disease
+                    # Remove duplicates while preserving order
+                    seen = set()
+                    product_item_codes = []
+                    for row in rows:
+                        if row[1] and row[1] not in seen:
+                            seen.add(row[1])
+                            product_item_codes.append(row[1])
                 cur.close()
             else:
                 conn.close()
