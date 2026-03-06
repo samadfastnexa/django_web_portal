@@ -12,9 +12,8 @@ class CanAddToCart(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        # Check for add_to_cart permission
         return (
-            request.user.is_superuser or 
+            request.user.is_superuser or
             request.user.has_perm('cart.add_to_cart')
         )
 
