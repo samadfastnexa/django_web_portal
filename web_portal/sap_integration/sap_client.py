@@ -801,7 +801,6 @@ class SAPClient:
                     "DocEntry",
                     "U_ItemCode",
                     "U_ItemName",
-                    "U_Description",
                     "U_Disease"
                 FROM "@ODID"
                 '''
@@ -815,8 +814,7 @@ class SAPClient:
                         'doc_entry': row[0] or '',
                         'item_code': row[1] or '',
                         'item_name': row[2] or '',
-                        'description': row[3] or '',
-                        'disease_name': row[4] or '',
+                        'disease_name': row[3] or '',
                     }
                     diseases.append(disease)
                 

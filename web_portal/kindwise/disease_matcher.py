@@ -77,7 +77,9 @@ def get_product_catalog_data(product_codes: List[str], database: str = None) -> 
                 cur.close()
             
             # Fetch all products (we'll filter later)
-            catalog_data = products_catalog(conn, cfg['schema'])
+            catalog_result = products_catalog(conn, cfg['schema'])
+            # Handle new dictionary format
+            catalog_data = catalog_result.get('products', []) if isinstance(catalog_result, dict) else catalog_result
             
             # Create lookup dictionary
             product_catalog = {}

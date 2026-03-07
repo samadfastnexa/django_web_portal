@@ -1329,61 +1329,23 @@ class CollectionAnalyticsView(APIView):
                             scaled.append(row)
                     data = scaled
                 
-                # DEBUG: Uncomment to see row data structure
-                # if data and len(data) > 0:
-                #     print(f"\n=== DEBUG: First row from collection_vs_achievement ===")
-                #     print(f"Total rows returned: {len(data)}")
-                #     print(f"First row keys: {list(data[0].keys())}")
-                #     print(f"First row data: {data[0]}")
-                #     if len(data) > 1:
-                #         print(f"Second row data: {data[1]}")
-                #     print(f"=== END DEBUG ===")
-                
-                # Helper function to clean region/zone/territory names
-                def clean_geo_name(name):
-                    """Remove ' Region', ' Zone', ' Territory' suffixes from location names"""
-                    if not name or not isinstance(name, str):
-                        return name
-                    # Remove common suffixes
-                    for suffix in [' Region', ' Zone', ' Territory']:
-                        if name.endswith(suffix):
-                            return name[:-len(suffix)].strip()
-                    return name
-                
-                # Build Hierarchy (Region → Zone → Territory)
+                # Build Hierarchy (Region → Zone → Territory) - OPTIMIZED
                 hierarchy = {}
                 for row in (data or []):
                     if not isinstance(row, dict):
                         continue
                     
+                    # Extract and convert values once
                     reg = row.get('Region') or 'All Regions'
                     zon = row.get('Zone') or 'All Zones'
                     ter = row.get('TerritoryName') or row.get('Territory') or 'All Territories'
                     
-                    # Clean the names to remove suffixes
-                    reg = clean_geo_name(reg)
-                    zon = clean_geo_name(zon)
-                    ter = clean_geo_name(ter)
-                    
-                    target = 0.0
-                    ach = 0.0
-                    
-                    try:
-                        v = row.get('Collection_Target')
-                        target = float(v or 0.0)
-                    except Exception:
-                        pass
-                    
-                    try:
-                        v = row.get('Collection_Achievement')
-                        ach = float(v or 0.0)
-                    except Exception:
-                        pass
-                    
-                    # Date handling
+                    target = float(row.get('Collection_Target') or 0.0)
+                    ach = float(row.get('Collection_Achievement') or 0.0)
                     row_from = row.get('From_Date')
                     row_to = row.get('To_Date')
                     
+                    # Initialize Region if needed
                     if reg not in hierarchy:
                         hierarchy[reg] = {
                             'name': reg, 
@@ -1394,19 +1356,19 @@ class CollectionAnalyticsView(APIView):
                             'to_date': row_to
                         }
                     
-                    # Update Region dates
-                    if row_from:
-                        if not hierarchy[reg]['from_date'] or str(row_from) < str(hierarchy[reg]['from_date']):
-                            hierarchy[reg]['from_date'] = row_from
-                    if row_to:
-                        if not hierarchy[reg]['to_date'] or str(row_to) > str(hierarchy[reg]['to_date']):
-                            hierarchy[reg]['to_date'] = row_to
+                    reg_data = hierarchy[reg]
                     
-                    hierarchy[reg]['target'] += target
-                    hierarchy[reg]['achievement'] += ach
+                    # Update Region
+                    if row_from and (not reg_data['from_date'] or row_from < reg_data['from_date']):
+                        reg_data['from_date'] = row_from
+                    if row_to and (not reg_data['to_date'] or row_to > reg_data['to_date']):
+                        reg_data['to_date'] = row_to
+                    reg_data['target'] += target
+                    reg_data['achievement'] += ach
                     
-                    if zon not in hierarchy[reg]['zones']:
-                        hierarchy[reg]['zones'][zon] = {
+                    # Initialize Zone if needed
+                    if zon not in reg_data['zones']:
+                        reg_data['zones'][zon] = {
                             'name': zon, 
                             'target': 0.0, 
                             'achievement': 0.0, 
@@ -1415,20 +1377,19 @@ class CollectionAnalyticsView(APIView):
                             'to_date': row_to
                         }
                     
-                    # Update Zone dates
-                    if row_from:
-                        if not hierarchy[reg]['zones'][zon]['from_date'] or str(row_from) < str(hierarchy[reg]['zones'][zon]['from_date']):
-                            hierarchy[reg]['zones'][zon]['from_date'] = row_from
-                    if row_to:
-                        if not hierarchy[reg]['zones'][zon]['to_date'] or str(row_to) > str(hierarchy[reg]['zones'][zon]['to_date']):
-                            hierarchy[reg]['zones'][zon]['to_date'] = row_to
+                    zon_data = reg_data['zones'][zon]
                     
-                    hierarchy[reg]['zones'][zon]['target'] += target
-                    hierarchy[reg]['zones'][zon]['achievement'] += ach
+                    # Update Zone
+                    if row_from and (not zon_data['from_date'] or row_from < zon_data['from_date']):
+                        zon_data['from_date'] = row_from
+                    if row_to and (not zon_data['to_date'] or row_to > zon_data['to_date']):
+                        zon_data['to_date'] = row_to
+                    zon_data['target'] += target
+                    zon_data['achievement'] += ach
                     
-                    # Territory aggregation
-                    if ter not in hierarchy[reg]['zones'][zon]['territories']:
-                        hierarchy[reg]['zones'][zon]['territories'][ter] = {
+                    # Initialize Territory if needed
+                    if ter not in zon_data['territories']:
+                        zon_data['territories'][ter] = {
                             'name': ter,
                             'target': 0.0,
                             'achievement': 0.0,
@@ -1436,55 +1397,52 @@ class CollectionAnalyticsView(APIView):
                             'to_date': row_to,
                         }
                     
-                    t_data = hierarchy[reg]['zones'][zon]['territories'][ter]
-                    t_data['target'] += target
-                    t_data['achievement'] += ach
+                    ter_data = zon_data['territories'][ter]
                     
-                    # Update Territory dates
-                    if row_from:
-                        if not t_data['from_date'] or str(row_from) < str(t_data['from_date']):
-                            t_data['from_date'] = row_from
-                    if row_to:
-                        if not t_data['to_date'] or str(row_to) > str(t_data['to_date']):
-                            t_data['to_date'] = row_to
+                    # Update Territory
+                    ter_data['target'] += target
+                    ter_data['achievement'] += ach
+                    if row_from and (not ter_data['from_date'] or row_from < ter_data['from_date']):
+                        ter_data['from_date'] = row_from
+                    if row_to and (not ter_data['to_date'] or row_to > ter_data['to_date']):
+                        ter_data['to_date'] = row_to
                             
                 
-                # Convert hierarchy to list
+                # Convert hierarchy to list - OPTIMIZED with inline rounding
                 final_list = []
+                grand_total_target = 0.0
+                grand_total_achievement = 0.0
+                
                 for r_name in sorted(hierarchy.keys()):
                     r_data = hierarchy[r_name]
+                    
+                    # Round region totals
+                    r_data['target'] = round(r_data['target'], 2)
+                    r_data['achievement'] = round(r_data['achievement'], 2)
+                    grand_total_target += r_data['target']
+                    grand_total_achievement += r_data['achievement']
+                    
                     zones_list = []
                     for z_name in sorted(r_data['zones'].keys()):
                         z_data = r_data['zones'][z_name]
                         
-                        # Convert territories dict to list
+                        # Round zone totals
+                        z_data['target'] = round(z_data['target'], 2)
+                        z_data['achievement'] = round(z_data['achievement'], 2)
+                        
+                        # Convert territories dict to list with rounding
                         territories_list = []
                         for t_name in sorted(z_data['territories'].keys()):
                             t_item = z_data['territories'][t_name]
-                            # Rounding for territory aggregate
                             t_item['target'] = round(t_item['target'], 2)
                             t_item['achievement'] = round(t_item['achievement'], 2)
                             territories_list.append(t_item)
                             
                         z_data['territories'] = territories_list
                         zones_list.append(z_data)
+                        
                     r_data['zones'] = zones_list
                     final_list.append(r_data)
-                
-                # Rounding
-                for r in final_list:
-                    r['target'] = round(r['target'], 2)
-                    r['achievement'] = round(r['achievement'], 2)
-                    for z in r['zones']:
-                        z['target'] = round(z['target'], 2)
-                        z['achievement'] = round(z['achievement'], 2)
-                
-                # Calculate Grand Total
-                grand_total_target = 0.0
-                grand_total_achievement = 0.0
-                for r in final_list:
-                    grand_total_target += r['target']
-                    grand_total_achievement += r['achievement']
                 
                 grand_total = {
                     'target': round(grand_total_target, 2),
