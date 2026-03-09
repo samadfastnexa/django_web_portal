@@ -1243,6 +1243,7 @@ class CollectionAnalyticsView(APIView):
             
             emp_val = None
             employee_code_from_user = None
+            employee_code = None  # Track original employee_code for CEO check
             
             # If user_id is provided, fetch employee_code from that user's sales_profile
             if user_id_param:
@@ -1252,6 +1253,7 @@ class CollectionAnalyticsView(APIView):
                     target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
                     if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
                         employee_code_from_user = target_user.sales_profile.employee_code
+                        employee_code = employee_code_from_user  # Track for CEO check
                         # Convert employee_code to integer if it's numeric
                         if employee_code_from_user:
                             try:
@@ -1265,6 +1267,7 @@ class CollectionAnalyticsView(APIView):
             # emp_id parameter overrides user_id if both are provided
             if emp_id_param:
                 try:
+                    employee_code = emp_id_param  # Track the string value for CEO check
                     emp_val = int(emp_id_param)
                 except Exception:
                     pass
@@ -1301,6 +1304,12 @@ class CollectionAnalyticsView(APIView):
                 
                 # DEBUG: Uncomment to see schema and parameters
                 # print(f"[DEBUG CollectionAnalyticsView] schema={cfg['schema']}, emp_id={sap_emp_id}, dates={start_date} to {end_date}, period={period if period else 'None'}")
+                
+                # CEO special case: employee_code='00' should see ALL territories
+                # When employee_code is '00', ignore employee filter to show organization-wide data
+                if employee_code == '00':
+                    ignore_emp_filter = True
+                    sap_emp_id = None  # Don't pass emp_id to query
                 
                 # Fetch data using collection_vs_achievement function
                 data = collection_vs_achievement(
