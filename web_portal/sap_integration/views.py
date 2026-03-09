@@ -3937,6 +3937,7 @@ def sales_vs_achievement_territory_api(request):
     emp_id_param = request.query_params.get('emp_id', '').strip()
     
     emp_val = None
+    employee_code = None  # Track original employee_code for CEO check
     
     # If user_id provided, fetch employee_code from sales_profile
     if user_id_param:
@@ -3957,6 +3958,7 @@ def sales_vs_achievement_territory_api(request):
     # emp_id overrides user_id if both provided
     if emp_id_param:
         try:
+            employee_code = emp_id_param  # Track the string value
             emp_val = int(emp_id_param)
         except Exception:
             pass
@@ -3989,8 +3991,15 @@ def sales_vs_achievement_territory_api(request):
             # DEBUG: Uncomment to see sales territory parameters
             # print(f"[DEBUG sales_vs_achievement_territory_api] schema={cfg['schema']}, emp_id={emp_val}, dates={start_date} to {end_date}, period={period if period else 'None'}")
             
+            # CEO special case: employee_code='00' should see ALL territories
+            # When employee_code is '00', ignore employee filter to show organization-wide data
+            ignore_emp_filter = False
+            if employee_code == '00':
+                ignore_emp_filter = True
+                emp_val = None  # Don't pass emp_id to query
+            
             # Use the new sales_vs_achievement_territory function with B4_SALES_TARGET
-            data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=False, group_by_emp=group_by_emp)
+            data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=ignore_emp_filter, group_by_emp=group_by_emp)
             
             # DEBUG: Uncomment to see row data structure
             # if data and len(data) > 0:
