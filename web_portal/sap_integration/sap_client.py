@@ -598,8 +598,11 @@ class SAPClient:
                     return self._policies_cache
         
         # Fetch fresh from SAP
-        projects = self.get_projects(select="Code,Name,ValidFrom,ValidTo,Active,U_pol")
+        projects = self.get_projects(select="Code,Name,ValidFrom,ValidTo,Active,U_pol,U_InvEndDate")
         policies = []
+        from datetime import datetime, date
+        current_date = date.today()
+        
         for p in projects:
             policy_val = p.get('U_pol')
             if policy_val is None:
@@ -607,13 +610,40 @@ class SAPClient:
             # Exclude empty strings
             if isinstance(policy_val, str) and not policy_val.strip():
                 continue
+            
+            # Calculate is_valid based on U_InvEndDate (not ValidTo)
+            inv_end_date_value = p.get('U_InvEndDate')
+            is_valid = True  # Default to valid
+            
+            if inv_end_date_value:
+                # Parse U_InvEndDate
+                try:
+                    if isinstance(inv_end_date_value, datetime):
+                        inv_end_date = inv_end_date_value.date()
+                    elif isinstance(inv_end_date_value, date):
+                        inv_end_date = inv_end_date_value
+                    elif isinstance(inv_end_date_value, str):
+                        # Try parsing ISO format
+                        inv_end_date = datetime.fromisoformat(inv_end_date_value.replace('Z', '+00:00')).date()
+                    else:
+                        inv_end_date = None
+                    
+                    # If U_InvEndDate has passed (is before current date), policy is invalid
+                    if inv_end_date:
+                        is_valid = inv_end_date >= current_date
+                except Exception:
+                    # If parsing fails, default to valid
+                    is_valid = True
+            
             policies.append({
                 'code': p.get('Code'),
                 'name': p.get('Name'),
                 'valid_from': p.get('ValidFrom'),
                 'valid_to': p.get('ValidTo'),
+                'u_inv_end_date': p.get('U_InvEndDate'),
                 'active': p.get('Active'),
-                'policy': policy_val
+                'policy': policy_val,
+                'is_valid': is_valid
             })
         
         # Cache the result

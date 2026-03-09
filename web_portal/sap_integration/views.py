@@ -2937,55 +2937,89 @@ def get_business_partner_detail(request, card_code):
 
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
-    operation_description="List all policies from SAP Projects (UDF U_pol)",
+    operation_description="""
+    List all policies from SAP Projects (UDF U_pol).
+    
+    **Default Behavior**: Returns only VALID policies (where U_InvEndDate has not passed).
+    
+    **is_valid Field**: Automatically calculated based on U_InvEndDate (custom field):
+    - `true`: Policy is still valid (U_InvEndDate >= current date)
+    - `false`: Policy has expired (U_InvEndDate < current date)
+    
+    **Note**: Uses U_InvEndDate (not ValidTo) for validity checks.
+    
+    **Query Parameters**:
+    - `database` or `company`: Specify company database (e.g., 4B-BIO_APP, 4B-AGRI_LIVE)
+    - `active`: Filter by Active status in SAP (true/false)
+    - `is_valid`: Filter by validity (true/false). Default: true
+    
+    **Examples**:
+    - `/api/sap/policies/?database=4B-AGRI_LIVE` - Only valid policies (default)
+    - `/api/sap/policies/?database=4B-AGRI_LIVE&is_valid=false` - Only expired policies
+    - `/api/sap/policies/?database=4B-AGRI_LIVE&active=true` - Only active AND valid policies
+    """,
     manual_parameters=[
         openapi.Parameter(
             'database',
             openapi.IN_QUERY,
-            description="Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)",
+            description="Company database (e.g., 4B-BIO_APP, 4B-AGRI_LIVE, 4B-ORANG_APP)",
             type=openapi.TYPE_STRING,
             required=False
         ),
         openapi.Parameter(
             'company',
             openapi.IN_QUERY,
-            description="Company database key (alternative to 'database' parameter)",
+            description="Company database key (alternative to 'database' parameter for backward compatibility)",
             type=openapi.TYPE_STRING,
             required=False
         ),
         openapi.Parameter(
             'active',
             openapi.IN_QUERY,
-            description="Filter by Active projects (true/false)",
+            description="Filter by Active status in SAP Projects (true/false). Independent of is_valid filter.",
             type=openapi.TYPE_BOOLEAN,
             required=False
+        ),
+        openapi.Parameter(
+            'is_valid',
+            openapi.IN_QUERY,
+            description="Filter by policy validity based on U_InvEndDate. Default: true (only returns policies where U_InvEndDate >= current date). Set to false to get expired policies only.",
+            type=openapi.TYPE_BOOLEAN,
+            required=False,
+            default=True
         )
     ],
     responses={
         200: openapi.Response(
-            description="Policies retrieved successfully",
+            description="Policies retrieved successfully. Each policy includes is_valid field with calculated validity status.",
             examples={
                 "application/json": {
                     "success": True,
                     "count": 2,
+                    "database": "4B-AGRI_LIVE",
                     "data": [
                         {
-                            "code": "PRJ001",
-                            "name": "Example Project",
-                            "valid_from": "2024-01-01",
-                            "valid_to": "2025-01-01",
-                            "active": True,
-                            "policy": "POL-123"
+                            "code": "0123003",
+                            "name": "Current Policy 2026",
+                            "valid_from": "2026-01-01T00:00:00",
+                            "valid_to": "2027-12-31T00:00:00",
+                            "u_inv_end_date": "2027-12-31T00:00:00",
+                            "active": "tYES",
+                            "policy": "05",
+                            "is_valid": True
                         },
                         {
-                            "code": "PRJ002",
-                            "name": "Another Project",
-                            "valid_from": "2024-02-01",
-                            "valid_to": "2025-02-01",
-                            "active": False,
-                            "policy": "POL-456"
+                            "code": "0123001",
+                            "name": "Expired Policy 2022",
+                            "valid_from": "2023-01-01T00:00:00",
+                            "valid_to": "2025-12-31T00:00:00",
+                            "u_inv_end_date": "2025-12-31T00:00:00",
+                            "active": "tYES",
+                            "policy": "03",
+                            "is_valid": False
                         }
-                    ]
+                    ],
+                    "message": "Policies retrieved successfully"
                 }
             }
         ),
@@ -3006,7 +3040,14 @@ def list_policies(request):
     """
     API endpoint to list policies from SAP Projects based on UDF `U_pol`.
     Usage: GET /api/sap/policies/
-    Optional: ?company=4B-BIO_APP|4B-ORANG_APP&active=true|false
+    Optional parameters:
+    - company: Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)
+    - database: Alias for company parameter (backward compatibility)
+    - active: Filter by active status (true/false)
+    - is_valid: Filter by validity based on U_InvEndDate (true/false). Default: true
+    
+    By default, only returns policies where is_valid=true (not expired based on U_InvEndDate).
+    To see all policies including expired: ?is_valid=false or pass no filter
     """
     import logging
     import socket
@@ -3032,10 +3073,21 @@ def list_policies(request):
         sap_client = SAPClient(company_db_key=selected_db)
         policies = sap_client.get_all_policies()
 
+        # Filter by active status if provided
         active_param = request.query_params.get('active')
         if active_param is not None:
             active_val = str(active_param).lower() in ('true', '1', 'yes')
             policies = [p for p in policies if bool(p.get('active')) == active_val]
+        
+        # Filter by is_valid (default: true - only show valid policies)
+        is_valid_param = request.query_params.get('is_valid')
+        if is_valid_param is None:
+            # Default behavior: only show valid policies
+            policies = [p for p in policies if p.get('is_valid', True)]
+        else:
+            # Explicit filter provided
+            is_valid_val = str(is_valid_param).lower() in ('true', '1', 'yes')
+            policies = [p for p in policies if p.get('is_valid', True) == is_valid_val]
 
         return Response({
             "success": True,
@@ -7911,32 +7963,37 @@ def disease_detail_api(request, disease_id=None):
     operation_description="""
     Get recommended products for a specific disease with product images from HANA catalog.
     
-    Returns all active recommended products for the specified disease, enriched with:
-    - Product images from HANA product catalog
-    - Product descriptions (Urdu)
-    - Item group names
-    - Generic names, brand names
+    **How it works:**
+    - Queries SAP @ODID table where each row maps: Product (U_ItemCode) → Disease (U_Disease)
+    - For a disease name search, returns ALL products that treat that disease
+    - Supports partial matching (e.g., "Downy mildew" matches "Downy mildew, Late blight")
+    - Can search by product codes (comma-separated): "FG00051,FG00015,FG00041"
+    
+    **Returns:**
+    - Multiple products if multiple products treat the same disease
+    - Product images from HANA product catalog (OITM table)
+    - Product descriptions (Urdu), item groups, generic names, brand names
     - Units of measure
     """,
     manual_parameters=[
         openapi.Parameter(
             'disease_id',
             openapi.IN_QUERY,
-            description='Disease ID (optional if item_code or disease_name is provided)',
+            description='Disease ID from Django database (optional if item_code or disease_name is provided)',
             type=openapi.TYPE_INTEGER,
             required=False
         ),
         openapi.Parameter(
             'item_code',
             openapi.IN_QUERY,
-            description='Disease item code (optional if disease_id or disease_name is provided)',
+            description='Product code(s) from @ODID table. Can be single (FG00021) or comma-separated (FG00051,FG00015,FG00041)',
             type=openapi.TYPE_STRING,
             required=False
         ),
         openapi.Parameter(
             'disease_name',
             openapi.IN_QUERY,
-            description='Disease name (optional if disease_id or item_code is provided). Example: "Potato virus Y"',
+            description='Disease name to search (partial match). Examples: "Downy mildew", "Late blight", "Wheat rusts"',
             type=openapi.TYPE_STRING,
             required=False
         ),
@@ -7963,26 +8020,52 @@ def disease_detail_api(request, disease_id=None):
             examples={
                 'application/json': {
                     "success": True,
-                    "disease_name": "Potato virus Y",
-                    "disease_item_code": "FG00259",
+                    "disease_name": "Downy mildew",
+                    "disease_item_code": "FG00021",
                     "database": "4B-BIO_APP",
                     "count": 3,
                     "data": [
                         {
-                            "id": 1,
-                            "product_item_code": "FG00100",
-                            "product_name": "Antiviral Spray Pro",
-                            "dosage": "500ml per acre",
-                            "application_method": "Foliar spray",
-                            "timing": "At first sign of symptoms",
                             "priority": 1,
-                            "effectiveness_rating": 8.5,
-                            "product_image_url": "/media/product_images/4B-BIO/FG00100.jpg",
-                            "product_description_urdu_url": "/media/product_images/4B-BIO/FG00100-urdu.jpg",
+                            "product_item_code": "FG00021",
+                            "product_name": "Keeper 50 WP - 500-Gms.",
+                            "dosage": "As per product label",
+                            "application_method": "Follow product instructions",
+                            "timing": "At first symptoms or preventively",
+                            "product_image_url": "/media/product_images/4B-BIO/Keeper.jpg",
+                            "product_description_urdu_url": "/media/product_images/4B-BIO/Keeper-urdu.jpg",
                             "item_group_name": "Fungicides",
-                            "generic_name": "Azoxystrobin 250 SC",
-                            "brand_name": "Antiviral Pro",
-                            "unit_of_measure": "500 ML"
+                            "generic_name": "Copper Oxychloride 50% WP",
+                            "brand_name": "Keeper",
+                            "unit_of_measure": "500 GMS"
+                        },
+                        {
+                            "priority": 2,
+                            "product_item_code": "FG00041",
+                            "product_name": "Shield Plus - 1-Ltr.",
+                            "dosage": "As per product label",
+                            "application_method": "Follow product instructions",
+                            "timing": "At first symptoms or preventively",
+                            "product_image_url": "/media/product_images/4B-BIO/Shield.jpg",
+                            "product_description_urdu_url": "/media/product_images/4B-BIO/Shield-urdu.jpg",
+                            "item_group_name": "Fungicides",
+                            "generic_name": "Mancozeb 75% WP",
+                            "brand_name": "Shield Plus",
+                            "unit_of_measure": "1 LTR"
+                        },
+                        {
+                            "priority": 3,
+                            "product_item_code": "FG00052",
+                            "product_name": "Wilson 50 WP - 350-Gms.",
+                            "dosage": "As per product label",
+                            "application_method": "Follow product instructions",
+                            "timing": "At first symptoms or preventively",
+                            "product_image_url": "/media/product_images/4B-BIO/Wilson.jpg",
+                            "product_description_urdu_url": "/media/product_images/4B-BIO/Wilson-urdu.jpg",
+                            "item_group_name": "Fungicides",
+                            "generic_name": "Metalaxyl 8% + Mancozeb 64% WP",
+                            "brand_name": "Wilson",
+                            "unit_of_measure": "350 GMS"
                         }
                     ]
                 }
@@ -8050,42 +8133,62 @@ def recommended_products_api(request):
             product_item_codes = []
             
             if item_code:
-                # Query by specific item code
+                # Query by product code(s) - can be single or comma-separated list
+                # e.g., "FG00051" or "FG00051,FG00015,FG00041"
+                item_codes = [code.strip() for code in item_code.split(',') if code.strip()]
+                
                 cur = conn.cursor()
+                placeholders = ','.join(['?' for _ in item_codes])
                 cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
-                    'FROM "@ODID" WHERE "U_ItemCode" = ?',
-                    (item_code,)
-                )
-                row = cur.fetchone()
-                if row:
-                    disease_info = {
-                        'doc_entry': row[0],
-                        'item_code': row[1],
-                        'item_name': row[2],
-                        'disease_name': row[3]
-                    }
-                    product_item_codes = [row[1]]
-                cur.close()
-            elif disease_name:
-                # Query by disease name - can return multiple item codes for same disease
-                cur = conn.cursor()
-                cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
-                    'FROM "@ODID" WHERE UPPER("U_Disease") = ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") = ?',
-                    (disease_name.upper(), disease_name.upper(), disease_name.upper())
+                    f'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
+                    f'FROM "@ODID" WHERE "U_ItemCode" IN ({placeholders})',
+                    tuple(item_codes)
                 )
                 rows = cur.fetchall()
                 if rows:
-                    # Use first row for disease info
                     disease_info = {
                         'doc_entry': rows[0][0],
                         'item_code': rows[0][1],
                         'item_name': rows[0][2],
                         'disease_name': rows[0][3]
                     }
-                    # Collect ALL item codes for this disease
-                    product_item_codes = [row[1] for row in rows if row[1]]
+                    # Collect ALL unique product codes
+                    seen = set()
+                    product_item_codes = []
+                    for row in rows:
+                        if row[1] and row[1] not in seen:
+                            seen.add(row[1])
+                            product_item_codes.append(row[1])
+                cur.close()
+            elif disease_name:
+                # Query by disease name - can return multiple product codes for same disease
+                # Note: U_ItemCode in @ODID is the PRODUCT code, not disease code
+                # Each row maps: Product (U_ItemCode) -> Disease (U_Disease)
+                # We search U_Disease to find ALL products that treat this disease
+                cur = conn.cursor()
+                cur.execute(
+                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
+                    'FROM "@ODID" '
+                    'WHERE UPPER("U_Disease") LIKE ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") LIKE ?',
+                    (f'%{disease_name.upper()}%', disease_name.upper(), f'%{disease_name.upper()}%')
+                )
+                rows = cur.fetchall()
+                if rows:
+                    # Use first row for disease info (primary disease match)
+                    disease_info = {
+                        'doc_entry': rows[0][0],
+                        'item_code': rows[0][1],  # First product code
+                        'item_name': rows[0][2],
+                        'disease_name': rows[0][3]
+                    }
+                    # Collect ALL unique product codes (U_ItemCode) for this disease
+                    # Remove duplicates while preserving order
+                    seen = set()
+                    product_item_codes = []
+                    for row in rows:
+                        if row[1] and row[1] not in seen:
+                            seen.add(row[1])
+                            product_item_codes.append(row[1])
                 cur.close()
             else:
                 conn.close()
@@ -8204,22 +8307,53 @@ def recommended_products_api(request):
 @swagger_auto_schema(
     tags=['SAP Projects'], 
     method='get',
-    operation_description="Get list of active SAP projects (OPRJ) with optional filters",
+    operation_description="""
+    Get list of SAP projects (OPRJ) with optional filters.
+    
+    **Default Behavior**: Returns only VALID policies (where U_InvEndDate has not passed).
+    
+    **is_valid Field**: Automatically calculated based on U_InvEndDate (custom field):
+    - `true`: Project/Policy is still valid (U_InvEndDate >= current date)
+    - `false`: Project/Policy has expired (U_InvEndDate < current date)
+    
+    **Note**: Uses U_InvEndDate (not ValidTo) for validity checks.
+    
+    **Query Parameters**:
+    - `database`: Specify company database (e.g., 4B-BIO_APP, 4B-AGRI_LIVE)
+    - `active`: Filter by Active status (Y/N) - defaults to 'Y'
+    - `is_valid`: Filter by validity (true/false) - defaults to true
+    - `code`: Filter by exact project code
+    - `name`: Filter by project name (partial match)
+    
+    **Examples**:
+    - `/api/sap/policies/?database=4B-AGRI_LIVE` - Only valid & active policies (default)
+    - `/api/sap/policies/?database=4B-AGRI_LIVE&is_valid=false` - Only expired policies
+    - `/api/sap/policies/?database=4B-AGRI_LIVE&active=N` - Inactive policies (valid only)
+    """,
     manual_parameters=[
         openapi.Parameter(
             'database',
             openapi.IN_QUERY,
-            description="Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)",
+            description="Company database (e.g., 4B-BIO_APP, 4B-AGRI_LIVE, 4B-ORANG_APP)",
             type=openapi.TYPE_STRING,
             required=False
         ),
         openapi.Parameter(
             'active',
             openapi.IN_QUERY,
-            description="Filter by active status (Y/N)",
+            description="Filter by active status in SAP Projects (Y/N). Default: Y (active only)",
             type=openapi.TYPE_STRING,
             required=False,
-            enum=['Y', 'N']
+            enum=['Y', 'N'],
+            default='Y'
+        ),
+        openapi.Parameter(
+            'is_valid',
+            openapi.IN_QUERY,
+            description="Filter by policy validity based on U_InvEndDate (true/false). Default: true (only returns projects where U_InvEndDate >= current date)",
+            type=openapi.TYPE_BOOLEAN,
+            required=False,
+            default=True
         ),
         openapi.Parameter(
             'code',
@@ -8231,42 +8365,38 @@ def recommended_products_api(request):
         openapi.Parameter(
             'name',
             openapi.IN_QUERY,
-            description="Filter by project name (partial match)",
+            description="Filter by project name (partial match, case-insensitive)",
             type=openapi.TYPE_STRING,
             required=False
         ),
     ],
     responses={
         200: openapi.Response(
-            description="Projects retrieved successfully",
+            description="Projects retrieved successfully with is_valid field calculated based on U_InvEndDate",
             examples={
                 "application/json": {
                     "success": True,
-                    "count": 3,
-                    "database": "4B-ORANG_APP",
+                    "count": 2,
+                    "database": "4B-AGRI_LIVE",
                     "data": [
                         {
-                            "code": "PRJ001",
-                            "name": "Cotton Policy 2024",
-                            "valid_from": "2024-01-01",
-                            "valid_to": "2024-12-31",
+                            "code": "0123003",
+                            "name": "Current Policy 2026",
+                            "valid_from": "2026-01-01T00:00:00",
+                            "valid_to": "2027-12-31T00:00:00",
+                            "u_inv_end_date": "2027-12-31T00:00:00",
                             "active": "tYES",
-                            "is_valid": False
-                        },
-                        {
-                            "code": "PRJ002",
-                            "name": "Wheat Policy 2026",
-                            "valid_from": "2026-01-15",
-                            "valid_to": "2026-12-31",
-                            "active": "tYES",
+                            "policy": "05",
                             "is_valid": True
                         },
                         {
-                            "code": "PRJ003",
-                            "name": "Rice Policy 2027",
-                            "valid_from": "2027-01-01",
-                            "valid_to": "2027-12-31",
+                            "code": "0123004",
+                            "name": "DOSTI Policy 2026-27",
+                            "valid_from": "2026-03-01T00:00:00",
+                            "valid_to": "2027-06-30T00:00:00",
+                            "u_inv_end_date": "2027-06-30T00:00:00",
                             "active": "tYES",
+                            "policy": "03",
                             "is_valid": True
                         }
                     ]
@@ -8288,8 +8418,22 @@ def recommended_products_api(request):
 def projects_list_api(request):
     """
     Get list of SAP projects from OPRJ table.
-    Endpoint: GET /api/sap/projects/
-    Query params: ?database=4B-BIO_APP&active=Y&code=PRJ001&name=Cotton
+    Endpoint: GET /api/sap/policies/
+    
+    By default, only returns VALID policies (where U_InvEndDate >= current date).
+    Uses U_InvEndDate (custom field) for validity checks instead of ValidTo.
+    
+    Query params:
+    - database: Company database (e.g., 4B-BIO_APP, 4B-AGRI_LIVE)
+    - active: Filter by active status (Y/N) - Default: Y
+    - is_valid: Filter by validity based on U_InvEndDate (true/false) - Default: true
+    - code: Filter by project code (exact match)
+    - name: Filter by project name (partial match)
+    
+    Examples:
+    - ?database=4B-AGRI_LIVE - Only valid & active policies (default)
+    - ?database=4B-AGRI_LIVE&is_valid=false - Only expired policies
+    - ?database=4B-AGRI_LIVE&active=N&is_valid=true - Inactive but valid policies
     """
     try:
         from hdbcli import dbapi
@@ -8318,6 +8462,7 @@ def projects_list_api(request):
         active_filter = request.GET.get('active', 'Y').upper()  # Default to active only
         code_filter = request.GET.get('code', '').strip()
         name_filter = request.GET.get('name', '').strip()
+        is_valid_param = request.GET.get('is_valid', 'true').strip().lower()  # Default to valid only
         
         if not hana_host or not hana_user or not hana_password:
             return Response({
@@ -8346,6 +8491,7 @@ def projects_list_api(request):
                     P."PrjName" AS "name",
                     P."ValidFrom" AS "valid_from",
                     P."ValidTo" AS "valid_to",
+                    P."U_InvEndDate" AS "u_inv_end_date",
                     CASE
                         WHEN P."Active" = 'Y' THEN 'tYES'
                         ELSE 'tNO'
@@ -8386,33 +8532,40 @@ def projects_list_api(request):
             
             for row in cursor.fetchall():
                 row_dict = {}
-                valid_to_date = None
+                inv_end_date = None
                 
                 for i, col in enumerate(columns):
                     value = row[i]
                     
-                    # Store valid_to date for validation (convert to date object)
-                    if col == 'valid_to' and value is not None:
+                    # Store U_InvEndDate for validation (convert to date object)
+                    if col == 'u_inv_end_date' and value is not None:
                         if isinstance(value, datetime):
-                            valid_to_date = value.date()
+                            inv_end_date = value.date()
                         elif isinstance(value, date):
-                            valid_to_date = value
+                            inv_end_date = value
                     
                     # Convert dates to string for JSON response
                     if isinstance(value, (date, datetime)):
                         value = value.isoformat()
                     row_dict[col] = value
                 
-                # Add is_valid field based on valid_to date
-                if valid_to_date:
-                    row_dict['is_valid'] = current_date <= valid_to_date
+                # Add is_valid field based on U_InvEndDate
+                if inv_end_date:
+                    row_dict['is_valid'] = current_date <= inv_end_date
                 else:
-                    # If no valid_to date, consider it valid
+                    # If no U_InvEndDate, consider it valid
                     row_dict['is_valid'] = True
                 
                 results.append(row_dict)
             
             cursor.close()
+            
+            # Apply is_valid filter (default: only show valid policies)
+            if is_valid_param in ('true', '1', 'yes', 't', 'y'):
+                results = [r for r in results if r.get('is_valid', True)]
+            elif is_valid_param in ('false', '0', 'no', 'f', 'n'):
+                results = [r for r in results if not r.get('is_valid', True)]
+            # If is_valid_param is 'all' or invalid, return all results without filtering
             
             return Response({
                 'success': True,
