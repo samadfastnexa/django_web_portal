@@ -352,6 +352,14 @@ class CartViewSet(viewsets.ViewSet):
                 status=status.HTTP_200_OK
             )
         else:
+            # Clean up any inactive items for this product to avoid unique constraint violation
+            # (MySQL doesn't support conditional unique constraints)
+            CartItem.objects.filter(
+                cart=cart,
+                product_item_code=serializer.validated_data['product_item_code'],
+                is_active=False
+            ).delete()
+            
             # Create new cart item
             cart_item = CartItem.objects.create(
                 cart=cart,
@@ -471,6 +479,14 @@ class CartViewSet(viewsets.ViewSet):
         cart = self.get_or_create_cart(user)
         cart_item = get_object_or_404(CartItem, id=item_id, cart=cart, is_active=True)
         
+        # Clean up any other inactive items for this product first (MySQL constraint workaround)
+        CartItem.objects.filter(
+            cart=cart,
+            product_item_code=cart_item.product_item_code,
+            is_active=False
+        ).exclude(id=cart_item.id).delete()
+        
+        # Soft delete - set inactive but keep record
         cart_item.is_active = False
         cart_item.save()
         
@@ -528,9 +544,11 @@ class CartViewSet(viewsets.ViewSet):
             return error_response
             
         cart = get_object_or_404(Cart, id=cart_id, user_id=user_id)
-            
-        # Soft delete items (set is_active to False)
+        
+        # Count active items before clearing
         cleared_items_count = cart.items.filter(is_active=True).count()
+        
+        # Soft delete - mark all active items as inactive
         cart.items.filter(is_active=True).update(is_active=False)
         
         return Response({
@@ -740,8 +758,8 @@ class CartViewSet(viewsets.ViewSet):
         order.total_amount = total_amount
         order.save()
         
-        # Clear cart
-        cart_items.update(is_active=False)
+        # Clear cart - soft delete (mark items inactive)
+        cart.items.filter(is_active=True).update(is_active=False)
         
         # Prepare response with normalized data
         order_serializer = OrderSerializer(order)
@@ -940,8 +958,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.total_amount = total_amount
         order.save()
         
-        # Clear cart
-        cart_items.update(is_active=False)
+        # Clear cart - soft delete (mark items inactive)
+        cart.items.filter(is_active=True).update(is_active=False)
         
         # Return created order
         order_serializer = OrderSerializer(order)

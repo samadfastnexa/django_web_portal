@@ -216,6 +216,28 @@ class User(AbstractBaseUser, PermissionsMixin):
             ('view_organogram', 'Can view organization hierarchy/organogram'),
         ]
 
+    def has_perm(self, perm, obj=None):
+        """
+        Override has_perm to check role permissions in addition to user/group permissions.
+        This ensures permissions assigned to a user's role are properly checked.
+        """
+        # Superusers have all permissions
+        if self.is_superuser:
+            return True
+        
+        # Check user's direct permissions and group permissions (default behavior)
+        if super().has_perm(perm, obj):
+            return True
+        
+        # Check role permissions
+        if self.role and self.role.permissions.filter(
+            codename=perm.split('.')[-1],
+            content_type__app_label=perm.split('.')[0] if '.' in perm else ''
+        ).exists():
+            return True
+        
+        return False
+
     def __str__(self):
         return self.email
 
