@@ -121,6 +121,11 @@ class DashboardOverviewView(APIView):
         
         # emp_id parameter overrides user_id if both are provided
         
+        # CEO SPECIAL CASE: Employee code '00' means show OVERALL data for entire organization
+        # When emp_id is '00', treat it as if no employee filter was specified
+        if emp_id_param and str(emp_id_param).strip() == '00':
+            emp_id_param = None  # Show overall data by removing employee filter
+        
         # Default collection window: last month when no dates provided
         if not start_date_param and not end_date_param:
             from datetime import date
@@ -143,7 +148,7 @@ class DashboardOverviewView(APIView):
             end_date_param = f"{last_month_year}-{last_month:02d}-{last_day}"
         
         # Determine if we should show overall data or specific employee data
-        # If no emp_id provided, show overall data by ignoring employee filter
+        # If no emp_id provided (or emp_id is '00' for CEO), show overall data by ignoring employee filter
         show_overall = not emp_id_param
         
         # Fetch aggregated totals directly from SAP
@@ -191,8 +196,12 @@ class DashboardOverviewView(APIView):
         pending_sales = self._get_pending_sales_orders(user) or 0
 
         # Determine employee info for response
-        emp_display = int(emp_id_param) if emp_id_param and emp_id_param.isdigit() else 0
-        territory_display = 'All Territories' if show_overall else 'Employee Territory'
+        # For CEO (employee code '00'), display as '00' in response but show overall data
+        if employee_code_from_user == '00':
+            emp_display = 0  # Display as 0 for CEO (overall view)
+        else:
+            emp_display = int(emp_id_param) if emp_id_param and emp_id_param.isdigit() else 0
+        territory_display = 'All Territories / Organization Wide' if show_overall else 'Employee Territory'
         
         # Build response to match requested structure
         response_data = {
