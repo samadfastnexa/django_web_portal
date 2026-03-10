@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.validators import RegexValidator
-from .models import Role
+from .models import Role, AccountDeletionRequest
 from .models import User, SalesStaffProfile
 from FieldAdvisoryService.models import Region, Zone, Territory,Company
 from FieldAdvisoryService.serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer
@@ -637,4 +637,56 @@ class PermissionSerializer(serializers.ModelSerializer):
         model = Permission
         fields = ['id', 'name', 'codename', 'content_type']
         ref_name = 'PermissionSerializerForListing'  # ✅ Add this line
+
+
+# ----------------------
+# Account Deletion Request Serializers
+# ----------------------
+class AccountDeletionRequestSerializer(serializers.ModelSerializer):
+    """Serializer for creating account deactivation requests"""
+    user_id = serializers.IntegerField(write_only=True, required=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = AccountDeletionRequest
+        fields = [
+            'id', 'user', 'user_id', 'user_email', 'user_name', 'request_type', 
+            'reason', 'status', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'status', 'created_at', 'updated_at']
+    
+    def get_user_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip()
+    
+    def create(self, validated_data):
+        # Get user_id from validated data
+        user_id = validated_data.pop('user_id')
         
+        # Get the user object (validation already done in view)
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.get(id=user_id)
+        
+        validated_data['user'] = user
+        return super().create(validated_data)
+
+
+
+class AccountDeletionRequestListSerializer(serializers.ModelSerializer):
+    """Serializer for listing account deactivation requests (admin view)"""
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    reviewed_by_email = serializers.EmailField(source='reviewed_by.email', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = AccountDeletionRequest
+        fields = [
+            'id', 'user', 'user_email', 'user_name', 'request_type', 
+            'reason', 'status', 'created_at', 'updated_at',
+            'reviewed_by', 'reviewed_by_email', 'reviewed_at', 'admin_notes'
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+    
+    def get_user_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip()

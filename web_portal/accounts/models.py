@@ -514,3 +514,75 @@ class PasswordResetOTP(models.Model):
         return ''.join([str(random.randint(0, 9)) for _ in range(6)])
 
 
+class AccountDeletionRequest(models.Model):
+    """
+    Model to store account deactivation requests from users.
+    Allows users to request account deactivation via mobile app.
+    Admin can review and approve/reject requests.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('completed', 'Completed'),
+    ]
+    
+    REQUEST_TYPE_CHOICES = [
+        ('deactivate', 'Deactivate Account'),
+    ]
+    
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='deletion_requests',
+        help_text="User who requested account deactivation"
+    )
+    request_type = models.CharField(
+        max_length=20,
+        choices=REQUEST_TYPE_CHOICES,
+        default='deactivate',
+        help_text="Type of request: deactivate account"
+    )
+    reason = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Optional reason provided by user"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending',
+        help_text="Current status of the request"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_deletion_requests',
+        help_text="Admin who reviewed the request"
+    )
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the request was reviewed"
+    )
+    admin_notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Internal notes from admin"
+    )
+    
+    class Meta:
+        db_table = 'accounts_deletion_request'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['status', 'created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.request_type.title()} request by {self.user.email} - {self.status}"
+
