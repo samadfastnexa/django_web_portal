@@ -6,7 +6,7 @@ from django.urls import path
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
-from .models import User, Role, SalesStaffProfile, DesignationModel
+from .models import User, Role, SalesStaffProfile, DesignationModel, AccountDeletionRequest
 from web_portal.admin import admin_site
 
 # Import Dealer model for the inline
@@ -654,3 +654,104 @@ class CustomAdminSite(admin.AdminSite):
 
 # Add organogram link to admin index (optional)
 # This will be accessible via /admin/organogram/
+
+
+# ==================== ACCOUNT DELETION REQUEST ADMIN ====================
+@admin.register(AccountDeletionRequest, site=admin_site)
+class AccountDeletionRequestAdmin(admin.ModelAdmin):
+    """Admin interface for managing account deactivation requests"""
+    list_display = [
+        'id', 'user_email', 'user_name', 'request_type', 'status', 
+        'created_at', 'reviewed_by_email', 'reviewed_at'
+    ]
+    list_filter = ['status', 'request_type', 'created_at', 'reviewed_at']
+    search_fields = ['user__email', 'user__first_name', 'user__last_name', 'reason', 'admin_notes']
+    ordering = ['-created_at']
+    readonly_fields = ['user', 'created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Request Information', {
+            'fields': ('user', 'request_type', 'reason', 'status', 'created_at', 'updated_at')
+        }),
+        ('Admin Review', {
+            'fields': ('reviewed_by', 'reviewed_at', 'admin_notes'),
+            'description': 'Admin review details'
+        }),
+    )
+    
+    def user_email(self, obj):
+        return obj.user.email
+    user_email.short_description = 'User Email'
+    user_email.admin_order_field = 'user__email'
+    
+    def user_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip()
+    user_name.short_description = 'User Name'
+    
+    def reviewed_by_email(self, obj):
+        return obj.reviewed_by.email if obj.reviewed_by else '—'
+    reviewed_by_email.short_description = 'Reviewed By'
+    reviewed_by_email.admin_order_field = 'reviewed_by__email'
+    
+    def save_model(self, request, obj, form, change):
+        """Auto-set reviewed_by and reviewed_at when admin updates status"""
+        if change:  # Only on update, not create
+            # If status changed from pending to approved/rejected/completed
+            original = AccountDeletionRequest.objects.get(pk=obj.pk)
+            if original.status == 'pending' and obj.status != 'pending':
+                obj.reviewed_by = request.user
+                from django.utils import timezone
+                obj.reviewed_at = timezone.now()
+                
+                # If approved, deactivate the user
+                if obj.status == 'approved':
+                    obj.user.is_active = False
+                    obj.user.save()
+                    messages.success(
+                        request, 
+                        f'✅ User {obj.user.email} has been deactivated. Request marked as completed.'
+                    )
+                    obj.status = 'completed'
+        
+        super().save_model(request, obj, form, change)
+    
+    actions = ['approve_requests', 'reject_requests']
+    
+    def approve_requests(self, request, queryset):
+        """Bulk approve selected requests"""
+        from django.utils import timezone
+        pending_requests = queryset.filter(status='pending')
+        count = 0
+        
+        for req in pending_requests:
+            req.status = 'approved'
+            req.reviewed_by = request.user
+            req.reviewed_at = timezone.now()
+            
+            # Deactivate user
+            req.user.is_active = False
+            req.user.save()
+            req.status = 'completed'
+            
+            req.save()
+            count += 1
+        
+        self.message_user(request, f'✅ {count} request(s) approved and users deactivated.', messages.SUCCESS)
+    approve_requests.short_description = '✅ Approve selected requests and deactivate users'
+    
+    def reject_requests(self, request, queryset):
+        """Bulk reject selected requests"""
+        from django.utils import timezone
+        pending_requests = queryset.filter(status='pending')
+        count = 0
+        
+        for req in pending_requests:
+            req.status = 'rejected'
+            req.reviewed_by = request.user
+            req.reviewed_at = timezone.now()
+            req.save()
+            count += 1
+        
+        self.message_user(request, f'❌ {count} request(s) rejected.', messages.SUCCESS)
+    reject_requests.short_description = '❌ Reject selected requests'
+

@@ -65,12 +65,13 @@ class DashboardOverviewView(APIView):
         **Data Scope**:
         - If `user_id` or `emp_id` is provided: Returns data for that specific employee
         - If neither is provided: Returns overall aggregated data for all employees
+        - **CEO Special Case**: If employee_code='00', shows organization-wide data (all sales and collections)
         
         **Default Date Range**: Last month (automatically calculated)
         """,
         manual_parameters=[
-            openapi.Parameter('user_id', openapi.IN_QUERY, description="Portal User ID - Automatically fetches employee_code from user's sales_profile. If not provided, shows overall data. Example: user_id=123", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('emp_id', openapi.IN_QUERY, description="SAP Employee ID - Direct employee ID, overrides user_id if both provided. If not provided, shows overall data. Example: emp_id=456", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('user_id', openapi.IN_QUERY, description="Portal User ID - Automatically fetches employee_code from user's sales_profile. If not provided, shows overall data. CEO users (employee_code='00') see organization-wide data. Example: user_id=123", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('emp_id', openapi.IN_QUERY, description="SAP Employee ID - Direct employee ID, overrides user_id if both provided. If not provided, shows overall data. Use emp_id=00 for CEO organization-wide view. Example: emp_id=456", type=openapi.TYPE_INTEGER, required=False),
             openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date (YYYY-MM-DD). If not provided, defaults to first day of last month. Example: 2026-01-01", type=openapi.TYPE_STRING, required=False),
             openapi.Parameter('end_date', openapi.IN_QUERY, description="End date (YYYY-MM-DD). If not provided, defaults to last day of last month. Example: 2026-01-31", type=openapi.TYPE_STRING, required=False),
             openapi.Parameter('company', openapi.IN_QUERY, description="Company key (e.g., 4B-BIO, 4B-AGRI_LIVE)", type=openapi.TYPE_STRING, required=False),
@@ -104,6 +105,7 @@ class DashboardOverviewView(APIView):
         # Handle user_id parameter to fetch employee_code
         emp_val = None
         employee_code_from_user = None
+        employee_code = None  # Track original employee_code for CEO check
         
         # If user_id is provided, fetch employee_code from that user's sales_profile
         if user_id_param:
@@ -113,6 +115,7 @@ class DashboardOverviewView(APIView):
                 target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
                 if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
                     employee_code_from_user = target_user.sales_profile.employee_code
+                    employee_code = employee_code_from_user  # Track for CEO check
                     # Use employee_code as emp_id_param
                     if employee_code_from_user and not emp_id_param:
                         emp_id_param = str(employee_code_from_user)
@@ -120,6 +123,9 @@ class DashboardOverviewView(APIView):
                 pass
         
         # emp_id parameter overrides user_id if both are provided
+        # Also track the employee_code string value
+        if emp_id_param and not employee_code:
+            employee_code = emp_id_param
         
         # CEO SPECIAL CASE: Employee code '00' means show OVERALL data for entire organization
         # When emp_id is '00', treat it as if no employee filter was specified
@@ -197,7 +203,7 @@ class DashboardOverviewView(APIView):
 
         # Determine employee info for response
         # For CEO (employee code '00'), display as '00' in response but show overall data
-        if employee_code_from_user == '00':
+        if employee_code == '00':
             emp_display = 0  # Display as 0 for CEO (overall view)
         else:
             emp_display = int(emp_id_param) if emp_id_param and emp_id_param.isdigit() else 0
