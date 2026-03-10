@@ -24,7 +24,7 @@ from .serializers import (
 from .models import SalesStaffProfile
 from rest_framework.permissions import IsAuthenticated
 from .permissions import HasRolePermission
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, parser_classes
 from .token_serializers import MyTokenObtainPairSerializer
 from .permissions import IsOwnerOrAdmin
 from .filters import UserFilter
@@ -1397,3 +1397,251 @@ def reset_password(request):
         'success': True,
         'message': 'Password has been reset successfully. You can now login with your new password.'
     }, status=status.HTTP_200_OK)
+
+
+# ==================== Account Deletion Request ====================
+
+@swagger_auto_schema(
+    method='post',
+    tags=['Account Management'],
+    operation_summary="Request Account Deactivation",
+    operation_description="""
+    **Submit a request to deactivate YOUR account.**
+    
+    **Important:** The request is automatically created for the authenticated user (from Bearer token).
+    You can only request deactivation of your own account, not other users' accounts.
+    
+    Users can request to:
+    - **Deactivate Account**: Temporarily disable account access
+    
+    **Process:**
+    1. User submits request with optional reason
+    2. Request is sent to admin for review (identifies user from Bearer token)
+    3. Admin can approve/reject the request
+    4. User is notified of the decision
+    
+    **Note:** This only creates a request. Admin approval is required before any action is taken.
+    
+    **Authentication:** Required (Bearer token) - automatically identifies which user is requesting
+    
+    **Example Request:**
+    ```bash
+    curl -X POST http://yourapi.com/api/accounts/account/deletion-request/ \\
+      -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
+      -F "user_id=123" \\
+      -F "request_type=deactivate" \\
+      -F "reason=Taking a break from the app"
+    ```
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            'user_id',
+            openapi.IN_FORM,
+            description="User ID whose account to deactivate. Must match authenticated user's ID (security check).",
+            type=openapi.TYPE_INTEGER,
+            required=True
+        ),
+        openapi.Parameter(
+            'request_type',
+            openapi.IN_FORM,
+            description="Type of request: 'deactivate' for account deactivation",
+            type=openapi.TYPE_STRING,
+            required=True,
+            enum=['deactivate']
+        ),
+        openapi.Parameter(
+            'reason',
+            openapi.IN_FORM,
+            description="Optional reason for the request",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+    ],
+    responses={
+        201: openapi.Response(
+            description="Request created successfully",
+            examples={
+                'application/json': {
+                    'success': True,
+                    'message': 'Account deletion request submitted successfully. An admin will review your request.',
+                    'data': {
+                        'id': 1,
+                        'user': 123,
+                        'user_email': 'user@example.com',
+                        'user_name': 'John Doe',
+                        'request_type': 'deactivate',
+                        'reason': 'Taking a break from the app',
+                        'status': 'pending',
+                        'created_at': '2026-03-10T10:30:00Z',
+                        'updated_at': '2026-03-10T10:30:00Z'
+                    }
+                }
+            }
+        ),
+        400: openapi.Response(
+            description="Bad request - invalid data or pending request exists",
+            examples={
+                'application/json': {
+                    'success': False,
+                    'error': 'You already have a pending request. Please wait for admin review.'
+                }
+            }
+        ),
+        401: openapi.Response(description="Unauthorized - authentication required"),
+        403: openapi.Response(
+            description="Forbidden - user_id does not match authenticated user",
+            examples={
+                'application/json': {
+                    'success': False,
+                    'error': 'You can only request deletion of your own account. user_id must match your authenticated user ID.'
+                }
+            }
+        )
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def request_account_deletion(request):
+    """
+    API endpoint for users to request account deactivation.
+    Requires authentication. Creates a request that admin can review.
+    """
+    from .models import AccountDeletionRequest
+    from .serializers import AccountDeletionRequestSerializer
+    
+    authenticated_user = request.user
+    
+    # Get user_id from request body
+    user_id = request.data.get('user_id')
+    
+    # Validate user_id is provided
+    if not user_id:
+        return Response({
+            'success': False,
+            'error': 'user_id is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Security check: user_id must match authenticated user
+    # (Users can only request deletion of their own account)
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        return Response({
+            'success': False,
+            'error': 'Invalid user_id format'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if user_id != authenticated_user.id:
+        return Response({
+            'success': False,
+            'error': 'You can only request deactivation of your own account. user_id must match your authenticated user ID.'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    # Verify user exists
+    try:
+        target_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': f'User with ID {user_id} not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # Check if user already has a pending request
+    existing_pending = AccountDeletionRequest.objects.filter(
+        user=target_user,
+        status='pending'
+    ).exists()
+    
+    if existing_pending:
+        return Response({
+            'success': False,
+            'error': 'You already have a pending request. Please wait for admin review.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Create the request
+    serializer = AccountDeletionRequestSerializer(
+        data=request.data,
+        context={'request': request}
+    )
+    
+    if serializer.is_valid():
+        deletion_request = serializer.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Account deactivation request submitted successfully. An admin will review your request.',
+            'data': serializer.data
+        }, status=status.HTTP_201_CREATED)
+    
+    return Response({
+        'success': False,
+        'error': 'Invalid data',
+        'details': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='get',
+    tags=['Account Management'],
+    operation_summary="Get My Account Deactivation Requests",
+    operation_description="""
+    **Get all account deactivation requests submitted by the authenticated user.**
+    
+    Returns a list of all requests (pending, approved, rejected, completed) submitted by the current user.
+    
+    **Authentication:** Required (Bearer token)
+    """,
+    responses={
+        200: openapi.Response(
+            description="List of user's account deactivation requests",
+            examples={
+                'application/json': {
+                    'success': True,
+                    'count': 2,
+                    'data': [
+                        {
+                            'id': 2,
+                            'request_type': 'deactivate',
+                            'reason': 'Taking a break',
+                            'status': 'pending',
+                            'created_at': '2026-03-10T10:30:00Z',
+                            'updated_at': '2026-03-10T10:30:00Z'
+                        },
+                        {
+                            'id': 1,
+                            'request_type': 'delete',
+                            'reason': 'No longer need the account',
+                            'status': 'rejected',
+                            'created_at': '2026-03-05T08:15:00Z',
+                            'updated_at': '2026-03-06T09:20:00Z'
+                        }
+                    ]
+                }
+            }
+        ),
+        401: openapi.Response(description="Unauthorized - authentication required")
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_account_deletion_requests(request):
+    """
+    API endpoint to retrieve all account deletion requests for the authenticated user.
+    """
+    from .models import AccountDeletionRequest
+    from .serializers import AccountDeletionRequestSerializer
+    
+    user = request.user
+    
+    # Get all requests for this user
+    requests = AccountDeletionRequest.objects.filter(user=user).order_by('-created_at')
+    
+    serializer = AccountDeletionRequestSerializer(requests, many=True)
+    
+    return Response({
+        'success': True,
+        'count': requests.count(),
+        'data': serializer.data
+    }, status=status.HTTP_200_OK)
+

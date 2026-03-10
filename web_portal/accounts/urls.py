@@ -47,6 +47,8 @@ from .views import (
     request_password_reset_otp,
     verify_password_reset_otp,
     reset_password,
+    request_account_deletion,
+    my_account_deletion_requests,
 )
 from .UserViewSet import UserViewSet
 
@@ -69,6 +71,12 @@ urlpatterns = [
     path('forgot-password/', request_password_reset_otp, name='forgot_password'),
     path('forgot-password/verify/', verify_password_reset_otp, name='verify_password_otp'),
     path('forgot-password/reset/', reset_password, name='reset_password'),
+
+    # ----------------------
+    # Account Deletion/Deactivation Requests
+    # ----------------------
+    path('account/deletion-request/', request_account_deletion, name='request_account_deletion'),
+    path('account/deletion-requests/my/', my_account_deletion_requests, name='my_deletion_requests'),
 
     # ----------------------
     # Admin-only controls
