@@ -598,7 +598,7 @@ class SAPClient:
                     return self._policies_cache
         
         # Fetch fresh from SAP
-        projects = self.get_projects(select="Code,Name,ValidFrom,ValidTo,Active,U_pol,U_InvEndDate")
+        projects = self.get_projects(select="Code,Name,ValidFrom,ValidTo,Active,U_pol,U_InvEndDate,U_Ct")
         policies = []
         from datetime import datetime, date
         current_date = date.today()
@@ -611,12 +611,14 @@ class SAPClient:
             if isinstance(policy_val, str) and not policy_val.strip():
                 continue
             
-            # Calculate is_valid based on U_InvEndDate (not ValidTo)
+            # Calculate is_valid based on U_InvEndDate OR U_Ct (not ValidTo)
             inv_end_date_value = p.get('U_InvEndDate')
+            u_ct_value = p.get('U_Ct')
             is_valid = True  # Default to valid
             
+            # Check U_InvEndDate
+            is_valid_by_inv_end = False
             if inv_end_date_value:
-                # Parse U_InvEndDate
                 try:
                     if isinstance(inv_end_date_value, datetime):
                         inv_end_date = inv_end_date_value.date()
@@ -628,12 +630,37 @@ class SAPClient:
                     else:
                         inv_end_date = None
                     
-                    # If U_InvEndDate has passed (is before current date), policy is invalid
                     if inv_end_date:
-                        is_valid = inv_end_date >= current_date
+                        is_valid_by_inv_end = inv_end_date >= current_date
                 except Exception:
-                    # If parsing fails, default to valid
-                    is_valid = True
+                    pass
+            
+            # Check U_Ct
+            is_valid_by_ct = False
+            if u_ct_value:
+                try:
+                    if isinstance(u_ct_value, datetime):
+                        u_ct_date = u_ct_value.date()
+                    elif isinstance(u_ct_value, date):
+                        u_ct_date = u_ct_value
+                    elif isinstance(u_ct_value, str):
+                        # Try parsing ISO format
+                        u_ct_date = datetime.fromisoformat(u_ct_value.replace('Z', '+00:00')).date()
+                    else:
+                        u_ct_date = None
+                    
+                    if u_ct_date:
+                        is_valid_by_ct = u_ct_date >= current_date
+                except Exception:
+                    pass
+            
+            # Policy is valid if either U_InvEndDate or U_Ct is valid
+            if is_valid_by_inv_end or is_valid_by_ct:
+                is_valid = True
+            elif inv_end_date_value or u_ct_value:
+                # If at least one date exists but neither is valid
+                is_valid = False
+            # else: remains True (default when no dates are set)
             
             policies.append({
                 'code': p.get('Code'),
@@ -641,6 +668,7 @@ class SAPClient:
                 'valid_from': p.get('ValidFrom'),
                 'valid_to': p.get('ValidTo'),
                 'u_inv_end_date': p.get('U_InvEndDate'),
+                'u_ct': p.get('U_Ct'),
                 'active': p.get('Active'),
                 'policy': policy_val,
                 'is_valid': is_valid

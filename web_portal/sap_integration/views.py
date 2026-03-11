@@ -2940,13 +2940,13 @@ def get_business_partner_detail(request, card_code):
     operation_description="""
     List all policies from SAP Projects (UDF U_pol).
     
-    **Default Behavior**: Returns only VALID policies (where U_InvEndDate has not passed).
+    **Default Behavior**: Returns only VALID policies (where U_InvEndDate or U_Ct has not passed).
     
-    **is_valid Field**: Automatically calculated based on U_InvEndDate (custom field):
-    - `true`: Policy is still valid (U_InvEndDate >= current date)
-    - `false`: Policy has expired (U_InvEndDate < current date)
+    **is_valid Field**: Automatically calculated based on U_InvEndDate and U_Ct (custom fields):
+    - `true`: Policy is still valid (U_InvEndDate >= current date OR U_Ct >= current date)
+    - `false`: Policy has expired (both U_InvEndDate and U_Ct < current date)
     
-    **Note**: Uses U_InvEndDate (not ValidTo) for validity checks.
+    **Note**: Uses U_InvEndDate or U_Ct (not ValidTo) for validity checks.
     
     **Query Parameters**:
     - `database` or `company`: Specify company database (e.g., 4B-BIO_APP, 4B-AGRI_LIVE)
@@ -2983,7 +2983,7 @@ def get_business_partner_detail(request, card_code):
         openapi.Parameter(
             'is_valid',
             openapi.IN_QUERY,
-            description="Filter by policy validity based on U_InvEndDate. Default: true (only returns policies where U_InvEndDate >= current date). Set to false to get expired policies only.",
+            description="Filter by policy validity based on U_InvEndDate or U_Ct. Default: true (only returns policies where U_InvEndDate >= current date OR U_Ct >= current date). Set to false to get expired policies only.",
             type=openapi.TYPE_BOOLEAN,
             required=False,
             default=True
@@ -3004,6 +3004,7 @@ def get_business_partner_detail(request, card_code):
                             "valid_from": "2026-01-01T00:00:00",
                             "valid_to": "2027-12-31T00:00:00",
                             "u_inv_end_date": "2027-12-31T00:00:00",
+                            "u_ct": "2027-12-31T00:00:00",
                             "active": "tYES",
                             "policy": "05",
                             "is_valid": True
@@ -3014,6 +3015,7 @@ def get_business_partner_detail(request, card_code):
                             "valid_from": "2023-01-01T00:00:00",
                             "valid_to": "2025-12-31T00:00:00",
                             "u_inv_end_date": "2025-12-31T00:00:00",
+                            "u_ct": "2025-12-31T00:00:00",
                             "active": "tYES",
                             "policy": "03",
                             "is_valid": False
@@ -3044,9 +3046,9 @@ def list_policies(request):
     - company: Company database (e.g., 4B-BIO_APP, 4B-ORANG_APP)
     - database: Alias for company parameter (backward compatibility)
     - active: Filter by active status (true/false)
-    - is_valid: Filter by validity based on U_InvEndDate (true/false). Default: true
+    - is_valid: Filter by validity based on U_InvEndDate or U_Ct (true/false). Default: true
     
-    By default, only returns policies where is_valid=true (not expired based on U_InvEndDate).
+    By default, only returns policies where is_valid=true (not expired based on U_InvEndDate or U_Ct).
     To see all policies including expired: ?is_valid=false or pass no filter
     """
     import logging
@@ -8319,13 +8321,15 @@ def recommended_products_api(request):
     operation_description="""
     Get list of SAP projects (OPRJ) with optional filters.
     
-    **Default Behavior**: Returns only VALID policies (where U_InvEndDate has not passed).
+    **Default Behavior**: Returns only VALID policies where at least one date field is set and not expired.
     
-    **is_valid Field**: Automatically calculated based on U_InvEndDate (custom field):
-    - `true`: Project/Policy is still valid (U_InvEndDate >= current date)
-    - `false`: Project/Policy has expired (U_InvEndDate < current date)
+    **Validity Logic**: Project is valid if:
+    - `U_InvEndDate` IS NOT NULL AND `U_InvEndDate` >= current date, **OR**
+    - `U_Ct` IS NOT NULL AND `U_Ct` >= current date
     
-    **Note**: Uses U_InvEndDate (not ValidTo) for validity checks.
+    **Note**: 
+    - Projects where both `U_InvEndDate` and `U_Ct` are NULL are **excluded by default**
+    - Uses `U_InvEndDate` or `U_Ct` (not `ValidTo`) for validity checks
     
     **Query Parameters**:
     - `database`: Specify company database (e.g., 4B-BIO_APP, 4B-AGRI_LIVE)
@@ -8359,7 +8363,7 @@ def recommended_products_api(request):
         openapi.Parameter(
             'is_valid',
             openapi.IN_QUERY,
-            description="Filter by policy validity based on U_InvEndDate (true/false). Default: true (only returns projects where U_InvEndDate >= current date)",
+            description="Filter by policy validity. Default: true (returns projects where U_InvEndDate >= current date OR U_Ct >= current date). Set to false to get expired policies. Projects with both dates NULL are excluded when is_valid=true.",
             type=openapi.TYPE_BOOLEAN,
             required=False,
             default=True
@@ -8381,7 +8385,7 @@ def recommended_products_api(request):
     ],
     responses={
         200: openapi.Response(
-            description="Projects retrieved successfully with is_valid field calculated based on U_InvEndDate",
+            description="Projects retrieved successfully with is_valid field calculated based on U_InvEndDate and U_Ct",
             examples={
                 "application/json": {
                     "success": True,
@@ -8394,6 +8398,7 @@ def recommended_products_api(request):
                             "valid_from": "2026-01-01T00:00:00",
                             "valid_to": "2027-12-31T00:00:00",
                             "u_inv_end_date": "2027-12-31T00:00:00",
+                            "u_ct": "2027-12-31T00:00:00",
                             "active": "tYES",
                             "policy": "05",
                             "is_valid": True
@@ -8404,6 +8409,7 @@ def recommended_products_api(request):
                             "valid_from": "2026-03-01T00:00:00",
                             "valid_to": "2027-06-30T00:00:00",
                             "u_inv_end_date": "2027-06-30T00:00:00",
+                            "u_ct": "2027-06-30T00:00:00",
                             "active": "tYES",
                             "policy": "03",
                             "is_valid": True
@@ -8429,13 +8435,16 @@ def projects_list_api(request):
     Get list of SAP projects from OPRJ table.
     Endpoint: GET /api/sap/policies/
     
-    By default, only returns VALID policies (where U_InvEndDate >= current date).
-    Uses U_InvEndDate (custom field) for validity checks instead of ValidTo.
+    By default, returns VALID policies where:
+    - (U_InvEndDate IS NOT NULL AND U_InvEndDate >= current date) OR
+    - (U_Ct IS NOT NULL AND U_Ct >= current date)
+    
+    Projects with both dates NULL are excluded by default.
     
     Query params:
     - database: Company database (e.g., 4B-BIO_APP, 4B-AGRI_LIVE)
     - active: Filter by active status (Y/N) - Default: Y
-    - is_valid: Filter by validity based on U_InvEndDate (true/false) - Default: true
+    - is_valid: Filter by validity (true/false) - Default: true
     - code: Filter by project code (exact match)
     - name: Filter by project name (partial match)
     
@@ -8501,6 +8510,7 @@ def projects_list_api(request):
                     P."ValidFrom" AS "valid_from",
                     P."ValidTo" AS "valid_to",
                     P."U_InvEndDate" AS "u_inv_end_date",
+                    P."U_Ct" AS "u_ct",
                     CASE
                         WHEN P."Active" = 'Y' THEN 'tYES'
                         ELSE 'tNO'
@@ -8527,6 +8537,28 @@ def projects_list_api(request):
                 base_query += ' AND UPPER(P."PrjName") LIKE ?'
                 params.append(f'%{name_filter.upper()}%')
             
+            # Apply validity filter at SQL level (default: only valid policies)
+            # Valid if: (U_InvEndDate IS NOT NULL AND >= CURRENT_DATE) OR (U_Ct IS NOT NULL AND >= CURRENT_DATE)
+            if is_valid_param in ('true', '1', 'yes', 't', 'y'):
+                base_query += '''
+                    AND (
+                        (P."U_InvEndDate" IS NOT NULL AND P."U_InvEndDate" >= CURRENT_DATE)
+                        OR (P."U_Ct" IS NOT NULL AND P."U_Ct" >= CURRENT_DATE)
+                    )
+                '''
+            elif is_valid_param in ('false', '0', 'no', 'f', 'n'):
+                # Only expired: both dates exist and both are in the past
+                base_query += '''
+                    AND (
+                        (P."U_InvEndDate" IS NOT NULL OR P."U_Ct" IS NOT NULL)
+                        AND (
+                            (P."U_InvEndDate" IS NULL OR P."U_InvEndDate" < CURRENT_DATE)
+                            AND (P."U_Ct" IS NULL OR P."U_Ct" < CURRENT_DATE)
+                        )
+                    )
+                '''
+            # If is_valid_param is 'all' or other value, don't apply validity filter
+            
             base_query += ' ORDER BY P."PrjCode"'
             
             # logger.info(f"[PROJECTS_LIST] Executing query with params: {params}")
@@ -8542,6 +8574,7 @@ def projects_list_api(request):
             for row in cursor.fetchall():
                 row_dict = {}
                 inv_end_date = None
+                u_ct_date = None
                 
                 for i, col in enumerate(columns):
                     value = row[i]
@@ -8553,28 +8586,37 @@ def projects_list_api(request):
                         elif isinstance(value, date):
                             inv_end_date = value
                     
+                    # Store U_Ct for validation (convert to date object)
+                    if col == 'u_ct' and value is not None:
+                        if isinstance(value, datetime):
+                            u_ct_date = value.date()
+                        elif isinstance(value, date):
+                            u_ct_date = value
+                    
                     # Convert dates to string for JSON response
                     if isinstance(value, (date, datetime)):
                         value = value.isoformat()
                     row_dict[col] = value
                 
-                # Add is_valid field based on U_InvEndDate
-                if inv_end_date:
-                    row_dict['is_valid'] = current_date <= inv_end_date
+                # Add is_valid field based on U_InvEndDate OR U_Ct
+                # Valid if either U_InvEndDate >= current_date OR U_Ct >= current_date
+                is_valid_by_inv_end = inv_end_date and current_date <= inv_end_date
+                is_valid_by_ct = u_ct_date and current_date <= u_ct_date
+                
+                if is_valid_by_inv_end or is_valid_by_ct:
+                    row_dict['is_valid'] = True
+                elif inv_end_date or u_ct_date:
+                    # If at least one date exists but neither is valid
+                    row_dict['is_valid'] = False
                 else:
-                    # If no U_InvEndDate, consider it valid
+                    # If no dates are set, consider it valid
                     row_dict['is_valid'] = True
                 
                 results.append(row_dict)
             
             cursor.close()
             
-            # Apply is_valid filter (default: only show valid policies)
-            if is_valid_param in ('true', '1', 'yes', 't', 'y'):
-                results = [r for r in results if r.get('is_valid', True)]
-            elif is_valid_param in ('false', '0', 'no', 'f', 'n'):
-                results = [r for r in results if not r.get('is_valid', True)]
-            # If is_valid_param is 'all' or invalid, return all results without filtering
+            # is_valid filtering is now done at SQL level, no need for post-processing
             
             return Response({
                 'success': True,
