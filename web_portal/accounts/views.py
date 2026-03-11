@@ -1433,30 +1433,25 @@ def reset_password(request):
       -F "reason=Taking a break from the app"
     ```
     """,
-    manual_parameters=[
-        openapi.Parameter(
-            'user_id',
-            openapi.IN_FORM,
-            description="User ID whose account to deactivate. Must match authenticated user's ID (security check).",
-            type=openapi.TYPE_INTEGER,
-            required=True
-        ),
-        openapi.Parameter(
-            'request_type',
-            openapi.IN_FORM,
-            description="Type of request: 'deactivate' for account deactivation",
-            type=openapi.TYPE_STRING,
-            required=True,
-            enum=['deactivate']
-        ),
-        openapi.Parameter(
-            'reason',
-            openapi.IN_FORM,
-            description="Optional reason for the request",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-    ],
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['user_id', 'request_type'],
+        properties={
+            'user_id': openapi.Schema(
+                type=openapi.TYPE_INTEGER,
+                description="User ID whose account to deactivate. Must match authenticated user's ID (security check)."
+            ),
+            'request_type': openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Type of request: 'deactivate' for account deactivation",
+                enum=['deactivate']
+            ),
+            'reason': openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional reason for the request"
+            ),
+        }
+    ),
     responses={
         201: openapi.Response(
             description="Request created successfully",
