@@ -49,6 +49,7 @@ from .views import (
     reset_password,
     request_account_deletion,
     my_account_deletion_requests,
+    user_company_theme,
 )
 from .UserViewSet import UserViewSet
 
@@ -105,6 +106,11 @@ urlpatterns = [
         user_territories_emp_api,
         name='user-territories-emp',
     ),
+
+    # ----------------------
+    # Company Theme (for frontend branding)
+    # ----------------------
+    path('company-theme/', user_company_theme, name='user-company-theme'),
 
     # ----------------------
     # Include all router ViewSets (Users, Roles)

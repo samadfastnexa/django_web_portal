@@ -852,9 +852,31 @@ class DealerRequestSerializer(serializers.ModelSerializer):
 
 
 class CompanySerializer(serializers.ModelSerializer):
+    logo_url = serializers.SerializerMethodField(
+        help_text="Absolute URL to the company logo image. Null if no logo is uploaded."
+    )
+    # Backward-compat: read primary/secondary color from the unified extra_settings JSON
+    primary_color = serializers.SerializerMethodField()
+    secondary_color = serializers.SerializerMethodField()
+
     class Meta:
         model = Company
         fields = '__all__'
+
+    @swagger_serializer_method(serializer_or_field=serializers.URLField(allow_null=True))
+    def get_logo_url(self, obj):
+        if obj.logo:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.logo.url)
+            return obj.logo.url
+        return None
+
+    def get_primary_color(self, obj):
+        return (obj.extra_settings or {}).get('primary_color') or None
+
+    def get_secondary_color(self, obj):
+        return (obj.extra_settings or {}).get('secondary_color') or None
 
 class RegionSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.Company_name', read_only=True)

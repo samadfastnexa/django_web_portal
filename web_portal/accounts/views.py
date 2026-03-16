@@ -1032,35 +1032,26 @@ from .models import PasswordResetOTP
     operation_summary="Request Password Reset OTP",
     operation_description="""
     Send a 6-digit OTP to user's email or phone for password reset.
-    
-    **Input:** Provide either email OR phone_number (not both).
-    
+
+    **Input:** Provide `portal_id` + either `email` OR `phone_number`.
+
     **Process:**
-    1. Find user by email or phone
+    1. Find user by email or phone within the given portal
     2. Generate 6-digit OTP
     3. Send OTP via email (phone SMS coming soon)
     4. OTP expires in 10 minutes
-    
+
     **Rate Limit:** Max 3 OTP requests per hour per user.
     """,
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            'email': openapi.Schema(type=openapi.TYPE_STRING, description='User email address'),
-            'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='User phone number'),
-        },
-    ),
+    manual_parameters=[
+        openapi.Parameter('portal_id',    openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=True,  description='Company / portal ID'),
+        openapi.Parameter('email',        openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User email address (provide email or phone_number)'),
+        openapi.Parameter('phone_number', openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User phone number (provide email or phone_number)'),
+    ],
     responses={
         200: openapi.Response(
             description="OTP sent successfully",
-            examples={
-                "application/json": {
-                    "success": True,
-                    "message": "OTP sent to your email",
-                    "identifier_type": "email",
-                    "expires_in_minutes": 10
-                }
-            }
+            examples={"application/json": {"success": True, "message": "OTP sent to your email", "identifier_type": "email", "expires_in_minutes": 10}}
         ),
         400: "Bad request - invalid input",
         404: "User not found",
@@ -1069,13 +1060,21 @@ from .models import PasswordResetOTP
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
 def request_password_reset_otp(request):
     """
     Request a password reset OTP via email or phone.
     """
-    email = (request.data.get('email') or '').strip().lower()
-    phone = (request.data.get('phone_number') or '').strip()
-    
+    portal_id    = request.data.get('portal_id') or request.data.get('company_id')
+    email        = (request.data.get('email') or '').strip().lower()
+    phone        = (request.data.get('phone_number') or '').strip()
+
+    if not portal_id:
+        return Response({
+            'success': False,
+            'error': 'portal_id is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
     if not email and not phone:
         return Response({
             'success': False,
@@ -1086,24 +1085,33 @@ def request_password_reset_otp(request):
     user = None
     identifier = None
     identifier_type = None
-    
+
     if email:
-        user = User.objects.filter(email__iexact=email).first()
+        # Try portal-scoped first; fall back to staff/superuser (no company restriction)
+        user = (
+            User.objects.filter(email__iexact=email, company_id=portal_id).first()
+            or User.objects.filter(email__iexact=email, is_staff=True).first()
+            or User.objects.filter(email__iexact=email, is_superuser=True).first()
+        )
         identifier = email
         identifier_type = 'email'
     elif phone:
         # Normalize phone number
         normalized_phone = re.sub(r'[\s\-\(\)\+]', '', phone)
-        user = User.objects.filter(phone_number__icontains=normalized_phone[-10:]).first()
-        if not user:
-            user = User.objects.filter(phone_number=phone).first()
+        qs = User.objects.filter(company_id=portal_id)
+        user = (
+            qs.filter(phone_number__icontains=normalized_phone[-10:]).first()
+            or qs.filter(phone_number=phone).first()
+            or User.objects.filter(phone_number=phone, is_staff=True).first()
+            or User.objects.filter(phone_number=phone, is_superuser=True).first()
+        )
         identifier = phone
         identifier_type = 'phone'
-    
+
     if not user:
         return Response({
             'success': False,
-            'error': 'No account found with this email/phone number'
+            'error': 'No account found with this email/phone number in the specified portal'
         }, status=status.HTTP_404_NOT_FOUND)
     
     # Check rate limit (max 3 per hour)
@@ -1135,12 +1143,14 @@ def request_password_reset_otp(request):
     )
     
     # Send OTP
+    import logging
+    logger = logging.getLogger(__name__)
+
     if identifier_type == 'email':
         try:
             send_mail(
                 subject='Password Reset OTP - Four Brothers Portal',
-                message=f'''
-Dear {user.first_name or 'User'},
+                message=f'''Dear {user.first_name or 'User'},
 
 Your password reset OTP is: {otp}
 
@@ -1149,32 +1159,85 @@ This OTP will expire in 10 minutes.
 If you did not request this, please ignore this email.
 
 Regards,
-Four Brothers Team
-                ''',
+Four Brothers Team''',
                 from_email=django_settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[email],
                 fail_silently=False,
             )
         except Exception as e:
+            logger.error(f"[Password Reset] Email send failed for {email}: {e}")
+            if django_settings.DEBUG:
+                # Return OTP directly in debug mode so testing works without email
+                return Response({
+                    'success': True,
+                    'message': 'Email not configured — OTP returned (DEBUG mode only)',
+                    'identifier_type': identifier_type,
+                    'expires_in_minutes': 10,
+                    'debug_otp': otp,
+                    'email_error': str(e),
+                }, status=status.HTTP_200_OK)
             otp_record.delete()
             return Response({
                 'success': False,
-                'error': f'Failed to send email. Please try again later.'
+                'error': 'Failed to send email. Please try again later.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     else:
-        # Phone SMS - placeholder for future implementation
-        # For now, log the OTP (in production, integrate with SMS gateway)
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"[SMS OTP] Phone: {phone}, OTP: {otp}")
-        # TODO: Integrate SMS gateway here
-    
-    return Response({
+        # Phone SMS via Twilio
+        twilio_sid   = getattr(django_settings, 'TWILIO_ACCOUNT_SID', '')
+        twilio_token = getattr(django_settings, 'TWILIO_AUTH_TOKEN', '')
+        twilio_from  = getattr(django_settings, 'TWILIO_FROM_NUMBER', '')
+
+        if not (twilio_sid and twilio_token and twilio_from):
+            logger.error("[Password Reset] Twilio credentials not configured")
+            if django_settings.DEBUG:
+                return Response({
+                    'success': True,
+                    'message': 'SMS not configured — OTP returned (DEBUG mode only)',
+                    'identifier_type': identifier_type,
+                    'expires_in_minutes': 10,
+                    'debug_otp': otp,
+                    'sms_error': 'TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER not set in .env',
+                }, status=status.HTTP_200_OK)
+            otp_record.delete()
+            return Response({
+                'success': False,
+                'error': 'SMS service is not configured. Contact support.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        try:
+            from twilio.rest import Client as TwilioClient
+            twilio_client = TwilioClient(twilio_sid, twilio_token)
+            twilio_client.messages.create(
+                body=f'Your Four Brothers Portal OTP is: {otp}. Valid for 10 minutes.',
+                from_=twilio_from,
+                to=phone,
+            )
+        except Exception as e:
+            logger.error(f"[Password Reset] SMS send failed for {phone}: {e}")
+            if django_settings.DEBUG:
+                return Response({
+                    'success': True,
+                    'message': 'SMS failed — OTP returned (DEBUG mode only)',
+                    'identifier_type': identifier_type,
+                    'expires_in_minutes': 10,
+                    'debug_otp': otp,
+                    'sms_error': str(e),
+                }, status=status.HTTP_200_OK)
+            otp_record.delete()
+            return Response({
+                'success': False,
+                'error': 'Failed to send SMS. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    response_data = {
         'success': True,
         'message': f'OTP sent to your {identifier_type}',
         'identifier_type': identifier_type,
-        'expires_in_minutes': 10
-    }, status=status.HTTP_200_OK)
+        'expires_in_minutes': 10,
+    }
+    if django_settings.DEBUG:
+        response_data['debug_otp'] = otp
+    return Response(response_data, status=status.HTTP_200_OK)
 
 
 @swagger_auto_schema(
@@ -1183,31 +1246,21 @@ Four Brothers Team
     operation_summary="Verify Password Reset OTP",
     operation_description="""
     Verify the OTP received via email/phone.
-    
+
     **Input:** Provide the identifier (email or phone) and the 6-digit OTP.
-    
+
     **On Success:** Returns a reset_token for the final password reset step.
-    
+
     **Max Attempts:** 5 attempts per OTP before it gets invalidated.
     """,
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['identifier', 'otp'],
-        properties={
-            'identifier': openapi.Schema(type=openapi.TYPE_STRING, description='Email or phone number'),
-            'otp': openapi.Schema(type=openapi.TYPE_STRING, description='6-digit OTP'),
-        },
-    ),
+    manual_parameters=[
+        openapi.Parameter('identifier', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='Email or phone number used in step 1'),
+        openapi.Parameter('otp',        openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='6-digit OTP received'),
+    ],
     responses={
         200: openapi.Response(
             description="OTP verified successfully",
-            examples={
-                "application/json": {
-                    "success": True,
-                    "message": "OTP verified successfully",
-                    "reset_token": "abc123..."
-                }
-            }
+            examples={"application/json": {"success": True, "message": "OTP verified successfully", "reset_token": "abc123..."}}
         ),
         400: "Invalid OTP or expired",
         404: "No OTP found"
@@ -1215,6 +1268,7 @@ Four Brothers Team
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
 def verify_password_reset_otp(request):
     """
     Verify the password reset OTP.
@@ -1297,39 +1351,31 @@ def verify_password_reset_otp(request):
     operation_summary="Reset Password",
     operation_description="""
     Set a new password using the reset token from OTP verification.
-    
+
     **Input:** Provide reset_token and new_password.
-    
+
     **Password Requirements:**
     - Minimum 8 characters
     - At least one uppercase letter
     - At least one lowercase letter
     - At least one digit
     """,
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['reset_token', 'new_password'],
-        properties={
-            'reset_token': openapi.Schema(type=openapi.TYPE_STRING, description='Token from verify OTP step'),
-            'new_password': openapi.Schema(type=openapi.TYPE_STRING, description='New password (min 8 chars)'),
-            'confirm_password': openapi.Schema(type=openapi.TYPE_STRING, description='Confirm new password'),
-        },
-    ),
+    manual_parameters=[
+        openapi.Parameter('reset_token',      openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,  description='Token returned from the verify OTP step'),
+        openapi.Parameter('new_password',     openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,  description='New password (min 8 chars, 1 uppercase, 1 lowercase, 1 digit)'),
+        openapi.Parameter('confirm_password', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description='Must match new_password'),
+    ],
     responses={
         200: openapi.Response(
             description="Password reset successfully",
-            examples={
-                "application/json": {
-                    "success": True,
-                    "message": "Password has been reset successfully. You can now login with your new password."
-                }
-            }
+            examples={"application/json": {"success": True, "message": "Password has been reset successfully. You can now login with your new password."}}
         ),
         400: "Invalid token or password mismatch",
     }
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
 def reset_password(request):
     """
     Reset password using the reset token.
@@ -1638,5 +1684,86 @@ def my_account_deletion_requests(request):
         'success': True,
         'count': requests.count(),
         'data': serializer.data
+    }, status=status.HTTP_200_OK)
+
+
+@swagger_auto_schema(
+    method='get',
+    tags=['18. Companies'],
+    operation_summary="Get Company Theme",
+    operation_description="""
+**Get branding/theme settings for a company.**
+
+- If `company_id` is provided → returns that company's theme.
+- If omitted → returns the authenticated user's own company theme.
+
+All branding fields (`logo_url`, `primary_color`, `secondary_color`) are optional and may be `null` if not configured.
+
+**Authentication:** Required (Bearer token)
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            'company_id',
+            openapi.IN_QUERY,
+            type=openapi.TYPE_INTEGER,
+            required=False,
+            description='Company ID. If omitted, returns the logged-in user\'s company theme.'
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="Company theme settings",
+            examples={
+                'application/json': {
+                    'success': True,
+                    'data': {
+                        'company_id': 1,
+                        'company_name': 'Orange Protection',
+                        'logo_url': 'http://localhost:8000/media/company/logos/orange.png',
+                        'primary_color': '#FF6B00',
+                        'secondary_color': '#2C3E50'
+                    }
+                }
+            }
+        ),
+        400: openapi.Response(description="Invalid company_id"),
+        404: openapi.Response(description="Company not found or user has no company assigned"),
+        401: openapi.Response(description="Unauthorized"),
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_company_theme(request):
+    from FieldAdvisoryService.models import Company
+
+    company_id = request.query_params.get('company_id')
+
+    if company_id is not None:
+        try:
+            company = Company.objects.get(id=int(company_id))
+        except (Company.DoesNotExist, ValueError):
+            return Response({
+                'success': False,
+                'error': f'Company with id={company_id} not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+    else:
+        company = getattr(request.user, 'company', None)
+        if not company:
+            return Response({
+                'success': False,
+                'error': 'No company assigned to this user'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    cfg = company.extra_settings or {}
+    return Response({
+        'success': True,
+        'data': {
+            'company_id': company.id,
+            'company_name': company.Company_name,
+            'logo_url': request.build_absolute_uri(company.logo.url) if company.logo else None,
+            'primary_color': cfg.get('primary_color') or None,
+            'secondary_color': cfg.get('secondary_color') or None,
+            'settings': cfg,
+        }
     }, status=status.HTTP_200_OK)
 

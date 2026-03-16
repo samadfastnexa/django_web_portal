@@ -40,6 +40,7 @@ requests==2.32.4
 rpds-py==0.26.0
 sqlparse==0.5.3
 swagger-spec-validator==3.0.4
+twilio==9.3.7
 typing_extensions==4.14.1
 tzdata==2025.2
 uritemplate==4.2.0

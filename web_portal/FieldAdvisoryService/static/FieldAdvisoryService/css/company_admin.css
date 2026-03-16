@@ -1,0 +1,312 @@
+/* ─── Company Branding Admin Enhancements ─── */
+
+/* Color swatch shown in list view */
+.company-color-swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-family: monospace;
+}
+.company-color-swatch .swatch-dot {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid rgba(0,0,0,0.15);
+    flex-shrink: 0;
+}
+.company-color-swatch .swatch-label {
+    color: #555;
+}
+
+/* Logo thumbnail in list view */
+.company-logo-thumb {
+    height: 28px;
+    width: auto;
+    max-width: 80px;
+    object-fit: contain;
+    border-radius: 3px;
+    vertical-align: middle;
+}
+
+/* Logo preview in change form */
+.field-logo .field-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.company-logo-preview-wrap {
+    flex-shrink: 0;
+    padding: 12px 16px;
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 120px;
+}
+.company-logo-preview-wrap img {
+    max-height: 80px;
+    max-width: 200px;
+    object-fit: contain;
+    border-radius: 3px;
+}
+.company-logo-preview-wrap .preview-label {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.logo-no-preview {
+    font-size: 12px;
+    color: #bbb;
+    font-style: italic;
+}
+
+/* Size hint below upload controls */
+.logo-size-hint {
+    font-size: 12px;
+    color: #888;
+    margin: 6px 0 0;
+    line-height: 1.5;
+}
+
+/* Theme preview card shown in change form */
+.company-theme-preview {
+    margin-top: 12px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+    max-width: 320px;
+    font-size: 13px;
+}
+.company-theme-preview .preview-header {
+    padding: 10px 14px;
+    color: #fff;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.company-theme-preview .preview-header img {
+    height: 24px;
+    width: auto;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+}
+.company-theme-preview .preview-body {
+    padding: 10px 14px;
+    background: #fff;
+    color: #333;
+}
+.company-theme-preview .preview-btn {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 5px 12px;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* ─── Extra Settings key-value editor ─── */
+
+.kv-editor {
+    margin-top: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 620px;
+}
+
+/* header */
+.kv-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+.kv-editor-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.kv-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* help button */
+.kv-help-btn {
+    background: none;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.kv-help-btn:hover,
+.kv-help-btn--active {
+    background: #eff6ff;
+    color: #2563eb;
+    border-color: #93c5fd;
+}
+
+/* collapsible help panel */
+.kv-help-panel {
+    border-bottom: 1px solid #e2e8f0;
+    background: #fafcff;
+}
+.kv-help-body {
+    padding: 12px 14px;
+}
+.kv-help-intro {
+    font-size: 12px;
+    color: #475569;
+    margin: 0 0 10px;
+    line-height: 1.6;
+}
+.kv-help-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-bottom: 0;
+}
+.kv-help-table th {
+    background: #f1f5f9;
+    color: #475569;
+    font-weight: 600;
+    padding: 5px 8px;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+}
+.kv-help-table td {
+    padding: 5px 8px;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+    vertical-align: middle;
+}
+.kv-help-table td:first-child code {
+    color: #0f172a;
+    font-weight: 600;
+}
+.kv-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 1px solid rgba(0,0,0,0.15);
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
+/* rows */
+.kv-hint {
+    font-size: 12px;
+    color: #94a3b8;
+    margin: 0;
+    padding: 6px 12px 10px;
+}
+.kv-hint code {
+    background: #f1f5f9;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: #1e40af;
+}
+.kv-rows {
+    display: flex;
+    flex-direction: column;
+}
+.kv-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid #f1f5f9;
+}
+.kv-row:last-child { border-bottom: none; }
+
+/* lock icon */
+.kv-lock-icon {
+    font-size: 11px;
+    flex-shrink: 0;
+    opacity: 0.45;
+    line-height: 1;
+}
+
+/* key input */
+.kv-key {
+    font-family: monospace;
+    width: 150px !important;
+    font-size: 13px;
+    background: #fafafa;
+}
+.kv-key-locked {
+    background: #f1f5f9 !important;
+    color: #64748b;
+    cursor: not-allowed;
+}
+
+.kv-sep {
+    color: #cbd5e1;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.kv-val {
+    font-family: monospace;
+    flex: 1 1 160px;
+    font-size: 13px;
+}
+.kv-color-picker {
+    width: 28px;
+    height: 26px;
+    padding: 1px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* add button */
+.kv-add-btn {
+    background: none;
+    color: #2563eb;
+    border: none;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+.kv-add-btn:hover { background: #eff6ff; }
+
+/* Extra settings badge in list view */
+.company-extra-settings-badge {
+    display: inline-block;
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: default;
+}
+
+

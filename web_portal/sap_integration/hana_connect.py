@@ -589,83 +589,109 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
 def sales_vs_achievement_geo_inv(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_emp: bool = False, group_by_date: bool = False) -> list:
     """
     Sales vs Achievement (Geo) using OINV (Invoices) table.
-    Simplified version - territory hierarchy not available without OCRD/OSLP access.
+    Hierarchy: Region -> Zone -> Territory via OCRD.Territory -> OTER.
     """
     inv_tbl = '"OINV"'
-    ohem_tbl = '"OHEM"'
+    bp_tbl = '"OCRD"'
+    oter_tbl = '"OTER"'
+    slp_tbl = '"OSLP"'
+    emp_tbl = '"B4_EMP"'
+
+    select_parts = [
+        'COALESCE(R3."descript", R2."descript", R1."descript") AS "Region"',
+        'R1."descript" AS "Zone"',
+        'T."descript" AS "Territory"'
+    ]
 
     if group_by_emp:
-        # Detailed View: Group by Employee
-        sql = (
-            'SELECT '
-            '    HE."firstName" || \' \' || HE."lastName" AS "EmployeeName", '
-            '    SUM(inv."DocTotal") AS "Collection_Target", '
-            '    SUM(inv."DocTotal") AS "Collection_Achievement" '
-            'FROM ' + inv_tbl + ' inv '
-            'LEFT JOIN ' + ohem_tbl + ' HE '
-            '    ON HE."empID" = inv."OwnerCode" '
-            'WHERE inv."CANCELED" = \'N\' '
-        )
-        group_by = (
-            ' GROUP BY '
-            '    HE."firstName", '
-            '    HE."lastName" '
-            ' ORDER BY 1'
-        )
-    elif group_by_date:
-        # Detailed View: Group by Date
-        sql = (
-            'SELECT '
-            '    HE."firstName" || \' \' || HE."lastName" AS "EmployeeName", '
-            '    SUM(inv."DocTotal") AS "Collection_Target", '
-            '    SUM(inv."DocTotal") AS "Collection_Achievement", '
-            '    inv."DocDate" AS "From_Date", '
-            '    inv."DocDate" AS "To_Date" '
-            'FROM ' + inv_tbl + ' inv '
-            'LEFT JOIN ' + ohem_tbl + ' HE '
-            '    ON HE."empID" = inv."OwnerCode" '
-            'WHERE inv."CANCELED" = \'N\' '
-        )
-        group_by = (
-            ' GROUP BY '
-            '    HE."firstName", '
-            '    HE."lastName", '
-            '    inv."DocDate" '
-            ' ORDER BY 1, 2'
-        )
+        select_parts.append('COALESCE(OS."SlpName", \'\') AS "EmployeeName"')
     else:
-        # Summary View: Aggregate all
-        sql = (
-            'SELECT '
-            '    STRING_AGG(HE."firstName" || \' \' || HE."lastName", \', \') AS "EmployeeName", '
-            '    SUM(inv."DocTotal") AS "Collection_Target", '
-            '    SUM(inv."DocTotal") AS "Collection_Achievement", '
-            '    MIN(inv."DocDate") AS "From_Date", '
-            '    MAX(inv."DocDate") AS "To_Date" '
-            'FROM ' + inv_tbl + ' inv '
-            'LEFT JOIN ' + ohem_tbl + ' HE '
-            '    ON HE."empID" = inv."OwnerCode" '
-            'WHERE inv."CANCELED" = \'N\' '
-        )
-        group_by = ''
+        select_parts.append('\'\' AS "EmployeeName"')
 
-    
+    select_parts.extend([
+        'SUM(T0."DocTotal") AS "Collection_Target"',
+        'SUM(T0."DocTotal") AS "Collection_Achievement"'
+    ])
+
+    if group_by_date:
+        select_parts.extend([
+            'T0."DocDate" AS "From_Date"',
+            'T0."DocDate" AS "To_Date"'
+        ])
+    else:
+        select_parts.extend([
+            'MIN(T0."DocDate") AS "From_Date"',
+            'MAX(T0."DocDate") AS "To_Date"'
+        ])
+
+    sql = (
+        'SELECT ' + ', '.join(select_parts) + ' '
+        'FROM ' + inv_tbl + ' T0 '
+        'INNER JOIN ' + bp_tbl + ' C0 ON T0."CardCode" = C0."CardCode" '
+        'INNER JOIN ' + oter_tbl + ' T ON C0."Territory" = T."territryID" '
+        'LEFT JOIN ' + oter_tbl + ' Z ON Z."territryID" = T."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R1 ON R1."territryID" = Z."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R2 ON R2."territryID" = R1."parent" '
+        'LEFT JOIN ' + oter_tbl + ' R3 ON R3."territryID" = R2."parent" '
+        'LEFT JOIN ' + slp_tbl + ' OS ON T0."SlpCode" = OS."SlpCode" '
+        'WHERE T0."CANCELED" = \'N\' '
+    )
+
     where_clauses = []
     params = []
-    
-    # Note: Territory filters skipped - requires OCRD/OSLP tables not available
+
+    if emp_id is not None:
+        where_clauses.append(' T."territryID" IN (SELECT U_TID FROM ' + emp_tbl + ' WHERE empID = ?) ')
+        params.append(emp_id)
+
+    if region and region.strip():
+        val = region.strip()
+        where_clauses.append(' (R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ? OR R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ?) ')
+        params.extend([val, val, val, val + ' Region', val + ' Region', val + ' Region'])
+
+    if zone and zone.strip():
+        val = zone.strip()
+        where_clauses.append(' (R1."descript" = ? OR R1."descript" = ?) ')
+        params.extend([val, val + ' Zone'])
+
+    if territory and territory.strip():
+        val = territory.strip()
+        where_clauses.append(' (T."descript" = ? OR T."descript" = ?) ')
+        params.extend([val, val + ' Territory'])
 
     if start_date and end_date:
-        where_clauses.append(" inv.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND inv.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
+        where_clauses.append(" T0.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') AND T0.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') ")
         params.extend([start_date.strip(), end_date.strip()])
-        
+
     where_sql = ''
     if where_clauses:
         where_sql = ' AND ' + ' AND '.join(where_clauses)
-        
-    final_sql = sql + where_sql + group_by
+
+    group_by_fields = [
+        'COALESCE(R3."descript", R2."descript", R1."descript")',
+        'R1."descript"',
+        'T."descript"'
+    ]
+    if group_by_emp:
+        group_by_fields.append('OS."SlpName"')
+    if group_by_date:
+        group_by_fields.append('T0."DocDate"')
+
+    group_by = ' GROUP BY ' + ', '.join(group_by_fields)
+    order_by = ' ORDER BY 1, 2, 3'
+    if group_by_emp:
+        order_by += ', 4'
+    if group_by_date:
+        order_by += ', 7'
+
+    final_sql = sql + where_sql + group_by + order_by
     rows = _fetch_all(db, final_sql, tuple(params))
-    
+
+    for r in rows:
+        v = r.get('Territory')
+        if v and isinstance(v, str) and v.endswith(' Territory'):
+            r['Territory'] = v[:-10]
+
     return rows
 
 def sales_vs_achievement_geo_profit(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_emp: bool = True) -> list:
@@ -1702,7 +1728,7 @@ def sales_orders_all(db, limit: int = 100, card_code: str | None = None, doc_sta
     Fetch sales orders with optional filters, including customer contact, policies, and crops
     """
     sql = (
-        'SELECT DISTINCT '
+        'SELECT '
         ' T0."DocEntry", '
         ' T0."DocNum", '
         ' T0."DocDate", '
@@ -1717,8 +1743,8 @@ def sales_orders_all(db, limit: int = 100, card_code: str | None = None, doc_sta
         ' T0."Comments", '
         ' T2."Name" AS "ContactPerson", '
         ' T2."Tel1" AS "ContactPhone", '
-        ' STRING_AGG(DISTINCT T1."U_policy", \', \') AS "Policies", '
-        ' STRING_AGG(DISTINCT T1."U_crop", \', \') AS "Crops" '
+        ' STRING_AGG(T1."U_policy", \', \') AS "Policies", '
+        ' STRING_AGG(T1."U_crop", \', \') AS "Crops" '
         ' FROM "ORDR" T0 '
         ' LEFT JOIN "RDR1" T1 ON T0."DocEntry" = T1."DocEntry" '
         ' LEFT JOIN "OCPR" T2 ON T0."CardCode" = T2."CardCode" AND T0."CntctCode" = T2."CntctCode" '
