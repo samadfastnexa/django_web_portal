@@ -878,6 +878,39 @@ class CompanySerializer(serializers.ModelSerializer):
     def get_secondary_color(self, obj):
         return (obj.extra_settings or {}).get('secondary_color') or None
 
+
+class CompanyMobileSerializer(serializers.ModelSerializer):
+    """Simplified Company serializer for mobile/login responses with essential fields only"""
+    logo = serializers.SerializerMethodField()
+    primary_color = serializers.SerializerMethodField()
+    secondary_color = serializers.SerializerMethodField()
+    display_company_name = serializers.SerializerMethodField()
+    schema_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Company
+        fields = ['display_company_name', 'schema_name', 'logo', 'primary_color', 'secondary_color', 'extra_settings']
+
+    def get_logo(self, obj):
+        if obj.logo:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.logo.url)
+            return obj.logo.url
+        return None
+
+    def get_primary_color(self, obj):
+        return (obj.extra_settings or {}).get('primary_color') or None
+
+    def get_secondary_color(self, obj):
+        return (obj.extra_settings or {}).get('secondary_color') or None
+
+    def get_display_company_name(self, obj):
+        return obj.Company_name
+
+    def get_schema_name(self, obj):
+        return obj.name
+
 class RegionSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.Company_name', read_only=True)
 

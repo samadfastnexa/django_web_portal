@@ -586,7 +586,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
             required=['password'],
         ),
         responses={
-            200: openapi.Response(
+200: openapi.Response(
                 description='Login successful - Returns JWT tokens and user information',
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
@@ -601,14 +601,43 @@ class MyTokenObtainPairView(TokenObtainPairView):
                         'company_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Company ID', nullable=True),
                         'role': openapi.Schema(type=openapi.TYPE_STRING, description='User role name'),
                         'permissions': openapi.Schema(
-                            type=openapi.TYPE_ARRAY, 
+                            type=openapi.TYPE_ARRAY,
                             description='User permissions',
                             items=openapi.Schema(type=openapi.TYPE_OBJECT)
                         ),
                         'companies': openapi.Schema(
-                            type=openapi.TYPE_ARRAY, 
-                            description='Associated companies',
-                            items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                            type=openapi.TYPE_ARRAY,
+                            description='User\'s associated companies (for backward compatibility)',
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'default': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                }
+                            )
+                        ),
+                        'all_companies': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            description='All companies with branding/settings information',
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'Company_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'name': openapi.Schema(type=openapi.TYPE_STRING, description='Schema name for HANA'),
+                                    'logo': openapi.Schema(type=openapi.TYPE_STRING, description='Logo file path', nullable=True),
+                                    'logo_url': openapi.Schema(type=openapi.TYPE_STRING, description='Full URL to logo', nullable=True),
+                                    'extra_settings': openapi.Schema(
+                                        type=openapi.TYPE_OBJECT,
+                                        description='Theme/branding settings JSON (primary_color, secondary_color, etc.)'
+                                    ),
+                                    'primary_color': openapi.Schema(type=openapi.TYPE_STRING, description='Primary brand color (from extra_settings)', nullable=True),
+                                    'secondary_color': openapi.Schema(type=openapi.TYPE_STRING, description='Secondary brand color (from extra_settings)', nullable=True),
+                                    'user_belongs': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Whether the user belongs to this company'),
+                                    'is_default': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Whether this is the user\'s default company'),
+                                }
+                            )
                         ),
                         'default_company': openapi.Schema(type=openapi.TYPE_OBJECT, description='Default company'),
                     }
