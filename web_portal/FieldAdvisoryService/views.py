@@ -1129,63 +1129,154 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
 
+_COMPANY_EXAMPLE = {
+    'id': 1,
+    'Company_name': 'Orange Protection Ltd.',
+    'name': '4B-ORANG_APP',
+    'email': 'info@orangeprotection.com',
+    'contact_number': '+92-42-1234567',
+    'address': '123 Business District, Lahore',
+    'description': 'Leading crop protection company',
+    'remarks': None,
+    'latitude': None,
+    'longitude': None,
+    'is_active': True,
+    'logo': 'company/logos/orange_logo.png',
+    'logo_url': 'http://localhost:8000/media/company/logos/orange_logo.png',
+    'primary_color': '#FF6B00',
+    'secondary_color': '#2C3E50',
+    'created_by': 1,
+    'created_at': '2025-01-15T08:00:00Z',
+    'updated_at': '2026-03-10T10:30:00Z',
+}
+
+
 class CompanyViewSet(viewsets.ModelViewSet):
-    queryset = Company.objects.only('id', 'Company_name', 'name', 'email', 'contact_number', 'is_active').all()
+    queryset = Company.objects.only(
+        'id', 'Company_name', 'name', 'email', 'contact_number', 'is_active',
+        'logo', 'extra_settings'
+    ).all()
     serializer_class = CompanySerializer
-    # permission_classes = [IsAdminOrReadOnly]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     permission_classes = [IsAuthenticated, HasRolePermission]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
-    
 
     @swagger_auto_schema(
-        operation_description="Retrieve a list of all companies in the system.",
+        operation_summary="List all companies",
+        operation_description=(
+            "Return a paginated list of all companies.\n\n"
+            "Each company includes branding fields: `logo_url`, `primary_color`, `secondary_color`.\n\n"
+            "Use the `search` query parameter to filter by schema name."
+        ),
         responses={
             200: openapi.Response(
-                description='List of companies',
+                description='List of companies with branding info',
                 examples={
-                    'application/json': [
-                        {
-                            'id': 1,
-                            'name': 'ABC Agriculture Ltd.',
-                            'code': 'ABC001',
-                            'address': '123 Business District, Lahore',
-                            'contact_number': '+92-42-1234567',
-                            'email': 'info@abcagriculture.com'
-                        }
-                    ]
+                    'application/json': [_COMPANY_EXAMPLE]
                 }
-            )
+            ),
+            401: openapi.Response(description='Unauthorized'),
+            403: openapi.Response(description='Forbidden – insufficient permissions'),
         },
         tags=["18. Companies"]
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
     @swagger_auto_schema(
-        operation_description="Create a new company in the system with all required business information.",
+        operation_summary="Create a company",
+        operation_description=(
+            "Create a new company.\n\n"
+            "**Branding fields (include in request):**\n"
+            "- `logo` – image file (jpg/jpeg/png/svg/webp)\n"
+            "- `primary_color` – hex string, e.g. `#FF6B00`\n"
+            "- `secondary_color` – hex string, e.g. `#2C3E50`\n\n"
+            "Use `multipart/form-data` when uploading a logo, otherwise `application/json`."
+        ),
         request_body=CompanySerializer,
         responses={
-            201: 'Company created successfully',
-            400: 'Bad Request - Invalid data or duplicate code'
+            201: openapi.Response(
+                description='Company created successfully',
+                examples={'application/json': _COMPANY_EXAMPLE}
+            ),
+            400: openapi.Response(description='Bad Request – validation errors'),
+            401: openapi.Response(description='Unauthorized'),
+            403: openapi.Response(description='Forbidden – insufficient permissions'),
         },
         tags=["18. Companies"]
     )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
-    @swagger_auto_schema(tags=["18. Company"])
+    @swagger_auto_schema(
+        operation_summary="Retrieve a company",
+        operation_description=(
+            "Return full details of a single company including branding: "
+            "`logo_url`, `primary_color`, `secondary_color`."
+        ),
+        responses={
+            200: openapi.Response(
+                description='Company details',
+                examples={'application/json': _COMPANY_EXAMPLE}
+            ),
+            404: openapi.Response(description='Company not found'),
+        },
+        tags=["18. Companies"]
+    )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
-    @swagger_auto_schema(tags=["18. Company"])
+    @swagger_auto_schema(
+        operation_summary="Update a company (full)",
+        operation_description=(
+            "Fully replace all fields of a company.\n\n"
+            "Use `multipart/form-data` to upload a new logo, otherwise `application/json`."
+        ),
+        request_body=CompanySerializer,
+        responses={
+            200: openapi.Response(
+                description='Company updated',
+                examples={'application/json': _COMPANY_EXAMPLE}
+            ),
+            400: openapi.Response(description='Validation error'),
+            404: openapi.Response(description='Company not found'),
+        },
+        tags=["18. Companies"]
+    )
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
 
-    @swagger_auto_schema(tags=["18. Company"])
+    @swagger_auto_schema(
+        operation_summary="Partially update a company",
+        operation_description=(
+            "Update one or more fields of a company.\n\n"
+            "Only send the fields you want to change. "
+            "Use `multipart/form-data` to upload a new logo, otherwise `application/json`."
+        ),
+        request_body=CompanySerializer,
+        responses={
+            200: openapi.Response(
+                description='Company partially updated',
+                examples={'application/json': _COMPANY_EXAMPLE}
+            ),
+            400: openapi.Response(description='Validation error'),
+            404: openapi.Response(description='Company not found'),
+        },
+        tags=["18. Companies"]
+    )
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
-    @swagger_auto_schema(tags=["18. Company"])
+    @swagger_auto_schema(
+        operation_summary="Delete a company",
+        operation_description="Permanently delete a company and its associated branding assets.",
+        responses={
+            204: openapi.Response(description='Company deleted successfully'),
+            404: openapi.Response(description='Company not found'),
+        },
+        tags=["18. Companies"]
+    )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
 

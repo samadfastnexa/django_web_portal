@@ -383,9 +383,17 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')  # Your Gmail address
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')  # Gmail App Password
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@fourbrothers.com')
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+# Falls back to EMAIL_HOST_USER so Gmail SMTP from-address always matches the authenticated account
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='') or EMAIL_HOST_USER or 'noreply@fourbrothers.com'
+
+# ==============================================================================
+# TWILIO SMS CONFIGURATION (OTP via SMS)
+# ==============================================================================
+TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
+TWILIO_AUTH_TOKEN  = config('TWILIO_AUTH_TOKEN', default='')
+TWILIO_FROM_NUMBER = config('TWILIO_FROM_NUMBER', default='')
 
 # Password Reset Token Settings
 PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in seconds

@@ -34,13 +34,31 @@ class BaseInfoModel(BaseAuditModel):
 class Company(BaseInfoModel):
     Company_name = models.CharField(max_length=100)
     name = models.CharField(
-        max_length=100, 
+        max_length=100,
         help_text="Schema name (e.g., 4B-BIO_APP, 4B-ORANG_APP). This is used for HANA database connections."
+    )
+
+    # Company Branding/Theme Settings
+    logo = models.ImageField(
+        upload_to='company/logos/',
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png', 'svg', 'webp'])],
+        blank=True,
+        null=True,
+        help_text="Company logo image"
+    )
+    extra_settings = models.JSONField(
+        default=dict,
+        blank=True,
+        null=True,
+        help_text=(
+            "All theme/branding settings as a single JSON object. "
+            "Use keys: primary_color, secondary_color, accent_color, font_family, etc."
+        )
     )
 
     def __str__(self):
         return self.Company_name  # or self.name if BaseInfoModel has 'name'
-    
+
     class Meta:
         db_table = 'fieldadvisoryservice_company'
         verbose_name = "Company"

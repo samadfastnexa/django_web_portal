@@ -323,8 +323,8 @@
   <div class="actions-section">
     <h3>📊 System & Reports</h3>
     <div class="actions-grid">
-      <a class="button {% if current_action == 'health' %}active{% endif %}" href="?action=health&company_db={{ selected_db_key }}">Health Check</a>
-      <a class="button {% if current_action == 'select_oitm' %}active{% endif %}" href="?action=select_oitm&company_db={{ selected_db_key }}">Select OITM</a>
+      {# <a class="button {% if current_action == 'health' %}active{% endif %}" href="?action=health&company_db={{ selected_db_key }}">Health Check</a> #}
+      {# <a class="button {% if current_action == 'select_oitm' %}active{% endif %}" href="?action=select_oitm&company_db={{ selected_db_key }}">Select OITM</a> #}
       <a class="button {% if current_action == 'collection_vs_achievement' %}active{% endif %}" href="?action=collection_vs_achievement&company_db={{ selected_db_key }}">Collection VS Achievement</a>
       <a class="button {% if current_action == 'sales_vs_achievement' %}active{% endif %}" href="?action=sales_vs_achievement&company_db={{ selected_db_key }}">Sales VS Achievement</a>
       <a class="button {% if current_action == 'sales_vs_achievement_by_emp' %}active{% endif %}" href="?action=sales_vs_achievement_by_emp&company_db={{ selected_db_key }}">Sales VS Achievement by Emp</a>
@@ -334,7 +334,7 @@
       <a class="button {% if current_action == 'products_catalog' %}active{% endif %}" href="?action=products_catalog&company_db={{ selected_db_key }}">Products Catalog</a>
       <a class="button {% if current_action == 'policy_customer_balance' %}active{% endif %}" href="?action=policy_customer_balance&company_db={{ selected_db_key }}">Policy Wise Customer Balance</a>
       <a class="button {% if current_action == 'list_territories_full' %}active{% endif %}" href="?action=list_territories_full&company_db={{ selected_db_key }}">All Territories</a>
-      <a class="button {% if current_action == 'list_cwl' %}active{% endif %}" href="?action=list_cwl&company_db={{ selected_db_key }}">CWL</a>
+      {# <a class="button {% if current_action == 'list_cwl' %}active{% endif %}" href="?action=list_cwl&company_db={{ selected_db_key }}">CWL</a> #}
       <a class="button {% if current_action == 'sales_orders' %}active{% endif %}" href="?action=sales_orders&company_db={{ selected_db_key }}">Sales Orders</a>
     </div>
   </div>
@@ -804,6 +804,17 @@
             </div>
           </div>
           <div class="filter-field">
+            <div class="filter-label" title="Quick period filter">Quick Period</div>
+            <div class="filter-input">
+              <select name="period">
+                <option value="" {% if not request.GET.period %}selected{% endif %}>Custom Date Range</option>
+                <option value="today" {% if request.GET.period == 'today' %}selected{% endif %}>Today</option>
+                <option value="monthly" {% if request.GET.period == 'monthly' %}selected{% endif %}>Current Month</option>
+                <option value="yearly" {% if request.GET.period == 'yearly' %}selected{% endif %}>Current Year</option>
+              </select>
+            </div>
+          </div>
+          <div class="filter-field">
             <div class="filter-label" title="Start Date">Start Date</div>
             <div class="filter-input"><input type="date" name="start_date" value="{{ request.GET.start_date|default:'' }}" /></div>
           </div>
@@ -900,6 +911,17 @@
                 {% for t in geo_options.territories %}
                   <option value="{{ t }}" {% if t == diagnostics.territory %}selected{% endif %}>{{ t }}</option>
                 {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field">
+            <div class="filter-label" title="Quick period filter">Quick Period</div>
+            <div class="filter-input">
+              <select name="period">
+                <option value="" {% if not diagnostics.period %}selected{% endif %}>Custom Date Range</option>
+                <option value="today" {% if diagnostics.period == 'today' %}selected{% endif %}>Today</option>
+                <option value="monthly" {% if diagnostics.period == 'monthly' %}selected{% endif %}>Current Month</option>
+                <option value="yearly" {% if diagnostics.period == 'yearly' %}selected{% endif %}>Current Year</option>
               </select>
             </div>
           </div>
@@ -2051,10 +2073,10 @@ textContent=count+' active'}
           <div class="filter-field">
             <div class="filter-label">
               <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
-              Limit
+              Limit <small style="opacity:.6;font-weight:400">(0 = all)</small>
             </div>
             <div class="filter-input">
-              <input type="number" name="limit" value="{{ diagnostics.limit|default:100 }}" min="1" max="1000" />
+              <input type="number" name="limit" value="{{ diagnostics.limit|default:500 }}" min="0" max="99999" placeholder="0 = no limit" />
             </div>
           </div>
         </div>
@@ -2476,9 +2498,38 @@ textContent=count+' active'}
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h3 style="margin:0;">Region / Zone / Territory Breakdown</h3>
         <div style="font-size:13px; color:#64748b;">
-          Showing {{ result_rows|length }} region{{ result_rows|length|pluralize }}
+          {% if geo_totals and pagination and geo_totals.regions != result_rows|length %}
+            Showing {{ result_rows|length }} of {{ geo_totals.regions }} regions
+          {% else %}
+            Showing {{ result_rows|length }} region{{ result_rows|length|pluralize }}
+          {% endif %}
         </div>
       </div>
+      {% if geo_totals %}
+      <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:14px;">
+        <div style="background:#0f172a;color:#fff;border-radius:12px;padding:14px 16px;">
+          <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;">Grand Total</div>
+          <div style="font-size:24px;font-weight:800;line-height:1.2;margin-top:4px;">{{ geo_totals.sales|default_if_none:0|floatformat:2 }}</div>
+          <div style="font-size:12px;opacity:.8;">{% if current_action == 'collection_vs_achievement' %}Target{% else %}Sales{% endif %}</div>
+        </div>
+        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+          <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;">Achievement</div>
+          <div style="font-size:22px;font-weight:800;line-height:1.2;margin-top:4px;color:#0f172a;">{{ geo_totals.achievement|default_if_none:0|floatformat:2 }}</div>
+        </div>
+        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+          <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;">Regions</div>
+          <div style="font-size:22px;font-weight:800;line-height:1.2;margin-top:4px;color:#0f172a;">{{ geo_totals.regions }}</div>
+        </div>
+        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+          <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;">Zones</div>
+          <div style="font-size:22px;font-weight:800;line-height:1.2;margin-top:4px;color:#0f172a;">{{ geo_totals.zones }}</div>
+        </div>
+        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+          <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;">Territories</div>
+          <div style="font-size:22px;font-weight:800;line-height:1.2;margin-top:4px;color:#0f172a;">{{ geo_totals.territories }}</div>
+        </div>
+      </div>
+      {% endif %}
       <div class="table-responsive">
         <table class="geo-table">
           <thead>
@@ -2710,6 +2761,61 @@ textContent=count+' active'}
                endInput.value = formatDate(today);
            }
        }
+
+           // Keep quick period and custom date range mutually exclusive
+           function wirePeriodVsDate(formId) {
+             const form = document.getElementById(formId);
+             if (!form) return;
+
+             const periodSelect = form.querySelector('select[name="period"]');
+             const startInput = form.querySelector('input[name="start_date"]');
+             const endInput = form.querySelector('input[name="end_date"]');
+
+             if (!periodSelect || !startInput || !endInput) return;
+
+             function applyPeriodDates(periodValue) {
+               const now = new Date();
+               if (periodValue === 'today') {
+                 const d = formatDate(now);
+                 startInput.value = d;
+                 endInput.value = d;
+               } else if (periodValue === 'monthly') {
+                 const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                 const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                 startInput.value = formatDate(monthStart);
+                 endInput.value = formatDate(monthEnd);
+               } else if (periodValue === 'yearly') {
+                 const yearStart = new Date(now.getFullYear(), 0, 1);
+                 const yearEnd = new Date(now.getFullYear(), 11, 31);
+                 startInput.value = formatDate(yearStart);
+                 endInput.value = formatDate(yearEnd);
+               }
+             }
+
+             periodSelect.addEventListener('change', function() {
+               if (periodSelect.value) {
+                 // Reset any custom range and populate with selected quick period.
+                 applyPeriodDates(periodSelect.value);
+               }
+             });
+
+             function clearPeriodIfDateSet() {
+               if ((startInput.value && startInput.value.trim() !== '') || (endInput.value && endInput.value.trim() !== '')) {
+                 periodSelect.value = '';
+               }
+             }
+
+             startInput.addEventListener('change', clearPeriodIfDateSet);
+             endInput.addEventListener('change', clearPeriodIfDateSet);
+
+             // If a quick period is already selected on page load and date fields are empty, populate them.
+             if (periodSelect.value && !startInput.value && !endInput.value) {
+               applyPeriodDates(periodSelect.value);
+             }
+           }
+
+           wirePeriodVsDate('geo-inv-filter-form');
+           wirePeriodVsDate('territory-filter-form');
      });
    </script>
 
