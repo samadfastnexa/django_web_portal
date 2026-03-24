@@ -1062,10 +1062,14 @@ from .models import PasswordResetOTP
     operation_description="""
     Send a 6-digit OTP to user's email or phone for password reset.
 
-    **Input:** Provide `portal_id` + either `email` OR `phone_number`.
+    **Input:** Provide `portal_id` + optionally `email` OR `phone_number`.
+
+    **Auto Email Detection:**
+    - If only `portal_id` (user ID) is provided, the user's email will be auto-detected
+    - If email/phone is provided, it must match the user specified by portal_id
 
     **Process:**
-    1. Find user by email or phone within the given portal
+    1. Find user by portal_id (user ID) and auto-detect their email, or validate provided email/phone matches
     2. Generate 6-digit OTP
     3. Send OTP via email (phone SMS coming soon)
     4. OTP expires in 10 minutes
@@ -1073,16 +1077,16 @@ from .models import PasswordResetOTP
     **Rate Limit:** Max 3 OTP requests per hour per user.
     """,
     manual_parameters=[
-        openapi.Parameter('portal_id',    openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=True,  description='Company / portal ID'),
-        openapi.Parameter('email',        openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User email address (provide email or phone_number)'),
-        openapi.Parameter('phone_number', openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User phone number (provide email or phone_number)'),
+        openapi.Parameter('portal_id',    openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=True,  description='User ID - the ID of the user who wants to reset password'),
+        openapi.Parameter('email',        openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User email address (optional if only one user in portal)'),
+        openapi.Parameter('phone_number', openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User phone number (optional if only one user in portal)'),
     ],
     responses={
         200: openapi.Response(
             description="OTP sent successfully",
-            examples={"application/json": {"success": True, "message": "OTP sent to your email", "identifier_type": "email", "expires_in_minutes": 10}}
+            examples={"application/json": {"success": True, "message": "OTP sent to your email", "identifier_type": "email", "auto_detected_email": True, "expires_in_minutes": 10}}
         ),
-        400: "Bad request - invalid input",
+        400: "Bad request - invalid input or multiple users found",
         404: "User not found",
         429: "Too many requests"
     }
@@ -1093,6 +1097,7 @@ from .models import PasswordResetOTP
 def request_password_reset_otp(request):
     """
     Request a password reset OTP via email or phone.
+    Auto-detects user email if only portal_id is provided and there's exactly one user.
     """
     portal_id    = request.data.get('portal_id') or request.data.get('company_id')
     email        = (request.data.get('email') or '').strip().lower()
@@ -1104,38 +1109,63 @@ def request_password_reset_otp(request):
             'error': 'portal_id is required'
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    if not email and not phone:
-        return Response({
-            'success': False,
-            'error': 'Please provide either email or phone_number'
-        }, status=status.HTTP_400_BAD_REQUEST)
-    
     # Find user
     user = None
     identifier = None
     identifier_type = None
+    auto_detected_email = False
 
-    if email:
-        # Try portal-scoped first; fall back to staff/superuser (no company restriction)
-        user = (
-            User.objects.filter(email__iexact=email, company_id=portal_id).first()
-            or User.objects.filter(email__iexact=email, is_staff=True).first()
-            or User.objects.filter(email__iexact=email, is_superuser=True).first()
-        )
-        identifier = email
-        identifier_type = 'email'
-    elif phone:
-        # Normalize phone number
-        normalized_phone = re.sub(r'[\s\-\(\)\+]', '', phone)
-        qs = User.objects.filter(company_id=portal_id)
-        user = (
-            qs.filter(phone_number__icontains=normalized_phone[-10:]).first()
-            or qs.filter(phone_number=phone).first()
-            or User.objects.filter(phone_number=phone, is_staff=True).first()
-            or User.objects.filter(phone_number=phone, is_superuser=True).first()
-        )
-        identifier = phone
-        identifier_type = 'phone'
+    # If email or phone provided, validate they match the portal_id user
+    if email or phone:
+        # First get the user by portal_id (user ID)
+        try:
+            portal_user = User.objects.get(id=portal_id, is_active=True)
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': f'User with ID {portal_id} not found or inactive'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if email:
+            # Verify the email matches the portal user
+            if portal_user.email.lower() != email:
+                return Response({
+                    'success': False,
+                    'error': 'Email does not match the user specified by portal_id'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            user = portal_user
+            identifier = email
+            identifier_type = 'email'
+        elif phone:
+            # Verify the phone matches the portal user
+            normalized_phone = re.sub(r'[\s\-\(\)\+]', '', phone)
+            user_phone = re.sub(r'[\s\-\(\)\+]', '', portal_user.phone_number or '')
+            if (normalized_phone[-10:] not in user_phone and
+                portal_user.phone_number != phone):
+                return Response({
+                    'success': False,
+                    'error': 'Phone number does not match the user specified by portal_id'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            user = portal_user
+            identifier = phone
+            identifier_type = 'phone'
+    else:
+        # Auto-detect user by portal_id (user ID) only
+        try:
+            user = User.objects.get(id=portal_id, is_active=True)
+            if not user.email:
+                return Response({
+                    'success': False,
+                    'error': f'User with ID {portal_id} has no email address configured'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            identifier = user.email.lower()
+            identifier_type = 'email'
+            auto_detected_email = True
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': f'User with ID {portal_id} not found or inactive'
+            }, status=status.HTTP_404_NOT_FOUND)
 
     if not user:
         return Response({
@@ -1190,21 +1220,25 @@ If you did not request this, please ignore this email.
 Regards,
 Four Brothers Team''',
                 from_email=django_settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
+                recipient_list=[identifier],
                 fail_silently=False,
             )
         except Exception as e:
             logger.error(f"[Password Reset] Email send failed for {email}: {e}")
             if django_settings.DEBUG:
                 # Return OTP directly in debug mode so testing works without email
-                return Response({
+                debug_response = {
                     'success': True,
                     'message': 'Email not configured — OTP returned (DEBUG mode only)',
                     'identifier_type': identifier_type,
                     'expires_in_minutes': 10,
                     'debug_otp': otp,
                     'email_error': str(e),
-                }, status=status.HTTP_200_OK)
+                }
+                if auto_detected_email:
+                    debug_response['auto_detected_email'] = True
+                    debug_response['email_used'] = identifier
+                return Response(debug_response, status=status.HTTP_200_OK)
             otp_record.delete()
             return Response({
                 'success': False,
@@ -1219,14 +1253,18 @@ Four Brothers Team''',
         if not (twilio_sid and twilio_token and twilio_from):
             logger.error("[Password Reset] Twilio credentials not configured")
             if django_settings.DEBUG:
-                return Response({
+                debug_response = {
                     'success': True,
                     'message': 'SMS not configured — OTP returned (DEBUG mode only)',
                     'identifier_type': identifier_type,
                     'expires_in_minutes': 10,
                     'debug_otp': otp,
                     'sms_error': 'TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER not set in .env',
-                }, status=status.HTTP_200_OK)
+                }
+                if auto_detected_email:  # This is unlikely but for consistency
+                    debug_response['auto_detected_email'] = True
+                    debug_response['email_used'] = identifier
+                return Response(debug_response, status=status.HTTP_200_OK)
             otp_record.delete()
             return Response({
                 'success': False,
@@ -1244,14 +1282,18 @@ Four Brothers Team''',
         except Exception as e:
             logger.error(f"[Password Reset] SMS send failed for {phone}: {e}")
             if django_settings.DEBUG:
-                return Response({
+                debug_response = {
                     'success': True,
                     'message': 'SMS failed — OTP returned (DEBUG mode only)',
                     'identifier_type': identifier_type,
                     'expires_in_minutes': 10,
                     'debug_otp': otp,
                     'sms_error': str(e),
-                }, status=status.HTTP_200_OK)
+                }
+                if auto_detected_email:
+                    debug_response['auto_detected_email'] = True
+                    debug_response['email_used'] = identifier
+                return Response(debug_response, status=status.HTTP_200_OK)
             otp_record.delete()
             return Response({
                 'success': False,
@@ -1264,8 +1306,16 @@ Four Brothers Team''',
         'identifier_type': identifier_type,
         'expires_in_minutes': 10,
     }
+
+    # Add auto-detection info if email was auto-detected
+    if auto_detected_email:
+        response_data['auto_detected_email'] = True
+        response_data['email_used'] = identifier
+        response_data['message'] = f'Auto-detected user email and sent OTP to {identifier}'
+
     if django_settings.DEBUG:
         response_data['debug_otp'] = otp
+
     return Response(response_data, status=status.HTTP_200_OK)
 
 
