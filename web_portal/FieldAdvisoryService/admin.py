@@ -121,10 +121,10 @@ def export_meeting_schedule_to_excel(modeladmin, request, queryset):
                 row_fill = odd_row_fill if is_odd_row else even_row_fill
                 
                 attendee_data = [
-                    attendee.farmer_name,
-                    attendee.contact_number,
-                    attendee.acreage,
-                    attendee.crop
+                    attendee.farmer_name or '-',
+                    attendee.contact_number or '-',
+                    attendee.acreage or 0,
+                    attendee.crop or '-'
                 ]
                 
                 for col_num, value in enumerate(attendee_data, 1):

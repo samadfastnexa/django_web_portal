@@ -4930,6 +4930,7 @@ def territory_summary_api(request):
         openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP). Uses default from env if not provided.", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search by ItemCode, ItemName, GenericName, or BrandName (e.g., 'baap', 'roshan', 'FG00023')", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('item_group', openapi.IN_QUERY, description="Filter by item group code", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('is_active', openapi.IN_QUERY, description="Filter by active status: 'Y' for active (default), 'N' for inactive, or leave empty for all products", type=openapi.TYPE_STRING, required=False, default='Y'),
         openapi.Parameter('only_priced', openapi.IN_QUERY, description="Show only products with price > 0 (true/false)", type=openapi.TYPE_BOOLEAN, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
@@ -4950,6 +4951,7 @@ def products_catalog_api(request):
     db_name = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
     search = (request.GET.get('search') or '').strip() or None
     item_group = (request.GET.get('item_group') or '').strip() or None
+    is_active = (request.GET.get('is_active') or 'Y').strip() or 'Y'  # Default to 'Y' (active products)
     only_priced = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
@@ -4993,7 +4995,7 @@ def products_catalog_api(request):
                 cur.close()
             
             # Pass pagination parameters to products_catalog for database-level pagination
-            result = products_catalog(conn, cfg['schema'], search, item_group, limit=page_size, offset=(page_num-1)*page_size, fetch_prices=True, only_priced=only_priced)
+            result = products_catalog(conn, cfg['schema'], search, item_group, limit=page_size, offset=(page_num-1)*page_size, fetch_prices=True, only_priced=only_priced, is_active=is_active)
             
             # Extract data from result dictionary
             data = result.get('products', [])

@@ -1036,11 +1036,11 @@ def _get_image_files_cache(folder_path, cache_timeout=300):
     _cache_timestamp[folder_path] = current_time
     return file_set
 
-def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None, item_groups: list | None = None, brand: str | None = None, limit: int | None = None, offset: int = 0, fetch_prices: bool = True, only_priced: bool = False) -> dict:
+def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None, item_groups: list | None = None, brand: str | None = None, limit: int | None = None, offset: int = 0, fetch_prices: bool = True, only_priced: bool = False, is_active: str | None = 'Y') -> dict:
     """
     Fetch products catalog with image URLs based on database name.
     Images are stored in media/product_images/{DB_NAME}/{FileName}.{FileExt}
-    
+
     Args:
         db: Database connection object
         schema_name: Schema name (e.g., '4B-BIO_APP', '4B-ORANG_APP')
@@ -1052,7 +1052,8 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         offset: Number of records to skip (pagination)
         fetch_prices: Whether to fetch prices (default True, set False if fetching separately)
         only_priced: If True, show only products with price > 0 (default False)
-    
+        is_active: Filter by active status (default 'Y' for active products, 'N' for inactive, None for all)
+
     Returns:
         dict with 'products' list, 'total_count', 'limit', 'offset'
     """
@@ -1095,6 +1096,7 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         ' T0."InvntryUom", '
         ' T0."U_GenericName", '
         ' T0."U_BrandName", '
+        ' T0."U_IsActive", '
         ' PI."FileName" AS "Product_Image_Name", '
         ' PI."FileExt" AS "Product_Image_Ext", '
         ' PU."FileName" AS "Product_Urdu_Name", '
@@ -1128,12 +1130,21 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         'WHERE T0."Series" = \'77\' '
         'AND T0."validFor" = \'Y\' '
     )
-    
+
+    # Initialize parameters list
+    params = []
+
+    # Add is_active filter if specified
+    if is_active is not None:
+        is_active_clause = ' AND T0."U_IsActive" = ? '
+        sql += is_active_clause
+        count_sql += is_active_clause
+        params.append(is_active)
+        count_params.append(is_active)
+
     # Add price filter if requested
     if only_priced and fetch_prices:
         sql += 'AND COALESCE(PR."U_np", 0) > 0 '
-    
-    params = []
     
     # Handle multi-category filtering
     if item_groups:
