@@ -122,8 +122,10 @@ def export_farmer_meeting_to_excel(modeladmin, request, queryset):
                 
                 # Write attendee info
                 for col_num, value in enumerate([
-                    attendee.farmer_name, attendee.contact_number,
-                    attendee.acreage, attendee.crop
+                    attendee.farmer_name or '-',
+                    attendee.contact_number or '-',
+                    attendee.acreage or 0,
+                    attendee.crop or '-'
                 ], len(main_headers) + 1):
                     cell = ws.cell(row=row_num, column=col_num, value=value)
                     cell.fill = row_fill
@@ -307,7 +309,7 @@ def export_field_day_to_excel(modeladmin, request, queryset):
         current_row += 1  # Empty row
         
         # Attendee table headers
-        attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
+        attendee_headers = ['Attendee Name', 'Contact Number', 'Crops (with Acreage)']
         for col_num, header in enumerate(attendee_headers, 1):
             cell = ws.cell(row=current_row, column=col_num)
             cell.value = header
@@ -315,35 +317,44 @@ def export_field_day_to_excel(modeladmin, request, queryset):
             cell.font = header_font
             cell.alignment = header_alignment
             cell.border = thin_border
-        
+
         current_row += 1
-        
+
         # Write attendees
-        attendees = field_day.attendees.all()
+        attendees = field_day.attendees.prefetch_related('crops').all()
         if attendees.exists():
             for idx, attendee in enumerate(attendees):
                 is_odd_row = idx % 2 == 0
                 row_fill = odd_row_fill if is_odd_row else even_row_fill
-                
+
+                # Get crops from the new relationship
+                crops_list = attendee.crops.all()
+                if crops_list:
+                    crops_display = ", ".join([f"{c.crop_name} ({c.acreage} acres)" for c in crops_list])
+                elif attendee.crop:
+                    # Fallback to old crop field if new crops relationship is empty
+                    crops_display = f"{attendee.crop} ({attendee.acreage} acres)"
+                else:
+                    crops_display = "-"
+
                 attendee_data = [
-                    attendee.farmer_name,
-                    attendee.contact_number,
-                    attendee.acreage,
-                    attendee.crop
+                    attendee.farmer_name or '-',
+                    attendee.contact_number or '-',
+                    crops_display
                 ]
-                
+
                 for col_num, value in enumerate(attendee_data, 1):
                     cell = ws.cell(row=current_row, column=col_num, value=value)
                     cell.fill = row_fill
                     cell.border = thin_border
                     cell.alignment = data_alignment
-                
+
                 current_row += 1
         else:
             # No attendees message
             no_attendee_cell = ws.cell(row=current_row, column=1, value="No attendees")
             no_attendee_cell.font = Font(italic=True, color="999999")
-            ws.merge_cells(f'A{current_row}:D{current_row}')
+            ws.merge_cells(f'A{current_row}:C{current_row}')
             current_row += 1
         
         current_row += 2  # Space before next field day

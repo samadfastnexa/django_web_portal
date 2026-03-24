@@ -897,83 +897,110 @@ def hana_connect_admin(request):
                                     return name
 
                                 # Hierarchical Transformation
-                                hierarchy = {}
-                                for row in (data or []):
-                                    if not isinstance(row, dict):
-                                        continue
-                                    reg = row.get('Region') or 'All Regions'
-                                    zon = row.get('Zone') or 'All Zones'
-                                    ter = row.get('TerritoryName') or row.get('Territory') or 'All Territories'
-                                    
-                                    # Clean the names
-                                    reg = clean_geo_name(reg)
-                                    zon = clean_geo_name(zon)
-                                    ter = clean_geo_name(ter)
-                                    
-                                    # Handle Date Range
-                                    date_range_str = ""
-                                    if is_detailed:
-                                        fd = row.get('From_Date')
-                                        td = row.get('To_Date')
+                                # If source is already hierarchical (name/sales/achievement/zones), use it directly.
+                                if isinstance(data, list) and data and isinstance(data[0], dict) and isinstance(data[0].get('zones'), list):
+                                    final_list = []
+                                    for region_row in data:
+                                        region_copy = dict(region_row)
+                                        region_copy['name'] = clean_geo_name(region_copy.get('name') or 'Unknown Region')
+                                        region_copy['sales'] = round(float(region_copy.get('sales') or 0.0), 2)
+                                        region_copy['achievement'] = round(float(region_copy.get('achievement') or 0.0), 2)
+                                        zones_in = region_copy.get('zones') or []
+                                        zones_out = []
+                                        for zone_row in zones_in:
+                                            zone_copy = dict(zone_row)
+                                            zone_copy['name'] = clean_geo_name(zone_copy.get('name') or 'Unknown Zone')
+                                            zone_copy['sales'] = round(float(zone_copy.get('sales') or 0.0), 2)
+                                            zone_copy['achievement'] = round(float(zone_copy.get('achievement') or 0.0), 2)
+                                            terr_in = zone_copy.get('territories') or []
+                                            terr_out = []
+                                            for terr_row in terr_in:
+                                                terr_copy = dict(terr_row)
+                                                terr_copy['name'] = clean_geo_name(terr_copy.get('name') or 'Unknown Territory')
+                                                terr_copy['sales'] = float(terr_copy.get('sales') or 0.0)
+                                                terr_copy['achievement'] = float(terr_copy.get('achievement') or 0.0)
+                                                terr_copy.setdefault('date_range', '')
+                                                terr_out.append(terr_copy)
+                                            zone_copy['territories'] = sorted(terr_out, key=lambda x: x.get('name') or '')
+                                            zones_out.append(zone_copy)
+                                        region_copy['zones'] = sorted(zones_out, key=lambda x: x.get('name') or '')
+                                        final_list.append(region_copy)
+                                    final_list = sorted(final_list, key=lambda x: x.get('name') or '')
+                                else:
+                                    hierarchy = {}
+                                    for row in (data or []):
+                                        if not isinstance(row, dict):
+                                            continue
+                                        reg = row.get('Region') or row.get('REGION') or row.get('region') or 'Unknown Region'
+                                        zon = row.get('Zone') or row.get('ZONE') or row.get('zone') or 'Unknown Zone'
+                                        ter = row.get('TerritoryName') or row.get('TERRITORYNAME') or row.get('Territory') or row.get('TERRITORY') or row.get('territory') or 'Unknown Territory'
+
+                                        # Clean the names
+                                        reg = clean_geo_name(reg)
+                                        zon = clean_geo_name(zon)
+                                        ter = clean_geo_name(ter)
+
+                                        # Handle Date Range
+                                        date_range_str = ""
+                                        fd = row.get('From_Date') or row.get('FROM_DATE')
+                                        td = row.get('To_Date') or row.get('TO_DATE')
                                         if fd and td:
                                             date_range_str = f"{fd} to {td}"
                                         elif fd:
                                             date_range_str = f"From {fd}"
                                         elif td:
                                             date_range_str = f"To {td}"
-                                    else:
-                                        # For aggregated view, we might also want to show date range if min/max available
-                                        fd = row.get('From_Date')
-                                        td = row.get('To_Date')
-                                        if fd and td:
-                                             date_range_str = f"{fd} to {td}"
 
-                                    sal = 0.0
-                                    ach = 0.0
-                                    try:
-                                        v = row.get('Collection_Target')
-                                        if v is None: v = row.get('COLLECTION_TARGET')
-                                        if v is None: v = row.get('colletion_Target')
-                                        sal = float(v or 0.0)
-                                    except: pass
-                                    try:
-                                        v = row.get('Collection_Achievement')
-                                        if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
-                                        if v is None: v = row.get('DocTotal')
-                                        ach = float(v or 0.0)
-                                    except: pass
+                                        sal = 0.0
+                                        ach = 0.0
+                                        try:
+                                            v = row.get('Collection_Target')
+                                            if v is None: v = row.get('COLLECTION_TARGET')
+                                            if v is None: v = row.get('colletion_Target')
+                                            if v is None: v = row.get('sales')
+                                            sal = float(v or 0.0)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            v = row.get('Collection_Achievement')
+                                            if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
+                                            if v is None: v = row.get('DocTotal')
+                                            if v is None: v = row.get('achievement')
+                                            ach = float(v or 0.0)
+                                        except Exception:
+                                            pass
 
-                                    if reg not in hierarchy:
-                                        hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
-                                    
-                                    hierarchy[reg]['sales'] += sal
-                                    hierarchy[reg]['achievement'] += ach
-                                    
-                                    if zon not in hierarchy[reg]['zones']:
-                                        hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
-                                        
-                                    hierarchy[reg]['zones'][zon]['sales'] += sal
-                                    hierarchy[reg]['zones'][zon]['achievement'] += ach
-                                    
-                                    hierarchy[reg]['zones'][zon]['territories'].append({
-                                        'name': ter,
-                                        'sales': sal,
-                                        'achievement': ach,
-                                        'date_range': date_range_str
-                                    })
+                                        if reg not in hierarchy:
+                                            hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
 
-                                # Convert dicts to sorted lists
-                                final_list = []
-                                for r_name in sorted(hierarchy.keys()):
-                                    r_data = hierarchy[r_name]
-                                    zones_list = []
-                                    for z_name in sorted(r_data['zones'].keys()):
-                                        z_data = r_data['zones'][z_name]
-                                        # Sort territories by name and date
-                                        z_data['territories'] = sorted(z_data['territories'], key=lambda x: (x['name'], x['date_range']))
-                                        zones_list.append(z_data)
-                                    r_data['zones'] = zones_list
-                                    final_list.append(r_data)
+                                        hierarchy[reg]['sales'] += sal
+                                        hierarchy[reg]['achievement'] += ach
+
+                                        if zon not in hierarchy[reg]['zones']:
+                                            hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+
+                                        hierarchy[reg]['zones'][zon]['sales'] += sal
+                                        hierarchy[reg]['zones'][zon]['achievement'] += ach
+
+                                        hierarchy[reg]['zones'][zon]['territories'].append({
+                                            'name': ter,
+                                            'sales': sal,
+                                            'achievement': ach,
+                                            'date_range': date_range_str
+                                        })
+
+                                    # Convert dicts to sorted lists
+                                    final_list = []
+                                    for r_name in sorted(hierarchy.keys()):
+                                        r_data = hierarchy[r_name]
+                                        zones_list = []
+                                        for z_name in sorted(r_data['zones'].keys()):
+                                            z_data = r_data['zones'][z_name]
+                                            # Sort territories by name and date
+                                            z_data['territories'] = sorted(z_data['territories'], key=lambda x: (x['name'], x['date_range']))
+                                            zones_list.append(z_data)
+                                        r_data['zones'] = zones_list
+                                        final_list.append(r_data)
                                 
                                 # Rounding
                                 for r in final_list:
@@ -1021,10 +1048,27 @@ def hana_connect_admin(request):
                             region_param = request.GET.get('region')
                             zone_param = request.GET.get('zone')
                             territory_param = request.GET.get('territory')
+                            period_param = (request.GET.get('period') or '').strip().lower()
                             start_date_param = request.GET.get('start_date')
                             end_date_param = request.GET.get('end_date')
                             in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
                             group_by_emp_param = request.GET.get('group_by_emp')
+
+                            # Quick period filters (applied only when explicit dates are not provided)
+                            if period_param and not start_date_param and not end_date_param:
+                                from datetime import date
+                                from calendar import monthrange
+                                today = date.today()
+                                if period_param == 'today':
+                                    start_date_param = today.strftime('%Y-%m-%d')
+                                    end_date_param = today.strftime('%Y-%m-%d')
+                                elif period_param == 'monthly':
+                                    start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
+                                    last_day = monthrange(today.year, today.month)[1]
+                                    end_date_param = today.replace(day=last_day).strftime('%Y-%m-%d')
+                                elif period_param == 'yearly':
+                                    start_date_param = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+                                    end_date_param = today.replace(month=12, day=31).strftime('%Y-%m-%d')
                             
                             # Default to False for Inv
                             group_by_emp = False
@@ -1180,6 +1224,7 @@ def hana_connect_admin(request):
                             diagnostics['region'] = (region_param or '').strip()
                             diagnostics['zone'] = (zone_param or '').strip()
                             diagnostics['territory'] = (territory_param or '').strip()
+                            diagnostics['period'] = period_param
                             diagnostics['in_millions'] = (in_millions_param in ('true','1','yes','y'))
                             diagnostics['group_by_emp'] = group_by_emp
                             
@@ -1187,23 +1232,97 @@ def hana_connect_admin(request):
                             error = str(e_geo_inv)
                     elif action == 'sales_vs_achievement_territory':
                         try:
+                            emp_id_param = request.GET.get('emp_id')
+                            user_id_param = request.GET.get('user_id')
                             region_param = request.GET.get('region')
                             zone_param = request.GET.get('zone')
                             territory_param = request.GET.get('territory')
+                            period_param = (request.GET.get('period') or '').strip().lower()
                             start_date_param = request.GET.get('start_date')
                             end_date_param = request.GET.get('end_date')
+                            year_param = (request.GET.get('year') or '').strip()
+                            month_param = (request.GET.get('month') or '').strip()
                             in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
-                            
-                            data = collection_vs_achievement(
+
+                            from datetime import date
+                            from calendar import monthrange
+                            today = date.today()
+
+                            if not start_date_param and not end_date_param and year_param and month_param:
+                                try:
+                                    year_val = int(year_param)
+                                    month_val = int(month_param)
+                                    if 1 <= month_val <= 12:
+                                        start_date_param = date(year_val, month_val, 1).strftime('%Y-%m-%d')
+                                        last_day = monthrange(year_val, month_val)[1]
+                                        end_date_param = date(year_val, month_val, last_day).strftime('%Y-%m-%d')
+                                except Exception:
+                                    pass
+                            elif not start_date_param and not end_date_param and year_param:
+                                try:
+                                    year_val = int(year_param)
+                                    start_date_param = date(year_val, 1, 1).strftime('%Y-%m-%d')
+                                    end_date_param = date(year_val, 12, 31).strftime('%Y-%m-%d')
+                                except Exception:
+                                    pass
+                            elif period_param and not start_date_param and not end_date_param:
+                                if period_param == 'today':
+                                    start_date_param = today.strftime('%Y-%m-%d')
+                                    end_date_param = today.strftime('%Y-%m-%d')
+                                elif period_param == 'monthly':
+                                    start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
+                                    last_day = monthrange(today.year, today.month)[1]
+                                    end_date_param = today.replace(day=last_day).strftime('%Y-%m-%d')
+                                elif period_param == 'yearly':
+                                    start_date_param = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+                                    end_date_param = today.replace(month=12, day=31).strftime('%Y-%m-%d')
+
+                            if not period_param and not start_date_param and not end_date_param and not year_param:
+                                start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
+                                last_day = monthrange(today.year, today.month)[1]
+                                end_date_param = today.replace(day=last_day).strftime('%Y-%m-%d')
+
+                            emp_val = None
+                            employee_code = None
+
+                            if user_id_param:
+                                try:
+                                    from accounts.models import User
+                                    user_id_int = int(user_id_param)
+                                    target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
+                                    if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
+                                        employee_code = target_user.sales_profile.employee_code
+                                        if employee_code:
+                                            try:
+                                                emp_val = int(employee_code)
+                                            except ValueError:
+                                                pass
+                                except Exception:
+                                    pass
+
+                            if emp_id_param is not None and emp_id_param != '':
+                                try:
+                                    employee_code = str(emp_id_param)
+                                    emp_val = int(emp_id_param)
+                                except Exception:
+                                    error = 'Invalid emp_id'
+
+                            ignore_emp_filter = False
+                            if employee_code == '00':
+                                ignore_emp_filter = True
+                                emp_val = None
+
+                            data = sales_vs_achievement_territory(
                                 conn,
-                                emp_id=None,
+                                emp_id=emp_val,
                                 region=(region_param or '').strip() or None,
                                 zone=(zone_param or '').strip() or None,
                                 territory=(territory_param or '').strip() or None,
                                 start_date=(start_date_param or '').strip() or None,
                                 end_date=(end_date_param or '').strip() or None,
                                 group_by_date=False,
-                                ignore_emp_filter=True
+                                ignore_emp_filter=ignore_emp_filter,
+                                group_by_emp=False
                             )
                             
                             if in_millions_param in ('true','1','yes','y'):
@@ -1212,34 +1331,23 @@ def hana_connect_admin(request):
                                     if isinstance(row, dict):
                                         r = dict(row)
                                         try:
-                                            v = r.get('Collection_Target')
-                                            if v is None: v = r.get('COLLECTION_TARGET')
+                                            v = r.get('Sales_Target')
+                                            if v is None: v = r.get('SALES_TARGET')
                                             if v is not None:
-                                                r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                                                r['Sales_Target'] = round((float(v) / 1000000.0), 2)
                                         except Exception:
                                             pass
                                         try:
-                                            v = r.get('Collection_Achievement')
-                                            if v is None: v = r.get('COLLECTION_ACHIEVEMENT')
+                                            v = r.get('Sales_Achievement')
+                                            if v is None: v = r.get('SALES_ACHIEVEMENT')
                                             if v is not None:
-                                                r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                                                r['Sales_Achievement'] = round((float(v) / 1000000.0), 2)
                                         except Exception:
                                             pass
-                                        r.pop('EmployeeName', None)
                                         scaled.append(r)
                                     else:
                                         scaled.append(row)
                                 data = scaled
-                            else:
-                                cleaned = []
-                                for row in data or []:
-                                    if isinstance(row, dict):
-                                        r = dict(row)
-                                        r.pop('EmployeeName', None)
-                                        cleaned.append(r)
-                                    else:
-                                        cleaned.append(row)
-                                data = cleaned
                             
                             # Helper function to clean region/zone/territory names
                             def clean_geo_name(name):
@@ -1254,6 +1362,8 @@ def hana_connect_admin(request):
                             hierarchy = {}
                             for row in (data or []):
                                 if not isinstance(row, dict):
+                                    continue
+                                if row.get('Region') == 'GRAND TOTAL':
                                     continue
                                 reg = None
                                 zon = None
@@ -1277,17 +1387,14 @@ def hana_connect_admin(request):
                                 sal = 0.0
                                 ach = 0.0
                                 try:
-                                    v = row.get('Collection_Target')
-                                    if v is None: v = row.get('COLLECTION_TARGET')
-                                    if v is None: v = row.get('colletion_Target')
-                                    if v is None: v = row.get('COLLETION_TARGET')
+                                    v = row.get('Sales_Target')
+                                    if v is None: v = row.get('SALES_TARGET')
                                     sal = float(v or 0.0)
                                 except Exception:
                                     pass
                                 try:
-                                    v = row.get('Collection_Achievement')
-                                    if v is None: v = row.get('COLLECTION_ACHIEVEMENT')
-                                    if v is None: v = row.get('DocTotal')
+                                    v = row.get('Sales_Achievement')
+                                    if v is None: v = row.get('SALES_ACHIEVEMENT')
                                     if v is None: v = row.get('ACHIEVEMENT')
                                     ach = float(v or 0.0)
                                 except Exception:
@@ -1338,6 +1445,9 @@ def hana_connect_admin(request):
                             
                             diagnostics['start_date'] = (start_date_param or '').strip()
                             diagnostics['end_date'] = (end_date_param or '').strip()
+                            diagnostics['period'] = period_param
+                            diagnostics['year'] = year_param
+                            diagnostics['month'] = month_param
                             diagnostics['region'] = (region_param or '').strip()
                             diagnostics['zone'] = (zone_param or '').strip()
                             diagnostics['territory'] = (territory_param or '').strip()
@@ -1771,7 +1881,107 @@ def hana_connect_admin(request):
                                         }
                                         agg.append(row)
                                     data = agg
-                                result = data
+                                
+                                # Build hierarchical structure for geo display
+                                # Build Territory → Zone → Region mapping from Django models
+                                territory_map = {}
+                                try:
+                                    company = Company.objects.filter(Company_name=selected_db_key).first()
+                                    if company:
+                                        from FieldAdvisoryService.models import Territory as TerritoryModel
+                                        territories_qs = TerritoryModel.objects.filter(company=company).select_related('zone', 'zone__region')
+                                        for t in territories_qs:
+                                            # Map territory name to its zone and region
+                                            territory_map[t.name] = {
+                                                'zone': t.zone.name if t.zone else 'Unknown Zone',
+                                                'region': t.zone.region.name if t.zone and t.zone.region else 'Unknown Region'
+                                            }
+                                except Exception:
+                                    pass
+                                
+                                # Transform flat data into hierarchical structure
+                                hierarchy = {}
+                                for row in (data or []):
+                                    if not isinstance(row, dict):
+                                        continue
+                                    
+                                    ter_name = row.get('TERRITORYNAME', 'Unknown Territory')
+                                    # Clean territory name (remove " Territory" suffix if present)
+                                    if ter_name and isinstance(ter_name, str) and ter_name.endswith(' Territory'):
+                                        ter_name = ter_name[:-10].strip()
+                                    
+                                    # Get employee name from EMPID if available
+                                    emp_id = row.get('EMPID')
+                                    emp_name = ''
+                                    if emp_id:
+                                        try:
+                                            from accounts.models import User as StaffUser
+                                            user = StaffUser.objects.filter(sales_profile__employee_code=str(emp_id)).first()
+                                            if user:
+                                                emp_name = user.get_full_name() or user.username
+                                        except Exception:
+                                            pass
+                                    
+                                    # Look up zone and region from territory map
+                                    geo_info = territory_map.get(ter_name, {'zone': 'Unknown Zone', 'region': 'Unknown Region'})
+                                    reg = geo_info['region']
+                                    zon = geo_info['zone']
+                                    ter = ter_name
+                                    
+                                    # Get sales and achievement values
+                                    sal = 0.0
+                                    ach = 0.0
+                                    try:
+                                        v = row.get('SALES_TARGET')
+                                        sal = float(v or 0.0)
+                                    except: pass
+                                    try:
+                                        v = row.get('ACCHIVEMENT')
+                                        ach = float(v or 0.0)
+                                    except: pass
+                                    
+                                    # Build hierarchy
+                                    if reg not in hierarchy:
+                                        hierarchy[reg] = {'name': reg, 'sales': 0.0, 'achievement': 0.0, 'zones': {}}
+                                    
+                                    hierarchy[reg]['sales'] += sal
+                                    hierarchy[reg]['achievement'] += ach
+                                    
+                                    if zon not in hierarchy[reg]['zones']:
+                                        hierarchy[reg]['zones'][zon] = {'name': zon, 'sales': 0.0, 'achievement': 0.0, 'territories': []}
+                                    
+                                    hierarchy[reg]['zones'][zon]['sales'] += sal
+                                    hierarchy[reg]['zones'][zon]['achievement'] += ach
+                                    
+                                    hierarchy[reg]['zones'][zon]['territories'].append({
+                                        'name': ter,
+                                        'sales': sal,
+                                        'achievement': ach,
+                                        'employee_name': emp_name
+                                    })
+                                
+                                # Convert dicts to sorted lists for rendering
+                                final_list = []
+                                for r_name in sorted(hierarchy.keys()):
+                                    r_data = hierarchy[r_name]
+                                    zones_list = []
+                                    for z_name in sorted(r_data['zones'].keys()):
+                                        z_data = r_data['zones'][z_name]
+                                        z_data['territories'] = sorted(z_data['territories'], key=lambda x: x['name'])
+                                        zones_list.append(z_data)
+                                    r_data['zones'] = zones_list
+                                    final_list.append(r_data)
+                                
+                                # Round totals after aggregation
+                                for r in final_list:
+                                    r['sales'] = round(r['sales'], 2)
+                                    r['achievement'] = round(r['achievement'], 2)
+                                    for z in r['zones']:
+                                        z['sales'] = round(z['sales'], 2)
+                                        z['achievement'] = round(z['achievement'], 2)
+                                
+                                result = final_list
+                                
                                 try:
                                     opts = territory_names(conn)
                                 except Exception:
@@ -1799,14 +2009,14 @@ def hana_connect_admin(request):
                             from_date_param = request.GET.get('from_date')
                             to_date_param = request.GET.get('to_date')
                             limit_param = request.GET.get('limit')
-                            
-                            limit_val = 100
+
+                            limit_val = 500
                             try:
                                 if limit_param:
                                     limit_val = int(limit_param)
                             except Exception:
-                                limit_val = 100
-                            
+                                limit_val = 500
+
                             data = sales_orders_all(
                                 conn, 
                                 limit=limit_val,
@@ -2209,6 +2419,38 @@ def hana_connect_admin(request):
                 for c in result_cols:
                     values.append(row.get(c))
                 table_rows.append(values)
+
+    geo_totals = None
+    try:
+        if isinstance(result_rows, list) and result_rows and isinstance(result_rows[0], dict) and isinstance(result_rows[0].get('zones'), list):
+            total_sales = 0.0
+            total_achievement = 0.0
+            total_regions = 0
+            total_zones = 0
+            total_territories = 0
+            for region_row in result_rows:
+                total_regions += 1
+                try:
+                    total_sales += float(region_row.get('sales') or 0.0)
+                except Exception:
+                    pass
+                try:
+                    total_achievement += float(region_row.get('achievement') or 0.0)
+                except Exception:
+                    pass
+                for zone_row in (region_row.get('zones') or []):
+                    total_zones += 1
+                    total_territories += len(zone_row.get('territories') or [])
+            geo_totals = {
+                'sales': round(total_sales, 2),
+                'achievement': round(total_achievement, 2),
+                'regions': total_regions,
+                'zones': total_zones,
+                'territories': total_territories,
+            }
+    except Exception:
+        geo_totals = None
+
     # Get base URL for full image URLs
     # Priority: settings.BASE_URL (configurable) -> request-based URL
     base_url = getattr(settings, 'BASE_URL', None) or request.build_absolute_uri('/').rstrip('/')
@@ -2272,6 +2514,7 @@ def hana_connect_admin(request):
             'base_url': base_url,
             'item_options': item_options,
             'project_options': project_options,
+            'geo_totals': geo_totals,
             'pagination': {
                 'page': (page_obj.number if page_obj else 1),
                 'num_pages': (paginator.num_pages if paginator else 1),
@@ -3838,33 +4081,41 @@ def sales_vs_achievement_geo_inv_api(request):
     - Use `user_id` parameter to fetch data for a specific portal user (auto-fetches employee_code)
     - Use `emp_id` parameter for direct SAP employee ID lookup
     
-    **Date Filtering Options:**
+    **Date Filtering Options (Priority Order):**
     
-    *Quick Period Filters (Recommended):*
-    - `period=today` - Today's sales data (Feb 3, 2026)
-    - `period=monthly` - Current month to date (Feb 1 - Feb 3, 2026)
-    - `period=yearly` - Current year to date (Jan 1 - Feb 3, 2026)
+    1. *Custom Date Range (Highest Priority):*
+       - `start_date` and `end_date` (YYYY-MM-DD format)
+       - Example: `?start_date=2026-01-01&end_date=2026-01-31`
     
-    *Custom Date Range:*
-    - Use `start_date` and `end_date` for specific ranges (YYYY-MM-DD)
-    - Note: `period` overrides custom dates if both provided
+    2. *Year/Month Filters:*
+       - `year=2026` - Full year (Jan 1 - Dec 31, 2026)
+       - `year=2026&month=3` - Specific month (March 2026)
+       - Example: `?year=2026&month=3`
     
-    **Parameter Priority:**
-    1. Employee: `emp_id` → `user_id` → authenticated user
-    2. Date: `period` → `start_date/end_date` → default range
+    3. *Quick Period Filters:*
+       - `period=today` - Today's data
+       - `period=monthly` - Current month to date
+       - `period=yearly` - Current year to date
+    
+    4. *Default:* Current month if no date parameters provided
     
     **Usage Examples:**
+    - Full year: `?database=4B-AGRI_LIVE&year=2026`
+    - Specific month: `?database=4B-AGRI_LIVE&year=2026&month=3`
     - Today: `?database=4B-BIO&period=today`
     - User's monthly: `?database=4B-BIO&user_id=123&period=monthly`
+    - Date range: `?database=4B-BIO&start_date=2026-01-01&end_date=2026-03-31`
     - Region filter: `?database=4B-BIO&region=North&period=yearly&in_millions=true`
     """,
     manual_parameters=[
         openapi.Parameter('database', openapi.IN_QUERY, description="Database/schema (e.g., 4B-BIO, 4B-ORANG, 4B-BIO_APP, 4B-ORANG_APP)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('user_id', openapi.IN_QUERY, description="Portal User ID - Auto-fetches employee_code. Example: user_id=123", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('emp_id', openapi.IN_QUERY, description="SAP Employee ID - Overrides user_id. Example: emp_id=456", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('year', openapi.IN_QUERY, description="Year filter (YYYY). Example: 2026. Can be combined with month. Takes priority over period parameter.", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('month', openapi.IN_QUERY, description="Month filter (1-12). Must be used with year parameter. Example: month=3 for March", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('period', openapi.IN_QUERY, description="Quick date filter - 'today', 'monthly', or 'yearly'. Overrides start_date/end_date.", type=openapi.TYPE_STRING, enum=['today', 'monthly', 'yearly'], required=False),
-        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date (YYYY-MM-DD). Ignored if 'period' provided. Example: 2026-01-01", type=openapi.TYPE_STRING),
-        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date (YYYY-MM-DD). Ignored if 'period' provided. Example: 2026-01-31", type=openapi.TYPE_STRING),
+        openapi.Parameter('start_date', openapi.IN_QUERY, description="Start date (YYYY-MM-DD). Ignored if 'period' or 'year' provided. Example: 2026-01-01", type=openapi.TYPE_STRING),
+        openapi.Parameter('end_date', openapi.IN_QUERY, description="End date (YYYY-MM-DD). Ignored if 'period' or 'year' provided. Example: 2026-01-31", type=openapi.TYPE_STRING),
         openapi.Parameter('region', openapi.IN_QUERY, description="Filter by region name", type=openapi.TYPE_STRING),
         openapi.Parameter('zone', openapi.IN_QUERY, description="Filter by zone name", type=openapi.TYPE_STRING),
         openapi.Parameter('territory', openapi.IN_QUERY, description="Filter by territory name", type=openapi.TYPE_STRING),
@@ -3912,27 +4163,56 @@ def sales_vs_achievement_territory_api(request):
     period = (request.query_params.get('period') or '').strip().lower()
     start_date = (request.query_params.get('start_date') or '').strip()
     end_date = (request.query_params.get('end_date') or '').strip()
+    year_param = (request.query_params.get('year') or '').strip()
+    month_param = (request.query_params.get('month') or '').strip()
     
     # Calculate dates based on period (only if period explicitly provided)
     from datetime import datetime, date
+    from calendar import monthrange
     today = date.today()
     
-    if period:
+    # Priority 1: Explicit start_date and end_date provided
+    # Priority 2: year and month parameters
+    # Priority 3: period parameter
+    # Priority 4: Default to current month
+    
+    if not start_date and not end_date and year_param and month_param:
+        # Year and month parameters provided
+        try:
+            year_val = int(year_param)
+            month_val = int(month_param)
+            if 1 <= month_val <= 12:
+                start_date = date(year_val, month_val, 1).strftime('%Y-%m-%d')
+                last_day = monthrange(year_val, month_val)[1]
+                end_date = date(year_val, month_val, last_day).strftime('%Y-%m-%d')
+        except Exception:
+            pass
+    elif not start_date and not end_date and year_param:
+        # Only year parameter provided - use full year
+        try:
+            year_val = int(year_param)
+            start_date = date(year_val, 1, 1).strftime('%Y-%m-%d')
+            end_date = date(year_val, 12, 31).strftime('%Y-%m-%d')
+        except Exception:
+            pass
+    elif period and not start_date and not end_date:
         # Period parameter explicitly provided - use it
         if period == 'today':
             start_date = today.strftime('%Y-%m-%d')
             end_date = today.strftime('%Y-%m-%d')
         elif period == 'monthly':
             start_date = today.replace(day=1).strftime('%Y-%m-%d')
-            end_date = today.strftime('%Y-%m-%d')
+            last_day = monthrange(today.year, today.month)[1]
+            end_date = today.replace(day=last_day).strftime('%Y-%m-%d')
         elif period == 'yearly':
             start_date = today.replace(month=1, day=1).strftime('%Y-%m-%d')
-            end_date = today.strftime('%Y-%m-%d')
+            end_date = today.replace(month=12, day=31).strftime('%Y-%m-%d')
     
     # If no period and no dates provided, default to current month
-    if not period and not start_date and not end_date:
+    if not period and not start_date and not end_date and not year_param:
         start_date = today.replace(day=1).strftime('%Y-%m-%d')
-        end_date = today.strftime('%Y-%m-%d')
+        last_day = monthrange(today.year, today.month)[1]
+        end_date = today.replace(day=last_day).strftime('%Y-%m-%d')
     
     # Handle user_id and emp_id parameters
     user_id_param = request.query_params.get('user_id', '').strip()
@@ -4650,6 +4930,7 @@ def territory_summary_api(request):
         openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP). Uses default from env if not provided.", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search by ItemCode, ItemName, GenericName, or BrandName (e.g., 'baap', 'roshan', 'FG00023')", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('item_group', openapi.IN_QUERY, description="Filter by item group code", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('is_active', openapi.IN_QUERY, description="Filter by active status: 'Y' for active (default), 'N' for inactive, or leave empty for all products", type=openapi.TYPE_STRING, required=False, default='Y'),
         openapi.Parameter('only_priced', openapi.IN_QUERY, description="Show only products with price > 0 (true/false)", type=openapi.TYPE_BOOLEAN, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
@@ -4670,6 +4951,7 @@ def products_catalog_api(request):
     db_name = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
     search = (request.GET.get('search') or '').strip() or None
     item_group = (request.GET.get('item_group') or '').strip() or None
+    is_active = (request.GET.get('is_active') or 'Y').strip() or 'Y'  # Default to 'Y' (active products)
     only_priced = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
@@ -4713,7 +4995,7 @@ def products_catalog_api(request):
                 cur.close()
             
             # Pass pagination parameters to products_catalog for database-level pagination
-            result = products_catalog(conn, cfg['schema'], search, item_group, limit=page_size, offset=(page_num-1)*page_size, fetch_prices=True, only_priced=only_priced)
+            result = products_catalog(conn, cfg['schema'], search, item_group, limit=page_size, offset=(page_num-1)*page_size, fetch_prices=True, only_priced=only_priced, is_active=is_active)
             
             # Extract data from result dictionary
             data = result.get('products', [])

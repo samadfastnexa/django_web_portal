@@ -1,6 +1,8 @@
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework import serializers
+from FieldAdvisoryService.models import Company
+from FieldAdvisoryService.serializers import CompanyMobileSerializer
 
 User = get_user_model()
 
@@ -93,61 +95,65 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
         # --- build successful response ---
         refresh = RefreshToken.for_user(user)
 
+        # Get user role and permissions
         role = getattr(user, "role", None)
         role_name = role.name if role else None
-
         permissions = list(role.permissions.values("id", "codename")) if role else []
 
-        companies_data, default_company_data = [], None
-        
+        default_company_data = None
+
         # Priority 1: Check for direct User.company field (highest priority)
         if hasattr(user, 'company') and user.company:
-            companies_data.append({
+            default_company_data = {
                 "id": user.company.id,
-                "name": user.company.Company_name,
-                "default": True,
-            })
-            default_company_data = {"id": user.company.id, "name": user.company.Company_name}
-        
+                "name": user.company.name,  # Schema name (e.g., "4B-AGRI_LIVE")
+                "schema_name": user.company.name,  # Explicit schema field
+            }
+
         # Priority 2: Check for Sales Staff Profile companies
-        if not companies_data:
+        if not default_company_data:
             profile = getattr(user, "sales_profile", None)
             if profile:
-                companies_qs = profile.companies.all()
-                for i, c in enumerate(companies_qs):
-                    companies_data.append({
-                        "id": c.id,
-                        "name": c.Company_name,
-                        "default": i == 0,
-                    })
-                    if i == 0:
-                        default_company_data = {"id": c.id, "name": c.Company_name}
-        
+                first_company = profile.companies.first()
+                if first_company:
+                    default_company_data = {
+                        "id": first_company.id,
+                        "name": first_company.name,  # Schema name
+                        "schema_name": first_company.name,  # Explicit schema field
+                    }
+
         # Priority 3: Check for Dealer Profile company
-        if not companies_data:
+        if not default_company_data:
             try:
                 from FieldAdvisoryService.models import Dealer
                 dealer = Dealer.objects.filter(user=user).first()
                 if dealer and dealer.company:
-                    companies_data.append({
+                    default_company_data = {
                         "id": dealer.company.id,
-                        "name": dealer.company.Company_name,
-                        "default": True,
-                    })
-                    default_company_data = {"id": dealer.company.id, "name": dealer.company.Company_name}
+                        "name": dealer.company.name,  # Schema name
+                        "schema_name": dealer.company.name,  # Explicit schema field
+                    }
             except Exception:
                 pass
+
+        # Fetch ALL companies with essential branding/settings only
+        all_companies = Company.objects.all()
+        all_companies_data = CompanyMobileSerializer(
+            all_companies,
+            many=True,
+            context={'request': None}  # No request context needed for basic serialization
+        ).data
 
         return {
             "refresh": str(refresh),
             "access": str(refresh.access_token),
             "user_id": user.id,
-            "companies": companies_data,
+            "all_companies": all_companies_data,  # All companies with essential branding/settings
             "default_company": default_company_data,
             "email": user.email,
             "username": user.username,
             "phone_number": user.phone_number if hasattr(user, 'phone_number') else None,
-            "company": default_company_data.get("name") if default_company_data else None,
+            "company": default_company_data.get("name") if default_company_data else None,  # Schema name
             "company_id": default_company_data.get("id") if default_company_data else None,
             "role": role_name,
             "permissions": permissions,

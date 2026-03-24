@@ -121,10 +121,10 @@ def export_meeting_schedule_to_excel(modeladmin, request, queryset):
                 row_fill = odd_row_fill if is_odd_row else even_row_fill
                 
                 attendee_data = [
-                    attendee.farmer_name,
-                    attendee.contact_number,
-                    attendee.acreage,
-                    attendee.crop
+                    attendee.farmer_name or '-',
+                    attendee.contact_number or '-',
+                    attendee.acreage or 0,
+                    attendee.crop or '-'
                 ]
                 
                 for col_num, value in enumerate(attendee_data, 1):
@@ -1609,17 +1609,27 @@ admin.site.register(SalesOrderAttachment)
 
 @admin.register(Company, site=admin_site)
 class CompanyAdmin(admin.ModelAdmin):
-    list_display = ('Company_name', 'name', 'email', 'contact_number', 'is_active')
+    list_display = ('Company_name', 'name', 'logo_thumb', 'color_swatch_primary', 'color_swatch_secondary', 'extra_settings_summary', 'is_active')
     search_fields = ('Company_name', 'name', 'email')
     list_filter = ('is_active',)
-    
+
     fieldsets = (
         ('Company Information', {
             'fields': ('Company_name', 'description', 'is_active')
         }),
+        ('Branding & Theme', {
+            'fields': ('logo', 'extra_settings'),
+            'description': (
+                'Upload a logo and configure all brand settings in the JSON editor below. '
+                'Common keys: <code>primary_color</code>, <code>secondary_color</code>, '
+                '<code>accent_color</code>, <code>font_family</code>. '
+                'A live theme preview updates as you type colors.'
+            )
+        }),
         ('HANA Database Schema', {
             'fields': ('name',),
-            'description': '<strong>Note:</strong> The "Name" field represents the HANA database schema name (e.g., 4B-BIO_APP, 4B-ORANG_APP). This value is used in HANA Connect for database connections.'
+            'description': '<strong>Note:</strong> The "Name" field represents the HANA database schema name '
+                           '(e.g., 4B-BIO_APP, 4B-ORANG_APP). This value is used in HANA Connect.'
         }),
         ('Contact Information', {
             'fields': ('email', 'contact_number', 'address')
@@ -1633,8 +1643,74 @@ class CompanyAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-    
+
     readonly_fields = ('created_at', 'updated_at')
+
+    # ── List-view helpers ─────────────────────────────────────────────────────
+
+    @admin.display(description='Logo')
+    def logo_thumb(self, obj):
+        if obj.logo:
+            from django.utils.html import format_html
+            return format_html(
+                '<img src="{}" class="company-logo-thumb" alt="{}">',
+                obj.logo.url,
+                obj.Company_name,
+            )
+        return '—'
+
+    @admin.display(description='Primary Color')
+    def color_swatch_primary(self, obj):
+        from django.utils.html import format_html
+        color = (obj.extra_settings or {}).get('primary_color', '')
+        if color:
+            return format_html(
+                '<span class="company-color-swatch">'
+                '<span class="swatch-dot" style="background:{}"></span>'
+                '<span class="swatch-label">{}</span>'
+                '</span>',
+                color, color,
+            )
+        return '—'
+
+    @admin.display(description='Secondary Color')
+    def color_swatch_secondary(self, obj):
+        from django.utils.html import format_html
+        color = (obj.extra_settings or {}).get('secondary_color', '')
+        if color:
+            return format_html(
+                '<span class="company-color-swatch">'
+                '<span class="swatch-dot" style="background:{}"></span>'
+                '<span class="swatch-label">{}</span>'
+                '</span>',
+                color, color,
+            )
+        return '—'
+
+    @admin.display(description='Extra Settings')
+    def extra_settings_summary(self, obj):
+        from django.utils.html import format_html
+        data = obj.extra_settings or {}
+        if not data:
+            return '—'
+        count = len(data)
+        keys_preview = ', '.join(list(data.keys())[:3])
+        if count > 3:
+            keys_preview += f', +{count - 3} more'
+        return format_html(
+            '<span class="company-extra-settings-badge" title="{}">{} setting{}</span>',
+            keys_preview,
+            count,
+            's' if count != 1 else '',
+        )
+
+    # ── Static assets ─────────────────────────────────────────────────────────
+
+    class Media:
+        css = {
+            'all': ('FieldAdvisoryService/css/company_admin.css',)
+        }
+        js = ('FieldAdvisoryService/js/company_admin.js',)
 
 @admin.register(Region, site=admin_site)
 class RegionAdmin(admin.ModelAdmin, _CompanySessionResolver):

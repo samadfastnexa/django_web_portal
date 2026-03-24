@@ -64,13 +64,13 @@ class CartItemSerializer(serializers.ModelSerializer):
 
 class CartSerializer(serializers.ModelSerializer):
     """Serializer for shopping cart"""
-    items = CartItemSerializer(many=True, read_only=True)
+    items = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
     total_quantity = serializers.SerializerMethodField()
     cart_total = serializers.SerializerMethodField()
     cart_id = serializers.IntegerField(source='id', read_only=True)
     user_id = serializers.IntegerField(source='user.id', read_only=True)
-    
+
     class Meta:
         model = Cart
         fields = [
@@ -78,6 +78,7 @@ class CartSerializer(serializers.ModelSerializer):
             'id',
             'user_id',
             'user',
+            'is_active',
             'items',
             'total_items',
             'total_quantity',
@@ -86,15 +87,22 @@ class CartSerializer(serializers.ModelSerializer):
             'updated_date',
         ]
         read_only_fields = ['id', 'cart_id', 'user_id', 'user', 'created_date', 'updated_date']
-    
+
+    def get_items(self, obj):
+        """Get only active items in cart"""
+        active_items = obj.items.filter(is_active=True)
+        # Get database from context if available
+        database = self.context.get('database', '4B-BIO')
+        return CartItemSerializer(active_items, many=True, context={'database': database}).data
+
     def get_total_items(self, obj):
         """Get total number of items"""
         return obj.get_total_items()
-    
+
     def get_total_quantity(self, obj):
         """Get total quantity"""
         return obj.get_total_quantity()
-    
+
     def get_cart_total(self, obj):
         """Calculate cart total"""
         return sum(item.get_subtotal() for item in obj.items.filter(is_active=True))

@@ -15,6 +15,10 @@ class Cart(models.Model):
         related_name='cart',
         help_text="User who owns this cart"
     )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Is this cart active? False when cart is cleared or checked out."
+    )
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
     

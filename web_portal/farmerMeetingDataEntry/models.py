@@ -114,13 +114,23 @@ class MeetingAttachment(models.Model):
             validate_file_size,
         ]
     )
-    uploaded_at = models.DateTimeField(auto_now_add=True) 
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'farmermeetingdataentry_meetingattachment'
 
     def __str__(self):
         return os.path.basename(self.file.name)
+
+    def delete(self, *args, **kwargs):
+        """Delete the model instance and its file if it exists"""
+        # Try to delete the file, but don't fail if it doesn't exist
+        try:
+            if self.file and os.path.exists(self.file.path):
+                self.file.delete(save=False)
+        except Exception:
+            pass  # File doesn't exist or can't be deleted, continue anyway
+        super().delete(*args, **kwargs)
     
 # field day 
 class FieldDay(models.Model):
@@ -237,10 +247,20 @@ class FieldDayAttachment(models.Model):
             validate_file_size,
         ]
     )
-    uploaded_at = models.DateTimeField(auto_now_add=True) 
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return os.path.basename(self.file.name)
-    
+
     class Meta:
         db_table = 'farmermeetingdataentry_fielddayattachment'
+
+    def delete(self, *args, **kwargs):
+        """Delete the model instance and its file if it exists"""
+        # Try to delete the file, but don't fail if it doesn't exist
+        try:
+            if self.file and os.path.exists(self.file.path):
+                self.file.delete(save=False)
+        except Exception:
+            pass  # File doesn't exist or can't be deleted, continue anyway
+        super().delete(*args, **kwargs)
