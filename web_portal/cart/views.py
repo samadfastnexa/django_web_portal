@@ -58,8 +58,14 @@ class CartViewSet(viewsets.ViewSet):
     pagination_class = None  # Will be set dynamically for items endpoint
     
     def get_or_create_cart(self, user):
-        """Get or create cart for user"""
+        """Get or create active cart for user"""
         cart, created = Cart.objects.get_or_create(user=user)
+
+        # If cart exists but is inactive, reactivate it and clear old items
+        if not created and not cart.is_active:
+            cart.is_active = True
+            cart.save()
+
         # Clean expired items
         cart.clear_expired_items()
         return cart
@@ -544,13 +550,17 @@ class CartViewSet(viewsets.ViewSet):
             return error_response
             
         cart = get_object_or_404(Cart, id=cart_id, user_id=user_id)
-        
+
         # Count active items before clearing
         cleared_items_count = cart.items.filter(is_active=True).count()
-        
+
         # Soft delete - mark all active items as inactive
         cart.items.filter(is_active=True).update(is_active=False)
-        
+
+        # Mark cart as inactive
+        cart.is_active = False
+        cart.save()
+
         return Response({
             'message': 'Cart cleared successfully',
             'cart_id': cart.id,
@@ -757,10 +767,12 @@ class CartViewSet(viewsets.ViewSet):
         # Update order total
         order.total_amount = total_amount
         order.save()
-        
-        # Clear cart - soft delete (mark items inactive)
+
+        # Clear cart - soft delete (mark items and cart inactive)
         cart.items.filter(is_active=True).update(is_active=False)
-        
+        cart.is_active = False
+        cart.save()
+
         # Prepare response with normalized data
         order_serializer = OrderSerializer(order)
         

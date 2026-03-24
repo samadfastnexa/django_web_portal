@@ -18,14 +18,15 @@ from general_ledger.views import (
     export_ledger_csv,
     export_ledger_pdf,
 )
-from django.urls import path, include
+from django.urls import path, include, re_path
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
-from django.shortcuts import redirect 
+from django.shortcuts import redirect
 
 from django.conf import settings
 from django.conf.urls.static import static
+from .media_views import serve_media_file
 
 # Import custom admin site
 from django.utils.module_loading import autodiscover_modules
@@ -91,4 +92,13 @@ urlpatterns = [
     path('api/analytics/', include('analytics.urls')),  # Analytics dashboard APIs
     path('api/cart/', include('cart.urls')),  # Shopping cart and orders
     path('', include('general_ledger.urls')),  # General Ledger app URLs (includes both API and admin routes)
-]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]
+
+# Custom media file serving with graceful error handling
+if settings.DEBUG:
+    urlpatterns += [
+        re_path(r'^media/(?P<path>.*)$', serve_media_file, name='serve_media'),
+    ]
+else:
+    # In production, serve media files through web server (nginx/apache)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
