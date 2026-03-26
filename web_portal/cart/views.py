@@ -13,6 +13,7 @@ import uuid
 import logging
 
 from .models import Cart, CartItem, Order, OrderItem, Payment
+from FieldAdvisoryService.models import Company
 from .serializers import (
     CartSerializer,
     CartItemSerializer,
@@ -40,6 +41,20 @@ from .permissions import (
 from .jazzcash_service import JazzCashService, get_jazzcash_response_message
 
 logger = logging.getLogger(__name__)
+
+
+def get_default_company_key():
+    """
+    Get the default company key (Company_name) from the first active company
+    """
+    try:
+        first_company = Company.objects.filter(is_active=True).first()
+        if first_company and first_company.Company_name:
+            return first_company.Company_name
+        # Fallback to a default
+        return ''
+    except Exception:
+        return ''
 
 
 class CartViewSet(viewsets.ViewSet):
@@ -298,10 +313,10 @@ class CartViewSet(viewsets.ViewSet):
         
         page = paginator.paginate_queryset(queryset, request)
         if page is not None:
-            serializer = CartItemSerializer(page, many=True, context={'database': request.query_params.get('database', '4B-BIO')})
+            serializer = CartItemSerializer(page, many=True, context={'database': request.query_params.get('database', get_default_company_key())})
             return paginator.get_paginated_response(serializer.data)
         
-        serializer = CartItemSerializer(queryset, many=True, context={'database': request.query_params.get('database', '4B-BIO')})
+        serializer = CartItemSerializer(queryset, many=True, context={'database': request.query_params.get('database', get_default_company_key())})
         return Response(serializer.data)
     
     @swagger_auto_schema(
@@ -340,7 +355,7 @@ class CartViewSet(viewsets.ViewSet):
             is_active=True
         ).first()
         
-        database = serializer.validated_data.get('database', '4B-BIO')
+        database = serializer.validated_data.get('database', get_default_company_key())
         
         if existing_item:
             # Update quantity if item exists
@@ -735,7 +750,7 @@ class CartViewSet(viewsets.ViewSet):
         
         # Create order items from cart items and build cart details
         total_amount = 0
-        database = serializer.validated_data.get('database', '4B-BIO')
+        database = serializer.validated_data.get('database', get_default_company_key())
         
         for cart_item in cart_items:
             subtotal = cart_item.get_subtotal()
