@@ -33,6 +33,46 @@ from FieldAdvisoryService.models import Company, Region, Zone, Territory
 #logger = logging.getLogger(__name__)
 
 
+def get_company_schema_options():
+    """
+    Get dynamic schema options from Company model
+    Returns dict mapping Company_name to schema name (name field)
+    """
+    try:
+        companies = Company.objects.filter(is_active=True)
+        return {comp.Company_name: comp.name for comp in companies}
+    except Exception:
+        return {}
+
+
+def get_default_schema():
+    """
+    Get the default schema dynamically from the first active company
+    """
+    try:
+        first_company = Company.objects.filter(is_active=True).first()
+        if first_company and first_company.name:
+            return first_company.name
+        # If no companies found, try environment variable with no hardcoded fallback
+        return os.environ.get('HANA_SCHEMA', '')
+    except Exception:
+        return os.environ.get('HANA_SCHEMA', '')
+
+
+def get_default_company_key():
+    """
+    Get the default company key (Company_name) from the first active company
+    """
+    try:
+        first_company = Company.objects.filter(is_active=True).first()
+        if first_company and first_company.Company_name:
+            return first_company.Company_name
+        # Fallback to a default
+        return ''
+    except Exception:
+        return ''
+
+
 def get_hana_schema_from_request(request):
     """
     Resolve HANA schema from query param, session, or first active company.
@@ -185,7 +225,7 @@ def sales_order_admin(request):
         try:
             payload_text = request.POST.get('payload') or payload_text
             data = json.loads(payload_text)
-            selected_db = request.session.get('selected_db', '4B-BIO')
+            selected_db = request.session.get('selected_db', get_default_company_key())
             client = SAPClient(company_db_key=selected_db)
             result = client.create_sales_order(data)
         except Exception as e:
@@ -2726,7 +2766,7 @@ def bp_entry_admin(request):
                     }
                 ]
                 
-                selected_db = request.session.get('selected_db', '4B-BIO')
+                selected_db = request.session.get('selected_db', get_default_company_key())
                 client = SAPClient(company_db_key=selected_db)
                 try:
                     # Log the payload for debugging
@@ -2895,7 +2935,7 @@ def bp_lookup_admin(request):
     table_rows = []
     if request.method in ('POST',) or (request.method == 'GET'):
         try:
-            selected_db = request.session.get('selected_db', '4B-BIO')
+            selected_db = request.session.get('selected_db', get_default_company_key())
             client = SAPClient(company_db_key=selected_db)
             if card_code:
                 result = client.get_bp_details(card_code)
@@ -2965,13 +3005,29 @@ def get_business_partner_data(request, card_code=None):
         # logger.info(f"[BUSINESS_PARTNER] Using HANA schema: {hana_schema}")
         
         # Map HANA schema to company_db_key for SAPClient
-        # Extract the key from company name (e.g., 4B-BIO_APP -> 4B-BIO)
-        if 'BIO' in hana_schema.upper():
-            company_db_key = '4B-BIO'
-        elif 'ORANG' in hana_schema.upper():
-            company_db_key = '4B-ORANG'
-        else:
-            company_db_key = '4B-BIO'  # Default fallback
+        # Find matching company from the schema name
+        company_db_key = get_default_company_key()
+        try:
+            # Look up company by schema name (name field)
+            company = Company.objects.filter(is_active=True, name=hana_schema).first()
+            if company and company.Company_name:
+                company_db_key = company.Company_name
+            else:
+                # Try partial matching for backward compatibility
+                if 'BIO' in hana_schema.upper():
+                    bio_company = Company.objects.filter(is_active=True, Company_name__icontains='BIO').first()
+                    if bio_company:
+                        company_db_key = bio_company.Company_name
+                elif 'ORANG' in hana_schema.upper():
+                    orang_company = Company.objects.filter(is_active=True, Company_name__icontains='ORANG').first()
+                    if orang_company:
+                        company_db_key = orang_company.Company_name
+                elif 'AGRI' in hana_schema.upper():
+                    agri_company = Company.objects.filter(is_active=True, Company_name__icontains='AGRI').first()
+                    if agri_company:
+                        company_db_key = agri_company.Company_name
+        except Exception:
+            pass
         
         # logger.info(f"[BUSINESS_PARTNER] Using company_db_key: {company_db_key}")
         
@@ -3366,7 +3422,7 @@ def list_policies(request):
         elif database_param:
             selected_db = database_param.replace('_APP', '').replace('-APP', '')
         else:
-            selected_db = request.session.get('selected_db', '4B-ORANG')
+            selected_db = request.session.get('selected_db', get_default_company_key())
         
         # logger.info(f"[SAP POLICIES] Fetching policies for database: {selected_db}")
         
@@ -3575,7 +3631,7 @@ def sync_policies(request):
     elif database_param:
         selected_db = database_param.replace('_APP', '').replace('-APP', '')
     else:
-        selected_db = request.session.get('selected_db', '4B-ORANG')
+        selected_db = request.session.get('selected_db', get_default_company_key())
     client = SAPClient(company_db_key=selected_db)
     try:
         rows = client.get_all_policies()
@@ -4212,7 +4268,7 @@ def sales_vs_achievement_territory_api(request):
         cfg['schema'] = db_param
     else:
         # Use first available company schema or default
-        cfg['schema'] = list(db_options.values())[0] if db_options else '4B-BIO_APP'
+        cfg['schema'] = list(db_options.values())[0] if db_options else get_default_schema()
     
     # Handle period parameter
     period = (request.query_params.get('period') or '').strip().lower()
@@ -6115,9 +6171,16 @@ def download_product_description_api(request):
                     if folder not in possible_folders:
                         possible_folders.append(folder)
             except Exception:
-                # Fallback: if we can't read directory, try common patterns
+                # Fallback: if we can't read directory, try company folders
                 if not possible_folders:
-                    possible_folders = ['4B-BIO', '4B-ORANG', '4B-AGRI']
+                    try:
+                        companies = Company.objects.filter(is_active=True)
+                        possible_folders = [comp.name.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip() for comp in companies if comp.name]
+                        # Remove duplicates
+                        possible_folders = list(set(possible_folders))
+                    except Exception:
+                        # Last resort fallback
+                        possible_folders = ['default']
             
             # Try to find the file in possible folders
             file_name_with_ext = f"{doc_file}.{doc_ext}"
@@ -7895,7 +7958,7 @@ def set_database(request):
    # logger = logging.getLogger(__name__)
     
     if request.method == 'POST':
-        db_key = request.POST.get('database', '4B-BIO')
+        db_key = request.POST.get('database', get_default_company_key())
         request.session['selected_db'] = db_key
         request.session.modified = True  # Force session save
         
@@ -8351,7 +8414,7 @@ def disease_detail_api(request, disease_id=None):
             description='Database/Company name (e.g., 4B-BIO_APP, 4B-ORANG_APP) for fetching product images and details from HANA catalog',
             type=openapi.TYPE_STRING,
             required=False,
-            default='4B-BIO_APP'
+            default=get_default_schema()
         ),
         openapi.Parameter(
             'include_inactive',

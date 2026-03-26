@@ -40,6 +40,34 @@ except ImportError:
     SAP_AVAILABLE = False
 
 
+def get_company_schema_options():
+    """
+    Get dynamic schema options from Company model
+    Returns dict mapping Company_name to schema name (name field)
+    """
+    try:
+        from FieldAdvisoryService.models import Company
+        companies = Company.objects.filter(is_active=True)
+        return {comp.Company_name: comp.name for comp in companies}
+    except Exception:
+        return {}
+
+
+def get_default_schema():
+    """
+    Get the default schema dynamically from the first active company
+    """
+    try:
+        from FieldAdvisoryService.models import Company
+        first_company = Company.objects.filter(is_active=True).first()
+        if first_company and first_company.name:
+            return first_company.name
+        # If no companies found, try environment variable with no hardcoded fallback
+        return os.environ.get('HANA_SCHEMA', '')
+    except Exception:
+        return os.environ.get('HANA_SCHEMA', '')
+
+
 class HANAConnectionTestView(APIView):
     """
     Test HANA connection and environment variables
@@ -406,34 +434,39 @@ class DashboardOverviewView(APIView):
             password = os.environ.get('HANA_PASSWORD', '')
             schema = os.environ.get('HANA_SCHEMA', '')
             
-            # Get company schema mapping / default schema, prefer SAP_COMPANY_DB over HANA_SCHEMA/FASTAPP
+            # Get company schema mapping from Company model
             try:
-                db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-                mapping = {}
-                if db_setting:
-                    if isinstance(db_setting.value, dict):
-                        mapping = db_setting.value
-                    else:
-                        raw_schema = str(db_setting.value or '').strip()
-                        if raw_schema:
-                            schema = raw_schema
-                if mapping:
+                db_options = get_company_schema_options()
+                if db_options:
                     result['company_options'] = [
                         {"key": k.strip(), "schema": str(v).strip()}
-                        for k, v in mapping.items()
+                        for k, v in db_options.items()
                     ]
                     if company:
-                        mapped = mapping.get(company.strip())
+                        mapped = db_options.get(company.strip())
                         if mapped:
                             schema = str(mapped).strip()
-                env_schema = os.environ.get('SAP_COMPANY_DB')
-                if env_schema and not mapping and not db_setting:
-                    schema = str(env_schema).strip()
+
+                # Fallback to database setting if Company model not available
                 if not schema:
-                    schema = '4B-BIO_APP'
+                    db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                    if db_setting:
+                        if isinstance(db_setting.value, dict):
+                            mapping = db_setting.value
+                            if mapping and company:
+                                mapped = mapping.get(company.strip())
+                                if mapped:
+                                    schema = str(mapped).strip()
+                        else:
+                            raw_schema = str(db_setting.value or '').strip()
+                            if raw_schema:
+                                schema = raw_schema
+
+                # Final fallback to default schema from Company model
+                if not schema:
+                    schema = get_default_schema()
             except Exception:
-                if not schema:
-                    schema = '4B-BIO_APP'
+                schema = get_default_schema()
             
             # Connect to HANA
             encrypt = str(os.environ.get('HANA_ENCRYPT', '')).strip().lower() in ('true', '1', 'yes')
@@ -556,46 +589,57 @@ class DashboardOverviewView(APIView):
             port = os.environ.get('HANA_PORT', '30015')
             user_name = os.environ.get('HANA_USER', '')
             password = os.environ.get('HANA_PASSWORD', '')
-            schema = os.environ.get('HANA_SCHEMA', '4B-BIO_APP')
-            
-            # Get company schema mapping
+            schema = get_default_schema()
+
+            # Get company schema mapping from Company model
             try:
-                db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
-                if db_setting:
-                    mapping = db_setting.value if isinstance(db_setting.value, dict) else {}
-                    if mapping:
-                        result['company_options'] = [
-                            {"key": k.strip(), "schema": str(v).strip()}
-                            for k, v in mapping.items()
-                        ]
-                        if company:
-                            # Try to match company key
-                            schema = mapping.get(company.strip(), schema)
-                    elif isinstance(db_setting.value, str):
-                        # Try to parse string JSON
-                        import json
-                        try:
-                            mapping = json.loads(db_setting.value)
+                db_options = get_company_schema_options()
+                if db_options:
+                    result['company_options'] = [
+                        {"key": k.strip(), "schema": str(v).strip()}
+                        for k, v in db_options.items()
+                    ]
+                    if company:
+                        # Try to match company key
+                        mapped_schema = db_options.get(company.strip())
+                        if mapped_schema:
+                            schema = mapped_schema
+
+                # Fallback to database setting if Company model not available
+                if not db_options:
+                    db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                    if db_setting:
+                        mapping = db_setting.value if isinstance(db_setting.value, dict) else {}
+                        if mapping:
                             result['company_options'] = [
                                 {"key": k.strip(), "schema": str(v).strip()}
                                 for k, v in mapping.items()
                             ]
                             if company:
-                                schema = mapping.get(company.strip(), schema)
-                        except:
-                            pass
+                                mapped_schema = mapping.get(company.strip())
+                                if mapped_schema:
+                                    schema = mapped_schema
+                        elif isinstance(db_setting.value, str):
+                            # Try to parse string JSON
+                            import json
+                            try:
+                                mapping = json.loads(db_setting.value)
+                                result['company_options'] = [
+                                    {"key": k.strip(), "schema": str(v).strip()}
+                                    for k, v in mapping.items()
+                                ]
+                                if company:
+                                    mapped_schema = mapping.get(company.strip())
+                                    if mapped_schema:
+                                        schema = mapped_schema
+                            except:
+                                pass
             except Exception:
                 pass
-            
-            # Fallback for schema selection if not found in mapping but company param is present
-            if company and not any(opt['key'] == company for opt in result['company_options']):
-                norm = company.strip().upper().replace('-APP', '_APP')
-                if '4B-BIO' in norm:
-                    schema = '4B-BIO_APP'
-                elif '4B-ORANG' in norm:
-                    schema = '4B-ORANG_APP'
-                else:
-                    schema = company
+
+            # Use company param directly if no mapping found but param is present
+            if company and not schema:
+                schema = company
             
             # Connect to HANA
             encrypt = str(os.environ.get('HANA_ENCRYPT', '')).strip().lower() in ('true', '1', 'yes')
@@ -770,7 +814,7 @@ class DashboardOverviewView(APIView):
             port = os.environ.get('HANA_PORT', '30015')
             user_name = os.environ.get('HANA_USER', '')
             password = os.environ.get('HANA_PASSWORD', '')
-            schema = os.environ.get('HANA_SCHEMA', '4B-BIO_APP')
+            schema = get_default_schema()
             
             # Get company schema mapping from Company model (matching collection analytics endpoint)
             db_options = {}
@@ -806,11 +850,11 @@ class DashboardOverviewView(APIView):
             if company and company in db_options:
                 schema = db_options[company]
             elif company:
-                # Try to find matching company by name field
+                # Use company param directly as schema
                 schema = company
-            else:
-                # Use first available company schema or default
-                schema = list(db_options.values())[0] if db_options else '4B-BIO_APP'
+            elif db_options:
+                # Use first available company schema
+                schema = list(db_options.values())[0]
             
             # DEBUG: Uncomment to see collection totals parameters
             # print(f"[DEBUG _get_collection_totals] emp_id={emp_id}, company={company}, schema={schema}, dates={start_date} to {end_date}, ignore_emp_filter={ignore_emp_filter}")
@@ -927,7 +971,7 @@ class DashboardOverviewView(APIView):
             port = os.environ.get('HANA_PORT', '30015')
             user_name = os.environ.get('HANA_USER', '')
             password = os.environ.get('HANA_PASSWORD', '')
-            schema = os.environ.get('HANA_SCHEMA', '4B-BIO_APP')
+            schema = get_default_schema()
             
             # Get company schema mapping from Company model (matching collection analytics endpoint)
             db_options = {}
@@ -963,11 +1007,11 @@ class DashboardOverviewView(APIView):
             if company and company in db_options:
                 schema = db_options[company]
             elif company:
-                # Try to find matching company by name field
+                # Use company param directly as schema
                 schema = company
-            else:
-                # Use first available company schema or default
-                schema = list(db_options.values())[0] if db_options else '4B-BIO_APP'
+            elif db_options:
+                # Use first available company schema
+                schema = list(db_options.values())[0]
             
             # DEBUG: Uncomment to see sales totals parameters
             # print(f"[DEBUG _get_sales_totals] emp_id={emp_id}, company={company}, schema={schema}, dates={start_date} to {end_date}")
@@ -1281,7 +1325,7 @@ class CollectionAnalyticsView(APIView):
                 'host': os.environ.get('HANA_HOST') or '',
                 'port': os.environ.get('HANA_PORT') or '30015',
                 'user': os.environ.get('HANA_USER') or '',
-                'schema': os.environ.get('HANA_SCHEMA') or '4B-BIO_APP',
+                'schema': get_default_schema(),
                 'encrypt': os.environ.get('HANA_ENCRYPT') or '',
                 'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or ''
             }
@@ -1325,9 +1369,9 @@ class CollectionAnalyticsView(APIView):
             elif db_param:
                 # Try to find matching company by name field
                 cfg['schema'] = db_param
-            else:
-                # Use first available company schema or default
-                cfg['schema'] = list(db_options.values())[0] if db_options else '4B-BIO_APP'
+            elif db_options:
+                # Use first available company schema
+                cfg['schema'] = list(db_options.values())[0]
             
             # Parameters
             period = (request.GET.get('period') or '').strip().lower()
