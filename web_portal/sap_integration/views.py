@@ -4239,6 +4239,10 @@ def sales_vs_achievement_geo_inv_api(request):
 )
 @api_view(['GET'])
 def sales_vs_achievement_territory_api(request):
+    print("\n🚨🚨🚨 EMERGENCY DEBUG: sales_vs_achievement_territory_api() WAS CALLED! 🚨🚨🚨")
+    print(f"🚨 If you see this message, the debugging is working! Full URL: {request.get_full_path()}")
+    print("🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨")
+
     try:
         _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
         _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
@@ -4392,6 +4396,30 @@ def sales_vs_achievement_territory_api(request):
                 emp_val = None  # Don't pass emp_id to query
             
             # Use the new sales_vs_achievement_territory function with B4_SALES_TARGET
+
+            # DEBUG: Log API call parameters
+            print("\n" + "="*100)
+            print("DEBUG: API ENDPOINT - sales_vs_achievement_territory_api() called")
+            print("="*100)
+            print(f"DEBUG: Request URL: {request.get_full_path()}")
+            print(f"DEBUG: Database schema: {cfg.get('schema', 'N/A')}")
+            print(f"DEBUG: Connection established: {conn is not None}")
+            print(f"DEBUG: Parameters being passed to hana_connect function:")
+            print(f"  - emp_id: {emp_val}")
+            print(f"  - region: {region or None}")
+            print(f"  - zone: {zone or None}")
+            print(f"  - territory: {territory or None}")
+            print(f"  - start_date: {start_date or None}")
+            print(f"  - end_date: {end_date or None}")
+            print(f"  - group_by_date: False")
+            print(f"  - ignore_emp_filter: {ignore_emp_filter}")
+            print(f"  - group_by_emp: {group_by_emp}")
+            print(f"DEBUG: Employee special handling:")
+            print(f"  - employee_code from request: {employee_code}")
+            print(f"  - CEO mode (code='00'): {employee_code == '00'}")
+            print(f"  - emp_val after processing: {emp_val}")
+            print("="*100)
+
             data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=ignore_emp_filter, group_by_emp=group_by_emp)
             
             # DEBUG: Uncomment to see row data structure
@@ -4841,6 +4869,29 @@ def sales_vs_achievement_by_emp_api(request):
             except Exception:
                 pass
     except Exception as e:
+        # DEBUG: Enhanced error logging for B4_SALES_TARGET issues
+        print("\n" + "!"*100)
+        print("DEBUG: EXCEPTION CAUGHT in sales_vs_achievement_territory_api")
+        print("!"*100)
+        print(f"DEBUG: Exception type: {type(e).__name__}")
+        print(f"DEBUG: Exception message: {str(e)}")
+        print(f"DEBUG: Request URL: {request.get_full_path()}")
+
+        # Check if it's the B4_SALES_TARGET error
+        if "B4_SALES_TARGET" in str(e):
+            print("DEBUG: This is the B4_SALES_TARGET missing table error!")
+            print("DEBUG: Root cause: The table B4_SALES_TARGET does not exist in your SAP HANA database")
+            print("DEBUG: Possible solutions:")
+            print("  1. Create B4_SALES_TARGET table in SAP Business One")
+            print("  2. Use an alternative existing table")
+            print("  3. Check if data should come from a different source")
+
+        # Print stack trace for debugging
+        import traceback
+        print("DEBUG: Full stack trace:")
+        traceback.print_exc()
+        print("!"*100)
+
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @swagger_auto_schema(tags=['SAP'], 
