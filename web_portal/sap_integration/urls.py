@@ -40,6 +40,8 @@ from .views import (
     # Product Description APIs
     get_product_description_api,
     download_product_description_api,
+    # Diagnostics endpoints
+    hana_connection_test_api,
 )
 
 urlpatterns = [
@@ -76,6 +78,9 @@ urlpatterns = [
     path('sales-orders/', sales_orders_api, name='sales_orders_api'),
     path('sales-vs-achievement-geo-inv/', sales_vs_achievement_geo_inv_api, name='sales_vs_achievement_geo_inv_api'),
     path('sales-vs-achievement-territory/', sales_vs_achievement_territory_api, name='sales_vs_achievement_territory_api'),
+    
+        # Diagnostics endpoints
+        path('hana-connection-test/', hana_connection_test_api, name='hana_connection_test_api'),
     
     # Disease Management endpoints
     path('diseases/', disease_list_api, name='disease_list_api'),

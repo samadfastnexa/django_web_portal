@@ -1,0 +1,176 @@
+Region,Zone,Territory
+AGRI BLUE,BHAKHAR,Bakhar
+AGRI BLUE,BHAKHAR,D.I Khan
+AGRI BLUE,BHAKHAR,Kahror Lal Esan
+AGRI BLUE,BHAKHAR,Mianwali
+AGRI BLUE,BHAKHAR,Piplan
+AGRI BLUE,BHAKHAR,Quaidabad
+AGRI BLUE,Bahawalpur,Ahmad Pur East
+AGRI BLUE,Bahawalpur,Bahawalnagar
+AGRI BLUE,Bahawalpur,Bahawalpur
+AGRI BLUE,Bahawalpur,Dunya Pur
+AGRI BLUE,Bahawalpur,Fortabbas
+AGRI BLUE,Bahawalpur,Haroonabad
+AGRI BLUE,Bahawalpur,Lodhran
+AGRI BLUE,Bahawalpur,Minchenabad
+AGRI BLUE,Bahawalpur,R.Y. Khan 2
+AGRI BLUE,Bahawalpur,Zahir Pir
+AGRI BLUE,Bahawalpur,xGalay waal
+AGRI BLUE,Bahawalpur,xKehror Pacca
+AGRI BLUE,CHINIOT,Bhowana
+AGRI BLUE,CHINIOT,Chiniot
+AGRI BLUE,CHINIOT,Silanwali
+AGRI BLUE,D.G.KHAN,Choti
+AGRI BLUE,D.G.KHAN,D.G Khan
+AGRI BLUE,D.G.KHAN,Fazalpur
+AGRI BLUE,D.G.KHAN,Jampur
+AGRI BLUE,D.G.KHAN,Kot Mithan
+AGRI BLUE,D.G.KHAN,Muhammad Pur
+AGRI BLUE,D.G.KHAN,Rajan Pur
+AGRI BLUE,MUZAFFAR GARH,Ali Pur
+AGRI BLUE,MUZAFFAR GARH,Jatoi
+AGRI BLUE,MUZAFFAR GARH,Kot Adu
+AGRI BLUE,MUZAFFAR GARH,Layyah
+AGRI BLUE,MUZAFFAR GARH,Muzaffar Garh
+AGRI BLUE,Multan,Khanewal
+AGRI BLUE,Multan,Multan
+AGRI BLUE,Multan,Shujabad
+AGRI BLUE,Multan,Tibba Sultan Pur
+AGRI BLUE,Multan,xJalal Pur
+AGRI BLUE,Multan,xKABIRWALA
+AGRI BLUE,SARGODHA,Khushab
+AGRI BLUE,SARGODHA,Kot Moman
+AGRI BLUE,SARGODHA,Mandi Bahaudin
+AGRI BLUE,SARGODHA,Sargodha
+AGRI BLUE,SARGODHA,Talagang
+AGRI BLUE,xBAHAWAL NAGAR,xChishtian
+AGRI BLUE,xBAHAWAL NAGAR,xHasil Pur
+AGRI GREEN,ARIF WALA,Arifwala
+AGRI GREEN,ARIF WALA,Chichawatni
+AGRI GREEN,ARIF WALA,Mianchannu
+AGRI GREEN,ARIF WALA,Qabola
+AGRI GREEN,ARIF WALA,Sahiwal
+AGRI GREEN,Faisalabad,18 HAZARI
+AGRI GREEN,Faisalabad,Ahmad Pur Sial
+AGRI GREEN,Faisalabad,Faisalabad
+AGRI GREEN,Faisalabad,Jhang
+AGRI GREEN,Faisalabad,Kamalia
+AGRI GREEN,Faisalabad,SAMUNDRI
+AGRI GREEN,Faisalabad,Shorkot
+AGRI GREEN,Faisalabad,T.T Singh
+AGRI GREEN,Gujranwala,Alipur Chatha
+AGRI GREEN,Gujranwala,Gujranwala
+AGRI GREEN,Gujranwala,Hafizabad
+AGRI GREEN,Gujranwala,Narang
+AGRI GREEN,Gujranwala,Sheikhupura
+AGRI GREEN,Lahore,Kasur
+AGRI GREEN,Lahore,Lahore
+AGRI GREEN,Lahore,Nankana
+AGRI GREEN,Lahore,Pattoki
+AGRI GREEN,Lahore,Theeng Morh
+AGRI GREEN,Pakpattan,Depalpur
+AGRI GREEN,Pakpattan,Haveli Lakha
+AGRI GREEN,Pakpattan,Noor Pur
+AGRI GREEN,Pakpattan,Pakpattan-1
+AGRI GREEN,Pakpattan,Pakpattan-2
+AGRI GREEN,Pakpattan,xHujra
+AGRI GREEN,Sialkot,Daska
+AGRI GREEN,Sialkot,Narowal
+AGRI GREEN,Sialkot,Pasrur
+AGRI GREEN,Sialkot,Sialkot
+AGRI GREEN,Sialkot,Wahndo
+AGRI GREEN,Vehari,Burewala
+AGRI GREEN,Vehari,Gaggo
+AGRI GREEN,Vehari,Mailsi-1
+AGRI GREEN,Vehari,Mailsi-2
+AGRI GREEN,Vehari,Vehari
+AGRI WHITE,Dadu,Chundko
+AGRI WHITE,Dadu,Dadu
+AGRI WHITE,Dadu,Gambat
+AGRI WHITE,Dadu,Mehrabpur
+AGRI WHITE,Dadu,Noshero Feroz
+AGRI WHITE,Ghotki,Dharki
+AGRI WHITE,Ghotki,Ghotki
+AGRI WHITE,Ghotki,Jarwar
+AGRI WHITE,Ghotki,Khanpur Mahar
+AGRI WHITE,Ghotki,Mirpur Mathelo
+AGRI WHITE,Hyderabad,Golarchi
+AGRI WHITE,Hyderabad,Hyderabad
+AGRI WHITE,Hyderabad,Karachi
+AGRI WHITE,Hyderabad,Matli
+AGRI WHITE,Hyderabad,Tando M. Khan
+AGRI WHITE,LARKANA,Kambar
+AGRI WHITE,Nawab Shah,Halla
+AGRI WHITE,Nawab Shah,Khipro
+AGRI WHITE,Nawab Shah,Nawabshah
+AGRI WHITE,Nawab Shah,Sakrand
+AGRI WHITE,Nawab Shah,Sanghar
+AGRI WHITE,Nawab Shah,Shahdadpur
+AGRI WHITE,Rahim Yar Khan,Khan Pur
+AGRI WHITE,Rahim Yar Khan,R.Y. Khan 1
+AGRI WHITE,Rahim Yar Khan,Sadiqabad
+AGRI WHITE,SUKKAR,Dokri
+AGRI WHITE,SUKKAR,Kandh Kot
+AGRI WHITE,SUKKAR,Kashmore
+AGRI WHITE,SUKKAR,Larkana
+AGRI WHITE,SUKKAR,Mehar
+AGRI WHITE,SUKKAR,Rohri
+AGRI WHITE,SUKKAR,Shikarpur
+AGRI WHITE,SUKKAR,Usta Muhammad
+AGRI WHITE,Umerkot,Kunri
+AGRI WHITE,Umerkot,Mirpurkhas
+AGRI WHITE,Umerkot,Sufi
+AGRI WHITE,Umerkot,Tando Allah Yar
+AGRI WHITE,Umerkot,Umerkot
+BULK,Bulk Sub,Multan Bulk
+BULK,Lahore Bulk,Lahore Bulk
+Bulk,Bulk,Bulk
+Dormant,Dormant,Disputed
+Dormant,Dormant,Dormant
+Dormant,XDunya Pur ZoneX,Badin
+Dormant,XDunya Pur ZoneX,Bhalwal TerritoryX
+Dormant,XDunya Pur ZoneX,Dunga Bunga TerritoryX
+Dormant,XDunya Pur ZoneX,Esa Khel TerritoryX
+Dormant,XDunya Pur ZoneX,Faqeerwali TerritoryX
+Dormant,XDunya Pur ZoneX,Fateh Pur TerritoryX
+Dormant,XDunya Pur ZoneX,Harappa
+Dormant,XDunya Pur ZoneX,Jhudo
+Dormant,XDunya Pur ZoneX,Kot Sultan TerritoryX
+Dormant,XDunya Pur ZoneX,Kotla Mughlan TerritoryX
+Dormant,XDunya Pur ZoneX,Liaqatpur TerritoryX
+Dormant,XDunya Pur ZoneX,Meer Hazar TerritoryX
+Dormant,XDunya Pur ZoneX,Nawabshah
+Dormant,XDunya Pur ZoneX,Okara
+Dormant,XDunya Pur ZoneX,xDera Murad Jamali
+Dormant,XDunya Pur ZoneX,xJanpur
+Dormant,XDunya Pur ZoneX,xKhuzdar
+Dormant,XDunya Pur ZoneX,xNasirabad
+Dormant,XDunya Pur ZoneX,xPerumal
+Dormant,XDunya Pur ZoneX,xTando Ghulam Ali
+Dormant,XDunya Pur ZoneX,xThatta
+Gold,Quetta,Loralai
+Gold,Quetta,Pashin
+Gold,Quetta,Quetta
+Institutional,Institutional,Institutional
+Inter Company -,Contract Grower,Contract Growers
+Inter Company -,Farms,Farms
+Inter Company -,Farms,Wheat Sale
+Inter Company -,Inter Company,Inter Company
+Inter Company -,Sample,Sample
+Pakistan,AGRI BLUE,xRAJAN PUR
+Pakistan,AGRI GREEN,Sahiwal
+Pakistan,AGRI GREEN,xJHANG
+Pakistan,AGRI WHITE,Mirpur Khas
+Pakistan,BULK,Multan Bulk
+Pakistan,Dormant Sub,Khanpur Mahar TerritoryX
+Platinum,PESHAWAR,Charsada
+Platinum,PESHAWAR,Hazro
+Platinum,PESHAWAR,Swabi
+Platinum,PESHAWAR,TAXILA
+Platinum,PESHAWAR,xPeshawar
+Platinum,POTOHAR,Islamabad
+Platinum,POTOHAR,Mansehra
+Platinum,POTOHAR,Mardan
+Platinum,POTOHAR,Swat
+Tarzan Online,Tarzan Online,Tarzan Online
+Walking Customer,Walking Customer,Walking Customer

@@ -263,12 +263,12 @@ def hana_connect_admin(request):
     if not selected_schema:
         selected_schema = os.environ.get('HANA_SCHEMA', '')
     
-    # DEBUG: Uncomment to see schema selection details
-    # print(f"DEBUG hana_connect_admin:")
-    # print(f"  selected_db_key: {selected_db_key}")
-    # print(f"  db_options: {db_options}")
-    # print(f"  selected_schema: {selected_schema}")
-    # print(f"  type(selected_schema): {type(selected_schema)}")
+    # DEBUG: schema selection details
+    print(f"DEBUG hana_connect_admin:")
+    print(f"  selected_db_key: {selected_db_key}")
+    print(f"  db_options: {db_options}")
+    print(f"  selected_schema: {selected_schema}")
+    print(f"  type(selected_schema): {type(selected_schema)}")
     
     cfg = {
         'dsn': os.environ.get('HANA_DSN') or '',
@@ -4270,8 +4270,8 @@ def sales_vs_achievement_territory_api(request):
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             
-            # DEBUG: Uncomment to see sales territory parameters
-            # print(f"[DEBUG sales_vs_achievement_territory_api] schema={cfg['schema']}, emp_id={emp_val}, dates={start_date} to {end_date}, period={period if period else 'None'}")
+            # DEBUG: sales territory parameters
+            print(f"[DEBUG sales_vs_achievement_territory_api] schema={cfg['schema']}, emp_id={emp_val}, dates={start_date} to {end_date}, period={period if period else 'None'}")
             
             # CEO special case: employee_code='00' should see ALL territories
             # When employee_code is '00', ignore employee filter to show organization-wide data
@@ -4283,12 +4283,12 @@ def sales_vs_achievement_territory_api(request):
             # Use the new sales_vs_achievement_territory function with B4_SALES_TARGET
             data = sales_vs_achievement_territory(conn, emp_id=emp_val, region=region or None, zone=zone or None, territory=territory or None, start_date=start_date or None, end_date=end_date or None, group_by_date=False, ignore_emp_filter=ignore_emp_filter, group_by_emp=group_by_emp)
             
-            # DEBUG: Uncomment to see row data structure
-            # if data and len(data) > 0:
-            #     print(f"[DEBUG sales_vs_achievement_territory_api] Total rows returned: {len(data)}")
-            #     print(f"[DEBUG sales_vs_achievement_territory_api] First row: {data[0] if data else 'No data'}")
-            #     if len(data) > 1:
-            #         print(f"[DEBUG sales_vs_achievement_territory_api] Second row: {data[1]}")
+            # DEBUG: row data structure
+            if data and len(data) > 0:
+                print(f"[DEBUG sales_vs_achievement_territory_api] Total rows returned: {len(data)}")
+                print(f"[DEBUG sales_vs_achievement_territory_api] First row: {data[0] if data else 'No data'}")
+                if len(data) > 1:
+                    print(f"[DEBUG sales_vs_achievement_territory_api] Second row: {data[1]}")
             
             if in_millions_param in ('true','1','yes','y'):
                 scaled = []
@@ -5060,8 +5060,15 @@ def get_policy_customer_balance_data(request, card_code=None):
         'encrypt': os.environ.get('HANA_ENCRYPT') or '',
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
-    # Use shared helper to resolve schema from Company model
-    if not cfg['schema']:
+    # Honor explicit schema values exactly as provided (e.g., 4B-AGRI_LIVE),
+    # then fall back to resolver for legacy/company-key flows.
+    explicit_schema = (
+        (request.GET.get('database') or '').strip()
+        or (request.GET.get('company') or '').strip()
+    )
+    if explicit_schema:
+        cfg['schema'] = explicit_schema
+    elif not cfg['schema']:
         cfg['schema'] = get_hana_schema_from_request(request)
     
     try:
@@ -8754,8 +8761,13 @@ def projects_list_api(request):
         hana_user = os.environ.get('HANA_USER', '')
         hana_password = os.environ.get('HANA_PASSWORD', '')
         
-        # Get database schema
-        schema = get_hana_schema_from_request(request)
+        # Use explicitly provided schema as-is (e.g., 4B-AGRI_LIVE) to avoid
+        # fallback mapping that can collapse to a different company schema.
+        explicit_schema = (
+            (request.GET.get('database') or '').strip()
+            or (request.GET.get('company') or '').strip()
+        )
+        schema = explicit_schema or get_hana_schema_from_request(request)
         # logger.info(f"[PROJECTS_LIST] Using schema: {schema}")
         
         # Get filter parameters
@@ -9043,8 +9055,13 @@ def policy_detail_api(request):
         hana_user = os.environ.get('HANA_USER', '')
         hana_password = os.environ.get('HANA_PASSWORD', '')
         
-        # Get database schema
-        schema = get_hana_schema_from_request(request)
+        # Use explicitly provided schema as-is (e.g., 4B-AGRI_LIVE) to avoid
+        # fallback mapping that can collapse to a different company schema.
+        explicit_schema = (
+            (request.GET.get('database') or '').strip()
+            or (request.GET.get('company') or '').strip()
+        )
+        schema = explicit_schema or get_hana_schema_from_request(request)
         # logger.info(f"[POLICY_DETAIL] Using schema: {schema}, code: {policy_code}")
         
         if not hana_host or not hana_user or not hana_password:
@@ -9646,4 +9663,496 @@ def dealer_analytics_api(request):
         return Response({
             'success': False,
             'error': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+@swagger_auto_schema(tags=['SAP - Diagnostics'],
+    method='get',
+    operation_summary="Test SAP HANA Connection & Table Availability",
+    operation_description="""
+    🔍 **SAP HANA DIAGNOSTIC ENDPOINT** - Test server connectivity and validate database
+    
+    This endpoint helps diagnose issues when queries fail with:
+    - "Table/View not found: B4_SALES_TARGET"
+    - "Table/View not found: B4_COLLECTION_TARGET"
+    - Other SAP HANA table/view not found errors
+    
+    **What This Endpoint Tests:**
+    1. ✅ Basic SAP HANA connectivity (can we reach the server?)
+    2. ✅ Authentication (are credentials valid?)
+    3. ✅ Schema accessibility (can we access the selected schema?)
+    4. ✅ Available tables (what tables exist in this schema?)
+    5. ✅ Critical tables (do B4_SALES_TARGET, B4_COLLECTION_TARGET exist?)
+    6. ✅ Configuration validation (are env vars correct?)
+    
+    **Usage Example:**
+    - Test current schema: `GET /api/sap/hana-connection-test/`
+    - Test specific schema: `GET /api/sap/hana-connection-test/?database=4B-AGRI_LIVE`
+    - Test with verbose output: `GET /api/sap/hana-connection-test/?verbose=true`
+    
+    **Troubleshooting Guidance:**
+    If tables are reported as missing that you know exist:
+    1. Verify you're connected to the correct SAP HANA instance
+    2. Check HANA_HOST and HANA_PORT in environment settings
+    3. Verify the schema name: is it "4B-AGRI_LIVE" or "4B_AGRI_LIVE"?
+    4. Check if server's SAP HANA has the tables (local vs production issue)
+    5. Contact IT/DevOps to confirm table existence on that server
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="Schema to test (e.g., 4B-AGRI_LIVE, 4B-BIO_APP, 4B-ORANG_APP). If not provided, uses first active company schema.",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+        openapi.Parameter(
+            'verbose',
+            openapi.IN_QUERY,
+            description="Include additional debug information (true/false). Default: false",
+            type=openapi.TYPE_BOOLEAN,
+            required=False,
+            default=False
+        )
+    ],
+    responses={
+        200: openapi.Response(
+            description="Connection test completed with diagnostic results",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "hostname": "sap-hana-prod.company.com",
+                    "schema": "4B-AGRI_LIVE",
+                    "connection": {
+                        "status": "connected",
+                        "message": "Successfully connected to SAP HANA"
+                    },
+                    "database_info": {
+                        "current_time": "2026-01-15T10:30:45.123456",
+                        "database_version": "4.00.000.00",
+                        "database_name": "HXE"
+                    },
+                    "schema_details": {
+                        "status": "accessible",
+                        "total_tables": 85,
+                        "total_views": 12
+                    },
+                    "critical_tables": {
+                        "B4_SALES_TARGET": {"exists": True, "type": "TABLE"},
+                        "B4_COLLECTION_TARGET": {"exists": True, "type": "VIEW"},
+                        "OTER": {"exists": True, "type": "TABLE"},
+                        "OITM": {"exists": True, "type": "TABLE"}
+                    },
+                    "available_tables": [
+                        "B4_SALES_TARGET",
+                        "B4_COLLECTION_TARGET",
+                        "OTER",
+                        "OITM",
+                        # ... more tables
+                    ],
+                    "missing_critical_tables": [],
+                    "troubleshooting": {
+                        "all_critical_tables_present": True,
+                        "explanation": "All expected tables are available in this schema"
+                    }
+                }
+            }
+        ),
+        500: openapi.Response(
+            description="Connection failed with error details",
+            examples={
+                "application/json": {
+                    "success": False,
+                    "error": "Connection failed",
+                    "message": "Cannot connect to SAP HANA server at sap-hana-prod:30015",
+                    "details": "Connection timeout after 60 seconds",
+                    "hostname": "sap-hana-prod.company.com",
+                    "port": "30015",
+                    "troubleshooting": [
+                        "Verify SAP HANA is running on sap-hana-prod:30015",
+                        "Check HANA_HOST and HANA_PORT environment variables",
+                        "Test network connectivity: ping sap-hana-prod",
+                        "Check VPN/firewall settings",
+                        "Contact SAP administrator"
+                    ]
+                }
+            }
+        )
+    }
+)
+@api_view(['GET'])
+def hana_connection_test_api(request):
+    """
+    API endpoint to diagnose SAP HANA connectivity and table availability.
+    
+    Tests connection, authentication, schema access, and lists available tables
+    to help troubleshoot "Table/View not found" errors.
+    """
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    verbose = (request.GET.get('verbose', '').lower() in ('true', '1', 'yes', 'y'))
+    
+    try:
+        # Load environment files
+        try:
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+        except Exception:
+            pass
+        
+        # Get database/schema parameter
+        db_param = (request.GET.get('database', '') or '').strip()
+        
+        # Try to get HANA schema from request (handles various parameter forms)
+        if db_param:
+            # Direct use of provided parameter
+            hana_schema = db_param
+        else:
+            # Fallback to get_hana_schema_from_request which handles Company model resolution
+            hana_schema = get_hana_schema_from_request(request)
+        
+        # Get HANA configuration from environment
+        cfg = {
+            'host': os.environ.get('HANA_HOST', '').strip(),
+            'port': os.environ.get('HANA_PORT', '30015').strip(),
+            'user': os.environ.get('HANA_USER', '').strip(),
+            'password': os.environ.get('HANA_PASSWORD', '').strip(),
+            'schema': hana_schema.strip() if hana_schema else '',
+            'encrypt': os.environ.get('HANA_ENCRYPT', '').strip(),
+            'ssl_validate': os.environ.get('HANA_SSL_VALIDATE', '').strip(),
+        }
+        
+        # Validate configuration
+        config_valid = all([cfg['host'], cfg['port'], cfg['user']])
+        
+        response_data = {
+            "hostname": cfg['host'],
+            "port": cfg['port'],
+            "schema": cfg['schema'] or 'Not specified',
+            "configuration": {
+                "has_host": bool(cfg['host']),
+                "has_port": bool(cfg['port']),
+                "has_user": bool(cfg['user']),
+                "has_password": bool(cfg['password']),
+                "has_schema": bool(cfg['schema']),
+                "all_required_settings": config_valid
+            }
+        }
+        
+        if not config_valid:
+            missing = []
+            if not cfg['host']:
+                missing.append("HANA_HOST")
+            if not cfg['port']:
+                missing.append("HANA_PORT") 
+            if not cfg['user']:
+                missing.append("HANA_USER")
+            if not cfg['password']:
+                missing.append("HANA_PASSWORD")
+                
+            return Response({
+                "success": False,
+                "error": "SAP HANA configuration is incomplete",
+                "message": f"Missing required environment variables: {', '.join(missing)}",
+                **response_data,
+                "troubleshooting": [
+                    "Set HANA_HOST environment variable (e.g., sap-hana-prod.company.com)",
+                    "Set HANA_PORT environment variable (default: 30015)",
+                    "Set HANA_USER environment variable (SAP HANA username)",
+                    "Set HANA_PASSWORD environment variable (SAP HANA password)",
+                    "Verify .env files in project root, parent directory, or /web_portal/",
+                    "Restart application after updating environment variables"
+                ]
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Try to establish connection
+        try:
+            from hdbcli import dbapi
+            
+            kwargs = {
+                'address': cfg['host'],
+                'port': int(cfg['port']),
+                'user': cfg['user'],
+                'password': cfg['password']
+            }
+            
+            # Handle encryption settings. Explicitly pass certificate validation flag
+            # because hdbcli may default to validation when encrypt=True.
+            if str(cfg['encrypt']).lower() in ('true', '1', 'yes'):
+                kwargs['encrypt'] = True
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).lower() in ('true', '1', 'yes'))
+            
+            # Attempt connection
+            conn = dbapi.connect(**kwargs)
+            
+            try:
+                # Connection successful
+                response_data["connection"] = {
+                    "status": "connected",
+                    "message": "Successfully connected to SAP HANA"
+                }
+                
+                # Get database information with HANA-safe SQL.
+                cur_info = conn.cursor()
+                current_time = "Unknown"
+                database_name = "Unknown"
+                database_version = "Unknown"
+
+                # 1) Always-safe timestamp query.
+                cur_info.execute('SELECT CURRENT_UTCTIMESTAMP FROM DUMMY')
+                ts_row = cur_info.fetchone()
+                if ts_row and len(ts_row) > 0:
+                    current_time = str(ts_row[0]) if ts_row[0] else "Unknown"
+
+                # 2) Database metadata query with fallbacks for different HANA versions.
+                try:
+                    cur_info.execute(
+                        'SELECT DATABASE_NAME AS "DB_NAME", DATABASE_VERSION AS "DB_VERSION" '
+                        'FROM SYS.M_DATABASES LIMIT 1'
+                    )
+                    meta_row = cur_info.fetchone()
+                    if meta_row:
+                        database_name = str(meta_row[0]) if meta_row[0] else "Unknown"
+                        database_version = str(meta_row[1]) if len(meta_row) > 1 and meta_row[1] else "Unknown"
+                except Exception:
+                    # Older/different revisions may expose VERSION instead of DATABASE_VERSION.
+                    try:
+                        cur_info.execute(
+                            'SELECT DATABASE_NAME AS "DB_NAME", VERSION AS "DB_VERSION" '
+                            'FROM SYS.M_DATABASES LIMIT 1'
+                        )
+                        meta_row = cur_info.fetchone()
+                        if meta_row:
+                            database_name = str(meta_row[0]) if meta_row[0] else "Unknown"
+                            database_version = str(meta_row[1]) if len(meta_row) > 1 and meta_row[1] else "Unknown"
+                    except Exception:
+                        # Last fallback: at least try database name, keep version unknown.
+                        try:
+                            cur_info.execute('SELECT DATABASE_NAME FROM SYS.M_DATABASES LIMIT 1')
+                            meta_row = cur_info.fetchone()
+                            if meta_row and len(meta_row) > 0:
+                                database_name = str(meta_row[0]) if meta_row[0] else "Unknown"
+                        except Exception:
+                            pass
+
+                response_data["database_info"] = {
+                    "current_time": current_time,
+                    "database_name": database_name,
+                    "database_version": database_version,
+                }
+                
+                # If schema provided, set it and test access
+                if cfg['schema']:
+                    try:
+                        cur_schema = conn.cursor()
+                        set_schema_sql = f'SET SCHEMA "{cfg["schema"]}"'
+                        cur_schema.execute(set_schema_sql)
+                        cur_schema.close()
+                        
+                        response_data["schema_details"] = {
+                            "status": "accessible",
+                            "name": cfg['schema']
+                        }
+                        
+                        # Get schema statistics: table and view counts
+                        cur_stats = conn.cursor()
+                        
+                        # Count tables in schema
+                        cur_stats.execute(f"""
+                            SELECT COUNT(*) FROM SYS.TABLES 
+                            WHERE SCHEMA_NAME = '{cfg["schema"]}'
+                        """)
+                        table_count = cur_stats.fetchone()
+                        table_count = table_count[0] if table_count else 0
+                        
+                        # Count views in schema
+                        cur_stats.execute(f"""
+                            SELECT COUNT(*) FROM SYS.VIEWS 
+                            WHERE SCHEMA_NAME = '{cfg["schema"]}'
+                        """)
+                        view_count = cur_stats.fetchone()
+                        view_count = view_count[0] if view_count else 0
+                        
+                        response_data["schema_details"]["total_tables"] = int(table_count)
+                        response_data["schema_details"]["total_views"] = int(view_count)
+                        
+                        # List all tables and views
+                        cur_tables = conn.cursor()
+                        cur_tables.execute(f"""
+                            SELECT TABLE_NAME, 'TABLE' as TYPE FROM SYS.TABLES 
+                            WHERE SCHEMA_NAME = '{cfg["schema"]}'
+                            UNION ALL
+                            SELECT VIEW_NAME as TABLE_NAME, 'VIEW' as TYPE FROM SYS.VIEWS
+                            WHERE SCHEMA_NAME = '{cfg["schema"]}'
+                            ORDER BY TABLE_NAME
+                        """)
+                        
+                        all_items = cur_tables.fetchall()
+                        available_names = []
+                        items_info = {}
+                        
+                        for item in all_items:
+                            name = item[0] if item[0] else ''
+                            item_type = item[1] if len(item) > 1 else 'UNKNOWN'
+                            if name:
+                                available_names.append(name)
+                                items_info[name] = {"type": item_type}
+                        
+                        response_data["available_tables"] = available_names
+                        
+                        # Check for critical tables that user is looking for
+                        critical_tables = ['B4_SALES_TARGET', 'B4_COLLECTION_TARGET', 'OTER', 'OITM']
+                        critical_status = {}
+                        missing_critical = []
+                        
+                        for critical_name in critical_tables:
+                            if critical_name in items_info:
+                                critical_status[critical_name] = {
+                                    "exists": True,
+                                    "type": items_info[critical_name].get("type", "TABLE")
+                                }
+                            else:
+                                critical_status[critical_name] = {
+                                    "exists": False,
+                                    "type": "MISSING"
+                                }
+                                missing_critical.append(critical_name)
+                        
+                        response_data["critical_tables"] = critical_status
+                        response_data["missing_critical_tables"] = missing_critical
+                        
+                        # Troubleshooting summary
+                        all_critical_present = len(missing_critical) == 0
+                        response_data["troubleshooting"] = {
+                            "all_critical_tables_present": all_critical_present,
+                            "explanation": "All expected tables are available in this schema" if all_critical_present else f"Missing tables: {', '.join(missing_critical)}"
+                        }
+                        
+                        if verbose and missing_critical:
+                            response_data["troubleshooting"]["guidance"] = [
+                                f"The following critical tables are NOT found in schema '{cfg['schema']}':",
+                                f"  - {', '.join(missing_critical)}",
+                                "",
+                                "Possible causes:",
+                                "1. Tables exist in local SAP HANA but not on production server - Check with IT/DevOps",
+                                "2. Tables are in a different schema - Verify the correct schema name",
+                                "3. Tables were not installed - Contact SAP support for deployment",
+                                "4. Connected to wrong SAP HANA instance - Check HANA_HOST environment variable",
+                                "",
+                                f"Available tables in schema '{cfg['schema']}': {len(available_names)} total",
+                                "Run with ?verbose=true to see full list"
+                            ]
+                        
+                        cur_stats.close()
+                        cur_tables.close()
+                        
+                    except Exception as e_schema:
+                        response_data["schema_details"] = {
+                            "status": "error",
+                            "error": str(e_schema),
+                            "message": f"Cannot access schema '{cfg['schema']}'"
+                        }
+                        return Response({
+                            "success": False,
+                            "error": "Schema access failed",
+                            "message": f"Unable to access schema '{cfg['schema']}': {str(e_schema)}",
+                            **response_data,
+                            "troubleshooting": [
+                                f"Verify schema name is correct: '{cfg['schema']}'",
+                                "Check if user has permissions to access this schema",
+                                "Verify schema exists on this SAP HANA instance",
+                                "Try with a different database parameter, e.g., ?database=4B-BIO_APP"
+                            ]
+                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                
+                cur_info.close()
+                
+                return Response({
+                    "success": True,
+                    **response_data
+                }, status=status.HTTP_200_OK)
+                
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                    
+        except Exception as e_conn:
+            error_msg = str(e_conn)
+            
+            # Determine error type
+            if "timeout" in error_msg.lower() or "10060" in error_msg:
+                error_type = "Connection Timeout"
+                troubleshooting = [
+                    f"SAP HANA server at {cfg['host']}:{cfg['port']} is not responding",
+                    "Possible causes:",
+                    "  1. SAP HANA service is not running",
+                    "  2. Network/firewall is blocking connection",
+                    "  3. VPN connection is not active",
+                    "  4. Wrong host or port specified in HANA_HOST/HANA_PORT",
+                    "",
+                    "Actions to take:",
+                    f"  1. Verify SAP HANA is running: try ping {cfg['host']}",
+                    f"  2. Verify host/port: {cfg['host']}:{cfg['port']}",
+                    "  3. Check VPN/network connectivity",
+                    "  4. Contact IT/DevOps for SAP HANA status"
+                ]
+            elif "authentication" in error_msg.lower() or "invalid password" in error_msg.lower():
+                error_type = "Authentication Failed"
+                troubleshooting = [
+                    "SAP HANA rejected the credentials",
+                    "Possible causes:",
+                    "  1. Incorrect username in HANA_USER",
+                    "  2. Incorrect password in HANA_PASSWORD",
+                    "  3. User account is locked or expired",
+                    "",
+                    "Actions to take:",
+                    "  1. Verify HANA_USER and HANA_PASSWORD in .env files",
+                    "  2. Test credentials directly with SAP HANA client tools",
+                    "  3. Contact SAP administrator for password reset",
+                    "  4. Ensure user has 'HNDS_USER' system privilege"
+                ]
+            elif "ssl certificate validation failed" in error_msg.lower() or "not trusted" in error_msg.lower():
+                error_type = "SSL Certificate Validation Failed"
+                troubleshooting = [
+                    "SAP HANA TLS is enabled but certificate trust validation failed",
+                    "For internal/self-signed certificates set HANA_SSL_VALIDATE=false",
+                    "Keep HANA_ENCRYPT=true if TLS transport is required",
+                    "If strict validation is required, install trusted CA chain on server",
+                    "Restart Django service after updating environment variables"
+                ]
+            else:
+                error_type = "Connection Error"
+                troubleshooting = [
+                    f"Failed to connect to SAP HANA: {error_msg}",
+                    "Verify HANA_HOST and HANA_PORT configuration",
+                    "Check network connectivity and firewall rules",
+                    "Ensure SAP HANA service is running",
+                    "Contact SAP administrator for assistance"
+                ]
+            
+            return Response({
+                "success": False,
+                "error": error_type,
+                "message": error_msg,
+                **response_data,
+                "troubleshooting": troubleshooting
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        error_msg = str(e)
+        return Response({
+            "success": False,
+            "error": "Unexpected error",
+            "message": error_msg,
+            "troubleshooting": [
+                "An unexpected error occurred during diagnostics",
+                "Check application logs for more details",
+                "Contact your system administrator"
+            ]
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

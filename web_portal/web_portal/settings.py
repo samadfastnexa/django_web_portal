@@ -19,7 +19,7 @@ from decouple import Config, RepositoryEnv, Csv
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Explicitly configure .env file location
-ENV_FILE = BASE_DIR.parent / '.env'
+ENV_FILE = BASE_DIR/ '.env'
 config = Config(RepositoryEnv(str(ENV_FILE)))
 
 MEDIA_URL = '/media/'

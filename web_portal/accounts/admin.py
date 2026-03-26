@@ -124,10 +124,18 @@ if HAS_DEALER:
 @admin.register(User, site=admin_site)
 class CustomUserAdmin(BaseUserAdmin):
     list_display = [
-        'id', 'username', 'email', 'phone_number', 'company', 'role', 'is_active', 'is_sales_staff', 'is_dealer'
+        'id', 'username', 'email', 'employee_code', 'dealer_card_code', 'phone_number', 'company', 'role', 'is_active', 'is_sales_staff', 'is_dealer'
     ]
     list_filter = ['role', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer', 'company']
-    search_fields = ['username', 'email', 'first_name', 'last_name', 'phone_number']
+    search_fields = [
+        '=id',
+        'username',
+        'email',
+        'first_name',
+        'last_name',
+        'phone_number',
+        'sales_profile__employee_code',
+    ]
     ordering = ['id']
 
     # ✅ Allow quick edits for role, is_active, is_dealer, phone_number, and company
@@ -145,6 +153,25 @@ class CustomUserAdmin(BaseUserAdmin):
     inlines = [SalesProfileInline]
     if HAS_DEALER:
         inlines.append(DealerInline)
+
+    def get_search_fields(self, request):
+        """
+        Add dealer card code to search fields when Dealer model is available.
+        """
+        fields = list(super().get_search_fields(request))
+        if HAS_DEALER:
+            fields.append('dealer__card_code')
+        return fields
+
+    @admin.display(description='Employee Code', ordering='sales_profile__employee_code')
+    def employee_code(self, obj):
+        sales_profile = getattr(obj, 'sales_profile', None)
+        return getattr(sales_profile, 'employee_code', '') if sales_profile else ''
+
+    @admin.display(description='Dealer Card Code', ordering='dealer__card_code')
+    def dealer_card_code(self, obj):
+        dealer = getattr(obj, 'dealer', None)
+        return getattr(dealer, 'card_code', '') if dealer else ''
     
     def save_formset(self, request, form, formset, change):
         """
