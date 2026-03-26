@@ -42,6 +42,9 @@ from .views import (
     download_product_description_api,
 )
 
+# Import debug test endpoint
+from .debug_test import debug_test_api
+
 urlpatterns = [
     # Unified API for Frontend - card_code is optional via two endpoints
     path('business-partner/', get_business_partners_list, name='unified_bp_api_list'),
@@ -76,6 +79,9 @@ urlpatterns = [
     path('sales-orders/', sales_orders_api, name='sales_orders_api'),
     path('sales-vs-achievement-geo-inv/', sales_vs_achievement_geo_inv_api, name='sales_vs_achievement_geo_inv_api'),
     path('sales-vs-achievement-territory/', sales_vs_achievement_territory_api, name='sales_vs_achievement_territory_api'),
+
+    # DEBUG ENDPOINT
+    path('debug-test/', debug_test_api, name='debug_test_api'),
     
     # Disease Management endpoints
     path('diseases/', disease_list_api, name='disease_list_api'),

@@ -380,10 +380,63 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     Hierarchy: Region (R3/R2/R1) → Zone (R1) → Territory (T)
     Includes GRAND TOTAL row via UNION ALL
     Employee data comes from B4_EMP table joined through territory
-    
+
     OPTIMIZED: Uses CTE and minimizes window functions for better performance
     """
+
+    # DEBUG: Add comprehensive logging for missing table issue
+    print("="*80)
+    print("DEBUG: sales_vs_achievement_territory() called")
+    print(f"DEBUG: Parameters: emp_id={emp_id}, region={region}, zone={zone}")
+    print(f"DEBUG: territory={territory}, start_date={start_date}, end_date={end_date}")
+    print(f"DEBUG: group_by_date={group_by_date}, group_by_emp={group_by_emp}")
+    print("="*80)
+
     sales_tbl = '"B4_SALES_TARGET"'
+
+    # DEBUG: Check if table exists before trying to use it
+    try:
+        check_query = "SELECT COUNT(*) FROM TABLES WHERE TABLE_NAME = 'B4_SALES_TARGET'"
+        print(f"DEBUG: Checking if B4_SALES_TARGET table exists...")
+        cursor = db.cursor()
+        cursor.execute(check_query)
+        table_count = cursor.fetchone()[0]
+        print(f"DEBUG: B4_SALES_TARGET table count: {table_count}")
+        cursor.close()
+
+        if table_count == 0:
+            print("ERROR: B4_SALES_TARGET table does not exist!")
+            print("AVAILABLE ALTERNATIVES: Checking for similar tables...")
+
+            # Check for alternative tables
+            alt_query = """
+            SELECT SCHEMA_NAME, TABLE_NAME
+            FROM TABLES
+            WHERE (TABLE_NAME LIKE '%SALES%' OR TABLE_NAME LIKE '%TARGET%')
+            AND CURRENT_SCHEMA = SCHEMA_NAME
+            ORDER BY TABLE_NAME
+            """
+            cursor = db.cursor()
+            cursor.execute(alt_query)
+            alternatives = cursor.fetchall()
+            cursor.close()
+
+            if alternatives:
+                print("DEBUG: Found these sales/target tables in current schema:")
+                for schema, table in alternatives:
+                    print(f"  - {schema}.{table}")
+            else:
+                print("DEBUG: No sales/target tables found in current schema")
+
+            # Return a meaningful error instead of letting it fail
+            raise Exception(f"B4_SALES_TARGET table does not exist in the current schema. Found {table_count} matches. Please check if the table should be created or if an alternative table should be used.")
+
+    except Exception as e:
+        if "B4_SALES_TARGET table does not exist" in str(e):
+            raise e
+        print(f"DEBUG: Error checking table existence: {e}")
+        # Continue with original logic if check fails
+
     oter_tbl = '"OTER"'
     emp_tbl = '"B4_EMP"'
     
@@ -546,7 +599,38 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     
     # Single set of params (CTE is evaluated once)
     all_params = tuple(params)
-    rows = _fetch_all(db, full_sql, all_params)
+
+    # DEBUG: Log the complete SQL query and parameters
+    print("="*80)
+    print("DEBUG: FINAL SQL QUERY TO BE EXECUTED")
+    print("="*80)
+    print("SQL Query:")
+    print(full_sql)
+    print("-"*80)
+    print(f"Parameters ({len(all_params)}): {all_params}")
+    print("="*80)
+
+    try:
+        rows = _fetch_all(db, full_sql, all_params)
+        print(f"DEBUG: Query executed successfully. Returned {len(rows)} rows.")
+    except Exception as e:
+        print(f"DEBUG: Query execution FAILED with error: {e}")
+        print(f"DEBUG: Error type: {type(e)}")
+        print(f"DEBUG: Full error details: {str(e)}")
+
+        # If it's the table not found error, provide helpful information
+        if "B4_SALES_TARGET" in str(e) and ("Could not find" in str(e) or "invalid table name" in str(e)):
+            print("\n" + "!"*80)
+            print("SOLUTION: The B4_SALES_TARGET table does not exist in your SAP HANA database.")
+            print("This table appears to be missing from your SAP B1 system.")
+            print("\nPossible solutions:")
+            print("1. Check if the table exists in SAP Business One")
+            print("2. Create the table if it's supposed to exist")
+            print("3. Modify the code to use an existing sales table")
+            print("4. Check if this is a custom table that needs to be set up")
+            print("!"*80)
+
+        raise e
     
     # DEBUG: Uncomment to see sales vs achievement territory report
     # output = "\n" + "="*80 + "\n"
@@ -1377,6 +1461,13 @@ def policy_customer_balance_all(db, limit: int = 200) -> list:
             raise e
 
 def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+    # DEBUG: Add logging for this function
+    print("="*80)
+    print("DEBUG: sales_vs_achievement() called")
+    print(f"DEBUG: Parameters: emp_id={emp_id}, territory_name={territory_name}")
+    print(f"DEBUG: year={year}, month={month}, start_date={start_date}, end_date={end_date}")
+    print("="*80)
+
     # Schema is already set via SET SCHEMA command, so no need for prefix
     sales_tbl = '"B4_SALES_TARGET"'
     emp_tbl = '"B4_EMP"'
@@ -1422,6 +1513,13 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
     return rows
 
 def sales_vs_achievement_by_emp(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
+    # DEBUG: Add logging for this function
+    print("="*80)
+    print("DEBUG: sales_vs_achievement_by_emp() called")
+    print(f"DEBUG: Parameters: emp_id={emp_id}, territory_name={territory_name}")
+    print(f"DEBUG: year={year}, month={month}, start_date={start_date}, end_date={end_date}")
+    print("="*80)
+
     sales_tbl = '"B4_SALES_TARGET"'
     emp_tbl = '"B4_EMP"'
     base = (
