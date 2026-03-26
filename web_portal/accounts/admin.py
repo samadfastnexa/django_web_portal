@@ -129,6 +129,7 @@ class CustomUserAdmin(BaseUserAdmin):
     list_filter = ['role', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer', 'company']
     search_fields = ['username', 'email', 'first_name', 'last_name', 'phone_number']
     ordering = ['id']
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
 
     # ✅ Allow quick edits for role, is_active, is_dealer, phone_number, and company
     list_editable = ['phone_number', 'company', 'role', 'is_active', 'is_dealer']
@@ -271,6 +272,7 @@ class CustomUserAdmin(BaseUserAdmin):
 class RoleAdmin(admin.ModelAdmin):
     list_display = ['id', 'name']
     filter_horizontal = ['permissions']
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     # Protected roles that cannot be deleted
     PROTECTED_ROLES = ['Admin', 'Dealer', 'Sales Staff', 'Farmer']
@@ -308,6 +310,7 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
     search_fields = ['user__email', 'user__username', 'employee_code', 'phone_number']
     filter_horizontal = ('companies', 'regions', 'zones', 'territories')
     raw_id_fields = ('manager', 'hod', 'master_hod')
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     fieldsets = (
         ('User Assignment', {
@@ -516,6 +519,7 @@ class DesignationAdmin(admin.ModelAdmin):
     search_fields = ['code', 'name', 'description']
     ordering = ['level', 'name']
     list_editable = ['level', 'is_active']
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     fieldsets = (
         ('Basic Information', {
@@ -661,13 +665,14 @@ class CustomAdminSite(admin.AdminSite):
 class AccountDeletionRequestAdmin(admin.ModelAdmin):
     """Admin interface for managing account deactivation requests"""
     list_display = [
-        'id', 'user_email', 'user_name', 'request_type', 'status', 
+        'id', 'user_email', 'user_name', 'request_type', 'status',
         'created_at', 'reviewed_by_email', 'reviewed_at'
     ]
     list_filter = ['status', 'request_type', 'created_at', 'reviewed_at']
     search_fields = ['user__email', 'user__first_name', 'user__last_name', 'reason', 'admin_notes']
     ordering = ['-created_at']
     readonly_fields = ['user', 'created_at', 'updated_at']
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     fieldsets = (
         ('Request Information', {

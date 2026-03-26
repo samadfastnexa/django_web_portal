@@ -1288,7 +1288,8 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     return {'products': results, 'total_count': total_count, 'limit': limit, 'offset': offset}
 
 def policy_customer_balance(db, card_code: str) -> list:
-    sql = (
+    # First try the original query with CUSTLEDG12
+    sql_custledg = (
         'SELECT '
         ' T0."CardCode", '
         ' T0."CardName", '
@@ -1303,10 +1304,35 @@ def policy_customer_balance(db, card_code: str) -> list:
         ' WHERE T0."CardCode" = ? '
         ' GROUP BY T0."CardCode", T0."CardName", T0."Project", T0."PrjName"'
     )
-    return _fetch_all(db, sql, (card_code,))
+
+    try:
+        return _fetch_all(db, sql_custledg, (card_code,))
+    except Exception as e:
+        # If CUSTLEDG12 doesn't exist, fall back to standard SAP tables
+        if 'CUSTLEDG12' in str(e) or 'invalid table name' in str(e):
+            sql_fallback = (
+                'SELECT '
+                ' T2."CardCode", '
+                ' T2."CardName", '
+                ' CAST(T0."Project" AS NVARCHAR(100)) AS "Project", '
+                ' T1."PrjName", '
+                ' SUM(T0."Debit" - T0."Credit") AS "Balance", '
+                ' CAST(MAX(T3."DocEntry") AS NVARCHAR(50)) AS "policy_doc_entry" '
+                ' FROM "JDT1" T0 '
+                ' LEFT JOIN "OPRJ" T1 ON T0."Project" = T1."PrjCode" '
+                ' LEFT JOIN "OCRD" T2 ON T0."ShortName" = T2."CardCode" '
+                ' LEFT JOIN "@PL1" T3 ON T3."U_proj" = T0."Project" '
+                ' WHERE T0."ShortName" = ? AND T0."Project" IS NOT NULL '
+                ' GROUP BY T2."CardCode", T2."CardName", T0."Project", T1."PrjName" '
+                ' HAVING SUM(T0."Debit" - T0."Credit") <> 0'
+            )
+            return _fetch_all(db, sql_fallback, (card_code,))
+        else:
+            raise e
 
 def policy_customer_balance_all(db, limit: int = 200) -> list:
-    sql = (
+    # First try the original query with CUSTLEDG12
+    sql_custledg = (
         'SELECT '
         ' T0."CardCode", '
         ' T0."CardName", '
@@ -1322,7 +1348,33 @@ def policy_customer_balance_all(db, limit: int = 200) -> list:
         ' ORDER BY T0."CardCode" '
         ' LIMIT ' + str(int(limit or 200))
     )
-    return _fetch_all(db, sql)
+
+    try:
+        return _fetch_all(db, sql_custledg)
+    except Exception as e:
+        # If CUSTLEDG12 doesn't exist, fall back to standard SAP tables
+        if 'CUSTLEDG12' in str(e) or 'invalid table name' in str(e):
+            sql_fallback = (
+                'SELECT '
+                ' T2."CardCode", '
+                ' T2."CardName", '
+                ' CAST(T0."Project" AS NVARCHAR(100)) AS "Project", '
+                ' T1."PrjName", '
+                ' SUM(T0."Debit" - T0."Credit") AS "Balance", '
+                ' CAST(MAX(T3."DocEntry") AS NVARCHAR(50)) AS "policy_doc_entry" '
+                ' FROM "JDT1" T0 '
+                ' LEFT JOIN "OPRJ" T1 ON T0."Project" = T1."PrjCode" '
+                ' LEFT JOIN "OCRD" T2 ON T0."ShortName" = T2."CardCode" '
+                ' LEFT JOIN "@PL1" T3 ON T3."U_proj" = T0."Project" '
+                ' WHERE T0."Project" IS NOT NULL '
+                ' GROUP BY T2."CardCode", T2."CardName", T0."Project", T1."PrjName" '
+                ' HAVING SUM(T0."Debit" - T0."Credit") <> 0 '
+                ' ORDER BY T2."CardCode" '
+                ' LIMIT ' + str(int(limit or 200))
+            )
+            return _fetch_all(db, sql_fallback)
+        else:
+            raise e
 
 def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
     # Schema is already set via SET SCHEMA command, so no need for prefix

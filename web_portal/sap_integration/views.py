@@ -476,16 +476,71 @@ def hana_connect_admin(request):
                             error = str(e_ts)
                     elif action == 'products_catalog':
                         try:
+                            # Extract pagination parameters
+                            page_param = request.GET.get('page', '1')
+                            page_size_param = request.GET.get('page_size', '50')
+
+                            try:
+                                page_num = int(page_param)
+                                if page_num < 1:
+                                    page_num = 1
+                            except (ValueError, TypeError):
+                                page_num = 1
+
+                            try:
+                                page_size = int(page_size_param)
+                                if page_size < 1:
+                                    page_size = 50
+                                elif page_size > 200:
+                                    page_size = 200
+                            except (ValueError, TypeError):
+                                page_size = 50
+
                             # Only filter by category server-side; search is handled client-side
                             # so all matching products are available in the DOM for instant filtering
                             item_group_param = (request.GET.get('item_group') or '').strip() or None
                             item_groups_param = (request.GET.get('item_groups') or '').strip() or None
-                            catalog_result = products_catalog(conn, selected_schema, search=None, item_group=item_group_param, item_groups=item_groups_param)
+                            is_active_param = (request.GET.get('is_active') or 'Y').strip()
+
+                            # Calculate offset for pagination
+                            offset = (page_num - 1) * page_size
+
+                            # print(f"DEBUG products_catalog: schema={selected_schema}, item_group={item_group_param}, is_active={is_active_param}, page={page_num}, page_size={page_size}, offset={offset}")
+
+                            # Apply pagination to the database query
+                            catalog_result = products_catalog(
+                                conn,
+                                selected_schema,
+                                search=None,
+                                item_group=item_group_param,
+                                item_groups=item_groups_param,
+                                is_active=is_active_param,
+                                limit=page_size,
+                                offset=offset
+                            )
+
                             # Handle new dictionary format - extract products list for backward compatibility
                             data = catalog_result.get('products', []) if isinstance(catalog_result, dict) else catalog_result
+                            total_count = catalog_result.get('total_count', 0) if isinstance(catalog_result, dict) else len(data)
+
                             result = data
+
+                            # Add pagination info to diagnostics for template
+                            diagnostics['pagination'] = {
+                                'page': page_num,
+                                'page_size': page_size,
+                                'total_count': total_count,
+                                'total_pages': (total_count + page_size - 1) // page_size,
+                                'has_previous': page_num > 1,
+                                'has_next': page_num * page_size < total_count,
+                                'start_index': offset + 1 if total_count > 0 else 0,
+                                'end_index': min(offset + page_size, total_count)
+                            }
+
+                            # print(f"DEBUG products_catalog result: {len(result) if result else 0} products, total_count: {total_count}, page {page_num} of {diagnostics['pagination']['total_pages']}")
                         except Exception as e_pc:
                             error = str(e_pc)
+                            # print(f"DEBUG products_catalog ERROR: {error}")
                     elif action == 'list_territories':
                         try:
                             data = territories_all(conn)

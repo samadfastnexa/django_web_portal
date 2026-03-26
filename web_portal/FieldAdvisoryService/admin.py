@@ -192,6 +192,7 @@ class MeetingScheduleAdmin(admin.ModelAdmin):
         'presence_of_zm',
         'presence_of_rsm'
     ]
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     search_fields = [
         'meeting_id',
         'fsm_name',
@@ -817,6 +818,7 @@ class SalesOrderAdmin(admin.ModelAdmin, _CompanySessionResolver):
     search_fields = ('card_code', 'card_name', 'federal_tax_id', 'u_s_card_code', 'portal_order_id')
     readonly_fields = ('portal_order_id', 'current_database', 'created_at', 'sap_doc_entry', 'sap_doc_num', 'sap_error', 'sap_response_display', 'posted_at', 'is_posted_to_sap', 'add_to_sap_button', 'series', 'doc_type', 'summery_type', 'doc_object_code')
     ordering = ['-id']
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     fieldsets = (
         ('Database Selection', {
@@ -1612,6 +1614,7 @@ class CompanyAdmin(admin.ModelAdmin):
     list_display = ('Company_name', 'name', 'logo_thumb', 'color_swatch_primary', 'color_swatch_secondary', 'extra_settings_summary', 'is_active')
     search_fields = ('Company_name', 'name', 'email')
     list_filter = ('is_active',)
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
 
     fieldsets = (
         ('Company Information', {
@@ -1717,6 +1720,7 @@ class RegionAdmin(admin.ModelAdmin, _CompanySessionResolver):
     list_display = ('name', 'company')
     list_filter = ('company',)
     search_fields = ('name',)
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         comp = self._get_selected_company(request)
@@ -1727,6 +1731,7 @@ class ZoneAdmin(admin.ModelAdmin, _CompanySessionResolver):
     list_display = ('name', 'region', 'company')
     list_filter = ('region', 'company')
     search_fields = ('name', 'region__name')
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         comp = self._get_selected_company(request)
@@ -1740,6 +1745,7 @@ class TerritoryAdmin(admin.ModelAdmin, _CompanySessionResolver):
     list_display = ('name', 'zone', 'region', 'company')
     list_filter = ('zone', 'zone__region', 'company')
     search_fields = ('name', 'zone__name')
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         comp = self._get_selected_company(request)
@@ -1753,6 +1759,7 @@ class DealerAdmin(admin.ModelAdmin):
     search_fields = ('name', 'business_name', 'contact_number', 'mobile_phone', 'email', 'user__username', 'user__email', 'cnic_number', 'card_code')
     raw_id_fields = ('user', 'company', 'region', 'zone', 'territory')
     readonly_fields = ('created_at', 'updated_at', 'card_code')
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     fieldsets = (
         ('User Account', {
@@ -1848,6 +1855,7 @@ class DealerRequestAdmin(admin.ModelAdmin):
     search_fields = ('business_name', 'owner_name', 'requested_by__username', 'cnic_number', 'sap_card_code', 'email')
     actions = ['approve_create_bp']
     readonly_fields = ('created_at', 'updated_at', 'reviewed_at', 'is_posted_to_sap', 'sap_card_code', 'sap_doc_entry', 'sap_error', 'posted_at', 'sap_response_json')
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     fieldsets = (
         ('Request Information', {
