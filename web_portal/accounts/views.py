@@ -1062,31 +1062,30 @@ from .models import PasswordResetOTP
     operation_description="""
     Send a 6-digit OTP to user's email or phone for password reset.
 
-    **Input:** Provide `portal_id` + optionally `email` OR `phone_number`.
-
-    **Auto Email Detection:**
-    - If only `portal_id` (user ID) is provided, the user's email will be auto-detected
-    - If email/phone is provided, it must match the user specified by portal_id
+    **Input Options:**
+    - **Option 1**: Provide `email` (system finds user by email)
+    - **Option 2**: Provide `phone_number` (system finds user by phone)
+    - **Option 3**: Provide `portal_id` + optionally `email` OR `phone_number` for validation
 
     **Process:**
-    1. Find user by portal_id (user ID) and auto-detect their email, or validate provided email/phone matches
+    1. Find user by email, phone, or portal_id
     2. Generate 6-digit OTP
-    3. Send OTP via email (phone SMS coming soon)
+    3. Send OTP via email or SMS
     4. OTP expires in 10 minutes
 
     **Rate Limit:** Max 3 OTP requests per hour per user.
     """,
     manual_parameters=[
-        openapi.Parameter('portal_id',    openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=True,  description='User ID - the ID of the user who wants to reset password'),
-        openapi.Parameter('email',        openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User email address (optional if only one user in portal)'),
-        openapi.Parameter('phone_number', openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User phone number (optional if only one user in portal)'),
+        openapi.Parameter('email',        openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User email address'),
+        openapi.Parameter('phone_number', openapi.IN_FORM, type=openapi.TYPE_STRING,  required=False, description='User phone number'),
+        openapi.Parameter('portal_id',    openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='User ID (optional - used for validation if provided)'),
     ],
     responses={
         200: openapi.Response(
             description="OTP sent successfully",
-            examples={"application/json": {"success": True, "message": "OTP sent to your email", "identifier_type": "email", "auto_detected_email": True, "expires_in_minutes": 10}}
+            examples={"application/json": {"success": True, "message": "OTP sent to your email", "identifier_type": "email", "expires_in_minutes": 10}}
         ),
-        400: "Bad request - invalid input or multiple users found",
+        400: "Bad request - invalid input or validation failed",
         404: "User not found",
         429: "Too many requests"
     }
@@ -1097,16 +1096,17 @@ from .models import PasswordResetOTP
 def request_password_reset_otp(request):
     """
     Request a password reset OTP via email or phone.
-    Auto-detects user email if only portal_id is provided and there's exactly one user.
+    Supports multiple input options: email only, phone only, or portal_id with validation.
     """
     portal_id    = request.data.get('portal_id') or request.data.get('company_id')
     email        = (request.data.get('email') or '').strip().lower()
     phone        = (request.data.get('phone_number') or '').strip()
 
-    if not portal_id:
+    # Validate input - at least one identifier is required
+    if not (portal_id or email or phone):
         return Response({
             'success': False,
-            'error': 'portal_id is required'
+            'error': 'At least one of these is required: portal_id, email, or phone_number'
         }, status=status.HTTP_400_BAD_REQUEST)
 
     # Find user
@@ -1115,62 +1115,103 @@ def request_password_reset_otp(request):
     identifier_type = None
     auto_detected_email = False
 
-    # If email or phone provided, validate they match the portal_id user
-    if email or phone:
-        # First get the user by portal_id (user ID)
-        try:
-            portal_user = User.objects.get(id=portal_id, is_active=True)
-        except User.DoesNotExist:
-            return Response({
-                'success': False,
-                'error': f'User with ID {portal_id} not found or inactive'
-            }, status=status.HTTP_404_NOT_FOUND)
+    try:
+        if portal_id and not (email or phone):
+            # Option 1: portal_id only - auto-detect email
+            try:
+                user = User.objects.get(id=portal_id, is_active=True)
+                if not user.email:
+                    return Response({
+                        'success': False,
+                        'error': f'User with ID {portal_id} has no email address configured'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                identifier = user.email.lower()
+                identifier_type = 'email'
+                auto_detected_email = True
+            except User.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': f'User with ID {portal_id} not found or inactive'
+                }, status=status.HTTP_404_NOT_FOUND)
 
-        if email:
-            # Verify the email matches the portal user
-            if portal_user.email.lower() != email:
+        elif portal_id and (email or phone):
+            # Option 2: portal_id + email/phone for validation
+            try:
+                portal_user = User.objects.get(id=portal_id, is_active=True)
+            except User.DoesNotExist:
                 return Response({
                     'success': False,
-                    'error': 'Email does not match the user specified by portal_id'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            user = portal_user
-            identifier = email
-            identifier_type = 'email'
-        elif phone:
-            # Verify the phone matches the portal user
-            normalized_phone = re.sub(r'[\s\-\(\)\+]', '', phone)
-            user_phone = re.sub(r'[\s\-\(\)\+]', '', portal_user.phone_number or '')
-            if (normalized_phone[-10:] not in user_phone and
-                portal_user.phone_number != phone):
+                    'error': f'User with ID {portal_id} not found or inactive'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            if email:
+                # Verify the email matches the portal user
+                if portal_user.email.lower() != email:
+                    return Response({
+                        'success': False,
+                        'error': 'Email does not match the user specified by portal_id'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                user = portal_user
+                identifier = email
+                identifier_type = 'email'
+            elif phone:
+                # Verify the phone matches the portal user
+                normalized_phone = re.sub(r'[\s\-\(\)\+]', '', phone)
+                user_phone = re.sub(r'[\s\-\(\)\+]', '', portal_user.phone_number or '')
+                if (normalized_phone[-10:] not in user_phone and
+                    portal_user.phone_number != phone):
+                    return Response({
+                        'success': False,
+                        'error': 'Phone number does not match the user specified by portal_id'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                user = portal_user
+                identifier = phone
+                identifier_type = 'phone'
+
+        elif email and not portal_id:
+            # Option 3: email only - find user by email
+            try:
+                user = User.objects.get(email=email, is_active=True)
+                identifier = email
+                identifier_type = 'email'
+            except User.DoesNotExist:
                 return Response({
                     'success': False,
-                    'error': 'Phone number does not match the user specified by portal_id'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            user = portal_user
-            identifier = phone
-            identifier_type = 'phone'
-    else:
-        # Auto-detect user by portal_id (user ID) only
-        try:
-            user = User.objects.get(id=portal_id, is_active=True)
-            if not user.email:
+                    'error': 'No active user found with this email address'
+                }, status=status.HTTP_404_NOT_FOUND)
+            except User.MultipleObjectsReturned:
                 return Response({
                     'success': False,
-                    'error': f'User with ID {portal_id} has no email address configured'
+                    'error': 'Multiple users found with this email. Please contact support.'
                 }, status=status.HTTP_400_BAD_REQUEST)
-            identifier = user.email.lower()
-            identifier_type = 'email'
-            auto_detected_email = True
-        except User.DoesNotExist:
-            return Response({
-                'success': False,
-                'error': f'User with ID {portal_id} not found or inactive'
-            }, status=status.HTTP_404_NOT_FOUND)
+
+        elif phone and not portal_id:
+            # Option 4: phone only - find user by phone
+            try:
+                user = User.objects.get(phone_number=phone, is_active=True)
+                identifier = phone
+                identifier_type = 'phone'
+            except User.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': 'No active user found with this phone number'
+                }, status=status.HTTP_404_NOT_FOUND)
+            except User.MultipleObjectsReturned:
+                return Response({
+                    'success': False,
+                    'error': 'Multiple users found with this phone number. Please contact support.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'Error finding user: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     if not user:
         return Response({
             'success': False,
-            'error': 'No account found with this email/phone number in the specified portal'
+            'error': 'No user found with the provided information'
         }, status=status.HTTP_404_NOT_FOUND)
     
     # Check rate limit (max 3 per hour)

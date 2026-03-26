@@ -40,6 +40,127 @@ except ImportError:
     SAP_AVAILABLE = False
 
 
+class HANAConnectionTestView(APIView):
+    """
+    Test HANA connection and environment variables
+    """
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        tags=["Analytics Diagnostics"],
+        operation_description="Test SAP HANA connection and show environment configuration",
+        responses={200: "HANA connection diagnostics"}
+    )
+    def get(self, request):
+        """Test HANA connection and diagnostics"""
+        diagnostics = {
+            'sap_available': SAP_AVAILABLE,
+            'environment_variables': {},
+            'connection_test': {},
+            'env_file_paths': [],
+            'settings': {}
+        }
+
+        # Check environment variables
+        try:
+            # Load environment variables from multiple paths
+            env_paths = [
+                os.path.join(os.path.dirname(__file__), '..', 'sap_integration', '.env'),
+                os.path.join(str(settings.BASE_DIR), '.env'),
+                os.path.join(str(settings.BASE_DIR), '..', '.env'),
+                os.path.join(os.getcwd(), '.env')
+            ]
+
+            for path in env_paths:
+                exists = os.path.exists(path)
+                diagnostics['env_file_paths'].append({
+                    'path': path,
+                    'exists': exists,
+                    'readable': os.access(path, os.R_OK) if exists else False
+                })
+                if exists:
+                    try:
+                        _hana_load_env_file(path)
+                    except Exception as e:
+                        diagnostics['env_file_paths'][-1]['load_error'] = str(e)
+
+            # Get environment variables
+            diagnostics['environment_variables'] = {
+                'HANA_HOST': os.environ.get('HANA_HOST', 'NOT_SET'),
+                'HANA_PORT': os.environ.get('HANA_PORT', 'NOT_SET'),
+                'HANA_USER': os.environ.get('HANA_USER', 'NOT_SET'),
+                'HANA_PASSWORD': '***SET***' if os.environ.get('HANA_PASSWORD') else 'NOT_SET',
+                'HANA_SCHEMA': os.environ.get('HANA_SCHEMA', 'NOT_SET'),
+                'SAP_COMPANY_DB': os.environ.get('SAP_COMPANY_DB', 'NOT_SET'),
+            }
+
+            # Get settings from database
+            try:
+                db_setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
+                if db_setting:
+                    diagnostics['settings']['SAP_COMPANY_DB'] = db_setting.value
+                else:
+                    diagnostics['settings']['SAP_COMPANY_DB'] = 'NOT_FOUND'
+            except Exception as e:
+                diagnostics['settings']['SAP_COMPANY_DB_ERROR'] = str(e)
+
+        except Exception as e:
+            diagnostics['env_error'] = str(e)
+
+        # Test HANA connection
+        if SAP_AVAILABLE:
+            try:
+                from hdbcli import dbapi
+
+                host = os.environ.get('HANA_HOST', '')
+                port = os.environ.get('HANA_PORT', '30015')
+                user_name = os.environ.get('HANA_USER', '')
+                password = os.environ.get('HANA_PASSWORD', '')
+
+                if host and user_name and password:
+                    try:
+                        connection = dbapi.connect(
+                            address=host,
+                            port=int(port),
+                            user=user_name,
+                            password=password
+                        )
+
+                        # Test simple query
+                        cursor = connection.cursor()
+                        cursor.execute('SELECT 1 FROM DUMMY')
+                        result = cursor.fetchone()
+                        cursor.close()
+                        connection.close()
+
+                        diagnostics['connection_test'] = {
+                            'status': 'success',
+                            'test_query_result': result[0] if result else None
+                        }
+                    except Exception as e:
+                        diagnostics['connection_test'] = {
+                            'status': 'failed',
+                            'error': str(e)
+                        }
+                else:
+                    diagnostics['connection_test'] = {
+                        'status': 'skipped',
+                        'reason': 'Missing connection parameters'
+                    }
+            except Exception as e:
+                diagnostics['connection_test'] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        else:
+            diagnostics['connection_test'] = {
+                'status': 'unavailable',
+                'reason': 'SAP integration not available'
+            }
+
+        return Response(diagnostics, status=status.HTTP_200_OK)
+
+
 class DashboardOverviewView(APIView):
     """
     Comprehensive Dashboard Overview API

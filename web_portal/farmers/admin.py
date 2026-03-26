@@ -37,6 +37,7 @@ class FarmerAdmin(admin.ModelAdmin):
     )
     readonly_fields = ('registration_date', 'last_updated', 'age')
     ordering = ['-id']
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     fieldsets = (
         ('Basic Information', {
@@ -87,6 +88,7 @@ class FarmingHistoryAdmin(admin.ModelAdmin):
         'crop_name', 'farming_practices_used'
     )
     readonly_fields = ('created_at', 'updated_at')
+    list_per_page = 25  # Updated to 25 records per page for better admin experience
     
     fieldsets = (
         ('Basic Information', {
