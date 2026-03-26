@@ -40,6 +40,8 @@ from .views import (
     # Product Description APIs
     get_product_description_api,
     download_product_description_api,
+    # Diagnostics endpoints
+    hana_connection_test_api,
 )
 
 # Import debug test endpoint
@@ -82,6 +84,9 @@ urlpatterns = [
 
     # DEBUG ENDPOINT
     path('debug-test/', debug_test_api, name='debug_test_api'),
+    
+        # Diagnostics endpoints
+        path('hana-connection-test/', hana_connection_test_api, name='hana_connection_test_api'),
     
     # Disease Management endpoints
     path('diseases/', disease_list_api, name='disease_list_api'),
