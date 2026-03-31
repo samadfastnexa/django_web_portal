@@ -577,6 +577,11 @@ def hana_connect_admin(request):
                                 'end_index': min(offset + page_size, total_count)
                             }
 
+                            # Store the correct total count for products_catalog to fix double-pagination bug
+                            # The generic pagination logic below creates a Django Paginator from the already-paginated
+                            # result_rows, which gives wrong count. We need to use the database total_count instead.
+                            request._products_catalog_total_count = total_count
+
                             # print(f"DEBUG products_catalog result: {len(result) if result else 0} products, total_count: {total_count}, page {page_num} of {diagnostics['pagination']['total_pages']}")
                         except Exception as e_pc:
                             error = str(e_pc)
@@ -2612,12 +2617,22 @@ def hana_connect_admin(request):
             'geo_totals': geo_totals,
             'pagination': {
                 'page': (page_obj.number if page_obj else 1),
-                'num_pages': (paginator.num_pages if paginator else 1),
-                'has_next': (page_obj.has_next() if page_obj else False),
-                'has_prev': (page_obj.has_previous() if page_obj else False),
+                # Fix num_pages calculation for products_catalog to use correct total_count
+                'num_pages': ((getattr(request, '_products_catalog_total_count', 0) + page_size - 1) // page_size
+                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                             else (paginator.num_pages if paginator else 1)),
+                # Fix has_next/has_prev for products_catalog to use correct total_count
+                'has_next': ((int(request.GET.get('page', '1')) * int(request.GET.get('page_size', '50')) < getattr(request, '_products_catalog_total_count', 0))
+                            if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                            else (page_obj.has_next() if page_obj else False)),
+                'has_prev': ((int(request.GET.get('page', '1')) > 1)
+                            if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                            else (page_obj.has_previous() if page_obj else False)),
                 'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)),
                 'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)),
-                'count': (paginator.count if paginator else len(result_rows)),
+                # Fix double-pagination bug for products_catalog: use database total_count instead of Django paginator count
+                'count': (getattr(request, '_products_catalog_total_count', None) if action == 'products_catalog'
+                         else (paginator.count if paginator else len(result_rows))),
                 'page_size': page_size,
             },
         }
