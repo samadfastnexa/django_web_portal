@@ -1,8 +1,8 @@
 """
-Django management command to import customers from SAP HANA 4B-ORANG_APP schema to Dealer model
+Django management command to import customers from SAP HANA 4B-ORANG_LIVE schema to Dealer model
 """
 from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.db import models, transaction
 from hdbcli import dbapi
 import os
 from dotenv import load_dotenv
@@ -11,7 +11,7 @@ load_dotenv()
 
 
 class Command(BaseCommand):
-    help = 'Import customers from SAP HANA 4B-ORANG_APP schema to Django Dealer model'
+    help = 'Import customers from SAP HANA 4B-ORANG_LIVE schema to Django Dealer model'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -29,8 +29,8 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         limit = options.get('limit')
         
-        schema = '4B-ORANG_APP'
-        company_key = '4B-ORANG_APP'
+        schema = '4B-ORANG_LIVE'
+        company_key = 'Port Orange'
         
         conn = dbapi.connect(
             address=os.getenv('HANA_HOST'),
@@ -73,14 +73,31 @@ class Command(BaseCommand):
         
         self.stdout.write(f"Found {len(customers)} customers in {schema}")
         
-        # Get company instance
+        # Get or create company instance
         from FieldAdvisoryService.models import Company, Dealer
         
         try:
-            company = Company.objects.get(name=company_key)
-        except Company.DoesNotExist:
+            # Try to find company by name (schema key) or Company_name
+            company = Company.objects.filter(
+                models.Q(name=schema) | models.Q(Company_name__icontains='Orange')
+            ).first()
+            
+            if not company:
+                # Create the company if it doesn't exist
+                company, created = Company.objects.get_or_create(
+                    name=schema,
+                    defaults={
+                        'Company_name': 'Orange Protection',
+                        'description': 'Orange Protection - Imported from SAP HANA',
+                        'address': 'Head Office',
+                        'email': 'info@orangeprotection.com',
+                    }
+                )
+                if created:
+                    self.stdout.write(self.style.SUCCESS(f"Created company: {company.Company_name} ({schema})"))
+        except Exception as e:
             self.stdout.write(
-                self.style.ERROR(f"Company '{company_key}' not found in database. Please create it first.")
+                self.style.ERROR(f"Error getting/creating company: {str(e)}")
             )
             conn.close()
             return
@@ -160,3 +177,16 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.ERROR(f"  ✗ Error processing {card_code}: {str(e)}")
                 )
+
+        # Close connection
+        conn.close()
+
+        # Print summary
+        self.stdout.write(self.style.SUCCESS(f"\n{'='*60}"))
+        self.stdout.write(self.style.SUCCESS("IMPORT SUMMARY"))
+        self.stdout.write(self.style.SUCCESS(f"{'='*60}"))
+        self.stdout.write(f"Total Processed: {total_processed}")
+        self.stdout.write(self.style.SUCCESS(f"Total Created:   {total_created}"))
+        self.stdout.write(self.style.WARNING(f"Total Updated:   {total_updated}"))
+        self.stdout.write(self.style.ERROR(f"Total Skipped:   {total_skipped}"))
+        self.stdout.write(self.style.SUCCESS(f"{'='*60}\n"))

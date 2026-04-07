@@ -209,13 +209,13 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
 
 def collection_vs_achievement(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False) -> list:
     """
-    Collection vs Achievement using B4_COLLECTION_TARGET table.
+    Collection vs Achievement using B4_COLLECTION_TARGET_NEW table.
     Hierarchy: Region (R3/R2/R1) -> Zone (R1) -> Territory (T)
     Employee data comes from B4_EMP table joined through territory relationship
     
     OPTIMIZED: Removed window functions - Python aggregates hierarchy totals
     """
-    collection_tbl = '"B4_COLLECTION_TARGET"'
+    collection_tbl = '"B4_COLLECTION_TARGET_NEW"'
     oter_tbl = '"OTER"'
     emp_tbl = '"B4_EMP"'
     
@@ -232,23 +232,31 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
     params.append('N')
         
     if region and region.strip():
-        where_clauses.append(' (R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ?) ')
-        params.extend([region.strip(), region.strip(), region.strip()])
+        # Use LIKE to handle suffix variations (e.g., "Punjab" matches "Punjab Region")
+        region_pattern = region.strip() + '%'
+        where_clauses.append(' (UPPER(R3."descript") LIKE UPPER(?) OR UPPER(R2."descript") LIKE UPPER(?) OR UPPER(R1."descript") LIKE UPPER(?)) ')
+        params.extend([region_pattern, region_pattern, region_pattern])
         
     if zone and zone.strip():
-        where_clauses.append(' R1."descript" = ? ')
-        params.append(zone.strip())
+        # Use LIKE to handle suffix variations (e.g., "ALI PUR" matches "ALI PUR Zone")
+        zone_pattern = zone.strip() + '%'
+        where_clauses.append(' UPPER(R1."descript") LIKE UPPER(?) ')
+        params.append(zone_pattern)
         
     if territory and territory.strip():
-        where_clauses.append(' T."descript" = ? ')
-        params.append(territory.strip())
+        # Use LIKE to handle suffix variations (e.g., "Lahore" matches "Lahore Territory")
+        territory_pattern = territory.strip() + '%'
+        where_clauses.append(' UPPER(T."descript") LIKE UPPER(?) ')
+        params.append(territory_pattern)
         
     if start_date and end_date:
         # Handle both date (YYYY-MM-DD) and datetime (YYYY-MM-DD HH:MI:SS) formats
         start_fmt = 'YYYY-MM-DD HH24:MI:SS' if ' ' in start_date else 'YYYY-MM-DD'
         end_fmt = 'YYYY-MM-DD HH24:MI:SS.FF3' if '.' in end_date else ('YYYY-MM-DD HH24:MI:SS' if ' ' in end_date else 'YYYY-MM-DD')
-        where_clauses.append(f" c.\"F_REFDATE\" BETWEEN TO_TIMESTAMP(?, '{start_fmt}') AND TO_TIMESTAMP(?, '{end_fmt}') ")
-        params.extend([start_date.strip(), end_date.strip()])
+        # Use overlap logic: record overlaps if F_REFDATE <= end_date AND T_REFDATE >= start_date
+        where_clauses.append(f" c.\"F_REFDATE\" <= TO_TIMESTAMP(?, '{end_fmt}') ")
+        where_clauses.append(f" c.\"T_REFDATE\" >= TO_TIMESTAMP(?, '{start_fmt}') ")
+        params.extend([end_date.strip(), start_date.strip()])
     
     where_sql = ' WHERE ' + ' AND '.join(where_clauses) if where_clauses else ''
     
@@ -264,8 +272,8 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         '    R1."descript" AS "Zone", '
         '    T."descript" AS "TerritoryName", '
         '    T."territryID" AS "TerritoryId", '
-        '    SUM(c.colletion_Target) AS "Collection_Target", '
-        '    SUM(c.DocTotal) AS "Collection_Achievement", '
+        '    SUM(c."COLLETION_TARGET") AS "Collection_Target", '
+        '    SUM(c."DOCTOTAL") AS "Collection_Achievement", '
     )
     
     if group_by_date:
@@ -376,7 +384,7 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
 
 def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False, group_by_emp: bool = False) -> list:
     """
-    Sales vs Achievement using B4_SALES_TARGET table.
+    Sales vs Achievement using B4_SALES_TARGET_NEW3 table.
     Hierarchy: Region (R3/R2/R1) → Zone (R1) → Territory (T)
     Includes GRAND TOTAL row via UNION ALL
     Employee data comes from B4_EMP table joined through territory
@@ -392,22 +400,22 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     print(f"DEBUG: group_by_date={group_by_date}, group_by_emp={group_by_emp}")
     print("="*80)
 
-    sales_tbl = '"B4_SALES_TARGET"'
+    sales_tbl = '"B4_SALES_TARGET_NEW3"'
 
     # DEBUG: Check if table exists before trying to use it
     table_exists = False
     try:
-        check_query = "SELECT COUNT(*) FROM TABLES WHERE TABLE_NAME = 'B4_SALES_TARGET'"
-        print(f"DEBUG: Checking if B4_SALES_TARGET table exists...")
+        check_query = "SELECT COUNT(*) FROM TABLES WHERE TABLE_NAME = 'B4_SALES_TARGET_NEW3'"
+        print(f"DEBUG: Checking if B4_SALES_TARGET_NEW3 table exists...")
         cursor = db.cursor()
         cursor.execute(check_query)
         table_count = cursor.fetchone()[0]
-        print(f"DEBUG: B4_SALES_TARGET table count: {table_count}")
+        print(f"DEBUG: B4_SALES_TARGET_NEW3 table count: {table_count}")
         cursor.close()
         table_exists = (table_count > 0)
 
         if not table_exists:
-            print("WARNING: B4_SALES_TARGET table does not exist!")
+            print("WARNING: B4_SALES_TARGET_NEW3 table does not exist!")
             print("FALLBACK: Checking for alternative sales tables...")
 
             # Check for alternative tables that might contain similar data
@@ -453,7 +461,7 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
             else:
                 print("DEBUG: No alternative sales tables found in current schema")
                 # Return empty result instead of raising exception
-                print("INFO: Returning empty result set due to missing B4_SALES_TARGET table")
+                print("INFO: Returning empty result set due to missing B4_SALES_TARGET_NEW3 table")
                 return []
 
     except Exception as e:
@@ -477,23 +485,31 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     params.append('N')
         
     if region and region.strip():
-        where_clauses.append(' (R3."descript" = ? OR R2."descript" = ? OR R1."descript" = ?) ')
-        params.extend([region.strip(), region.strip(), region.strip()])
+        # Use LIKE to handle suffix variations (e.g., "Punjab" matches "Punjab Region")
+        region_pattern = region.strip() + '%'
+        where_clauses.append(' (UPPER(R3."descript") LIKE UPPER(?) OR UPPER(R2."descript") LIKE UPPER(?) OR UPPER(R1."descript") LIKE UPPER(?)) ')
+        params.extend([region_pattern, region_pattern, region_pattern])
         
     if zone and zone.strip():
-        where_clauses.append(' R1."descript" = ? ')
-        params.append(zone.strip())
+        # Use LIKE to handle suffix variations (e.g., "ALI PUR" matches "ALI PUR Zone")
+        zone_pattern = zone.strip() + '%'
+        where_clauses.append(' UPPER(R1."descript") LIKE UPPER(?) ')
+        params.append(zone_pattern)
         
     if territory and territory.strip():
-        where_clauses.append(' T."descript" = ? ')
-        params.append(territory.strip())
+        # Use LIKE to handle suffix variations (e.g., "Lahore" matches "Lahore Territory")
+        territory_pattern = territory.strip() + '%'
+        where_clauses.append(' UPPER(T."descript") LIKE UPPER(?) ')
+        params.append(territory_pattern)
         
     if start_date and end_date:
         # Handle both date (YYYY-MM-DD) and datetime (YYYY-MM-DD HH:MI:SS) formats
         start_fmt = 'YYYY-MM-DD HH24:MI:SS' if ' ' in start_date else 'YYYY-MM-DD'
         end_fmt = 'YYYY-MM-DD HH24:MI:SS.FF3' if '.' in end_date else ('YYYY-MM-DD HH24:MI:SS' if ' ' in end_date else 'YYYY-MM-DD')
-        where_clauses.append(f" c.\"F_REFDATE\" BETWEEN TO_TIMESTAMP(?, '{start_fmt}') AND TO_TIMESTAMP(?, '{end_fmt}') ")
-        params.extend([start_date.strip(), end_date.strip()])
+        # Use overlap logic: record overlaps if F_REFDATE <= end_date AND T_REFDATE >= start_date
+        where_clauses.append(f" c.\"F_REFDATE\" <= TO_TIMESTAMP(?, '{end_fmt}') ")
+        where_clauses.append(f" c.\"T_REFDATE\" >= TO_TIMESTAMP(?, '{start_fmt}') ")
+        params.extend([end_date.strip(), start_date.strip()])
     
     where_sql = ' WHERE ' + ' AND '.join(where_clauses) if where_clauses else ''
     
@@ -643,7 +659,7 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
         print(f"DEBUG: Full error details: {str(e)}")
 
         # Check if we're using a fallback table and the error is due to column name differences
-        if sales_tbl != '"B4_SALES_TARGET"' and ("invalid column name" in str(e).lower() or "column not found" in str(e).lower()):
+        if sales_tbl != '"B4_SALES_TARGET_NEW3"' and ("invalid column name" in str(e).lower() or "column not found" in str(e).lower()):
             print("\n" + "!"*80)
             print(f"FALLBACK ERROR: Using alternative table {sales_tbl} failed due to schema differences.")
             print("This is expected when production schema differs from development.")
@@ -654,7 +670,7 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
         # If it's the table not found error, provide helpful information
         if "B4_SALES_TARGET" in str(e) and ("Could not find" in str(e) or "invalid table name" in str(e)):
             print("\n" + "!"*80)
-            print("SOLUTION: The B4_SALES_TARGET table does not exist in your SAP HANA database.")
+            print("SOLUTION: The B4_SALES_TARGET_NEW3 table does not exist in your SAP HANA database.")
             print("This table appears to be missing from your SAP B1 system.")
             print("\nPossible solutions:")
             print("1. Check if the table exists in SAP Business One")
@@ -665,7 +681,7 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
             print("!"*80)
 
             # If we're not using a fallback table already, return empty rather than crash
-            if sales_tbl == '"B4_SALES_TARGET"':
+            if sales_tbl == '"B4_SALES_TARGET_NEW3"':
                 print("INFO: Returning empty result set to prevent application crash.")
                 return []
 
@@ -1508,8 +1524,25 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
     print(f"DEBUG: year={year}, month={month}, start_date={start_date}, end_date={end_date}")
     print("="*80)
 
+    # Calculate date range from year/month if not provided explicitly
+    if not start_date and not end_date:
+        from datetime import date
+        from calendar import monthrange
+        
+        if year and month:
+            # Specific year and month
+            last_day = monthrange(year, month)[1]
+            start_date = date(year, month, 1).strftime('%Y-%m-%d')
+            end_date = date(year, month, last_day).strftime('%Y-%m-%d')
+            print(f"DEBUG: Calculated month range: {start_date} to {end_date}")
+        elif year:
+            # Entire year: January 1 to December 31
+            start_date = date(year, 1, 1).strftime('%Y-%m-%d')
+            end_date = date(year, 12, 31).strftime('%Y-%m-%d')
+            print(f"DEBUG: Calculated year range: {start_date} to {end_date}")
+
     # Schema is already set via SET SCHEMA command, so no need for prefix
-    sales_tbl = '"B4_SALES_TARGET"'
+    sales_tbl = '"B4_SALES_TARGET_NEW3"'
     emp_tbl = '"B4_EMP"'
     base = (
         'select '
@@ -1533,6 +1566,15 @@ def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | No
         val = territory_name.strip()
         where_clauses.append(' (O."descript" = ? OR O."descript" = ?) ')
         params.extend([val, val + ' Territory'])
+    
+    # Add date filtering
+    if start_date and end_date:
+        start_fmt = 'YYYY-MM-DD HH24:MI:SS' if ' ' in start_date else 'YYYY-MM-DD'
+        end_fmt = 'YYYY-MM-DD HH24:MI:SS.FF3' if '.' in end_date else ('YYYY-MM-DD HH24:MI:SS' if ' ' in end_date else 'YYYY-MM-DD')
+        where_clauses.append(f" c.\"F_REFDATE\" <= TO_TIMESTAMP(?, '{end_fmt}') ")
+        where_clauses.append(f" c.\"T_REFDATE\" >= TO_TIMESTAMP(?, '{start_fmt}') ")
+        params.extend([end_date.strip(), start_date.strip()])
+        print(f"DEBUG: Added date filter: {start_date} to {end_date}")
 
     where_sql = ''
     if len(where_clauses) > 0:
@@ -1560,7 +1602,24 @@ def sales_vs_achievement_by_emp(db, emp_id: int | None = None, territory_name: s
     print(f"DEBUG: year={year}, month={month}, start_date={start_date}, end_date={end_date}")
     print("="*80)
 
-    sales_tbl = '"B4_SALES_TARGET"'
+    # Calculate date range from year/month if not provided explicitly
+    if not start_date and not end_date:
+        from datetime import date
+        from calendar import monthrange
+        
+        if year and month:
+            # Specific year and month
+            last_day = monthrange(int(year), int(month))[1]
+            start_date = date(int(year), int(month), 1).strftime('%Y-%m-%d')
+            end_date = date(int(year), int(month), last_day).strftime('%Y-%m-%d')
+            print(f"DEBUG: Calculated month range: {start_date} to {end_date}")
+        elif year:
+            # Entire year: January 1 to December 31
+            start_date = date(int(year), 1, 1).strftime('%Y-%m-%d')
+            end_date = date(int(year), 12, 31).strftime('%Y-%m-%d')
+            print(f"DEBUG: Calculated year range: {start_date} to {end_date}")
+
+    sales_tbl = '"B4_SALES_TARGET_NEW3"'
     emp_tbl = '"B4_EMP"'
     base = (
         'select '
@@ -1584,21 +1643,16 @@ def sales_vs_achievement_by_emp(db, emp_id: int | None = None, territory_name: s
         val = territory_name.strip()
         where_clauses.append(' (O."descript" = ? OR O."descript" = ?) ')
         params.extend([val, val + ' Territory'])
+    
+    # Add date filtering
     if start_date and end_date:
-        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE <= TO_DATE(?, 'YYYY-MM-DD') ")
-        params.extend([start_date.strip(), end_date.strip()])
-    elif year is not None and month is not None and 1 <= int(month) <= 12:
-        y = int(year)
-        m = int(month)
-        start = date(y, m, 1)
-        if m == 12:
-            next_start = date(y + 1, 1, 1)
-        else:
-            next_start = date(y, m + 1, 1)
-        start_str = start.strftime('%Y-%m-%d')
-        next_str = next_start.strftime('%Y-%m-%d')
-        where_clauses.append(" c.F_REFDATE >= TO_DATE(?, 'YYYY-MM-DD') AND c.T_REFDATE < TO_DATE(?, 'YYYY-MM-DD') ")
-        params.extend([start_str, next_str])
+        start_fmt = 'YYYY-MM-DD HH24:MI:SS' if ' ' in start_date else 'YYYY-MM-DD'
+        end_fmt = 'YYYY-MM-DD HH24:MI:SS.FF3' if '.' in end_date else ('YYYY-MM-DD HH24:MI:SS' if ' ' in end_date else 'YYYY-MM-DD')
+        where_clauses.append(f" c.\"F_REFDATE\" <= TO_TIMESTAMP(?, '{end_fmt}') ")
+        where_clauses.append(f" c.\"T_REFDATE\" >= TO_TIMESTAMP(?, '{start_fmt}') ")
+        params.extend([end_date.strip(), start_date.strip()])
+        print(f"DEBUG: Added date filter: {start_date} to {end_date}")
+        
     where_sql = ''
     if len(where_clauses) > 0:
         where_sql = ' where ' + ' AND '.join(where_clauses)
