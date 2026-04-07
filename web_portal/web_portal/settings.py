@@ -35,13 +35,13 @@ BASE_URL = config('BASE_URL', default='http://localhost:8000')
 
 # ============== .ENV LOADING CHECK (Remove after verification) ==============
 print("\n" + "="*70)
-print("🔍 CHECKING .ENV FILE LOADING")
+print("CHECKING .ENV FILE LOADING")
 print("="*70)
-print(f"📁 .env file path: {ENV_FILE}")
-print(f"✓ .env exists: {ENV_FILE.exists()}")
+print(f".env file path: {ENV_FILE}")
+print(f".env exists: {ENV_FILE.exists()}")
 if ENV_FILE.exists():
-    print(f"📏 .env file size: {ENV_FILE.stat().st_size} bytes")
-print(f"📊 Loaded values:")
+    print(f".env file size: {ENV_FILE.stat().st_size} bytes")
+print(f"Loaded values:")
 print(f"   BASE_URL: {BASE_URL}")
 print(f"   HANA_HOST: {config('HANA_HOST', default='NOT_LOADED')}")
 print(f"   SAP_B1S_HOST: {config('SAP_B1S_HOST', default='NOT_LOADED')}")

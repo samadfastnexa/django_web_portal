@@ -2,6 +2,27 @@
 {% block title %}HANA Connect{% endblock %}
 {% block content %}
 <style>
+  /* Global Select/Dropdown Styling */
+  select.filter-select,
+  .filter-input select {
+    height: 44px !important;
+    min-height: 44px !important;
+    box-sizing: border-box !important;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%236b7280' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px !important;
+    cursor: pointer;
+  }
+  /* Increase dropdown option size for better readability */
+  select option {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+  
   /* Loading Overlay */
   .loading-overlay {
     position: fixed;
@@ -879,6 +900,11 @@
         <div class="filter-header">
           <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
           <div class="filter-title">Sales VS Achievement (Territory) Filters</div>
+          {% if diagnostics.period %}
+          <span style="background:#3b82f6;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;margin-left:8px;">
+            Period: {{ diagnostics.period|upper }} → {{ diagnostics.start_date }} to {{ diagnostics.end_date }}
+          </span>
+          {% endif %}
         </div>
         <div class="filter-grid">
           <div class="filter-field">
@@ -1478,6 +1504,11 @@
           <svg class="icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/><path d="M7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg>
           <div class="filter-title">Collection Filters</div>
           <span class="chip" id="activeCountCVA">0 active</span>
+          {% if diagnostics.period %}
+          <span style="background:#3b82f6;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;margin-left:8px;">
+            Period: {{ diagnostics.period|upper }} → {{ diagnostics.start_date }} to {{ diagnostics.end_date }}
+          </span>
+          {% endif %}
         </div>
         <div class="filter-grid">
           <div class="filter-field" data-key="emp_id">
@@ -2798,6 +2829,7 @@ textContent=count+' active'}
                if (periodSelect.value) {
                  // Reset any custom range and populate with selected quick period.
                  applyPeriodDates(periodSelect.value);
+                 console.log('Period changed to:', periodSelect.value, 'Start:', startInput.value, 'End:', endInput.value);
                }
              });
 
@@ -2818,6 +2850,7 @@ textContent=count+' active'}
 
            wirePeriodVsDate('geo-inv-filter-form');
            wirePeriodVsDate('territory-filter-form');
+           wirePeriodVsDate('cva-filter-form');
      });
    </script>
 

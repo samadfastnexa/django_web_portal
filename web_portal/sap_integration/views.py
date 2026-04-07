@@ -866,21 +866,31 @@ def hana_connect_admin(request):
                                 result = data
                                 
                                 try:
-                                    company = Company.objects.filter(Company_name=selected_db_key).first()
-                                    if company:
-                                        regions_qs = Region.objects.filter(company=company)
-                                        zones_qs = Zone.objects.filter(company=company)
-                                        territories_qs = Territory.objects.filter(company=company)
+                                    # Get geo options from HANA OTER table
+                                    hana_geo = geo_options(conn)
+                                    if hana_geo:
+                                        regions = sorted(set(r.get('Region') for r in hana_geo if r.get('Region')))
+                                        zones = sorted(set(r.get('Zone') for r in hana_geo if r.get('Zone')))
+                                        territories = sorted(set(r.get('Territory') for r in hana_geo if r.get('Territory')))
+                                        request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
                                     else:
-                                        regions_qs = Region.objects.all()
-                                        zones_qs = Zone.objects.all()
-                                        territories_qs = Territory.objects.all()
-                                    regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
-                                    zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
-                                    territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
-                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
-                                except Exception:
-                                    request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                        # Fallback to Django models if HANA returns empty
+                                        from FieldAdvisoryService.models import Region, Zone, Territory
+                                        regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                except Exception as e:
+                                    print(f"DEBUG: geo_options error: {e}")
+                                    # Fallback to Django models
+                                    try:
+                                        from FieldAdvisoryService.models import Region, Zone, Territory
+                                        regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                    except Exception:
+                                        request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                                     
                                 diagnostics['emp_id'] = emp_val
                                 diagnostics['start_date'] = (start_date_param or '').strip()
@@ -1113,21 +1123,31 @@ def hana_connect_admin(request):
                                 result = final_list
                                 
                                 try:
-                                    company = Company.objects.filter(Company_name=selected_db_key).first()
-                                    if company:
-                                        regions_qs = Region.objects.filter(company=company)
-                                        zones_qs = Zone.objects.filter(company=company)
-                                        territories_qs = Territory.objects.filter(company=company)
+                                    # Get geo options from HANA OTER table
+                                    hana_geo = geo_options(conn)
+                                    if hana_geo:
+                                        regions = sorted(set(r.get('Region') for r in hana_geo if r.get('Region')))
+                                        zones = sorted(set(r.get('Zone') for r in hana_geo if r.get('Zone')))
+                                        territories = sorted(set(r.get('Territory') for r in hana_geo if r.get('Territory')))
+                                        request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
                                     else:
-                                        regions_qs = Region.objects.all()
-                                        zones_qs = Zone.objects.all()
-                                        territories_qs = Territory.objects.all()
-                                    regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
-                                    zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
-                                    territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
-                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
-                                except Exception:
-                                    request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                        # Fallback to Django models if HANA returns empty
+                                        from FieldAdvisoryService.models import Region, Zone, Territory
+                                        regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                except Exception as e:
+                                    print(f"DEBUG: geo_options error: {e}")
+                                    # Fallback to Django models
+                                    try:
+                                        from FieldAdvisoryService.models import Region, Zone, Territory
+                                        regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                        request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                    except Exception:
+                                        request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                                     
                                 diagnostics['emp_id'] = emp_val
                                 diagnostics['user_id'] = user_id_param or ''
@@ -1154,8 +1174,9 @@ def hana_connect_admin(request):
                             in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
                             group_by_emp_param = request.GET.get('group_by_emp')
 
-                            # Quick period filters (applied only when explicit dates are not provided)
-                            if period_param and not start_date_param and not end_date_param:
+                            # Priority order: period > custom dates > default
+                            # When period is explicitly set (today/monthly/yearly), it takes precedence
+                            if period_param in ('today', 'monthly', 'yearly'):
                                 from datetime import date
                                 from calendar import monthrange
                                 today = date.today()
@@ -1302,21 +1323,29 @@ def hana_connect_admin(request):
                             result = final_list
                             
                             try:
-                                company = Company.objects.filter(Company_name=selected_db_key).first()
-                                if company:
-                                    regions_qs = Region.objects.filter(company=company)
-                                    zones_qs = Zone.objects.filter(company=company)
-                                    territories_qs = Territory.objects.filter(company=company)
+                                # Get geo options from HANA OTER table
+                                hana_geo = geo_options(conn)
+                                if hana_geo:
+                                    regions = sorted(set(r.get('Region') for r in hana_geo if r.get('Region')))
+                                    zones = sorted(set(r.get('Zone') for r in hana_geo if r.get('Zone')))
+                                    territories = sorted(set(r.get('Territory') for r in hana_geo if r.get('Territory')))
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
                                 else:
-                                    regions_qs = Region.objects.all()
-                                    zones_qs = Zone.objects.all()
-                                    territories_qs = Territory.objects.all()
-                                regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
-                                zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
-                                territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
-                                request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
-                            except Exception:
-                                request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                    from FieldAdvisoryService.models import Region, Zone, Territory
+                                    regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                            except Exception as e:
+                                print(f"DEBUG: geo_options error: {e}")
+                                try:
+                                    from FieldAdvisoryService.models import Region, Zone, Territory
+                                    regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                except Exception:
+                                    request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                                 
                             diagnostics['emp_id'] = emp_val
                             diagnostics['start_date'] = (start_date_param or '').strip()
@@ -1347,8 +1376,26 @@ def hana_connect_admin(request):
                             from datetime import date
                             from calendar import monthrange
                             today = date.today()
+                            
+                            # DEBUG: Log incoming parameters
+                            print(f"DEBUG sales_vs_achievement_territory: period={period_param}, start_date={start_date_param}, end_date={end_date_param}")
+                            print(f"DEBUG: Server date.today() = {today}, today.strftime = {today.strftime('%Y-%m-%d')}")
 
-                            if not start_date_param and not end_date_param and year_param and month_param:
+                            # Priority order: period > year+month > year > custom dates > default to current month
+                            # When period is explicitly set (today/monthly/yearly), it overrides everything
+                            if period_param in ('today', 'monthly', 'yearly'):
+                                if period_param == 'today':
+                                    start_date_param = today.strftime('%Y-%m-%d')
+                                    end_date_param = today.strftime('%Y-%m-%d')
+                                elif period_param == 'monthly':
+                                    start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
+                                    last_day = monthrange(today.year, today.month)[1]
+                                    end_date_param = today.replace(day=last_day).strftime('%Y-%m-%d')
+                                elif period_param == 'yearly':
+                                    start_date_param = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+                                    end_date_param = today.replace(month=12, day=31).strftime('%Y-%m-%d')
+                                print(f"DEBUG: After period calc: start_date={start_date_param}, end_date={end_date_param}")
+                            elif not start_date_param and not end_date_param and year_param and month_param:
                                 try:
                                     year_val = int(year_param)
                                     month_val = int(month_param)
@@ -1365,18 +1412,8 @@ def hana_connect_admin(request):
                                     end_date_param = date(year_val, 12, 31).strftime('%Y-%m-%d')
                                 except Exception:
                                     pass
-                            elif period_param and not start_date_param and not end_date_param:
-                                if period_param == 'today':
-                                    start_date_param = today.strftime('%Y-%m-%d')
-                                    end_date_param = today.strftime('%Y-%m-%d')
-                                elif period_param == 'monthly':
-                                    start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
-                                    last_day = monthrange(today.year, today.month)[1]
-                                    end_date_param = today.replace(day=last_day).strftime('%Y-%m-%d')
-                                elif period_param == 'yearly':
-                                    start_date_param = today.replace(month=1, day=1).strftime('%Y-%m-%d')
-                                    end_date_param = today.replace(month=12, day=31).strftime('%Y-%m-%d')
 
+                            # Default to current month if no date parameters provided
                             if not period_param and not start_date_param and not end_date_param and not year_param:
                                 start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
                                 last_day = monthrange(today.year, today.month)[1]
@@ -1527,21 +1564,29 @@ def hana_connect_admin(request):
                             result = final_list
                             
                             try:
-                                company = Company.objects.filter(Company_name=selected_db_key).first()
-                                if company:
-                                    regions_qs = Region.objects.filter(company=company)
-                                    zones_qs = Zone.objects.filter(company=company)
-                                    territories_qs = Territory.objects.filter(company=company)
+                                # Get geo options from HANA OTER table
+                                hana_geo = geo_options(conn)
+                                if hana_geo:
+                                    regions = sorted(set(r.get('Region') for r in hana_geo if r.get('Region')))
+                                    zones = sorted(set(r.get('Zone') for r in hana_geo if r.get('Zone')))
+                                    territories = sorted(set(r.get('Territory') for r in hana_geo if r.get('Territory')))
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
                                 else:
-                                    regions_qs = Region.objects.all()
-                                    zones_qs = Zone.objects.all()
-                                    territories_qs = Territory.objects.all()
-                                regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
-                                zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
-                                territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
-                                request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
-                            except Exception:
-                                request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                    from FieldAdvisoryService.models import Region, Zone, Territory
+                                    regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                            except Exception as e:
+                                print(f"DEBUG: geo_options error: {e}")
+                                try:
+                                    from FieldAdvisoryService.models import Region, Zone, Territory
+                                    regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                except Exception:
+                                    request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                             
                             diagnostics['start_date'] = (start_date_param or '').strip()
                             diagnostics['end_date'] = (end_date_param or '').strip()
@@ -1560,11 +1605,41 @@ def hana_connect_admin(request):
                             region_param = request.GET.get('region')
                             zone_param = request.GET.get('zone')
                             territory_param = request.GET.get('territory')
+                            period_param = (request.GET.get('period') or '').strip().lower()
                             start_date_param = request.GET.get('start_date')
                             end_date_param = request.GET.get('end_date')
                             in_millions_param = (request.GET.get('in_millions') or '').strip().lower()
                             group_by_date_param = (request.GET.get('group_by_date') or '').strip().lower()
                             ignore_emp_filter_param = (request.GET.get('ignore_emp_filter') or '').strip().lower()
+                            
+                            from datetime import date
+                            from calendar import monthrange
+                            today = date.today()
+                            
+                            # DEBUG: Log incoming parameters
+                            print(f"DEBUG collection_vs_achievement: period={period_param}, start_date={start_date_param}, end_date={end_date_param}")
+                            print(f"DEBUG: Server date.today() = {today}, today.strftime = {today.strftime('%Y-%m-%d')}")
+                            
+                            # Handle period parameter to auto-calculate date range
+                            # When period is explicitly set (today/monthly/yearly), it takes precedence over manual dates
+                            if period_param in ('today', 'monthly', 'yearly'):
+                                if period_param == 'today':
+                                    start_date_param = today.strftime('%Y-%m-%d')
+                                    end_date_param = today.strftime('%Y-%m-%d')
+                                elif period_param == 'monthly':
+                                    start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
+                                    last_day = monthrange(today.year, today.month)[1]
+                                    end_date_param = today.replace(day=last_day).strftime('%Y-%m-%d')
+                                elif period_param == 'yearly':
+                                    start_date_param = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+                                    end_date_param = today.replace(month=12, day=31).strftime('%Y-%m-%d')
+                                print(f"DEBUG: After period calc: start_date={start_date_param}, end_date={end_date_param}")
+                            
+                            # Default to monthly if no date parameters provided
+                            if not period_param and not start_date_param and not end_date_param:
+                                start_date_param = today.replace(day=1).strftime('%Y-%m-%d')
+                                last_day = monthrange(today.year, today.month)[1]
+                                end_date_param = today.replace(day=last_day).strftime('%Y-%m-%d')
                             
                             emp_val = None
                             if emp_id_param is not None and emp_id_param != '':
@@ -1687,25 +1762,34 @@ def hana_connect_admin(request):
                             result = final_list
                             
                             try:
-                                company = Company.objects.filter(Company_name=selected_db_key).first()
-                                if company:
-                                    regions_qs = Region.objects.filter(company=company)
-                                    zones_qs = Zone.objects.filter(company=company)
-                                    territories_qs = Territory.objects.filter(company=company)
+                                # Get geo options from HANA OTER table
+                                hana_geo = geo_options(conn)
+                                if hana_geo:
+                                    regions = sorted(set(r.get('Region') for r in hana_geo if r.get('Region')))
+                                    zones = sorted(set(r.get('Zone') for r in hana_geo if r.get('Zone')))
+                                    territories = sorted(set(r.get('Territory') for r in hana_geo if r.get('Territory')))
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
                                 else:
-                                    regions_qs = Region.objects.all()
-                                    zones_qs = Zone.objects.all()
-                                    territories_qs = Territory.objects.all()
-                                regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
-                                zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
-                                territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
-                                request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
-                            except Exception:
-                                request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                    from FieldAdvisoryService.models import Region, Zone, Territory
+                                    regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                            except Exception as e:
+                                print(f"DEBUG: geo_options error: {e}")
+                                try:
+                                    from FieldAdvisoryService.models import Region, Zone, Territory
+                                    regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                except Exception:
+                                    request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                             
                             diagnostics['emp_id'] = emp_val
                             diagnostics['start_date'] = (start_date_param or '').strip()
                             diagnostics['end_date'] = (end_date_param or '').strip()
+                            diagnostics['period'] = period_param
                             diagnostics['region'] = (region_param or '').strip()
                             diagnostics['zone'] = (zone_param or '').strip()
                             diagnostics['territory'] = (territory_param or '').strip()
@@ -1853,21 +1937,29 @@ def hana_connect_admin(request):
                             result = final_list
                             
                             try:
-                                company = Company.objects.filter(Company_name=selected_db_key).first()
-                                if company:
-                                    regions_qs = Region.objects.filter(company=company)
-                                    zones_qs = Zone.objects.filter(company=company)
-                                    territories_qs = Territory.objects.filter(company=company)
+                                # Get geo options from HANA OTER table
+                                hana_geo = geo_options(conn)
+                                if hana_geo:
+                                    regions = sorted(set(r.get('Region') for r in hana_geo if r.get('Region')))
+                                    zones = sorted(set(r.get('Zone') for r in hana_geo if r.get('Zone')))
+                                    territories = sorted(set(r.get('Territory') for r in hana_geo if r.get('Territory')))
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
                                 else:
-                                    regions_qs = Region.objects.all()
-                                    zones_qs = Zone.objects.all()
-                                    territories_qs = Territory.objects.all()
-                                regions = list(regions_qs.order_by('name').values_list('name', flat=True).distinct())
-                                zones = list(zones_qs.order_by('name').values_list('name', flat=True).distinct())
-                                territories = list(territories_qs.order_by('name').values_list('name', flat=True).distinct())
-                                request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
-                            except Exception:
-                                request._geo_options = {'regions': [], 'zones': [], 'territories': []}
+                                    from FieldAdvisoryService.models import Region, Zone, Territory
+                                    regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                            except Exception as e:
+                                print(f"DEBUG: geo_options error: {e}")
+                                try:
+                                    from FieldAdvisoryService.models import Region, Zone, Territory
+                                    regions = list(Region.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    zones = list(Zone.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    territories = list(Territory.objects.order_by('name').values_list('name', flat=True).distinct())
+                                    request._geo_options = {'regions': regions, 'zones': zones, 'territories': territories}
+                                except Exception:
+                                    request._geo_options = {'regions': [], 'zones': [], 'territories': []}
                                 
                             diagnostics['emp_id'] = emp_val
                             diagnostics['start_date'] = (start_date_param or '').strip()
