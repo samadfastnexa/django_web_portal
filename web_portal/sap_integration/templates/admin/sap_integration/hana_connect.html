@@ -2720,7 +2720,114 @@ textContent=count+' active'}
   </div>
   
    <script>
+     // ============================================================
+     // SCROLL POSITION MANAGER
+     // Preserves scroll position across filter changes & page reloads
+     // ============================================================
+     const ScrollManager = {
+       storageKey: 'hana_connect_scroll_position',
+       maxAge: 5000, // 5 seconds
+       restored: false,
+       
+       save: function() {
+         const scrollData = {
+           x: window.pageXOffset || document.documentElement.scrollLeft,
+           y: window.pageYOffset || document.documentElement.scrollTop,
+           url: window.location.href,
+           timestamp: Date.now()
+         };
+         sessionStorage.setItem(this.storageKey, JSON.stringify(scrollData));
+         console.log('[ScrollManager] Saved scroll position:', scrollData.y + 'px');
+       },
+       
+       restore: function() {
+         if (this.restored) return;
+         
+         const stored = sessionStorage.getItem(this.storageKey);
+         if (!stored) {
+           console.log('[ScrollManager] No stored position found');
+           return;
+         }
+         
+         try {
+           const scrollData = JSON.parse(stored);
+           const age = Date.now() - scrollData.timestamp;
+           
+           // Only restore if URL matches and data is recent
+           if (scrollData.url !== window.location.href) {
+             console.log('[ScrollManager] URL mismatch, clearing stored position');
+             sessionStorage.removeItem(this.storageKey);
+             return;
+           }
+           
+           if (age > this.maxAge) {
+             console.log('[ScrollManager] Stored position too old (' + age + 'ms), clearing');
+             sessionStorage.removeItem(this.storageKey);
+             return;
+           }
+           
+           // Restore scroll position
+           window.scrollTo(scrollData.x, scrollData.y);
+           this.restored = true;
+           console.log('[ScrollManager] Restored scroll to:', scrollData.y + 'px');
+           
+           // Clear stored position after restoration
+           sessionStorage.removeItem(this.storageKey);
+           
+         } catch (e) {
+           console.error('[ScrollManager] Error restoring scroll:', e);
+           sessionStorage.removeItem(this.storageKey);
+         }
+       },
+       
+       bindFilterForms: function() {
+         // Find all filter forms and bind submit event
+         const filterForms = document.querySelectorAll('form[id*="filter-form"], form[action*="hana-connect"]');
+         filterForms.forEach(function(form) {
+           form.addEventListener('submit', function(e) {
+             ScrollManager.save();
+           });
+         });
+         console.log('[ScrollManager] Bound ' + filterForms.length + ' filter forms');
+         
+         // Also save scroll on any filter dropdown change
+         const filterSelects = document.querySelectorAll('select[name="period"], select[name="company_db"], select[name="region"], select[name="zone"], select[name="territory"]');
+         filterSelects.forEach(function(select) {
+           select.addEventListener('change', function(e) {
+             // Save scroll when dropdown changes (form will be submitted)
+             ScrollManager.save();
+           });
+         });
+         console.log('[ScrollManager] Bound ' + filterSelects.length + ' filter dropdowns');
+       },
+       
+       init: function() {
+         const self = this;
+         
+         // Attempt restoration multiple times (for slow-loading content)
+         const attemptRestore = function() {
+           self.restore();
+         };
+         
+         // Try restoring at multiple intervals
+         [0, 50, 100, 200, 400, 800].forEach(function(delay) {
+           setTimeout(attemptRestore, delay);
+         });
+       }
+     };
+     
+     // Initialize scroll restoration immediately
+     ScrollManager.init();
+     
      document.addEventListener('DOMContentLoaded', function() {
+       // Restore scroll position again after DOM is ready
+       setTimeout(function() {
+         ScrollManager.restore();
+       }, 0);
+       
+       // Bind filter forms
+       ScrollManager.bindFilterForms();
+       
        const loadingOverlay = document.getElementById('loading-overlay');
        
        // Show loading overlay when any action button is clicked
@@ -2851,6 +2958,13 @@ textContent=count+' active'}
            wirePeriodVsDate('geo-inv-filter-form');
            wirePeriodVsDate('territory-filter-form');
            wirePeriodVsDate('cva-filter-form');
+     });
+     
+     // Final restoration attempt after window fully loads
+     window.addEventListener('load', function() {
+       setTimeout(function() {
+         ScrollManager.restore();
+       }, 100);
      });
    </script>
 
