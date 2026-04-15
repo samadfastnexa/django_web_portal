@@ -2039,22 +2039,61 @@ def sales_orders_all(db, limit: int = 100, card_code: str | None = None, doc_sta
     
     return _fetch_all(db, sql, tuple(params))
 
-def customer_lov(db, search: str | None = None, limit: int = 1000) -> list:
-    """Customer List of Values"""
+def territories_lov(db) -> list:
+    """Get all territories for filter dropdown"""
+    sql = (
+        'SELECT DISTINCT '
+        ' T0."Territory" AS "TerritoryId", '
+        ' O."descript" AS "TerritoryName" '
+        'FROM OCRD T0 '
+        'LEFT JOIN OTER O ON O."territryID" = T0."Territory" '
+        'WHERE T0."CardType" = \'C\' '
+        'ORDER BY O."descript" '
+    )
+    return _fetch_all(db, sql)
+
+def customer_lov(db, search: str | None = None, limit: int = 1000, status: str | None = 'active', territory: str | None = None, territory_name: str | None = None, hana_territory_id: int | None = None) -> list:
+    """Customer List of Values
+    
+    Args:
+        territory: Filter by territory code (T0."Territory" = ?)
+        territory_name: Filter by territory name/description (O."descript" = ?)
+        hana_territory_id: Filter by HANA territory numeric ID (T0."Territory" = ?)
+    """
     sql = (
         'SELECT '
         ' T0."CardCode", '
         ' T0."CardName", '
         ' T0."CntctPrsn", '
         ' T1."CntctCode", '
-        ' T0."LicTradNum" '
+        ' T0."LicTradNum", '
+        ' T0."Territory" AS "TerritoryId", '
+        ' O."descript" AS "TerritoryName" '
         'FROM OCRD T0 '
         'LEFT JOIN OCPR T1 ON T0."CardCode" = T1."CardCode" AND T0."CntctPrsn" = T1."Name" '
+        'LEFT JOIN OTER O ON O."territryID" = T0."Territory" '
         'WHERE T0."CardType" = \'C\' '
-        'AND T0."validFor" = \'Y\' '
     )
     
     params = []
+    if status:
+        status_val = str(status).strip().lower()
+        if status_val in ('active', 'inactive'):
+            sql += ' AND T0."validFor" = ? '
+            params.append('Y' if status_val == 'active' else 'N')
+    # Filter by territory ID, name, or code (priority order: hana_territory_id > territory_name > territory)
+    if hana_territory_id:
+        # Filter by HANA territory ID (numeric)
+        sql += ' AND T0."Territory" = ? '
+        params.append(str(hana_territory_id))
+    elif territory_name and str(territory_name).strip():
+        # Filter by territory name (for Django-mapped territories)
+        sql += ' AND O."descript" = ? '
+        params.append(str(territory_name).strip())
+    elif territory and str(territory).strip():
+        # Filter by territory code (for direct HANA territory codes)
+        sql += ' AND T0."Territory" = ? '
+        params.append(str(territory).strip())
     if search and search.strip():
         sql += ' AND (T0."CardCode" LIKE ? OR T0."CardName" LIKE ?) '
         search_param = f'%{search.strip()}%'

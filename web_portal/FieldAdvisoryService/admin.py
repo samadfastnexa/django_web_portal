@@ -1737,19 +1737,70 @@ class ZoneAdmin(admin.ModelAdmin, _CompanySessionResolver):
         comp = self._get_selected_company(request)
         return qs.filter(company=comp) if comp else qs
 
+
+class TerritoryMappingFilter(admin.SimpleListFilter):
+    """Custom filter for SAP Territory mapping status"""
+    title = 'SAP Territory Mapping'
+    parameter_name = 'mapping_status'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('mapped', 'Mapped to SAP HANA ✅'),
+            ('unmapped', 'Not Mapped to SAP HANA ❌'),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == 'mapped':
+            return queryset.filter(hana_territory_id__isnull=False)
+        if self.value() == 'unmapped':
+            return queryset.filter(hana_territory_id__isnull=True)
+
+
 @admin.register(Territory, site=admin_site)
 class TerritoryAdmin(admin.ModelAdmin, _CompanySessionResolver):
     def region(self, obj):
         return obj.zone.region if obj.zone else None
     region.short_description = 'Region'
-    list_display = ('name', 'zone', 'region', 'company')
-    list_filter = ('zone', 'zone__region', 'company')
-    search_fields = ('name', 'zone__name')
+    
+    def hana_territory_id_display(self, obj):
+        """Display SAP HANA Territory ID"""
+        if obj.hana_territory_id:
+            return f"{obj.hana_territory_id}"
+        return "—"
+    hana_territory_id_display.short_description = 'SAP Territory ID'
+    
+    def mapping_status(self, obj):
+        """Display mapping status with colors"""
+        from django.utils.html import format_html
+        if obj.hana_territory_id:
+            return format_html(
+                '<span style="padding:4px 8px; border-radius:4px; background-color:#90EE90; color:#155724; font-weight:bold;">{}</span>',
+                'MAPPED'
+            )
+        return format_html(
+            '<span style="padding:4px 8px; border-radius:4px; background-color:#FFB6C1; color:#721c24; font-weight:bold;">{}</span>',
+            'UNMAPPED'
+        )
+    mapping_status.short_description = 'Mapping Status'
+    mapping_status.admin_order_field = 'hana_territory_id'
+    
+    list_display = ('name', 'zone', 'region', 'company', 'hana_territory_id_display', 'mapping_status')
+    list_filter = ('zone', 'zone__region', 'company', TerritoryMappingFilter)
+    search_fields = ('name', 'zone__name', 'hana_territory_id')
     list_per_page = 25  # Updated to 25 records per page for better admin experience
+    fields = ('name', 'zone', 'company', 'hana_territory_id', 'latitude', 'longitude', 'created_by')
+    readonly_fields = ('created_by',)
+    
+    
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         comp = self._get_selected_company(request)
         return qs.filter(company=comp) if comp else qs
+    
+    class Media:
+        css = {
+            'all': ('admin/css/territory_admin.css',)
+        }
 
 @admin.register(Dealer, site=admin_site)
 class DealerAdmin(admin.ModelAdmin):

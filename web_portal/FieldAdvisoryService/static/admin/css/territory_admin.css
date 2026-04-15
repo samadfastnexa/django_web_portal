@@ -1,0 +1,85 @@
+/* Territory Admin List - Fix column overlap issue */
+
+/* Force table layout */
+.change-list #changelist .results {
+    table-layout: auto !important;
+    width: 100% !important;
+    min-width: 1400px !important;
+    border-collapse: collapse !important;
+}
+
+.change-list #changelist .results thead {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+}
+
+.change-list #changelist .results th,
+.change-list #changelist .results td {
+    padding: 12px 10px !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    border: 1px solid #ddd !important;
+}
+
+/* Column widths - Territory admin */
+.change-list #changelist .results th:nth-child(2),
+.change-list #changelist .results td:nth-child(2) {
+    min-width: 160px !important;
+    max-width: 160px !important;
+}
+
+.change-list #changelist .results th:nth-child(3),
+.change-list #changelist .results td:nth-child(3) {
+    min-width: 240px !important;
+    max-width: 240px !important;
+}
+
+.change-list #changelist .results th:nth-child(4),
+.change-list #changelist .results td:nth-child(4) {
+    min-width: 220px !important;
+    max-width: 220px !important;
+}
+
+.change-list #changelist .results th:nth-child(5),
+.change-list #changelist .results td:nth-child(5) {
+    min-width: 140px !important;
+    max-width: 140px !important;
+}
+
+.change-list #changelist .results th:nth-child(6),
+.change-list #changelist .results td:nth-child(6) {
+    min-width: 150px !important;
+    max-width: 150px !important;
+}
+
+.change-list #changelist .results th:nth-child(7),
+.change-list #changelist .results td:nth-child(7) {
+    min-width: 140px !important;
+    max-width: 140px !important;
+}
+
+/* Enable horizontal scrolling container */
+#changelist #content-main {
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+}
+
+/* Better scrollbar */
+#changelist #content-main::-webkit-scrollbar {
+    height: 12px !important;
+}
+
+#changelist #content-main::-webkit-scrollbar-track {
+    background: #f1f1f1 !important;
+}
+
+#changelist #content-main::-webkit-scrollbar-thumb {
+    background: #888 !important;
+    border-radius: 6px !important;
+}
+
+#changelist #content-main::-webkit-scrollbar-thumb:hover {
+    background: #555 !important;
+}

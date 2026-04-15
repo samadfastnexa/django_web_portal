@@ -22,7 +22,7 @@ import json
 import re
 import logging
 import mimetypes
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, sales_vs_achievement_territory, unit_price_by_policy
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, sales_vs_achievement_territory, unit_price_by_policy, territories_lov
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -73,10 +73,88 @@ def get_default_company_key():
         return ''
 
 
+def resolve_company_to_schema(company_param: str) -> str:
+    """
+    Directly resolve company parameter to schema name.
+    - If given display name (e.g., '4B-AGRI'), returns schema_name (e.g., '4B-AGRI_LIVE')
+    - If given schema name directly, returns it as-is
+    
+    Company model has:
+      - Company_name: Display name (e.g., "4B-AGRI")
+      - name: Schema name (e.g., "4B-AGRI_LIVE")
+    """
+    if not company_param or not company_param.strip():
+        return ''
+    
+    company_param = company_param.strip()
+    token = company_param.upper()
+    
+    # 1. Try direct case-insensitive match on Company_name (display name)
+    try:
+        company = Company.objects.get(Company_name__iexact=company_param, is_active=True)
+        return company.name  # Return the schema_name field
+    except Company.DoesNotExist:
+        pass
+    
+    # 2. Try direct case-insensitive match on name field (schema name)
+    try:
+        company = Company.objects.get(name__iexact=company_param, is_active=True)
+        return company.name
+    except Company.DoesNotExist:
+        pass
+    
+    # 3. Try with dash/underscore variants on Company_name
+    variants = set()
+    variants.add(token)
+    variants.add(token.replace('-', '_'))
+    variants.add(token.replace('_', '-'))
+    
+    for candidate in variants:
+        try:
+            company = Company.objects.get(Company_name__iexact=candidate, is_active=True)
+            return company.name
+        except Company.DoesNotExist:
+            pass
+        try:
+            company = Company.objects.get(name__iexact=candidate, is_active=True)
+            return company.name
+        except Company.DoesNotExist:
+            pass
+    
+    # 4. Fallback: search by company type keyword in Company_name
+    # Get all matching companies and prefer longer schema names
+    if 'ORANG' in token:
+        companies = list(Company.objects.filter(is_active=True, Company_name__icontains='ORANG'))
+        if companies:
+            # Return the one with longest schema name (more specific)
+            company = sorted(companies, key=lambda c: len(c.name), reverse=True)[0]
+            return company.name
+    if 'BIO' in token:
+        companies = list(Company.objects.filter(is_active=True, Company_name__icontains='BIO'))
+        if companies:
+            company = sorted(companies, key=lambda c: len(c.name), reverse=True)[0]
+            return company.name
+    if 'AGRI' in token:
+        companies = list(Company.objects.filter(is_active=True, Company_name__icontains='AGRI'))
+        if companies:
+            company = sorted(companies, key=lambda c: len(c.name), reverse=True)[0]
+            return company.name
+    
+    # 5. Last resort: return first active company's schema
+    try:
+        company = Company.objects.filter(is_active=True).first()
+        if company:
+            return company.name
+    except Exception:
+        pass
+    
+    # If nothing found, return the original parameter
+    return company_param.strip()
+
 def get_hana_schema_from_request(request):
     """
     Resolve HANA schema from query param, session, or first active company.
-    Returns Company_name (e.g., '4B-BIO_APP').
+    Returns Company_name (e.g., '4B-BIO_APP', '4B-AGRI_LIVE').
     """
     db_param = request.GET.get('database', '').strip()
     if db_param:
@@ -92,6 +170,10 @@ def get_hana_schema_from_request(request):
         if not token.endswith('_APP') and not token.endswith('-APP'):
             variants.add(f"{token}_APP")
             variants.add(f"{token}-APP")
+        # Ensure LIVE suffix when missing
+        if not token.endswith('_LIVE') and not token.endswith('-LIVE'):
+            variants.add(f"{token}_LIVE")
+            variants.add(f"{token}-LIVE")
         # Try exact/case-insensitive matches against active companies
         for candidate in list(variants):
             try:
@@ -325,6 +407,7 @@ def hana_connect_admin(request):
     result = None
     error = None
     error_fields = {}
+    territories = []
     
     # Extract filter parameters for diagnostics
     emp_id_param = (request.GET.get('emp_id') or '').strip()
@@ -2230,6 +2313,8 @@ def hana_connect_admin(request):
                     elif action == 'customer_lov':
                         try:
                             search_param = request.GET.get('search')
+                            status_param = (request.GET.get('status') or 'active').strip().lower()
+                            territory_param = request.GET.get('territory')
                             top_param = request.GET.get('top') or request.GET.get('limit')
                             lim = None
                             try:
@@ -2237,8 +2322,19 @@ def hana_connect_admin(request):
                                     lim = int(str(top_param).strip())
                             except Exception:
                                 lim = None
-                            data = customer_lov(conn, (search_param or '').strip() or None, limit=(lim or 5000))
+                            data = customer_lov(
+                                conn,
+                                (search_param or '').strip() or None,
+                                limit=(lim or 5000),
+                                status=(status_param or 'active'),
+                                territory=(territory_param or '').strip() or None
+                            )
                             result = data
+                            # Get territories for filter dropdown
+                            try:
+                                territories = territories_lov(conn)
+                            except Exception:
+                                territories = []
                         except Exception as e_cl:
                             error = str(e_cl)
                     elif action == 'child_customers':
@@ -2671,6 +2767,17 @@ def hana_connect_admin(request):
                 if grp_cod:
                     seen_groups[grp_cod]['ProductCount'] += 1
         product_categories = sorted(seen_groups.values(), key=lambda x: x.get('ItmsGrpNam', ''))
+
+    def _safe_int(value, default):
+        try:
+            if value is None:
+                return default
+            return int(value)
+        except (ValueError, TypeError):
+            return default
+
+    req_page = _safe_int(request.GET.get('page'), 1)
+    req_page_size = _safe_int(request.GET.get('page_size'), 50)
     
     return render(
         request,
@@ -2680,6 +2787,7 @@ def hana_connect_admin(request):
             'error': error,
             'diagnostics': diagnostics,
             'diagnostics_json': diag_json,
+            'territories': territories,
             'territory_options': territory_options,
             'geo_options': geo_options,
             'selected_territory': selected_territory,
@@ -2714,10 +2822,10 @@ def hana_connect_admin(request):
                              if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
                              else (paginator.num_pages if paginator else 1)),
                 # Fix has_next/has_prev for products_catalog to use correct total_count
-                'has_next': ((int(request.GET.get('page', '1')) * int(request.GET.get('page_size', '50')) < getattr(request, '_products_catalog_total_count', 0))
+                'has_next': ((req_page * req_page_size < getattr(request, '_products_catalog_total_count', 0))
                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
                             else (page_obj.has_next() if page_obj else False)),
-                'has_prev': ((int(request.GET.get('page', '1')) > 1)
+                'has_prev': ((req_page > 1)
                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
                             else (page_obj.has_previous() if page_obj else False)),
                 'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)),
@@ -7200,9 +7308,12 @@ def cwl_full_api(request):
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Customer LOV",
-    operation_description="List customers with optional search and pagination.",
+    operation_description="List customers with optional search, territory, status and pagination. Can filter by user_id to get the user's territory automatically.",
     manual_parameters=[
         openapi.Parameter('company', openapi.IN_QUERY, description="Optional: Company database key", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('user_id', openapi.IN_QUERY, description="Optional: Portal User ID - Gets territory assigned to the user. If provided, shows only customers from that user's territory", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('status', openapi.IN_QUERY, description="Filter by status: active, inactive, or all", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('territory', openapi.IN_QUERY, description="Filter by territory ID (overridden by user_id if both provided)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search CardCode or CardName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
@@ -7229,26 +7340,84 @@ def customer_lov_api(request):
         'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
     }
     
-    # Read the 'company' parameter (not 'database') and resolve schema
+    # Read the 'company' parameter and resolve schema directly
     company_param = (request.GET.get('company') or '').strip()
     if company_param:
-        # Create a modified request.GET to use with the helper function
-        from django.http import QueryDict
-        modified_get = request.GET.copy()
-        modified_get['database'] = company_param
-        # Temporarily replace request.GET
-        original_get = request.GET
-        request.GET = modified_get
-        cfg['schema'] = get_hana_schema_from_request(request)
-        request.GET = original_get
+        cfg['schema'] = resolve_company_to_schema(company_param)
     else:
-        # No company param provided, use default resolution
-        cfg['schema'] = get_hana_schema_from_request(request)
+        # No company param provided, try database param or use default
+        db_param = (request.GET.get('database') or '').strip()
+        if db_param:
+            cfg['schema'] = resolve_company_to_schema(db_param)
+        else:
+            cfg['schema'] = get_hana_schema_from_request(request)
     
     search = (request.GET.get('search') or '').strip()
+    status_param = (request.GET.get('status') or 'active').strip().lower()
+    territory_param = (request.GET.get('territory') or '').strip()
+    user_id_param = (request.GET.get('user_id') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     limit_param = (request.GET.get('top') or request.GET.get('limit') or '').strip()
+    
+    # If user_id is provided, get the user's territory/territories
+    user_territories = []
+    hana_territory_id_param = None
+    if user_id_param:
+        try:
+            user_id_val = int(user_id_param)
+            # Import the custom User model from accounts app
+            from accounts.models import User
+            target_user = User.objects.get(id=user_id_val)
+            # Get the user's sales profile and territories
+            if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
+                territories = target_user.sales_profile.territories.all()
+                if territories.exists():
+                    # Get first territory with hana_territory_id mapping
+                    first_territory = territories.first()
+                    if first_territory and first_territory.hana_territory_id:
+                        hana_territory_id_param = first_territory.hana_territory_id
+                        user_territories = [{'id': first_territory.id, 'name': first_territory.name, 'hana_id': first_territory.hana_territory_id}]
+                        import sys
+                        print(f"[DEBUG] customer_lov_api: User {user_id_val} - Using territory '{first_territory.name}' (HANA ID: {hana_territory_id_param})", file=sys.stderr)
+                    else:
+                        # Territory doesn't have HANA mapping
+                        import sys
+                        print(f"[DEBUG] customer_lov_api: User {user_id_val} - First territory '{first_territory.name}' has NO hana_territory_id mapping", file=sys.stderr)
+                        # Return all territories assigned but indicate mapping is missing
+                        user_territories = [{'id': t.id, 'name': t.name, 'hana_id': t.hana_territory_id} for t in territories]
+                else:
+                    import sys
+                    print(f"[DEBUG] customer_lov_api: User {user_id_val} has no territories assigned", file=sys.stderr)
+            else:
+                import sys
+                print(f"[DEBUG] customer_lov_api: User {user_id_val} has no sales profile", file=sys.stderr)
+        except (ValueError, User.DoesNotExist) as e:
+            import sys
+            print(f"[DEBUG] customer_lov_api: Error fetching user territory: {str(e)}", file=sys.stderr)
+            pass
+    
+    # Validate schema resolution
+    if not cfg['schema']:
+        # Try to get list of available companies for the error message
+        available_companies = []
+        try:
+            available_companies = list(Company.objects.filter(is_active=True).values_list('Company_name', flat=True))
+        except Exception:
+            pass
+        
+        if company_param:
+            error_msg = f"Could not resolve company '{company_param}' to a valid schema."
+            if available_companies:
+                error_msg += f" Available companies: {', '.join(available_companies)}"
+            else:
+                error_msg += " No active companies configured in the system."
+            return Response({'success': False, 'error': error_msg, 'available_companies': available_companies}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            error_msg = "No schema configured. Please provide a 'company' parameter."
+            if available_companies:
+                error_msg += f" Available companies: {', '.join(available_companies)}"
+            return Response({'success': False, 'error': error_msg, 'available_companies': available_companies}, status=status.HTTP_400_BAD_REQUEST)
     try:
         page_num = int(page_param) if page_param else 1
     except Exception:
@@ -7279,22 +7448,62 @@ def customer_lov_api(request):
         conn = dbapi.connect(**kwargs)
         try:
             if cfg['schema']:
-                sch = cfg['schema']
+                sch = cfg['schema'].strip()
+                # Log for debugging
+                import sys
+                print(f"[DEBUG] customer_lov_api: Using schema: '{sch}'", file=sys.stderr)
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
             from .hana_connect import customer_lov
-            data = customer_lov(conn, search or None, limit=limit_val)
+            # Use hana_territory_id if from user_id, otherwise use territory or territory_name
+            data = customer_lov(
+                conn, 
+                search or None, 
+                limit=limit_val, 
+                status=status_param or 'active', 
+                territory=territory_param or None if not hana_territory_id_param else None,
+                territory_name=None,  # Don't use territory_name anymore
+                hana_territory_id=hana_territory_id_param
+            )
             paginator = Paginator(data or [], page_size)
             page_obj = paginator.get_page(page_num)
-            return Response({'success': True, 'page': page_obj.number, 'page_size': page_size, 'num_pages': paginator.num_pages, 'count': paginator.count, 'data': list(page_obj.object_list)}, status=status.HTTP_200_OK)
+            
+            # Build response
+            response_data = {
+                'success': True,
+                'page': page_obj.number,
+                'page_size': page_size,
+                'num_pages': paginator.num_pages,
+                'count': paginator.count,
+                'data': list(page_obj.object_list)
+            }
+            
+            # Include user territory info if user_id was provided
+            if user_id_param and user_territories:
+                response_data['user_id'] = int(user_id_param)
+                response_data['assigned_territories'] = user_territories  # Already in dict format with hana_id
+                if hana_territory_id_param:
+                    response_data['filtered_by_hana_territory_id'] = hana_territory_id_param
+                    response_data['warning'] = 'Make sure all territories have hana_territory_id mapping set' if not all(t.get('hana_id') for t in user_territories) else None
+            elif territory_param:
+                response_data['filtered_by_territory_code'] = territory_param
+            
+            return Response(response_data, status=status.HTTP_200_OK)
         finally:
             try:
                 conn.close()
             except Exception:
                 pass
     except Exception as e:
-        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        import sys
+        error_msg = str(e)
+        print(f"[DEBUG] customer_lov_api ERROR: {error_msg}", file=sys.stderr)
+        print(f"[DEBUG] Resolved schema: '{cfg['schema']}'", file=sys.stderr)
+        print(f"[DEBUG] Company param: '{company_param}'", file=sys.stderr)
+        if user_id_param:
+            print(f"[DEBUG] User ID: '{user_id_param}', Territories: {user_territories}", file=sys.stderr)
+        return Response({'success': False, 'error': error_msg, 'debug': {'schema': cfg['schema'], 'company_param': company_param, 'user_id': user_id_param if user_id_param else None}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @swagger_auto_schema(tags=['SAP'], 
     method='get',

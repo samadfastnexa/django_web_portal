@@ -104,6 +104,11 @@ class Territory(models.Model):
     company = models.ForeignKey('Company', on_delete=models.PROTECT)
     zone = models.ForeignKey(Zone, on_delete=models.PROTECT, related_name='territories')
     name = models.CharField(max_length=100)  # ✅ Territory's own name
+    hana_territory_id = models.IntegerField(
+        null=True, 
+        blank=True, 
+        help_text="SAP HANA territoryID for customer filtering. Must match OTER.territryID"
+    )
     latitude = models.DecimalField(
         max_digits=9, 
         decimal_places=6, 
