@@ -373,8 +373,8 @@ CACHES = {
 # Session configuration for better performance
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Database-backed sessions
 SESSION_CACHE_ALIAS = 'default'
-SESSION_COOKIE_AGE = 86400  # 24 hours
-SESSION_SAVE_EVERY_REQUEST = False  # Only save when session is modified
+SESSION_COOKIE_AGE = 2592000  # 30 days (30 * 24 * 60 * 60)
+SESSION_SAVE_EVERY_REQUEST = True  # Refresh session on every request to keep users logged in
 
 # ==============================================================================
 # EMAIL CONFIGURATION - Gmail SMTP for Password Reset
