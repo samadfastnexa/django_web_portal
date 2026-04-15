@@ -4,6 +4,7 @@
 <style>
   /* Global Select/Dropdown Styling */
   select.filter-select,
+  select.filter-input,
   .filter-input select {
     height: 44px !important;
     min-height: 44px !important;
@@ -16,12 +17,57 @@
     background-position: right 12px center;
     padding-right: 36px !important;
     cursor: pointer;
+    color: #1a202c !important;
+    background-color: #fff !important;
   }
   /* Increase dropdown option size for better readability */
   select option {
     padding: 10px 12px;
     font-size: 14px;
+    color: #1a202c;
+    background: #fff;
   }
+  .filter-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    color: #475569;
+  }
+  .filter-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fff;
+    color: #1a202c;
+  }
+  select.filter-input {
+    color: #1a202c !important;
+  }
+  .filter-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid #667eea;
+    background: #667eea;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn:hover { background: #5a67d8; border-color: #5a67d8; }
+  .btn-secondary { background: #fff; color: #667eea; }
+  .btn-secondary:hover { background: #eef2ff; }
+  .icon { width: 16px; height: 16px; fill: currentColor; }
   
   /* Loading Overlay */
   .loading-overlay {
@@ -451,6 +497,56 @@
       </form>
     {% endif %}
   </div>
+
+  {% if current_action == 'customer_lov' %}
+    <!-- Customer List Filters Section -->
+    <div class="actions-section" id="customerLovFilterSection">
+      <h3>🔍 Customer List Filters</h3>
+      <form method="get" style="margin-top: 16px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+        <input type="hidden" name="action" value="customer_lov">
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div>
+            <label class="filter-label">Status</label>
+            <select name="status" class="filter-input">
+              <option value="active" {% if request.GET.status == 'active' or not request.GET.status %}selected{% endif %}>Active</option>
+              <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
+              <option value="all" {% if request.GET.status == 'all' %}selected{% endif %}>All</option>
+            </select>
+          </div>
+          <div>
+            <label class="filter-label">Territory</label>
+            <select name="territory" class="filter-input">
+              <option value="">-- Select Territory --</option>
+              {% for territory in territories %}
+                <option value="{{ territory.TerritoryId }}" {% if request.GET.territory == territory.TerritoryId|stringformat:"s" %}selected{% endif %}>
+                  {{ territory.TerritoryName }} ({{ territory.TerritoryId }})
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="filter-label">Search Customer</label>
+            <input type="text" name="search" class="filter-input" placeholder="Search by code or name" value="{{ request.GET.search }}">
+          </div>
+          <div>
+            <label class="filter-label">Limit</label>
+            <input type="number" name="limit" min="1" max="20000" class="filter-input" value="{{ request.GET.limit|default:'5000' }}">
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply
+          </button>
+          <a class="btn btn-secondary" href="?action=customer_lov&company_db={{ selected_db_key }}">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+      </form>
+    </div>
+  {% endif %}
   
   <!-- Policy Section -->
   <div class="actions-section">

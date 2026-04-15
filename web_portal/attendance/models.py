@@ -84,9 +84,19 @@ class Attendance(models.Model):
         if not self.check_in_time and not self.check_out_time:
             raise ValidationError("At least one of check-in or check-out time must be set.")
 
-        if self.check_in_time and self.check_in_time > now:
+        # Allow 5 minute tolerance for future time checks (handles clock skew and timezone issues)
+        from datetime import timedelta
+        tolerance = timedelta(minutes=5)
+        
+        # DEBUG: Log timezone comparison
+        if self.check_in_time:
+            print(f"[ATTENDANCE DEBUG] Check-in time: {self.check_in_time}")
+            print(f"[ATTENDANCE DEBUG] Server now: {now}")
+            print(f"[ATTENDANCE DEBUG] Difference: {(self.check_in_time - now).total_seconds()} seconds")
+        
+        if self.check_in_time and self.check_in_time > (now + tolerance):
             raise ValidationError("Check-in time cannot be in the future.")
-        if self.check_out_time and self.check_out_time > now:
+        if self.check_out_time and self.check_out_time > (now + tolerance):
             raise ValidationError("Check-out time cannot be in the future.")
 
         if self.check_in_time and self.check_out_time:

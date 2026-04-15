@@ -1,0 +1,123 @@
+{% extends "admin/change_list.html" %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    /* Force table to show all columns */
+    #changelist {
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+    }
+    
+    #changelist #content-main {
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+      display: block;
+      width: 100%;
+    }
+    
+    #changelist .results {
+      table-layout: auto !important;
+      width: 100% !important;
+      min-width: 1600px !important;
+      border-collapse: collapse !important;
+      display: table !important;
+    }
+    
+    #changelist .results thead {
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 10 !important;
+      background: #f8f8f8 !important;
+      display: table-header-group !important;
+    }
+    
+    #changelist .results tbody {
+      display: table-row-group !important;
+    }
+    
+    #changelist .results tr {
+      display: table-row !important;
+    }
+    
+    #changelist .results th,
+    #changelist .results td {
+      display: table-cell !important;
+      padding: 12px 10px !important;
+      white-space: normal !important;
+      overflow: visible !important;
+      border: 1px solid #ddd !important;
+    }
+    
+    /* Column widths - specific for Territory columns */
+    #changelist .results th:nth-child(1),
+    #changelist .results td:nth-child(1) {
+      min-width: 80px !important;
+      max-width: 80px !important;
+      text-align: center;
+    }
+    
+    #changelist .results th:nth-child(2),
+    #changelist .results td:nth-child(2) {
+      min-width: 140px !important;
+      max-width: 140px !important;
+    }
+    
+    #changelist .results th:nth-child(3),
+    #changelist .results td:nth-child(3) {
+      min-width: 180px !important;
+      max-width: 180px !important;
+    }
+    
+    #changelist .results th:nth-child(4),
+    #changelist .results td:nth-child(4) {
+      min-width: 200px !important;
+      max-width: 200px !important;
+    }
+    
+    #changelist .results th:nth-child(5),
+    #changelist .results td:nth-child(5) {
+      min-width: 140px !important;
+      max-width: 140px !important;
+    }
+    
+    /* SAP Territory ID column */
+    #changelist .results th:nth-child(6),
+    #changelist .results td:nth-child(6) {
+      min-width: 130px !important;
+      max-width: 130px !important;
+      text-align: center;
+      background-color: #fffacd !important;
+    }
+    
+    /* Mapping Status column */
+    #changelist .results th:nth-child(7),
+    #changelist .results td:nth-child(7) {
+      min-width: 140px !important;
+      max-width: 140px !important;
+      text-align: center;
+      font-weight: bold;
+      background-color: #f0f8ff !important;
+    }
+    
+    /* Better scrollbar */
+    #changelist #content-main::-webkit-scrollbar {
+      height: 12px !important;
+    }
+    
+    #changelist #content-main::-webkit-scrollbar-track {
+      background: #f1f1f1 !important;
+    }
+    
+    #changelist #content-main::-webkit-scrollbar-thumb {
+      background: #888 !important;
+      border-radius: 6px !important;
+    }
+    
+    #changelist #content-main::-webkit-scrollbar-thumb:hover {
+      background: #555 !important;
+    }
+  </style>
+{% endblock %}
+
