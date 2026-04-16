@@ -393,12 +393,12 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     """
 
     # DEBUG: Add comprehensive logging for missing table issue
-    print("="*80)
-    print("DEBUG: sales_vs_achievement_territory() called")
-    print(f"DEBUG: Parameters: emp_id={emp_id}, region={region}, zone={zone}")
-    print(f"DEBUG: territory={territory}, start_date={start_date}, end_date={end_date}")
-    print(f"DEBUG: group_by_date={group_by_date}, group_by_emp={group_by_emp}")
-    print("="*80)
+    # print("="*80)
+    # print("DEBUG: sales_vs_achievement_territory() called")
+    # print(f"DEBUG: Parameters: emp_id={emp_id}, region={region}, zone={zone}")
+    # print(f"DEBUG: territory={territory}, start_date={start_date}, end_date={end_date}")
+    # print(f"DEBUG: group_by_date={group_by_date}, group_by_emp={group_by_emp}")
+    # print("="*80)
 
     sales_tbl = '"B4_SALES_TARGET_NEW3"'
 
@@ -406,17 +406,17 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     table_exists = False
     try:
         check_query = "SELECT COUNT(*) FROM TABLES WHERE TABLE_NAME = 'B4_SALES_TARGET_NEW3'"
-        print(f"DEBUG: Checking if B4_SALES_TARGET_NEW3 table exists...")
+        # print(f"DEBUG: Checking if B4_SALES_TARGET_NEW3 table exists...")
         cursor = db.cursor()
         cursor.execute(check_query)
         table_count = cursor.fetchone()[0]
-        print(f"DEBUG: B4_SALES_TARGET_NEW3 table count: {table_count}")
+        # print(f"DEBUG: B4_SALES_TARGET_NEW3 table count: {table_count}")
         cursor.close()
         table_exists = (table_count > 0)
 
         if not table_exists:
-            print("WARNING: B4_SALES_TARGET_NEW3 table does not exist!")
-            print("FALLBACK: Checking for alternative sales tables...")
+            # print("WARNING: B4_SALES_TARGET_NEW3 table does not exist!")
+            # print("FALLBACK: Checking for alternative sales tables...")
 
             # Check for alternative tables that might contain similar data
             alt_query = """
@@ -433,9 +433,10 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
             cursor.close()
 
             if alternatives:
-                print("DEBUG: Found these alternative sales tables in current schema:")
+                # print("DEBUG: Found these alternative sales tables in current schema:")
                 for schema, table, record_count in alternatives:
-                    print(f"  - {schema}.{table} ({record_count} records)")
+                    pass
+                    # print(f"  - {schema}.{table} ({record_count} records)")
 
                 # Try to use the first alternative table with data
                 # Prefer ETL_SALES_LINES if available, otherwise use the one with most records
@@ -449,23 +450,23 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
                     best_alternative = alternatives[0][1]  # Use first (highest record count)
 
                 if best_alternative:
-                    print(f"FALLBACK: Using alternative table: {best_alternative}")
+                    # print(f"FALLBACK: Using alternative table: {best_alternative}")
                     sales_tbl = f'"{best_alternative}"'
-                    print(f"WARNING: Results may be different due to schema differences")
-                    print(f"NOTE: Production schema may have different column names than expected")
+                    # print(f"WARNING: Results may be different due to schema differences")
+                    # print(f"NOTE: Production schema may have different column names than expected")
                     # Continue with modified sales_tbl - don't return here
                 else:
-                    print("ERROR: No suitable alternative tables found with data")
+                    # print("ERROR: No suitable alternative tables found with data")
                     # Return empty result instead of raising exception
                     return []
             else:
-                print("DEBUG: No alternative sales tables found in current schema")
+                # print("DEBUG: No alternative sales tables found in current schema")
                 # Return empty result instead of raising exception
-                print("INFO: Returning empty result set due to missing B4_SALES_TARGET_NEW3 table")
+                # print("INFO: Returning empty result set due to missing B4_SALES_TARGET_NEW3 table")
                 return []
 
     except Exception as e:
-        print(f"DEBUG: Error checking table existence: {e}")
+        # print(f"DEBUG: Error checking table existence: {e}")
         # Continue with original logic if check fails
         table_exists = True  # Assume it exists and let original error handling deal with it
 
@@ -641,48 +642,48 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     all_params = tuple(params)
 
     # DEBUG: Log the complete SQL query and parameters
-    print("="*80)
-    print("DEBUG: FINAL SQL QUERY TO BE EXECUTED")
-    print("="*80)
-    print("SQL Query:")
-    print(full_sql)
-    print("-"*80)
-    print(f"Parameters ({len(all_params)}): {all_params}")
-    print("="*80)
+    # print("="*80)
+    # print("DEBUG: FINAL SQL QUERY TO BE EXECUTED")
+    # print("="*80)
+    # print("SQL Query:")
+    # print(full_sql)
+    # print("-"*80)
+    # print(f"Parameters ({len(all_params)}): {all_params}")
+    # print("="*80)
 
     try:
         rows = _fetch_all(db, full_sql, all_params)
-        print(f"DEBUG: Query executed successfully. Returned {len(rows)} rows.")
+        # print(f"DEBUG: Query executed successfully. Returned {len(rows)} rows.")
     except Exception as e:
-        print(f"DEBUG: Query execution FAILED with error: {e}")
-        print(f"DEBUG: Error type: {type(e)}")
-        print(f"DEBUG: Full error details: {str(e)}")
+        # print(f"DEBUG: Query execution FAILED with error: {e}")
+        # print(f"DEBUG: Error type: {type(e)}")
+        # print(f"DEBUG: Full error details: {str(e)}")
 
         # Check if we're using a fallback table and the error is due to column name differences
         if sales_tbl != '"B4_SALES_TARGET_NEW3"' and ("invalid column name" in str(e).lower() or "column not found" in str(e).lower()):
-            print("\n" + "!"*80)
-            print(f"FALLBACK ERROR: Using alternative table {sales_tbl} failed due to schema differences.")
-            print("This is expected when production schema differs from development.")
-            print("\nReturning empty result set instead of failing.")
-            print("!"*80)
+            # print("\n" + "!"*80)
+            # print(f"FALLBACK ERROR: Using alternative table {sales_tbl} failed due to schema differences.")
+            # print("This is expected when production schema differs from development.")
+            # print("\nReturning empty result set instead of failing.")
+            # print("!"*80)
             return []
 
         # If it's the table not found error, provide helpful information
         if "B4_SALES_TARGET" in str(e) and ("Could not find" in str(e) or "invalid table name" in str(e)):
-            print("\n" + "!"*80)
-            print("SOLUTION: The B4_SALES_TARGET_NEW3 table does not exist in your SAP HANA database.")
-            print("This table appears to be missing from your SAP B1 system.")
-            print("\nPossible solutions:")
-            print("1. Check if the table exists in SAP Business One")
-            print("2. Create the table if it's supposed to exist")
-            print("3. Modify the code to use an existing sales table")
-            print("4. Check if this is a custom table that needs to be set up")
-            print("\nNOTE: Fallback mechanism is now enabled - check logs for alternative table usage.")
-            print("!"*80)
+            # print("\n" + "!"*80)
+            # print("SOLUTION: The B4_SALES_TARGET_NEW3 table does not exist in your SAP HANA database.")
+            # print("This table appears to be missing from your SAP B1 system.")
+            # print("\nPossible solutions:")
+            # print("1. Check if the table exists in SAP Business One")
+            # print("2. Create the table if it's supposed to exist")
+            # print("3. Modify the code to use an existing sales table")
+            # print("4. Check if this is a custom table that needs to be set up")
+            # print("\nNOTE: Fallback mechanism is now enabled - check logs for alternative table usage.")
+            # print("!"*80)
 
             # If we're not using a fallback table already, return empty rather than crash
             if sales_tbl == '"B4_SALES_TARGET_NEW3"':
-                print("INFO: Returning empty result set to prevent application crash.")
+                # print("INFO: Returning empty result set to prevent application crash.")
                 return []
 
         # For any other errors, still raise them

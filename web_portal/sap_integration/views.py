@@ -2816,20 +2816,24 @@ def hana_connect_admin(request):
             'project_options': project_options,
             'geo_totals': geo_totals,
             'pagination': {
-                'page': (page_obj.number if page_obj else 1),
+                'page': (page_obj.number if page_obj else 1) if action != 'products_catalog' else req_page,
                 # Fix num_pages calculation for products_catalog to use correct total_count
                 'num_pages': ((getattr(request, '_products_catalog_total_count', 0) + page_size - 1) // page_size
                              if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
                              else (paginator.num_pages if paginator else 1)),
                 # Fix has_next/has_prev for products_catalog to use correct total_count
-                'has_next': ((req_page * req_page_size < getattr(request, '_products_catalog_total_count', 0))
+                'has_next': ((req_page * page_size < getattr(request, '_products_catalog_total_count', 0))
                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
                             else (page_obj.has_next() if page_obj else False)),
                 'has_prev': ((req_page > 1)
                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
                             else (page_obj.has_previous() if page_obj else False)),
-                'next_page': ((page_obj.next_page_number() if page_obj and page_obj.has_next() else None)),
-                'prev_page': ((page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)),
+                'next_page': ((req_page + 1 if req_page * page_size < getattr(request, '_products_catalog_total_count', 0) else None)
+                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                             else (page_obj.next_page_number() if page_obj and page_obj.has_next() else None)),
+                'prev_page': ((req_page - 1 if req_page > 1 else None)
+                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                             else (page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)),
                 # Fix double-pagination bug for products_catalog: use database total_count instead of Django paginator count
                 'count': (getattr(request, '_products_catalog_total_count', None) if action == 'products_catalog'
                          else (paginator.count if paginator else len(result_rows))),

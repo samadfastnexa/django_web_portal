@@ -89,10 +89,10 @@ class Attendance(models.Model):
         tolerance = timedelta(minutes=5)
         
         # DEBUG: Log timezone comparison
-        if self.check_in_time:
-            print(f"[ATTENDANCE DEBUG] Check-in time: {self.check_in_time}")
-            print(f"[ATTENDANCE DEBUG] Server now: {now}")
-            print(f"[ATTENDANCE DEBUG] Difference: {(self.check_in_time - now).total_seconds()} seconds")
+        # if self.check_in_time:
+        #     print(f"[ATTENDANCE DEBUG] Check-in time: {self.check_in_time}")
+        #     print(f"[ATTENDANCE DEBUG] Server now: {now}")
+        #     print(f"[ATTENDANCE DEBUG] Difference: {(self.check_in_time - now).total_seconds()} seconds")
         
         if self.check_in_time and self.check_in_time > (now + tolerance):
             raise ValidationError("Check-in time cannot be in the future.")

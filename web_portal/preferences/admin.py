@@ -121,7 +121,7 @@ class JSONKeyValueWidget(forms.Widget):
         final_attrs = self.build_attrs(attrs, {'type': 'hidden'})
         
         # Debug: Print what we're receiving
-        print(f"DEBUG JSONKeyValueWidget - name: {name}, value type: {type(value)}, value: {value}")
+        # print(f"DEBUG JSONKeyValueWidget - name: {name}, value type: {type(value)}, value: {value}")
         
         # Normalize value to dict
         if not value:
@@ -130,15 +130,15 @@ class JSONKeyValueWidget(forms.Widget):
             try:
                 value = json.loads(value)
             except json.JSONDecodeError:
-                print(f"DEBUG: Failed to parse JSON string: {value}")
+                # print(f"DEBUG: Failed to parse JSON string: {value}")
                 value = {}
         
         # Ensure value is a dict
         if not isinstance(value, dict):
-            print(f"DEBUG: Converting non-dict value to empty dict. Was: {type(value)}")
+            # print(f"DEBUG: Converting non-dict value to empty dict. Was: {type(value)}")
             value = {}
 
-        print(f"DEBUG: Final normalized value: {value}")
+        # print(f"DEBUG: Final normalized value: {value}")
 
         # Generate unique ID for this widget instance
         widget_id = final_attrs.get('id', name.replace('-', '_'))
