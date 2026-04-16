@@ -601,7 +601,7 @@ def hana_connect_admin(request):
                         try:
                             # Extract pagination parameters
                             page_param = request.GET.get('page', '1')
-                            page_size_param = request.GET.get('page_size', '50')
+                            page_size_param = request.GET.get('page_size', '')
 
                             try:
                                 page_num = int(page_param)
@@ -611,11 +611,11 @@ def hana_connect_admin(request):
                                 page_num = 1
 
                             try:
-                                page_size = int(page_size_param)
+                                page_size = int(page_size_param) if page_size_param else 50
                                 if page_size < 1:
                                     page_size = 50
-                                elif page_size > 200:
-                                    page_size = 200
+                                elif page_size > 10000:
+                                    page_size = 10000
                             except (ValueError, TypeError):
                                 page_size = 50
 
@@ -624,17 +624,16 @@ def hana_connect_admin(request):
                             item_group_param = (request.GET.get('item_group') or '').strip() or None
                             item_groups_param = (request.GET.get('item_groups') or '').strip() or None
                             is_active_param = (request.GET.get('is_active') or 'Y').strip()
+                            search_param = (request.GET.get('search') or '').strip() or None
 
                             # Calculate offset for pagination
                             offset = (page_num - 1) * page_size
-
-                            # print(f"DEBUG products_catalog: schema={selected_schema}, item_group={item_group_param}, is_active={is_active_param}, page={page_num}, page_size={page_size}, offset={offset}")
 
                             # Apply pagination to the database query
                             catalog_result = products_catalog(
                                 conn,
                                 selected_schema,
-                                search=None,
+                                search=search_param,
                                 item_group=item_group_param,
                                 item_groups=item_groups_param,
                                 is_active=is_active_param,
@@ -2678,7 +2677,7 @@ def hana_connect_admin(request):
         page_num = 1
     # Use default page size for products_catalog
     if action == 'products_catalog':
-        default_page_size = 10000  # Load all products; client-side filtering handles search
+        default_page_size = 50
     else:
         default_page_size = 10
         try:

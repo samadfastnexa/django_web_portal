@@ -451,7 +451,7 @@ Includes: Multi-category filtering, search with autocomplete, responsive design
       </button>
       <div class="autocomplete-dropdown" id="autocompleteDropdown" role="listbox"></div>
     </div>
-    <button onclick="clearTimeout(searchDebounceTimer);currentSearch=document.getElementById('productSearch').value;updateAppliedFilters();runClientFilter();" aria-label="Search" style="background: #417690; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 10px; font-size: 14px; font-weight: 600;">
+    <button onclick="applyFiltersWithSearch()" aria-label="Search" style="background: #417690; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 10px; font-size: 14px; font-weight: 600;">
       🔍 Search
     </button>
   </div>
@@ -529,9 +529,16 @@ function getAllProductCards() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
-  // Restore category filters from URL params only (search is client-side, not in URL)
+  // Restore category filters and search from URL params
   const urlParams = new URLSearchParams(window.location.search);
   const categoriesParam = urlParams.get('item_groups') || '';
+  const searchParam = urlParams.get('search') || '';
+  if (searchParam) {
+    const input = document.getElementById('productSearch');
+    if (input) { input.value = searchParam; currentSearch = searchParam; }
+    const clearBtn = document.getElementById('searchClearBtn');
+    if (clearBtn) clearBtn.classList.add('active');
+  }
 
   if (categoriesParam) {
     categoriesParam.split(',').forEach(catId => {
@@ -616,29 +623,20 @@ function handleSearchKeydown(event) {
   if (event.key === 'Enter') {
     event.preventDefault();
     clearTimeout(searchDebounceTimer);
-    currentSearch = document.getElementById('productSearch').value;
-    updateAppliedFilters();
-    runClientFilter();
+    applyFiltersWithSearch();
   }
   if (event.key === 'Escape') {
     clearTimeout(searchDebounceTimer);
     document.getElementById('productSearch').value = '';
     currentSearch = '';
     updateAppliedFilters();
-    runClientFilter();
     checkFiltersActive();
   }
 }
 
 function clearSearch() {
   clearTimeout(searchDebounceTimer);
-  const input = document.getElementById('productSearch');
-  if (input) { input.value = ''; input.focus(); }
-  document.getElementById('searchClearBtn').classList.remove('active');
-  currentSearch = '';
-  updateAppliedFilters();
-  runClientFilter();
-  checkFiltersActive();
+  applyFiltersWithSearchValue('');
 }
 
 // ---------- Category Filters ----------
@@ -651,7 +649,7 @@ function handleCategoryChange() {
   updateCategoryCount();
   updateAppliedFilters();
   checkFiltersActive();
-  runClientFilter();
+  applyFiltersWithSearch();
 }
 
 function updateCategoryCount() {
@@ -662,6 +660,10 @@ function updateCategoryCount() {
 // ---------- Apply / Reset (server-side reload only for category filtering) ----------
 
 function applyFilters() {
+  applyFiltersWithSearch();
+}
+
+function applyFiltersWithSearchValue(searchVal) {
   showLoading();
   const params = new URLSearchParams(window.location.search);
   const action = params.get('action') || 'products_catalog';
@@ -669,24 +671,38 @@ function applyFilters() {
   const newParams = new URLSearchParams();
   newParams.set('action', action);
   if (companyDb) newParams.set('company_db', companyDb);
-  // Do NOT pass search to server - search is purely client-side
+  if (searchVal && searchVal.trim()) newParams.set('search', searchVal.trim());
   if (selectedCategories.length > 0) newParams.set('item_groups', selectedCategories.join(','));
+  newParams.set('page', '1');
+  window.location.href = '?' + newParams.toString();
+}
+
+function applyFiltersWithSearch() {
+  showLoading();
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action') || 'products_catalog';
+  const companyDb = params.get('company_db');
+  const newParams = new URLSearchParams();
+  newParams.set('action', action);
+  if (companyDb) newParams.set('company_db', companyDb);
+  const searchVal = (document.getElementById('productSearch') || {}).value || '';
+  if (searchVal.trim()) newParams.set('search', searchVal.trim());
+  if (selectedCategories.length > 0) newParams.set('item_groups', selectedCategories.join(','));
+  // Reset to page 1 when filtering
+  newParams.set('page', '1');
   window.location.href = '?' + newParams.toString();
 }
 
 function resetAllFilters() {
-  clearTimeout(searchDebounceTimer);
-  const input = document.getElementById('productSearch');
-  if (input) input.value = '';
-  const clearBtn = document.getElementById('searchClearBtn');
-  if (clearBtn) clearBtn.classList.remove('active');
-  currentSearch = '';
-  selectedCategories = [];
-  document.querySelectorAll('.category-checkbox').forEach(cb => { cb.checked = false; });
-  updateCategoryCount();
-  updateAppliedFilters();
-  checkFiltersActive();
-  runClientFilter();
+  showLoading();
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action') || 'products_catalog';
+  const companyDb = params.get('company_db');
+  const newParams = new URLSearchParams();
+  newParams.set('action', action);
+  if (companyDb) newParams.set('company_db', companyDb);
+  newParams.set('page', '1');
+  window.location.href = '?' + newParams.toString();
 }
 
 // ---------- UI Helpers ----------
