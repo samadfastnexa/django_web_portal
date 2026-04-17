@@ -5976,8 +5976,8 @@ def get_product_description_api(request):
                 'error': 'item_code parameter is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Resolve database/schema dynamically from Company table
-        database = get_hana_schema_from_request(request)
+        # Use database param directly (same as products_catalog_api) to get the actual HANA schema name
+        database = (request.GET.get('database') or os.environ.get('HANA_SCHEMA') or '').strip()
         
         # logger.info(f"Fetching product description for ItemCode: {item_code}, Database: {database}")
         
@@ -6035,25 +6035,40 @@ def get_product_description_api(request):
                 set_schema_sql = f'SET SCHEMA {quote_ident(schema_name)}'
                 cur.execute(set_schema_sql)
             
-            # Query product description
-            
-            # First, try to get the description from any ATC1 line that has FreeText
+            # Query product description - match image by file extension (same as products-catalog)
+            # and urdu by U_IMG_C category. Join ATC1 directly (no OATC intermediate).
             sql = """
             SELECT
                 T0."ItemCode",
                 T0."ItemName",
                 T0."AtcEntry",
-                A1."Line",
-                A1."FreeText",
-                A1."FileName",
-                A1."FileExt",
-                A1."U_IMG_C"
+                MAX(
+                    CASE
+                        WHEN A."U_IMG_C" = 'Product Image'
+                        THEN A."FreeText"
+                    END
+                ) AS "Description",
+                MIN(
+                    CASE
+                        WHEN LOWER(TRIM(A."FileExt")) IN ('jpeg', 'jpg', 'png')
+                        THEN A."FileName" || '.' || A."FileExt"
+                    END
+                ) AS "Product_Image",
+                MAX(
+                    CASE
+                        WHEN A."U_IMG_C" = 'Product Description Urdu'
+                        THEN A."FileName" || '.' || A."FileExt"
+                    END
+                ) AS "Product_Description_Urdu"
             FROM OITM T0
-            LEFT JOIN ATC1 A1
-                ON A1."AbsEntry" = T0."AtcEntry"
+            LEFT JOIN ATC1 A
+                ON A."AbsEntry" = T0."AtcEntry"
             WHERE
                 T0."ItemCode" = ?
-            ORDER BY A1."Line"
+            GROUP BY
+                T0."ItemCode",
+                T0."ItemName",
+                T0."AtcEntry"
             """
             
             cur.execute(sql, (item_code,))
@@ -6066,71 +6081,38 @@ def get_product_description_api(request):
                     'error': f'Product with ItemCode {item_code} not found'
                 }, status=status.HTTP_404_NOT_FOUND)
             
-            # Extract basic product info from first row
-            item_code_result = rows[0][0]
-            item_name = rows[0][1]
-            atc_entry = rows[0][2]
-            
-            # Look through all attachment lines to find FreeText, images, etc.
-            description = None
-            image_file = None
-            image_ext = None
-            urdu_file = None
-            urdu_ext = None
-            all_attachments = []
-            
-            for row in rows:
-                line_num = row[3]
-                free_text = row[4]
-                file_name = row[5]
-                file_ext = row[6]
-                img_category = row[7] if len(row) > 7 else None
-                
-                # Collect all attachment info
-                if file_name and file_ext:
-                    attachment_info = {
-                        'line': line_num,
-                        'file_name': file_name,
-                        'file_ext': file_ext,
-                        'category': img_category,
-                        'has_description': bool(free_text)
-                    }
-                    all_attachments.append(attachment_info)
-                
-                # Get the first FreeText we find (description)
-                if free_text and not description:
-                    description = free_text
-                
-                # Try to identify image and Urdu files by category or pattern
-                if img_category:
-                    if 'image' in img_category.lower() and not image_file:
-                        image_file = file_name
-                        image_ext = file_ext
-                    elif 'urdu' in img_category.lower() and not urdu_file:
-                        urdu_file = file_name
-                        urdu_ext = file_ext
-                elif file_ext in ['jpg', 'jpeg', 'png', 'gif'] and not image_file:
-                    # If no category, try to guess by extension
-                    image_file = file_name
-                    image_ext = file_ext
-                elif file_ext in ['doc', 'docx', 'pdf'] and not urdu_file:
-                    urdu_file = file_name
-                    urdu_ext = file_ext
-            
+            row = rows[0]
+            item_code_result = row[0]
+            item_name        = row[1]
+            atc_entry        = row[2]
+            description      = row[3]          # FreeText from Product Image line
+            product_image    = row[4]          # e.g. "Black-Gold.png"
+            product_desc_urdu = row[5]         # e.g. "بلیک گولڈ 5.docx"
+
+            # Split combined FileName.FileExt back into parts for backward-compat fields
+            def _split_file(combined):
+                if not combined:
+                    return None, None
+                parts = combined.rsplit('.', 1)
+                return (parts[0], parts[1]) if len(parts) == 2 else (parts[0], None)
+
+            image_file, image_ext = _split_file(product_image)
+            urdu_file,  urdu_ext  = _split_file(product_desc_urdu)
+
             # Extract folder name from schema/database name (e.g., "4B-AGRI_LIVE" -> "4B-AGRI")
             folder_name = 'default'
             if database:
                 folder_name = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
             
-            # Construct product image URL (similar to products_catalog)
-            product_image_url = None
-            if image_file and image_ext:
-                product_image_url = f'/media/product_images/{folder_name}/{image_file}.{image_ext}'
-            
-            # Construct product description Urdu URL
-            product_description_urdu_url = None
-            if urdu_file and urdu_ext:
-                product_description_urdu_url = f'/media/product_images/{folder_name}/{urdu_file}.{urdu_ext}'
+            # Construct URLs directly from the combined Product_Image / Product_Description_Urdu values
+            product_image_url = f'/media/product_images/{folder_name}/{product_image}' if product_image else None
+            product_description_urdu_url = f'/media/product_images/{folder_name}/{product_desc_urdu}' if product_desc_urdu else None
+
+            all_attachments = []
+            if product_image:
+                all_attachments.append({'file_name': image_file, 'file_ext': image_ext, 'category': 'Product Image', 'has_description': bool(description)})
+            if product_desc_urdu:
+                all_attachments.append({'file_name': urdu_file, 'file_ext': urdu_ext, 'category': 'Product Description Urdu', 'has_description': False})
             
             # Fetch price from @PLR4 for this item
             price = 0.0
@@ -6162,6 +6144,8 @@ def get_product_description_api(request):
                 'description': description,  # FreeText - Product Description
                 'price': price,  # Price from @PLR4 or 0 if not found
                 'atc_entry': atc_entry,
+                'product_image': product_image,          # e.g. "Black-Gold.png"  (FileName.FileExt)
+                'product_description_urdu': product_desc_urdu,  # e.g. "بلیک گولڈ 5.docx"
                 'image_file': image_file,
                 'image_ext': image_ext,
                 'urdu_file': urdu_file,
@@ -6303,8 +6287,8 @@ def download_product_description_api(request):
                 'error': 'item_code parameter is required'
             }, status=400)
         
-        # Resolve database/schema dynamically from Company table
-        database = get_hana_schema_from_request(request)
+        # Use database param directly (same as products_catalog_api) to get the actual HANA schema name
+        database = (request.GET.get('database') or os.environ.get('HANA_SCHEMA') or '').strip()
         
         # logger.info(f"Downloading product description for ItemCode: {item_code}, Database: {database}")
         

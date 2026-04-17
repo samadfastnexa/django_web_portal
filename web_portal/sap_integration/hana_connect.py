@@ -1231,28 +1231,26 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         'SELECT '
         ' T1."ItmsGrpCod", '
         ' SUBSTR(T1."ItmsGrpNam", 4) AS "ItmsGrpNam", '
+        ' T0."U_PCN" AS "Product_Catalog_Code", '
         ' T0."ItemCode", '
         ' T0."ItemName", '
-        ' T0."SalPackMsr", '
-        ' T0."InvntryUom", '
         ' T0."U_GenericName", '
         ' T0."U_BrandName", '
+        ' T0."SalPackMsr", '
+        ' T0."InvntryUom", '
         ' T0."U_IsActive", '
-        ' PI."FileName" AS "Product_Image_Name", '
-        ' PI."FileExt" AS "Product_Image_Ext", '
-        ' PU."FileName" AS "Product_Urdu_Name", '
-        ' PU."FileExt" AS "Product_Urdu_Ext"'
+        ' MIN(CASE WHEN LOWER(TRIM(A."FileExt")) IN (\'jpeg\', \'jpg\', \'png\') THEN A."FileName" || \'.\'  || A."FileExt" END) AS "Product_Image", '
+        ' MAX(CASE WHEN A."U_IMG_C" = \'Product Description Urdu\' THEN A."FileName" || \'.\'  || A."FileExt" END) AS "Product_Description_Urdu"'
     )
     
     # Add price column if requested
     if fetch_prices:
-        sql += ', COALESCE(PR."U_np", 0) AS "Price" '
+        sql += ', MAX(COALESCE(PR."U_np", 0)) AS "Price" '
     
     sql += (
         'FROM OITM T0 '
         'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
-        'LEFT JOIN ATC1 PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."Line" = 0 '
-        'LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."Line" = 1 '
+        'LEFT JOIN ATC1 A ON A."AbsEntry" = T0."AtcEntry" '
     )
     
     # Join price data if requested
@@ -1331,6 +1329,19 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     count_result = _fetch_all(db, count_sql, tuple(count_params) if count_params else None)
     total_count = count_result[0].get('total', 0) if count_result else 0
     
+    sql += (
+        ' GROUP BY'
+        ' T1."ItmsGrpCod",'
+        ' T1."ItmsGrpNam",'
+        ' T0."U_PCN",'
+        ' T0."ItemCode",'
+        ' T0."ItemName",'
+        ' T0."U_GenericName",'
+        ' T0."U_BrandName",'
+        ' T0."SalPackMsr",'
+        ' T0."InvntryUom",'
+        ' T0."U_IsActive"'
+    )
     sql += ' ORDER BY T1."ItmsGrpCod", T0."ItemCode"'
     
     # Add pagination
@@ -1370,27 +1381,17 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         if fetch_prices:
             row['price'] = float(row.get('Price', 0.0))
         
-        # Product Image URL (from attachment Line 0)
-        img_name = row.get('Product_Image_Name')
-        img_ext = row.get('Product_Image_Ext')
+        # Product Image URL (combined FileName.FileExt, matched by extension)
+        product_image = row.get('Product_Image')
         
-        # Product Description Urdu (from attachment Line 1)
-        urdu_name = row.get('Product_Urdu_Name')
-        urdu_ext = row.get('Product_Urdu_Ext')
+        # Product Description Urdu (matched by U_IMG_C = 'Product Description Urdu')
+        product_desc_urdu = row.get('Product_Description_Urdu')
         
         image_url = None
         
-        # Primary: Use Line 0 attachment if available AND file exists in cache
-        if img_name and img_ext:
-            file_key = f'{img_name}.{img_ext}'.lower()
-            if file_key in available_files:
-                image_url = f'/media/product_images/{folder_name}/{img_name}.{img_ext}'
-        
-        # Fallback 1: Use Line 1 (Urdu) attachment as primary image if Line 0 doesn't exist
-        if not image_url and urdu_name and urdu_ext:
-            file_key = f'{urdu_name}.{urdu_ext}'.lower()
-            if file_key in available_files:
-                image_url = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
+        # Primary: Use aggregated Product_Image from SAP — always build URL if SAP returned a filename
+        if product_image:
+            image_url = f'/media/product_images/{folder_name}/{product_image}'
         
         # Fallback 2: Quick check for brand name or simplified item name
         # Skip complex regex/fuzzy matching for performance
@@ -1420,9 +1421,9 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         
         row['product_image_url'] = image_url
         
-        # Urdu URL: Use Line 1 attachment
-        if urdu_name and urdu_ext:
-            row['product_description_urdu_url'] = f'/media/product_images/{folder_name}/{urdu_name}.{urdu_ext}'
+        # Urdu URL: Use Product Description Urdu attachment
+        if product_desc_urdu:
+            row['product_description_urdu_url'] = f'/media/product_images/{folder_name}/{product_desc_urdu}'
         else:
             row['product_description_urdu_url'] = None
     
