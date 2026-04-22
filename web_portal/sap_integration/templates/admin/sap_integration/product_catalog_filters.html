@@ -76,7 +76,7 @@ Includes: Multi-category filtering, search with autocomplete, responsive design
   
   .search-input {
     width: 100%;
-    padding: 14px 50px 14px 50px;
+    padding: 14px 50px 14px 14px;
     border: 2px solid #e5e7eb;
     border-radius: 12px;
     font-size: 15px;
@@ -93,10 +93,11 @@ Includes: Multi-category filtering, search with autocomplete, responsive design
   
   .search-icon {
     position: absolute;
-    left: 18px;
+    left: 14px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 20px;
+    width: 18px;
+    height: 18px;
     color: #94a3b8;
     pointer-events: none;
   }
@@ -435,7 +436,6 @@ Includes: Multi-category filtering, search with autocomplete, responsive design
       <span>Search Products</span>
     </div>
     <div class="search-wrapper">
-      <span class="search-icon">🔎</span>
       <input 
         type="text" 
         id="productSearch" 

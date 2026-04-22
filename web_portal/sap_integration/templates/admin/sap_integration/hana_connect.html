@@ -1,4 +1,5 @@
 {% extends "admin/base_site.html" %}
+{% load admin_extras %}
 {% block title %}HANA Connect{% endblock %}
 {% block content %}
 <style>
@@ -2447,12 +2448,12 @@ textContent=count+' active'}
           <div class="json-title">📊 Raw JSON Response</div>
           <button class="copy-json-btn" onclick="copyJsonToClipboard()">Copy JSON</button>
         </div>
-        <pre id="jsonContent">{{ result_rows|safe }}</pre>
+        <pre id="jsonContent">{{ result_rows_json|safe }}</pre>
       </div>
       
       <div class="products-grid">
         {% for row in result_rows %}
-          <div class="product-card" data-product='{{ row|safe }}'>
+          <div class="product-card" data-product='{{ row|jsonify|safe }}'>
             <div class="product-image-container">
               {% if row.product_image_url %}
                 <img src="{{ row.product_image_url }}" alt="{{ row.ItemName }}" class="product-image" 
@@ -2489,8 +2490,8 @@ textContent=count+' active'}
         {% endfor %}
       </div>
       <script>
-        // Store JSON data
-        const jsonData = {{ result_rows|safe }};
+        // Store JSON data - use server-serialized JSON to avoid Python repr issues
+        const jsonData = {{ result_rows_json|safe }};
         
         function toggleJsonViewer() {
           const viewer = document.getElementById('jsonViewer');
@@ -2509,18 +2510,37 @@ textContent=count+' active'}
         
         function copyJsonToClipboard() {
           const jsonText = JSON.stringify(jsonData, null, 2);
-          navigator.clipboard.writeText(jsonText).then(() => {
-            const btn = event.target;
-            const originalText = btn.textContent;
+          const btn = event.target;
+          const originalText = btn.textContent;
+          // Try modern clipboard API first (requires HTTPS), fall back to execCommand
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(jsonText).then(() => {
+              btn.textContent = '✓ Copied!';
+              btn.classList.add('copied');
+              setTimeout(() => { btn.textContent = originalText; btn.classList.remove('copied'); }, 2000);
+            }).catch(() => _fallbackCopy(jsonText, btn, originalText));
+          } else {
+            _fallbackCopy(jsonText, btn, originalText);
+          }
+        }
+
+        function _fallbackCopy(text, btn, originalText) {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          try {
+            document.execCommand('copy');
             btn.textContent = '✓ Copied!';
             btn.classList.add('copied');
-            setTimeout(() => {
-              btn.textContent = originalText;
-              btn.classList.remove('copied');
-            }, 2000);
-          }).catch(err => {
-            alert('Failed to copy: ' + err);
-          });
+            setTimeout(() => { btn.textContent = originalText; btn.classList.remove('copied'); }, 2000);
+          } catch (e) {
+            alert('Copy failed. Please copy manually from the JSON viewer.');
+          }
+          document.body.removeChild(ta);
         }
         
         function showProductJson(btn) {

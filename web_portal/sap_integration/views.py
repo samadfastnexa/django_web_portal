@@ -2778,10 +2778,17 @@ def hana_connect_admin(request):
     req_page = _safe_int(request.GET.get('page'), 1)
     req_page_size = _safe_int(request.GET.get('page_size'), 50)
     
+    import json as _json
+    try:
+        result_rows_json = _json.dumps(paged_rows, default=str)
+    except Exception:
+        result_rows_json = '[]'
+
     return render(
         request,
         'admin/sap_integration/hana_connect.html',
         {
+            'result_rows_json': result_rows_json,
             'result_json': result_json,
             'error': error,
             'diagnostics': diagnostics,
