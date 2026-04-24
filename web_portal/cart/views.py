@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -548,7 +549,7 @@ class CartViewSet(viewsets.ViewSet):
         },
         tags=["06. Shopping Cart"]
     )
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], parser_classes=[JSONParser])
     def clear(self, request):
         """Clear all items from cart with validation"""
         cart_id = request.data.get('cart_id')
