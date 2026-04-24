@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     'analytics',  # app for analytics and dashboard
     'general_ledger',  # app for SAP General Ledger reports
     'cart',  # app for shopping cart and order management
+    'document_management',  # app for document/attachment management
 ]
 
 MIDDLEWARE = [

@@ -507,6 +507,7 @@ class SignupView(generics.CreateAPIView):
 
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
+    parser_classes = [JSONParser]
 
     @swagger_auto_schema(
         operation_description="""
@@ -1662,7 +1663,7 @@ def reset_password(request):
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser, FormParser, JSONParser])
+@parser_classes([JSONParser])
 def request_account_deletion(request):
     """
     API endpoint for users to request account deactivation.

@@ -380,6 +380,12 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
     #     print(output.encode('ascii', errors='replace').decode('ascii'))
     # logger.info(output)
             
+    for r in rows:
+        for k in list(r.keys()):
+            if k.upper() == 'TERRITORYNAME':
+                v = r[k]
+                if v and isinstance(v, str):
+                    r[k] = v.replace(' Territory', '').strip()
     return rows
 
 def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False, group_by_emp: bool = False) -> list:
@@ -724,6 +730,12 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     #     print(output.encode('ascii', errors='replace').decode('ascii'))
     # logger.info(output)
             
+    for r in rows:
+        for k in list(r.keys()):
+            if k.upper() == 'TERRITORYNAME':
+                v = r[k]
+                if v and isinstance(v, str):
+                    r[k] = v.replace(' Territory', '').strip()
     return rows
 
 

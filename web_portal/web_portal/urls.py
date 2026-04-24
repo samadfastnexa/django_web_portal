@@ -42,9 +42,31 @@ admin_site.index_title = getattr(settings, 'ADMIN_INDEX_TITLE', 'Site Administra
 
 schema_view = get_schema_view(
    openapi.Info(
-      title="web portal API",
+      title="Web Portal API",
       default_version='v1',
-      description="web portal API for user management",
+      description="""
+      Comprehensive Web Portal API
+      
+      ## Available Modules:
+      - **Accounts** - User management and authentication
+      - **Document Management** - File upload, assignment, and tracking
+      - **Complaints** - Complaint management
+      - **Farmers** - Farmer data management
+      - **Field Advisory** - Field advisory services
+      - **Farm Management** - Farm operations
+      - **SAP Integration** - SAP B1 integration
+      - **Crop Management** - Crop and R&D management
+      - **Analytics** - Dashboard and analytics
+      - **Cart** - Shopping cart and orders
+      - **And more...**
+      
+      ## Document Management Features:
+      - Upload and manage documents (PDF, DOC, DOCX, Images)
+      - Role-based access control
+      - User assignment and tracking
+      - Download tracking and audit logs
+      - Acknowledgment system
+      """,
       terms_of_service="https://www.google.com/policies/terms/",
       contact=openapi.Contact(email="contact@snippets.local"),
       license=openapi.License(name="BSD License"),
@@ -91,6 +113,7 @@ urlpatterns = [
     path('api/kindwise/', include('kindwise.urls')),  # Kindwise app URLs
     path('api/analytics/', include('analytics.urls')),  # Analytics dashboard APIs
     path('api/cart/', include('cart.urls')),  # Shopping cart and orders
+    path('api/documents/', include('document_management.urls')),  # Document management
     path('', include('general_ledger.urls')),  # General Ledger app URLs (includes both API and admin routes)
 ]
 
