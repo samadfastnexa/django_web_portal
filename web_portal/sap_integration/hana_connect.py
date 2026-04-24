@@ -270,7 +270,7 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
         '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
         '    COALESCE(R3."inactive", R2."inactive", R1."inactive") AS "inactive", '
         '    R1."descript" AS "Zone", '
-        '    T."descript" AS "TerritoryName", '
+        '    TRIM(REPLACE(T."descript", \' Territory\', \'\')) AS "TerritoryName", '
         '    T."territryID" AS "TerritoryId", '
         '    SUM(c."COLLETION_TARGET") AS "Collection_Target", '
         '    SUM(c."DOCTOTAL") AS "Collection_Achievement", '
@@ -380,12 +380,6 @@ def collection_vs_achievement(db, emp_id: int | None = None, region: str | None 
     #     print(output.encode('ascii', errors='replace').decode('ascii'))
     # logger.info(output)
             
-    for r in rows:
-        for k in list(r.keys()):
-            if k.upper() == 'TERRITORYNAME':
-                v = r[k]
-                if v and isinstance(v, str):
-                    r[k] = v.replace(' Territory', '').strip()
     return rows
 
 def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False, group_by_emp: bool = False) -> list:
@@ -533,7 +527,7 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
         '    COALESCE(R3."descript", R2."descript", R1."descript") AS "Region", '
         '    COALESCE(R3."inactive", R2."inactive", R1."inactive") AS "inactive", '
         '    R1."descript" AS "Zone", '
-        '    T."descript" AS "TerritoryName", '
+        '    TRIM(REPLACE(T."descript", \' Territory\', \'\')) AS "TerritoryName", '
         '    T."territryID" AS "TerritoryId", '
     )
     
@@ -730,12 +724,6 @@ def sales_vs_achievement_territory(db, emp_id: int | None = None, region: str | 
     #     print(output.encode('ascii', errors='replace').decode('ascii'))
     # logger.info(output)
             
-    for r in rows:
-        for k in list(r.keys()):
-            if k.upper() == 'TERRITORYNAME':
-                v = r[k]
-                if v and isinstance(v, str):
-                    r[k] = v.replace(' Territory', '').strip()
     return rows
 
 
