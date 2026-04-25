@@ -17,6 +17,8 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse, FileResponse, HttpResponse
+from django.db import models
+from django.db.models import Q
 import os
 import json
 import re
@@ -9007,6 +9009,9 @@ def recommended_products_api(request):
         disease_id = request.GET.get('disease_id')
         item_code = request.GET.get('item_code', '').strip()
         disease_name = request.GET.get('disease_name', '').strip()
+        # Recommended products must follow Product Catalog visibility rules.
+        # Keep query param for backward compatibility but do not relax visibility.
+        include_inactive = (request.GET.get('include_inactive', '') or '').strip().lower() in ('true', '1', 'yes', 'y')
         
         # Get database parameter - always resolve via Company.name (actual HANA schema)
         db_param = (request.GET.get('database') or request.session.get('selected_db') or '').strip()
@@ -9176,6 +9181,9 @@ def recommended_products_api(request):
                         INNER JOIN {_oitb} T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"
                         LEFT JOIN {_atc1} A ON A."AbsEntry" = T0."AtcEntry"
                         WHERE T0."ItemCode" = ?
+                                                    AND T0."Series" = '77'
+                                                    AND T0."validFor" = 'Y'
+                                                    AND T0."U_IsActive" = 'Y'
                         GROUP BY
                             T0."ItemCode",
                             T0."ItemName",
