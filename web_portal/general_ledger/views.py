@@ -33,12 +33,36 @@ try:
     from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image as RLImage, KeepTogether
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
+
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display as bidi_display
+    ARABIC_AVAILABLE = True
+except ImportError:
+    ARABIC_AVAILABLE = False
+
+# Register Tahoma once at module load (supports Urdu/Arabic glyphs)
+_URDU_FONT = 'Helvetica'
+if REPORTLAB_AVAILABLE:
+    try:
+        import os as _font_os
+        _tahoma = r'C:\Windows\Fonts\tahoma.ttf'
+        if _font_os.path.exists(_tahoma):
+            from reportlab.pdfbase import pdfmetrics as _pm
+            from reportlab.pdfbase.ttfonts import TTFont as _TTFont
+            if 'Tahoma' not in _pm.getRegisteredFontNames():
+                _pm.registerFont(_TTFont('Tahoma', _tahoma))
+            _URDU_FONT = 'Tahoma'
+    except Exception:
+        pass
 
 from . import hana_queries
 from .utils import (
@@ -885,7 +909,7 @@ def export_ledger_csv(request):
 def export_ledger_pdf_api(request):
     """
     GET /api/general-ledger/export-pdf/
-    
+
     Export general ledger to PDF format for mobile app.
     Returns a downloadable PDF file with formatted headers and data.
     """
@@ -894,57 +918,55 @@ def export_ledger_pdf_api(request):
             'success': False,
             'error': 'PDF export not available. Please install reportlab package.'
         }, status=500)
-    
+
     try:
-        # Get filter parameters
-        company = (request.GET.get('company') or '').strip()
+        # ── Query parameters ──────────────────────────────────────────────────
+        company      = (request.GET.get('company')      or '').strip()
         account_from = (request.GET.get('account_from') or '').strip()
-        account_to = (request.GET.get('account_to') or '').strip()
-        from_date = (request.GET.get('from_date') or '').strip()
-        to_date = (request.GET.get('to_date') or '').strip()
-        bp_code = (request.GET.get('bp_code') or '').strip()
-        user_param = request.GET.get('user', '').strip()
+        account_to   = (request.GET.get('account_to')   or '').strip()
+        from_date    = (request.GET.get('from_date')    or '').strip()
+        to_date      = (request.GET.get('to_date')      or '').strip()
+        bp_code      = (request.GET.get('bp_code')      or '').strip()
+        user_param   = (request.GET.get('user')         or '').strip()
         project_code = (request.GET.get('project_code') or '').strip()
-        trans_type = (request.GET.get('trans_type') or '').strip()
-        
-        # Handle user-based filtering
+        trans_type   = (request.GET.get('trans_type')   or '').strip()
+
+        # ── User-based filtering (mobile/dealer) ──────────────────────────────
         if user_param:
             try:
                 from accounts.models import User
                 from FieldAdvisoryService.models import Dealer
-                
-                # Get user object
+
                 user_obj = None
                 try:
-                    user_id = int(user_param)
-                    user_obj = User.objects.get(id=user_id)
+                    user_obj = User.objects.get(id=int(user_param))
                 except (ValueError, User.DoesNotExist):
                     user_obj = User.objects.filter(username=user_param).first()
-                
+
                 if not user_obj:
                     return Response({'success': False, 'error': f'User "{user_param}" not found'}, status=404)
-                
-                # Get dealer card codes for this user
-                dealers = Dealer.objects.filter(user=user_obj).values_list('card_code', flat=True).exclude(card_code__isnull=True).exclude(card_code='')
-                dealer_card_codes = list(dealers)
-                
+
+                dealer_card_codes = list(
+                    Dealer.objects.filter(user=user_obj)
+                    .exclude(card_code__isnull=True).exclude(card_code='')
+                    .values_list('card_code', flat=True)
+                )
+
                 if not dealer_card_codes:
-                    # Return empty list for bp_code - will result in empty export file
                     bp_code = []
                 elif bp_code:
-                    # If bp_code is provided, validate it belongs to user
                     if bp_code not in dealer_card_codes:
-                        return Response({'success': False, 'error': f'Business Partner "{bp_code}" does not belong to user "{user_param}"'}, status=403)
-                    # Use only the specified bp_code
-                    bp_code = bp_code
+                        return Response({
+                            'success': False,
+                            'error': f'Business Partner "{bp_code}" does not belong to user "{user_param}"'
+                        }, status=403)
                 else:
-                    # Use all dealer card codes as a list
                     bp_code = dealer_card_codes
-                    
+
             except Exception as e:
                 return Response({'success': False, 'error': f'Error processing user filter: {str(e)}'}, status=500)
-        
-        # Fetch all data
+
+        # ── Fetch & group data ────────────────────────────────────────────────
         conn = get_hana_connection(company)
         transactions = hana_queries.general_ledger_report(
             conn,
@@ -954,198 +976,365 @@ def export_ledger_pdf_api(request):
             to_date=to_date or None,
             bp_code=bp_code if bp_code else None,
             project_code=project_code or None,
-            trans_type=trans_type or None
+            trans_type=trans_type or None,
         )
+
+        grouped_raw = group_by_account(transactions)
+        accounts_grouped = []
+        for account_code, account_data in grouped_raw.items():
+            opening_balance = 0.0
+            if from_date:
+                opening = hana_queries.account_opening_balance(
+                    conn, account_code, from_date, bp_code=bp_code or None
+                )
+                opening_balance = float(opening.get('Balance', 0))
+            account_data['transactions'] = calculate_running_balance(account_data['transactions'])
+            totals = calculate_totals(account_data['transactions'])
+            accounts_grouped.append({
+                'Account':        account_data['Account'],
+                'AccountName':    account_data['AccountName'],
+                'OpeningBalance': opening_balance,
+                'transactions':   account_data['transactions'],
+                'TotalDebit':     totals['TotalDebit'],
+                'TotalCredit':    totals['TotalCredit'],
+                'ClosingBalance': opening_balance + totals['Balance'],
+            })
         conn.close()
-        
-        # Create PDF response
+
+        grand_total = None
+        if accounts_grouped:
+            grand_total = {
+                'TotalDebit':  sum(a['TotalDebit']  for a in accounts_grouped),
+                'TotalCredit': sum(a['TotalCredit'] for a in accounts_grouped),
+            }
+            grand_total['Difference'] = grand_total['TotalDebit'] - grand_total['TotalCredit']
+
+        # ── PDF setup ─────────────────────────────────────────────────────────
         response = HttpResponse(content_type='application/pdf')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        response['Content-Disposition'] = f'attachment; filename="general_ledger_{company}_{timestamp}.pdf"'
-        
-        # Create PDF document
+        response['Content-Disposition'] = (
+            f'attachment; filename="general_ledger_{company}_{timestamp}.pdf"'
+        )
+
         pdf_buffer = BytesIO()
-        doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(letter), topMargin=0.4*inch, bottomMargin=0.4*inch)
-        
-        # Container for the 'Flowable' objects
+        doc = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=landscape(letter),
+            topMargin=0.4 * inch, bottomMargin=0.4 * inch,
+            leftMargin=0.3 * inch, rightMargin=0.3 * inch,
+        )
         elements = []
-        
-        # Get styles
         styles = getSampleStyleSheet()
-        
-        # Create paragraph style for table cells
+
         cell_style = ParagraphStyle(
-            'CellStyle',
-            parent=styles['Normal'],
-            fontSize=9,
-            fontName='Helvetica',
-            leading=11,
-            alignment=TA_LEFT
+            'PDFCell', parent=styles['Normal'],
+            fontSize=7, fontName='Helvetica', leading=9, alignment=TA_LEFT,
         )
-        
-        # Add company name (Four Brothers Group)
-        company_style = ParagraphStyle(
-            'CompanyName',
-            parent=styles['Normal'],
-            fontSize=12,
-            textColor=colors.black,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold',
-            spaceAfter=2
-        )
-        elements.append(Paragraph('Four Brothers Group', company_style))
-        
-        # Add title (General Ledger)
-        title_style = ParagraphStyle(
-            'ReportTitle',
-            parent=styles['Heading1'],
-            fontSize=14,
-            textColor=colors.black,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold',
-            spaceAfter=4
-        )
-        elements.append(Paragraph('General Ledger', title_style))
-        
-        # Get company display name mapping
-        company_names = {
-            '4B-BIO': 'FARMING INPUTS (PVT) LTD',
-            '4B-ORANG': 'ORANGE PROTECTION (PVT) LTD',
-            '4B-KINDWISE': 'KINDWISE (PVT) LTD',
-        }
-        company_display_name = company_names.get(company, company)
-        
-        # Add company name from database
-        comp_name_style = ParagraphStyle(
-            'CompanySubName',
-            parent=styles['Normal'],
-            fontSize=10,
-            textColor=colors.black,
-            alignment=TA_LEFT,
-            fontName='Helvetica-Bold',
-            spaceAfter=6
-        )
-        elements.append(Paragraph(f'To: {company_display_name}', comp_name_style))
-        
-        # Prepare date range
-        from_date_display = from_date if from_date else '01/01/2000'
-        to_date_display = to_date if to_date else datetime.now().strftime('%m/%d/%Y')
-        
-        # Convert date format from YYYY-MM-DD to M/D/YYYY if needed
+
+        # ── Date range strings ────────────────────────────────────────────────
+        from_disp = from_date or '01/01/2000'
+        to_disp   = to_date   or datetime.now().strftime('%m/%d/%Y')
         try:
             if from_date and len(from_date) == 10:
-                from_date_obj = datetime.strptime(from_date, '%Y-%m-%d')
-                from_date_display = f"{from_date_obj.month}/{from_date_obj.day}/{from_date_obj.year}"
-        except:
+                d = datetime.strptime(from_date, '%Y-%m-%d')
+                from_disp = f"{d.month}/{d.day}/{d.year}"
+        except Exception:
             pass
-        
         try:
             if to_date and len(to_date) == 10:
-                to_date_obj = datetime.strptime(to_date, '%Y-%m-%d')
-                to_date_display = f"{to_date_obj.month}/{to_date_obj.day}/{to_date_obj.year}"
-        except:
+                d = datetime.strptime(to_date, '%Y-%m-%d')
+                to_disp = f"{d.month}/{d.day}/{d.year}"
+        except Exception:
             pass
-        
-        # Add date range line
-        date_range_style = ParagraphStyle(
-            'DateRange',
-            parent=styles['Normal'],
-            fontSize=9,
-            textColor=colors.black,
-            alignment=TA_LEFT,
-            spaceAfter=2
-        )
-        elements.append(Paragraph(f'From: {from_date_display}  To: {to_date_display}', date_range_style))
-        
-        # Add print date
         now = datetime.now()
-        print_date = f"{now.month}/{now.day}/{now.year} {now.strftime('%I:%M:%S%p')}"
-        elements.append(Paragraph(f'Print Date: {print_date}', date_range_style))
-        
-        elements.append(Spacer(1, 0.15*inch))
-        
-        # Prepare table data
-        table_data = [
-            ['VNo.', 'VDate', 'Narration', 'Type', 'Debit', 'Credit', 'Balance']
+        print_date_str = f"{now.month}/{now.day}/{now.year}   {now.strftime('%I:%M:%S%p')}"
+
+        # ── Resolve company full name ─────────────────────────────────────────
+        _company_full_name = company
+        try:
+            from FieldAdvisoryService.models import Company as _CompanyModel
+            _co = _CompanyModel.objects.filter(name=company).first() \
+                  or _CompanyModel.objects.filter(Company_name=company).first()
+            if _co:
+                _company_full_name = getattr(_co, 'Company_name', None) or company
+        except Exception:
+            pass
+
+        # ── Header styles ─────────────────────────────────────────────────────
+        _h_group  = ParagraphStyle('HDRGroup',  parent=styles['Normal'],
+            fontSize=11, fontName='Helvetica-Bold', leading=14)
+        _h_entity = ParagraphStyle('HDREntity', parent=styles['Normal'],
+            fontSize=13, fontName='Helvetica-Bold', leading=17)
+        _h_title  = ParagraphStyle('HDRTitle',  parent=styles['Normal'],
+            fontSize=10, fontName='Helvetica',      leading=13)
+        _h_dates  = ParagraphStyle('HDRDates',  parent=styles['Normal'],
+            fontSize=9,  fontName='Helvetica',      leading=12)
+        _h_print  = ParagraphStyle('HDRPrint',  parent=styles['Normal'],
+            fontSize=8,  fontName='Helvetica',      leading=11, alignment=TA_RIGHT)
+
+        # ── Logo ──────────────────────────────────────────────────────────────
+        import os as _os
+        _logo_path = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            'media', 'Ledger_template', 'smart_stamp.png'
+        )
+
+        # ── 2-column header table ─────────────────────────────────────────────
+        _left_content = [
+            Paragraph('Four Brothers Group', _h_group),
+            Paragraph('General Ledger', _h_title),
+            Spacer(1, 6),
+            Paragraph(f'From:  {from_disp}     To:  {to_disp}', _h_dates),
         ]
-        
-        total_debit = 0
-        total_credit = 0
-        running_balance = 0
-        
-        for txn in transactions:
-            debit = float(txn.get('Debit', 0))
-            credit = float(txn.get('Credit', 0))
-            total_debit += debit
-            total_credit += credit
-            running_balance += (debit - credit)
-            
-            # Format date
-            posting_date = str(txn.get('PostingDate', ''))[:10]
-            try:
-                date_obj = datetime.strptime(posting_date, '%Y-%m-%d')
-                posting_date = f"{date_obj.month}/{date_obj.day}/{date_obj.year}"
-            except:
-                pass
-            
-            # Get narration text
-            narration_text = str(txn.get('ProjectName', '') or txn.get('ProjectCode', ''))
-            narration_para = Paragraph(narration_text, cell_style) if narration_text else ''
-            
-            table_data.append([
-                str(txn.get('TransId', '')),  # VNo
-                posting_date,  # VDate
-                narration_para,  # Narration (Policy Name/Project)
-                str(txn.get('TransTypeName') or txn.get('TransType', '')),  # Type Name
-                f"{debit:.2f}" if debit > 0 else '',  # Debit
-                f"{credit:.2f}" if credit > 0 else '',  # Credit
-                f"{running_balance:.2f}",  # Balance
-            ])
-        
-        # Add totals row
-        if table_data:
-            table_data.append([
-                '', '', '',
-                'TOTAL',
-                f"{total_debit:.2f}", f"{total_credit:.2f}", f"{(total_debit - total_credit):.2f}"
-            ])
-        
-        # Create table
-        table = Table(table_data, colWidths=[0.65*inch, 0.85*inch, 2.9*inch, 0.9*inch, 1.2*inch, 1.2*inch, 1.2*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#404040')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-            ('ALIGN', (2, 1), (2, -1), 'LEFT'),
-            ('ALIGN', (3, 1), (3, -1), 'CENTER'),
-            ('ALIGN', (4, 1), (-1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('TOPPADDING', (0, 0), (-1, 0), 8),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#cccccc')),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f5f5f5')]),
-            ('LEFTPADDING', (0, 0), (-1, -1), 5),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-            ('TOPPADDING', (0, 1), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+
+        _right_content = [Paragraph(f'Print Date:   {print_date_str}', _h_print)]
+        if _os.path.exists(_logo_path):
+            _stamp = RLImage(_logo_path, width=1.1 * inch, height=1.1 * inch)
+            _stamp.hAlign = 'RIGHT'
+            _right_content.append(Spacer(1, 4))
+            _right_content.append(_stamp)
+
+        _page_w = landscape(letter)[0] - 0.6 * inch
+        _hdr_table = Table(
+            [[_left_content, _right_content]],
+            colWidths=[_page_w * 0.70, _page_w * 0.30],
+        )
+        _hdr_table.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('ALIGN',         (1, 0), (1, 0),   'RIGHT'),
         ]))
-        
+        elements.append(_hdr_table)
+
+        elements.append(Spacer(1, 4))
+        _divider = Table([['']], colWidths=[_page_w])
+        _divider.setStyle(TableStyle([
+            ('LINEBELOW',     (0, 0), (-1, -1), 0.75, colors.HexColor('#1e293b')),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(_divider)
+        elements.append(Spacer(1, 6))
+
+        # ── Colour palette ────────────────────────────────────────────────────
+        C_HEADER_BG     = colors.HexColor('#1e293b')
+        C_HEADER_TEXT   = colors.white
+        C_ACCOUNT_BG    = colors.HexColor('#c7d2fe')
+        C_ACCOUNT_BORD  = colors.HexColor('#6366f1')
+        C_ACCOUNT_TEXT  = colors.HexColor('#1e293b')
+        C_OPENING_BG    = colors.HexColor('#fef3c7')
+        C_OPENING_TEXT  = colors.HexColor('#92400e')
+        C_ROW_EVEN      = colors.white
+        C_ROW_ODD       = colors.HexColor('#f8fafc')
+        C_SUBTOTAL_BG   = colors.HexColor('#dbeafe')
+        C_SUBTOTAL_BORD = colors.HexColor('#60a5fa')
+        C_SUBTOTAL_TEXT = colors.HexColor('#1e40af')
+        C_GRAND_BG      = colors.HexColor('#f3e8ff')
+        C_GRAND_BORD    = colors.HexColor('#a855f7')
+        C_GRAND_TEXT    = colors.HexColor('#6b21a8')
+        C_GRID          = colors.HexColor('#e5e7eb')
+
+        # ── Column widths ─────────────────────────────────────────────────────
+        col_widths = [
+            0.75 * inch,   # Date
+            0.58 * inch,   # Trans #
+            0.82 * inch,   # Account
+            0.72 * inch,   # BP Code
+            1.15 * inch,   # BP Name
+            0.68 * inch,   # Type
+            0.72 * inch,   # Reference
+            0.72 * inch,   # Project
+            1.20 * inch,   # Description
+            0.76 * inch,   # Debit
+            0.76 * inch,   # Credit
+            0.76 * inch,   # Balance
+        ]
+        NCOLS = len(col_widths)
+
+        # ── Table rows ────────────────────────────────────────────────────────
+        table_data   = []
+        table_styles = [
+            ('FONTSIZE',      (0, 0), (-1, -1), 7),
+            ('FONTNAME',      (0, 0), (-1, -1), 'Helvetica'),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 3),
+            ('TOPPADDING',    (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('GRID',          (0, 0), (-1, -1), 0.25, C_GRID),
+            ('ALIGN',         (9, 0), (11, -1), 'RIGHT'),
+        ]
+
+        headers = [
+            'Date', 'Trans #', 'Account', 'BP Code', 'BP Name',
+            'Type', 'Reference', 'Project', 'Description',
+            'Debit', 'Credit', 'Balance',
+        ]
+        table_data.append(headers)
+        ri = 0
+        table_styles += [
+            ('BACKGROUND',    (0, ri), (-1, ri), C_HEADER_BG),
+            ('TEXTCOLOR',     (0, ri), (-1, ri), C_HEADER_TEXT),
+            ('FONTNAME',      (0, ri), (-1, ri), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0, ri), (-1, ri), 8),
+            ('ALIGN',         (0, ri), (-1, ri), 'CENTER'),
+            ('BOTTOMPADDING', (0, ri), (-1, ri), 6),
+            ('TOPPADDING',    (0, ri), (-1, ri), 6),
+        ]
+        ri += 1
+
+        for account in accounts_grouped:
+            label = f"{account['Account']} — {account['AccountName']}"
+            table_data.append([label] + [''] * (NCOLS - 1))
+            table_styles += [
+                ('SPAN',       (0, ri), (NCOLS - 1, ri)),
+                ('BACKGROUND', (0, ri), (-1, ri), C_ACCOUNT_BG),
+                ('TEXTCOLOR',  (0, ri), (-1, ri), C_ACCOUNT_TEXT),
+                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                ('FONTSIZE',   (0, ri), (-1, ri), 8),
+                ('LINEABOVE',  (0, ri), (-1, ri), 2, C_ACCOUNT_BORD),
+            ]
+            ri += 1
+
+            if from_date:
+                ob = account['OpeningBalance']
+                ob_debit  = f"{ob:.2f}"      if ob > 0 else '-'
+                ob_credit = f"{abs(ob):.2f}" if ob < 0 else '-'
+                ob_bal    = f"{ob:.2f}"
+                row = (
+                    [f'Opening Balance (as of {from_disp})']
+                    + [''] * (NCOLS - 4)
+                    + [ob_debit, ob_credit, ob_bal]
+                )
+                table_data.append(row)
+                table_styles += [
+                    ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+                    ('BACKGROUND', (0, ri), (-1, ri), C_OPENING_BG),
+                    ('TEXTCOLOR',  (0, ri), (-1, ri), C_OPENING_TEXT),
+                    ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Oblique'),
+                ]
+                ri += 1
+
+            for i, txn in enumerate(account['transactions']):
+                debit   = float(txn.get('Debit', 0))
+                credit  = float(txn.get('Credit', 0))
+                running = float(txn.get('RunningBalance', 0))
+
+                posting_date = str(txn.get('PostingDate', ''))[:10]
+                try:
+                    d = datetime.strptime(posting_date, '%Y-%m-%d')
+                    posting_date = f"{d.month}/{d.day}/{d.year}"
+                except Exception:
+                    pass
+
+                row = [
+                    posting_date,
+                    str(txn.get('TransId', '')),
+                    str(txn.get('Account', '')),
+                    str(txn.get('BPCode', '')  or '-'),
+                    Paragraph(str(txn.get('BPName', '') or '-'), cell_style),
+                    str(txn.get('TransTypeName') or txn.get('TransType', '') or '-'),
+                    str(txn.get('Reference1', '') or '-'),
+                    str(txn.get('ExtractedProject') or txn.get('ProjectCode', '') or '-'),
+                    Paragraph(str(txn.get('Description', '') or '-'), cell_style),
+                    f"{debit:.2f}"  if debit  > 0 else '',
+                    f"{credit:.2f}" if credit > 0 else '',
+                    f"{running:.2f}",
+                ]
+                table_data.append(row)
+                bg = C_ROW_EVEN if i % 2 == 0 else C_ROW_ODD
+                table_styles.append(('BACKGROUND', (0, ri), (-1, ri), bg))
+                ri += 1
+
+            subtotal_label = f"Subtotal: {account['Account']} — {account['AccountName']}"
+            table_data.append(
+                [subtotal_label] + [''] * (NCOLS - 4)
+                + [
+                    f"{account['TotalDebit']:.2f}",
+                    f"{account['TotalCredit']:.2f}",
+                    f"{account['ClosingBalance']:.2f}",
+                ]
+            )
+            table_styles += [
+                ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+                ('BACKGROUND', (0, ri), (-1, ri), C_SUBTOTAL_BG),
+                ('TEXTCOLOR',  (0, ri), (-1, ri), C_SUBTOTAL_TEXT),
+                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                ('LINEABOVE',  (0, ri), (-1, ri), 1, C_SUBTOTAL_BORD),
+            ]
+            ri += 1
+
+        if grand_total:
+            table_data.append(
+                ['GRAND TOTAL'] + [''] * (NCOLS - 4)
+                + [
+                    f"{grand_total['TotalDebit']:.2f}",
+                    f"{grand_total['TotalCredit']:.2f}",
+                    f"{grand_total['Difference']:.2f}",
+                ]
+            )
+            table_styles += [
+                ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+                ('BACKGROUND', (0, ri), (-1, ri), C_GRAND_BG),
+                ('TEXTCOLOR',  (0, ri), (-1, ri), C_GRAND_TEXT),
+                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                ('FONTSIZE',   (0, ri), (-1, ri), 9),
+                ('LINEABOVE',  (0, ri), (-1, ri), 2, C_GRAND_BORD),
+            ]
+
+        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle(table_styles))
         elements.append(table)
-        
-        # Build PDF
+
+        # ── Urdu footer ───────────────────────────────────────────────────────
+        _urdu_lines = [
+            'معزز بزنس پارٹنر: آپ کے لیجر کی کاپی ارسال کی جا رہی ہے۔ اسکو اپنے کھاتے کے مطابق چیک کر کے بیلنس کی تصدیق کر دیں۔',
+            'دستخط اور مہر لازمی ثبت فرمائیں۔ اگر کسی بھی متم کا فرق ہوتو اسی لیجر کے اوپر نوٹ فرما دیں تا کہ درستگی ہو سکے۔ بصورت دیگر کمپنی کسی کلیم کی ذمہ دارنہ ہوگی',
+            'مزید برآں !',
+            'میں کمپنی کے اس لیجر بیلنس کے ساتھ متفق ہوں اور میرا ....................................... کے ساتھ کوئی ذاتی لین دین نہیں ہے',
+        ]
+
+        _urdu_style = ParagraphStyle(
+            'UrduFooterStyle', parent=styles['Normal'],
+            fontSize=10, fontName=_URDU_FONT,
+            alignment=TA_RIGHT, leading=16, spaceAfter=4,
+            textColor=colors.HexColor('#1e293b'),
+        )
+        _urdu_border_style = TableStyle([
+            ('BOX',           (0, 0), (-1, -1), 0.75, colors.HexColor('#6366f1')),
+            ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#f8f9ff')),
+            ('TOPPADDING',    (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+        ])
+
+        _footer_paras = []
+        for _line in _urdu_lines:
+            if ARABIC_AVAILABLE and _URDU_FONT != 'Helvetica':
+                try:
+                    _reshaped = arabic_reshaper.reshape(_line)
+                    _display  = bidi_display(_reshaped)
+                    _line     = _display
+                except Exception:
+                    pass
+            _footer_paras.append(Paragraph(_line, _urdu_style))
+
+        _footer_table = Table(
+            [[p] for p in _footer_paras],
+            colWidths=[sum(col_widths)],
+        )
+        _footer_table.setStyle(_urdu_border_style)
+        elements.append(KeepTogether([Spacer(1, 0.25 * inch), _footer_table]))
+
         doc.build(elements)
-        
-        # Return PDF
         pdf_buffer.seek(0)
         response.write(pdf_buffer.getvalue())
         return response
-        
+
     except Exception as e:
         logger.exception("Error exporting PDF")
         return Response({
@@ -1157,26 +1346,27 @@ def export_ledger_pdf_api(request):
 @staff_member_required
 def export_ledger_pdf(request):
     """
-    Export general ledger to PDF format.
+    Export general ledger to PDF — matches the admin HTML table design.
+    Grouped by account with account header, opening balance, transactions,
+    subtotal, and grand total rows using the same colour scheme as the UI.
     """
     if not REPORTLAB_AVAILABLE:
         return HttpResponse(
             "PDF export requires reportlab. Install it with: pip install reportlab",
             status=500
         )
-    
+
     try:
-        # Get filter parameters
-        company = (request.GET.get('company') or '').strip()
+        company      = (request.GET.get('company')      or '').strip()
         account_from = (request.GET.get('account_from') or '').strip()
-        account_to = (request.GET.get('account_to') or '').strip()
-        from_date = (request.GET.get('from_date') or '').strip()
-        to_date = (request.GET.get('to_date') or '').strip()
-        bp_code = (request.GET.get('bp_code') or '').strip()
+        account_to   = (request.GET.get('account_to')   or '').strip()
+        from_date    = (request.GET.get('from_date')    or '').strip()
+        to_date      = (request.GET.get('to_date')      or '').strip()
+        bp_code      = (request.GET.get('bp_code')      or '').strip()
         project_code = (request.GET.get('project_code') or '').strip()
-        trans_type = (request.GET.get('trans_type') or '').strip()
-        
-        # Fetch all data
+        trans_type   = (request.GET.get('trans_type')   or '').strip()
+
+        # ── Fetch data ────────────────────────────────────────────────────────
         conn = get_hana_connection(company)
         transactions = hana_queries.general_ledger_report(
             conn,
@@ -1186,198 +1376,384 @@ def export_ledger_pdf(request):
             to_date=to_date or None,
             bp_code=bp_code or None,
             project_code=project_code or None,
-            trans_type=trans_type or None
+            trans_type=trans_type or None,
         )
+
+        # Group & calculate balances (same logic as the admin view)
+        grouped_raw = group_by_account(transactions)
+        accounts_grouped = []
+        for account_code, account_data in grouped_raw.items():
+            opening_balance = 0.0
+            if from_date:
+                opening = hana_queries.account_opening_balance(
+                    conn, account_code, from_date, bp_code=bp_code or None
+                )
+                opening_balance = float(opening.get('Balance', 0))
+            account_data['transactions'] = calculate_running_balance(account_data['transactions'])
+            totals = calculate_totals(account_data['transactions'])
+            accounts_grouped.append({
+                'Account':        account_data['Account'],
+                'AccountName':    account_data['AccountName'],
+                'OpeningBalance': opening_balance,
+                'transactions':   account_data['transactions'],
+                'TotalDebit':     totals['TotalDebit'],
+                'TotalCredit':    totals['TotalCredit'],
+                'ClosingBalance': opening_balance + totals['Balance'],
+            })
         conn.close()
-        
-        # Create PDF response
+
+        grand_total = None
+        if accounts_grouped:
+            grand_total = {
+                'TotalDebit':  sum(a['TotalDebit']  for a in accounts_grouped),
+                'TotalCredit': sum(a['TotalCredit'] for a in accounts_grouped),
+            }
+            grand_total['Difference'] = grand_total['TotalDebit'] - grand_total['TotalCredit']
+
+        # ── PDF setup ─────────────────────────────────────────────────────────
         response = HttpResponse(content_type='application/pdf')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        response['Content-Disposition'] = f'attachment; filename="general_ledger_{company}_{timestamp}.pdf"'
-        
-        # Create PDF document
+        response['Content-Disposition'] = (
+            f'attachment; filename="general_ledger_{company}_{timestamp}.pdf"'
+        )
+
         pdf_buffer = BytesIO()
-        doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(letter), topMargin=0.4*inch, bottomMargin=0.4*inch)
-        
-        # Container for the 'Flowable' objects
+        doc = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=landscape(letter),
+            topMargin=0.4 * inch, bottomMargin=0.4 * inch,
+            leftMargin=0.3 * inch, rightMargin=0.3 * inch,
+        )
         elements = []
-        
-        # Get styles
         styles = getSampleStyleSheet()
-        
-        # Create paragraph style for table cells
+
         cell_style = ParagraphStyle(
-            'CellStyle',
-            parent=styles['Normal'],
-            fontSize=9,
-            fontName='Helvetica',
-            leading=11,
-            alignment=TA_LEFT
+            'PDFCell', parent=styles['Normal'],
+            fontSize=7, fontName='Helvetica', leading=9, alignment=TA_LEFT,
         )
-        
-        # Add company name (Four Brothers Group)
-        company_style = ParagraphStyle(
-            'CompanyName',
-            parent=styles['Normal'],
-            fontSize=12,
-            textColor=colors.black,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold',
-            spaceAfter=2
-        )
-        elements.append(Paragraph('Four Brothers Group', company_style))
-        
-        # Add title (General Ledger)
-        title_style = ParagraphStyle(
-            'ReportTitle',
-            parent=styles['Heading1'],
-            fontSize=14,
-            textColor=colors.black,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold',
-            spaceAfter=4
-        )
-        elements.append(Paragraph('General Ledger', title_style))
-        
-        # Get company display name mapping
-        company_names = {
-            '4B-BIO': 'FARMING INPUTS (PVT) LTD',
-            '4B-ORANG': 'ORANGE PROTECTION (PVT) LTD',
-            '4B-KINDWISE': 'KINDWISE (PVT) LTD',
-        }
-        company_display_name = company_names.get(company, company)
-        
-        # Add company name from database
-        comp_name_style = ParagraphStyle(
-            'CompanySubName',
-            parent=styles['Normal'],
-            fontSize=10,
-            textColor=colors.black,
-            alignment=TA_LEFT,
-            fontName='Helvetica-Bold',
-            spaceAfter=6
-        )
-        elements.append(Paragraph(f'To: {company_display_name}', comp_name_style))
-        
-        # Prepare date range
-        from_date_display = from_date if from_date else '01/01/2000'
-        to_date_display = to_date if to_date else datetime.now().strftime('%m/%d/%Y')
-        
-        # Convert date format from YYYY-MM-DD to M/D/YYYY if needed
+
+        # ── Date range display (computed before header table) ─────────────────
+        from_disp = from_date or '01/01/2000'
+        to_disp   = to_date   or datetime.now().strftime('%m/%d/%Y')
         try:
             if from_date and len(from_date) == 10:
-                from_date_obj = datetime.strptime(from_date, '%Y-%m-%d')
-                from_date_display = f"{from_date_obj.month}/{from_date_obj.day}/{from_date_obj.year}"
-        except:
+                d = datetime.strptime(from_date, '%Y-%m-%d')
+                from_disp = f"{d.month}/{d.day}/{d.year}"
+        except Exception:
             pass
-        
         try:
             if to_date and len(to_date) == 10:
-                to_date_obj = datetime.strptime(to_date, '%Y-%m-%d')
-                to_date_display = f"{to_date_obj.month}/{to_date_obj.day}/{to_date_obj.year}"
-        except:
+                d = datetime.strptime(to_date, '%Y-%m-%d')
+                to_disp = f"{d.month}/{d.day}/{d.year}"
+        except Exception:
             pass
-        
-        # Add date range line
-        date_range_style = ParagraphStyle(
-            'DateRange',
-            parent=styles['Normal'],
-            fontSize=9,
-            textColor=colors.black,
-            alignment=TA_LEFT,
-            spaceAfter=2
-        )
-        elements.append(Paragraph(f'From: {from_date_display}  To: {to_date_display}', date_range_style))
-        
-        # Add print date
         now = datetime.now()
-        print_date = f"{now.month}/{now.day}/{now.year} {now.strftime('%I:%M:%S%p')}"
-        elements.append(Paragraph(f'Print Date: {print_date}', date_range_style))
-        
-        elements.append(Spacer(1, 0.15*inch))
-        
-        # Prepare table data
-        table_data = [
-            ['VNo.', 'VDate', 'Narration', 'Type', 'Debit', 'Credit', 'Balance']
+        print_date_str = f"{now.month}/{now.day}/{now.year}   {now.strftime('%I:%M:%S%p')}"
+
+        # ── Resolve company full name ─────────────────────────────────────────
+        _company_full_name = company  # fallback to the key passed
+        try:
+            from FieldAdvisoryService.models import Company as _CompanyModel
+            _co = _CompanyModel.objects.filter(name=company).first() \
+                  or _CompanyModel.objects.filter(Company_name=company).first()
+            if _co:
+                _company_full_name = getattr(_co, 'Company_name', None) or company
+        except Exception:
+            pass
+
+        # ── Header styles ─────────────────────────────────────────────────────
+        _h_group = ParagraphStyle('HDRGroup', parent=styles['Normal'],
+            fontSize=11, fontName='Helvetica-Bold', leading=14)
+        _h_entity = ParagraphStyle('HDREntity', parent=styles['Normal'],
+            fontSize=13, fontName='Helvetica-Bold', leading=17)
+        _h_title = ParagraphStyle('HDRTitle', parent=styles['Normal'],
+            fontSize=10, fontName='Helvetica', leading=13)
+        _h_dates = ParagraphStyle('HDRDates', parent=styles['Normal'],
+            fontSize=9, fontName='Helvetica', leading=12)
+        _h_print = ParagraphStyle('HDRPrint', parent=styles['Normal'],
+            fontSize=8, fontName='Helvetica', leading=11, alignment=TA_RIGHT)
+
+        # ── Logo path ─────────────────────────────────────────────────────────
+        import os as _os
+        _logo_path = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            'media', 'Ledger_template', 'smart_stamp.png'
+        )
+
+        # ── Build header as 2-column table ───────────────────────────────────
+        # Left cell: group name / entity name / report title / date range
+        # Right cell: print date (top-right) + logo (bottom-right)
+        _left_content = [
+            Paragraph('Four Brothers Group', _h_group),
+            Paragraph('General Ledger', _h_title),
+            Spacer(1, 6),
+            Paragraph(f'From:  {from_disp}     To:  {to_disp}', _h_dates),
         ]
-        
-        total_debit = 0
-        total_credit = 0
-        running_balance = 0
-        
-        for txn in transactions:
-            debit = float(txn.get('Debit', 0))
-            credit = float(txn.get('Credit', 0))
-            total_debit += debit
-            total_credit += credit
-            running_balance += (debit - credit)
-            
-            # Format date
-            posting_date = str(txn.get('PostingDate', ''))[:10]
-            try:
-                date_obj = datetime.strptime(posting_date, '%Y-%m-%d')
-                posting_date = f"{date_obj.month}/{date_obj.day}/{date_obj.year}"
-            except:
-                pass
-            
-            # Get narration text
-            narration_text = str(txn.get('ProjectName', '') or txn.get('ProjectCode', ''))
-            narration_para = Paragraph(narration_text, cell_style) if narration_text else ''
-            
-            table_data.append([
-                str(txn.get('TransId', '')),  # VNo
-                posting_date,  # VDate
-                narration_para,  # Narration (Policy Name/Project)
-                str(txn.get('TransTypeName') or txn.get('TransType', '')),  # Type Name
-                f"{debit:.2f}" if debit > 0 else '',  # Debit
-                f"{credit:.2f}" if credit > 0 else '',  # Credit
-                f"{running_balance:.2f}",  # Balance
-            ])
-        
-        # Add totals row
-        if table_data:
-            table_data.append([
-                '', '', '',
-                'TOTAL',
-                f"{total_debit:.2f}", f"{total_credit:.2f}", f"{(total_debit - total_credit):.2f}"
-            ])
-        
-        # Create table
-        table = Table(table_data, colWidths=[0.65*inch, 0.85*inch, 2.9*inch, 0.9*inch, 1.2*inch, 1.2*inch, 1.2*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#404040')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-            ('ALIGN', (2, 1), (2, -1), 'LEFT'),
-            ('ALIGN', (3, 1), (3, -1), 'CENTER'),
-            ('ALIGN', (4, 1), (-1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('TOPPADDING', (0, 0), (-1, 0), 8),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#cccccc')),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f5f5f5')]),
-            ('LEFTPADDING', (0, 0), (-1, -1), 5),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-            ('TOPPADDING', (0, 1), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+
+        _right_content = [
+            Paragraph(f'Print Date:   {print_date_str}', _h_print),
+        ]
+        if _os.path.exists(_logo_path):
+            _stamp = RLImage(_logo_path, width=1.1 * inch, height=1.1 * inch)
+            _stamp.hAlign = 'RIGHT'
+            _right_content.append(Spacer(1, 4))
+            _right_content.append(_stamp)
+
+        # Total usable width = sum of col_widths (computed later) — use page width
+        _page_w = landscape(letter)[0] - 0.6 * inch   # left+right margin = 0.3*2
+        _hdr_table = Table(
+            [[_left_content, _right_content]],
+            colWidths=[_page_w * 0.70, _page_w * 0.30],
+        )
+        _hdr_table.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('ALIGN',         (1, 0), (1, 0),   'RIGHT'),
         ]))
-        
+        elements.append(_hdr_table)
+
+        # Divider line below header
+        elements.append(Spacer(1, 4))
+        _divider = Table([['']], colWidths=[_page_w])
+        _divider.setStyle(TableStyle([
+            ('LINEBELOW', (0, 0), (-1, -1), 0.75, colors.HexColor('#1e293b')),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(_divider)
+        elements.append(Spacer(1, 6))
+
+        # ── Colour palette (mirrors the HTML CSS) ────────────────────────────
+        C_HEADER_BG     = colors.HexColor('#1e293b')   # thead  dark slate
+        C_HEADER_TEXT   = colors.white
+        C_ACCOUNT_BG    = colors.HexColor('#c7d2fe')   # account-header indigo-200
+        C_ACCOUNT_BORD  = colors.HexColor('#6366f1')   # indigo-500
+        C_ACCOUNT_TEXT  = colors.HexColor('#1e293b')
+        C_OPENING_BG    = colors.HexColor('#fef3c7')   # amber-100
+        C_OPENING_TEXT  = colors.HexColor('#92400e')
+        C_ROW_EVEN      = colors.white
+        C_ROW_ODD       = colors.HexColor('#f8fafc')
+        C_SUBTOTAL_BG   = colors.HexColor('#dbeafe')   # blue-100
+        C_SUBTOTAL_BORD = colors.HexColor('#60a5fa')
+        C_SUBTOTAL_TEXT = colors.HexColor('#1e40af')
+        C_GRAND_BG      = colors.HexColor('#f3e8ff')   # purple-100
+        C_GRAND_BORD    = colors.HexColor('#a855f7')
+        C_GRAND_TEXT    = colors.HexColor('#6b21a8')
+        C_GRID          = colors.HexColor('#e5e7eb')
+
+        # ── Column definitions (landscape letter ≈ 10.4" usable) ─────────────
+        # Date | Trans# | Account | BP Code | BP Name | Type | Ref | Project | Description | Debit | Credit | Balance
+        col_widths = [
+            0.75 * inch,   # Date
+            0.58 * inch,   # Trans #
+            0.82 * inch,   # Account
+            0.72 * inch,   # BP Code
+            1.15 * inch,   # BP Name
+            0.68 * inch,   # Type
+            0.72 * inch,   # Reference
+            0.72 * inch,   # Project
+            1.20 * inch,   # Description
+            0.76 * inch,   # Debit
+            0.76 * inch,   # Credit
+            0.76 * inch,   # Balance
+        ]
+        NCOLS = len(col_widths)
+
+        # ── Build table rows & per-row styles ────────────────────────────────
+        table_data   = []
+        table_styles = [
+            # Global defaults
+            ('FONTSIZE',      (0, 0), (-1, -1), 7),
+            ('FONTNAME',      (0, 0), (-1, -1), 'Helvetica'),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 3),
+            ('TOPPADDING',    (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('GRID',          (0, 0), (-1, -1), 0.25, C_GRID),
+            # Numeric columns right-aligned
+            ('ALIGN', (9,  0), (11, -1), 'RIGHT'),
+        ]
+
+        # Header row
+        headers = [
+            'Date', 'Trans #', 'Account', 'BP Code', 'BP Name',
+            'Type', 'Reference', 'Project', 'Description',
+            'Debit', 'Credit', 'Balance',
+        ]
+        table_data.append(headers)
+        ri = 0  # current row index
+        table_styles += [
+            ('BACKGROUND',    (0, ri), (-1, ri), C_HEADER_BG),
+            ('TEXTCOLOR',     (0, ri), (-1, ri), C_HEADER_TEXT),
+            ('FONTNAME',      (0, ri), (-1, ri), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0, ri), (-1, ri), 8),
+            ('ALIGN',         (0, ri), (-1, ri), 'CENTER'),
+            ('BOTTOMPADDING', (0, ri), (-1, ri), 6),
+            ('TOPPADDING',    (0, ri), (-1, ri), 6),
+        ]
+        ri += 1
+
+        for account in accounts_grouped:
+            # ── Account header row ───────────────────────────────────────────
+            label = f"{account['Account']} — {account['AccountName']}"
+            table_data.append([label] + [''] * (NCOLS - 1))
+            table_styles += [
+                ('SPAN',       (0, ri), (NCOLS - 1, ri)),
+                ('BACKGROUND', (0, ri), (-1, ri), C_ACCOUNT_BG),
+                ('TEXTCOLOR',  (0, ri), (-1, ri), C_ACCOUNT_TEXT),
+                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                ('FONTSIZE',   (0, ri), (-1, ri), 8),
+                ('LINEABOVE',  (0, ri), (-1, ri), 2, C_ACCOUNT_BORD),
+            ]
+            ri += 1
+
+            # ── Opening balance row (only when date filter applied) ───────────
+            if from_date:
+                ob = account['OpeningBalance']
+                ob_debit  = f"{ob:.2f}"  if ob > 0 else '-'
+                ob_credit = f"{abs(ob):.2f}" if ob < 0 else '-'
+                ob_bal    = f"{ob:.2f}"
+                row = (
+                    [f'Opening Balance (as of {from_disp})']
+                    + [''] * (NCOLS - 4)
+                    + [ob_debit, ob_credit, ob_bal]
+                )
+                table_data.append(row)
+                table_styles += [
+                    ('SPAN',      (0, ri), (NCOLS - 4, ri)),
+                    ('BACKGROUND',(0, ri), (-1, ri), C_OPENING_BG),
+                    ('TEXTCOLOR', (0, ri), (-1, ri), C_OPENING_TEXT),
+                    ('FONTNAME',  (0, ri), (-1, ri), 'Helvetica-Oblique'),
+                ]
+                ri += 1
+
+            # ── Transaction rows ─────────────────────────────────────────────
+            for i, txn in enumerate(account['transactions']):
+                debit   = float(txn.get('Debit', 0))
+                credit  = float(txn.get('Credit', 0))
+                running = float(txn.get('RunningBalance', 0))
+
+                posting_date = str(txn.get('PostingDate', ''))[:10]
+                try:
+                    d = datetime.strptime(posting_date, '%Y-%m-%d')
+                    posting_date = f"{d.month}/{d.day}/{d.year}"
+                except Exception:
+                    pass
+
+                row = [
+                    posting_date,
+                    str(txn.get('TransId', '')),
+                    str(txn.get('Account', '')),
+                    str(txn.get('BPCode', '')  or '-'),
+                    Paragraph(str(txn.get('BPName', '') or '-'), cell_style),
+                    str(txn.get('TransTypeName') or txn.get('TransType', '') or '-'),
+                    str(txn.get('Reference1', '') or '-'),
+                    str(txn.get('ExtractedProject') or txn.get('ProjectCode', '') or '-'),
+                    Paragraph(str(txn.get('Description', '') or '-'), cell_style),
+                    f"{debit:.2f}"  if debit  > 0 else '',
+                    f"{credit:.2f}" if credit > 0 else '',
+                    f"{running:.2f}",
+                ]
+                table_data.append(row)
+                bg = C_ROW_EVEN if i % 2 == 0 else C_ROW_ODD
+                table_styles.append(('BACKGROUND', (0, ri), (-1, ri), bg))
+                ri += 1
+
+            # ── Account subtotal row ─────────────────────────────────────────
+            subtotal_label = f"Subtotal: {account['Account']} — {account['AccountName']}"
+            table_data.append(
+                [subtotal_label] + [''] * (NCOLS - 4)
+                + [
+                    f"{account['TotalDebit']:.2f}",
+                    f"{account['TotalCredit']:.2f}",
+                    f"{account['ClosingBalance']:.2f}",
+                ]
+            )
+            table_styles += [
+                ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+                ('BACKGROUND', (0, ri), (-1, ri), C_SUBTOTAL_BG),
+                ('TEXTCOLOR',  (0, ri), (-1, ri), C_SUBTOTAL_TEXT),
+                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                ('LINEABOVE',  (0, ri), (-1, ri), 1, C_SUBTOTAL_BORD),
+            ]
+            ri += 1
+
+        # ── Grand total row ───────────────────────────────────────────────────
+        if grand_total:
+            table_data.append(
+                ['GRAND TOTAL'] + [''] * (NCOLS - 4)
+                + [
+                    f"{grand_total['TotalDebit']:.2f}",
+                    f"{grand_total['TotalCredit']:.2f}",
+                    f"{grand_total['Difference']:.2f}",
+                ]
+            )
+            table_styles += [
+                ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+                ('BACKGROUND', (0, ri), (-1, ri), C_GRAND_BG),
+                ('TEXTCOLOR',  (0, ri), (-1, ri), C_GRAND_TEXT),
+                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                ('FONTSIZE',   (0, ri), (-1, ri), 9),
+                ('LINEABOVE',  (0, ri), (-1, ri), 2, C_GRAND_BORD),
+            ]
+
+        # ── Assemble & build ──────────────────────────────────────────────────
+        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle(table_styles))
         elements.append(table)
-        
-        # Build PDF
+
+        # ── Urdu footer ───────────────────────────────────────────────────────
+        _urdu_lines = [
+            'معزز بزنس پارٹنر: آپ کے لیجر کی کاپی ارسال کی جا رہی ہے۔ اسکو اپنے کھاتے کے مطابق چیک کر کے بیلنس کی تصدیق کر دیں۔',
+            'دستخط اور مہر لازمی ثبت فرمائیں۔ اگر کسی بھی متم کا فرق ہوتو اسی لیجر کے اوپر نوٹ فرما دیں تا کہ درستگی ہو سکے۔ بصورت دیگر کمپنی کسی کلیم کی ذمہ دارنہ ہوگی',
+            'مزید برآں !',
+            'میں کمپنی کے اس لیجر بیلنس کے ساتھ متفق ہوں اور میرا ....................................... کے ساتھ کوئی ذاتی لین دین نہیں ہے',
+        ]
+
+        _urdu_style = ParagraphStyle(
+            'UrduFooterStyle', parent=styles['Normal'],
+            fontSize=10, fontName=_URDU_FONT,
+            alignment=TA_RIGHT, leading=16,
+            spaceAfter=4,
+            textColor=colors.HexColor('#1e293b'),
+        )
+        _urdu_border_style = TableStyle([
+            ('BOX',           (0, 0), (-1, -1), 0.75, colors.HexColor('#6366f1')),
+            ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#f8f9ff')),
+            ('TOPPADDING',    (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+        ])
+
+        _footer_paras = []
+        for _line in _urdu_lines:
+            if ARABIC_AVAILABLE and _URDU_FONT != 'Helvetica':
+                try:
+                    _reshaped = arabic_reshaper.reshape(_line)
+                    _display  = bidi_display(_reshaped)
+                    _line     = _display
+                except Exception:
+                    pass
+            _footer_paras.append(Paragraph(_line, _urdu_style))
+
+        _footer_table = Table(
+            [[p] for p in _footer_paras],
+            colWidths=[sum(col_widths)],
+        )
+        _footer_table.setStyle(_urdu_border_style)
+        # KeepTogether ensures footer never splits across pages
+        elements.append(KeepTogether([Spacer(1, 0.25 * inch), _footer_table]))
+
         doc.build(elements)
-        
-        # Return PDF
         pdf_buffer.seek(0)
         response.write(pdf_buffer.getvalue())
         return response
-        
+
     except Exception as e:
         logger.exception("Error exporting PDF")
         return HttpResponse(f"Error exporting PDF: {str(e)}", status=500)

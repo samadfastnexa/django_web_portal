@@ -154,8 +154,15 @@ def resolve_company_to_schema(company_param: str) -> str:
 def get_hana_schema_from_request(request):
     """
     Resolve HANA schema from query param, session, or first active company.
-    Returns Company_name (e.g., '4B-BIO_APP', '4B-AGRI_LIVE').
+    Returns the actual schema field from Company.name
+    (e.g., '4B-BIO_APP', '4B-AGRI_LIVE').
     """
+    def _schema_from_company(company_obj):
+        if not company_obj:
+            return None
+        # Company.name is the schema key used for HANA connections.
+        return (getattr(company_obj, 'name', None) or getattr(company_obj, 'Company_name', None) or '').strip() or None
+
     db_param = request.GET.get('database', '').strip()
     if db_param:
         token = db_param.upper().strip()
@@ -177,47 +184,57 @@ def get_hana_schema_from_request(request):
         # Try exact/case-insensitive matches against active companies
         for candidate in list(variants):
             try:
+                company = Company.objects.get(name=candidate, is_active=True)
+                return _schema_from_company(company)
+            except Company.DoesNotExist:
+                pass
+            try:
+                company = Company.objects.get(name__iexact=candidate, is_active=True)
+                return _schema_from_company(company)
+            except Company.DoesNotExist:
+                pass
+            try:
                 company = Company.objects.get(Company_name=candidate, is_active=True)
-                # logger.info(f"[DB RESOLVER] Matched exact company: {company.Company_name} from '{db_param}'")
-                return company.Company_name
+                return _schema_from_company(company)
             except Company.DoesNotExist:
                 pass
             try:
                 company = Company.objects.get(Company_name__iexact=candidate, is_active=True)
-                # logger.info(f"[DB RESOLVER] Matched iexact company: {company.Company_name} from '{db_param}'")
-                return company.Company_name
+                return _schema_from_company(company)
             except Company.DoesNotExist:
                 pass
 
         # If still not found, map common keys like '4B-ORANG'/'4B-BIO'/'4B-AGRI' to active companies
         if 'ORANG' in token:
-            company = Company.objects.filter(is_active=True, Company_name__icontains='ORANG').first()
+            company = Company.objects.filter(is_active=True).filter(Q(name__icontains='ORANG') | Q(Company_name__icontains='ORANG')).first()
             if company:
-                # logger.info(f"[DB RESOLVER] Fallback mapped to ORANG company: {company.Company_name}")
-                return company.Company_name
+                return _schema_from_company(company)
         if 'BIO' in token:
-            company = Company.objects.filter(is_active=True, Company_name__icontains='BIO').first()
+            company = Company.objects.filter(is_active=True).filter(Q(name__icontains='BIO') | Q(Company_name__icontains='BIO')).first()
             if company:
-                # logger.info(f"[DB RESOLVER] Fallback mapped to BIO company: {company.Company_name}")
-                return company.Company_name
+                return _schema_from_company(company)
         if 'AGRI' in token:
-            company = Company.objects.filter(is_active=True, Company_name__icontains='AGRI').first()
+            company = Company.objects.filter(is_active=True).filter(Q(name__icontains='AGRI') | Q(Company_name__icontains='AGRI')).first()
             if company:
-                # logger.info(f"[DB RESOLVER] Fallback mapped to AGRI company: {company.Company_name}")
-                return company.Company_name
+                return _schema_from_company(company)
 
     session_db = request.session.get('selected_db', '').strip()
     if session_db:
         try:
+            company = Company.objects.get(name=session_db, is_active=True)
+            return _schema_from_company(company)
+        except Company.DoesNotExist:
+            pass
+        try:
             company = Company.objects.get(Company_name=session_db, is_active=True)
-            return company.Company_name
+            return _schema_from_company(company)
         except Company.DoesNotExist:
             pass
 
     try:
         company = Company.objects.filter(is_active=True).first()
         if company:
-            return company.Company_name
+            return _schema_from_company(company)
     except Exception:
         pass
 
@@ -225,7 +242,7 @@ def get_hana_schema_from_request(request):
     try:
         company = Company.objects.filter(is_active=True).first()
         if company:
-            return company.Company_name
+            return _schema_from_company(company)
     except Exception:
         pass
     
@@ -3222,12 +3239,114 @@ def get_business_partner_data(request, card_code=None):
     """
     
     try:
+        top_param = request.query_params.get('top')
+        card_type_param = request.query_params.get('card_type', 'C')
+        max_records = 500
+        if top_param is not None:
+            try:
+                max_records = int(top_param)
+                if max_records == 0:
+                    max_records = 10000
+            except Exception:
+                max_records = 500
+
         # Get HANA schema from database parameter, session, or company model
         db_param_received = request.GET.get('database', 'NOT PROVIDED')
         # logger.info(f"[BUSINESS_PARTNER] Received database parameter: {db_param_received}")
         
         hana_schema = get_hana_schema_from_request(request)
         # logger.info(f"[BUSINESS_PARTNER] Using HANA schema: {hana_schema}")
+
+        def _fetch_bp_from_hana(target_card_code=None):
+            """Fallback path when SAP Service Layer is unavailable."""
+            try:
+                _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+                _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+                _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+                _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+            except Exception:
+                pass
+
+            cfg = {
+                'host': os.environ.get('HANA_HOST') or '',
+                'port': os.environ.get('HANA_PORT') or '30015',
+                'user': os.environ.get('HANA_USER') or '',
+                'schema': hana_schema or '',
+                'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+                'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+            }
+
+            from hdbcli import dbapi
+            pwd = os.environ.get('HANA_PASSWORD', '')
+            kwargs = {
+                'address': cfg['host'],
+                'port': int(cfg['port']),
+                'user': cfg['user'] or '',
+                'password': pwd or '',
+            }
+            if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+                kwargs['encrypt'] = True
+                if cfg['ssl_validate']:
+                    kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+
+            conn = dbapi.connect(**kwargs)
+            try:
+                if cfg['schema']:
+                    sch = cfg['schema'].replace('"', '""')
+                    cur = conn.cursor()
+                    cur.execute(f'SET SCHEMA "{sch}"')
+                    cur.close()
+
+                card_type_upper = (card_type_param or '').strip().upper()
+                query_parts = [
+                    'SELECT "CardCode", "CardName", "CardType", "GroupCode", "VatGroup", "Balance" AS "CurrentAccountBalance"',
+                    'FROM "OCRD"'
+                ]
+                where_clauses = []
+                params = []
+
+                if target_card_code:
+                    where_clauses.append('"CardCode" = ?')
+                    params.append(target_card_code)
+                elif card_type_upper in ('C', 'S', 'L'):
+                    where_clauses.append('"CardType" = ?')
+                    params.append(card_type_upper)
+
+                if where_clauses:
+                    query_parts.append('WHERE ' + ' AND '.join(where_clauses))
+
+                query_parts.append('ORDER BY "CardCode"')
+                if not target_card_code and max_records > 0:
+                    query_parts.append(f'LIMIT {int(max_records)}')
+
+                sql = ' '.join(query_parts)
+                cur = conn.cursor()
+                cur.execute(sql, params)
+                columns = [desc[0] for desc in cur.description] if cur.description else []
+                rows = cur.fetchall() or []
+                cur.close()
+
+                out = []
+                card_type_map = {'C': 'cCustomer', 'S': 'cSupplier', 'L': 'cLid'}
+                for row in rows:
+                    item = {}
+                    for idx, col in enumerate(columns):
+                        item[col] = row[idx]
+                    ct = str(item.get('CardType') or '').strip().upper()
+                    if ct in card_type_map:
+                        item['CardType'] = card_type_map[ct]
+                    try:
+                        bal = item.get('CurrentAccountBalance')
+                        item['CurrentAccountBalance'] = float(bal) if bal is not None else 0.0
+                    except Exception:
+                        pass
+                    out.append(item)
+                return out
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         
         # Map HANA schema to company_db_key for SAPClient
         # Find matching company from the schema name
@@ -3278,21 +3397,6 @@ def get_business_partner_data(request, card_code=None):
         
         # Otherwise, list all business partners
         else:
-            # Get parameters
-            top_param = request.query_params.get('top')
-            card_type_param = request.query_params.get('card_type', 'C')  # Default to Customers only (ORC*)
-            
-            # Set default limit to 500 for reasonable loading time
-            # User can request more with ?top=10000 or ?top=0 (unlimited)
-            max_records = 500
-            if top_param is not None:
-                try:
-                    max_records = int(top_param)
-                    if max_records == 0:
-                        max_records = 10000  # 0 means "all", cap at 10k
-                except Exception:
-                    max_records = 500
-            
             # Include CardType in select to enable filtering
             # logger.info(f"[BUSINESS_PARTNER] Fetching business partners (limit: {max_records})")
             
@@ -3352,6 +3456,46 @@ def get_business_partner_data(request, card_code=None):
         
     except Exception as e:
         error_message = str(e)
+
+        # Fallback to direct HANA query when SAP Service Layer is unavailable.
+        lower_msg = error_message.lower()
+        should_fallback = (
+            'ssl' in lower_msg or
+            'service layer' in lower_msg or
+            'tlsv1_alert_internal_error' in lower_msg or
+            'alert internal error' in lower_msg
+        )
+        if should_fallback:
+            try:
+                fallback_rows = _fetch_bp_from_hana(card_code.strip() if card_code and card_code.strip() else None)
+                if card_code and card_code.strip():
+                    if not fallback_rows:
+                        return Response({
+                            "success": False,
+                            "error": "Business partner not found",
+                            "message": f"No business partner found with card code: {card_code}"
+                        }, status=status.HTTP_404_NOT_FOUND)
+                    return Response({
+                        "success": True,
+                        "data": fallback_rows[0],
+                        "message": "Business partner data retrieved successfully (HANA fallback)"
+                    }, status=status.HTTP_200_OK)
+
+                return Response({
+                    "success": True,
+                    "count": len(fallback_rows),
+                    "data": fallback_rows,
+                    "message": "Business partners retrieved successfully (HANA fallback)"
+                }, status=status.HTTP_200_OK)
+            except Exception as fallback_error:
+                return Response({
+                    "success": False,
+                    "error": "SAP integration failed",
+                    "message": (
+                        f"Unable to retrieve business partner data. Service Layer error: {error_message}. "
+                        f"HANA fallback also failed: {str(fallback_error)}"
+                    )
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Handle specific SAP errors
         if "not found" in error_message.lower() or "404" in error_message:
@@ -8864,8 +9008,15 @@ def recommended_products_api(request):
         item_code = request.GET.get('item_code', '').strip()
         disease_name = request.GET.get('disease_name', '').strip()
         
-        # Get database parameter
-        hana_schema = get_hana_schema_from_request(request)
+        # Get database parameter - always resolve via Company.name (actual HANA schema)
+        db_param = (request.GET.get('database') or request.session.get('selected_db') or '').strip()
+        hana_schema = resolve_company_to_schema(db_param) if db_param else ''
+        if not hana_schema:
+            try:
+                first = Company.objects.filter(is_active=True).first()
+                hana_schema = first.name if first else ''
+            except Exception:
+                pass
         if not hana_schema:
             return Response({
                 'success': False,
@@ -8901,12 +9052,15 @@ def recommended_products_api(request):
         conn = dbapi.connect(**kwargs)
         
         try:
-            # Set schema
-            cur = conn.cursor()
+            import re as _re
             schema_name = cfg['schema']
-            cur.execute(f'SET SCHEMA "{schema_name}"')
-            cur.close()
-            
+            # Build a safely-quoted schema prefix (handles hyphens like "4B-AGRI_LIVE")
+            _sch_q = schema_name if _re.match(r'^[A-Za-z0-9_]+$', schema_name) else '"' + schema_name.replace('"', '""') + '"'
+            _odid  = _sch_q + '."@ODID"'
+            _oitm  = _sch_q + '."OITM"'
+            _oitb  = _sch_q + '."OITB"'
+            _atc1  = _sch_q + '."ATC1"'
+
             # Query @ODID table for disease
             disease_info = None
             product_item_codes = []
@@ -8920,7 +9074,7 @@ def recommended_products_api(request):
                 placeholders = ','.join(['?' for _ in item_codes])
                 cur.execute(
                     f'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
-                    f'FROM "@ODID" WHERE "U_ItemCode" IN ({placeholders})',
+                    f'FROM {_odid} WHERE "U_ItemCode" IN ({placeholders})',
                     tuple(item_codes)
                 )
                 rows = cur.fetchall()
@@ -8946,8 +9100,8 @@ def recommended_products_api(request):
                 # We search U_Disease to find ALL products that treat this disease
                 cur = conn.cursor()
                 cur.execute(
-                    'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
-                    'FROM "@ODID" '
+                    f'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
+                    f'FROM {_odid} '
                     'WHERE UPPER("U_Disease") LIKE ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") LIKE ?',
                     (f'%{disease_name.upper()}%', disease_name.upper(), f'%{disease_name.upper()}%')
                 )
@@ -8994,7 +9148,7 @@ def recommended_products_api(request):
                 for idx, prod_code in enumerate(product_item_codes, 1):
                     try:
                         cur = conn.cursor()
-                        sql = '''
+                        sql = f'''
                         SELECT 
                             T0."ItemCode",
                             T0."ItemName",
@@ -9007,10 +9161,10 @@ def recommended_products_api(request):
                             PI."FileExt" AS "Image_Ext",
                             PU."FileName" AS "Urdu_File",
                             PU."FileExt" AS "Urdu_Ext"
-                        FROM OITM T0
-                        INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"
-                        LEFT JOIN ATC1 PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."Line" = 0
-                        LEFT JOIN ATC1 PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."Line" = 1
+                        FROM {_oitm} T0
+                        INNER JOIN {_oitb} T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"
+                        LEFT JOIN {_atc1} PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."Line" = 0
+                        LEFT JOIN {_atc1} PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."Line" = 1
                         WHERE T0."ItemCode" = ?
                         '''
                         cur.execute(sql, (prod_code,))
