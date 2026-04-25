@@ -9139,6 +9139,17 @@ def recommended_products_api(request):
             
             # Fetch product details from OITM for all item codes
             products_data = []
+
+            def _media_url(raw_path):
+                """Return encoded relative media URL (no absolute/full URL)."""
+                if not raw_path:
+                    return None
+                try:
+                    from urllib.parse import quote
+                    encoded = quote(raw_path, safe='/:._-')
+                except Exception:
+                    encoded = raw_path
+                return encoded
             
             if product_item_codes:
                 # Extract database folder name for images
@@ -9157,15 +9168,22 @@ def recommended_products_api(request):
                             T0."InvntryUom",
                             T0."U_GenericName",
                             T0."U_BrandName",
-                            PI."FileName" AS "Image_File",
-                            PI."FileExt" AS "Image_Ext",
-                            PU."FileName" AS "Urdu_File",
-                            PU."FileExt" AS "Urdu_Ext"
+                            MIN(CASE WHEN LOWER(TRIM(A."FileExt")) IN ('jpeg', 'jpg', 'png', 'webp')
+                                     THEN A."FileName" || '.' || A."FileExt" END) AS "Product_Image",
+                            MAX(CASE WHEN A."U_IMG_C" = 'Product Description Urdu'
+                                     THEN A."FileName" || '.' || A."FileExt" END) AS "Product_Description_Urdu"
                         FROM {_oitm} T0
                         INNER JOIN {_oitb} T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"
-                        LEFT JOIN {_atc1} PI ON PI."AbsEntry" = T0."AtcEntry" AND PI."Line" = 0
-                        LEFT JOIN {_atc1} PU ON PU."AbsEntry" = T0."AtcEntry" AND PU."Line" = 1
+                        LEFT JOIN {_atc1} A ON A."AbsEntry" = T0."AtcEntry"
                         WHERE T0."ItemCode" = ?
+                        GROUP BY
+                            T0."ItemCode",
+                            T0."ItemName",
+                            T1."ItmsGrpNam",
+                            T0."SalPackMsr",
+                            T0."InvntryUom",
+                            T0."U_GenericName",
+                            T0."U_BrandName"
                         '''
                         cur.execute(sql, (prod_code,))
                         row = cur.fetchone()
@@ -9177,20 +9195,25 @@ def recommended_products_api(request):
                             product_name = full_product_name.split(' - ')[0].strip() if ' - ' in full_product_name else full_product_name
                             
                             # Build image URLs
-                            img_file = row[7]
-                            img_ext = row[8]
-                            if img_file and img_ext:
-                                product_image_url = f'/media/product_images/{folder_name}/{img_file}.{img_ext}'
+                            product_image = row[7]
+                            if product_image:
+                                product_image_url = f'/media/product_images/{folder_name}/{product_image}'
                             else:
                                 # Fallback to product name-based naming (e.g., Badar.jpg, Haryali.jpg, Map.jpg)
                                 product_image_url = f'/media/product_images/{folder_name}/{product_name}.jpg'
                             
-                            urdu_file = row[9]
-                            urdu_ext = row[10]
-                            if urdu_file and urdu_ext:
-                                urdu_url = f'/media/product_images/{folder_name}/{urdu_file}.{urdu_ext}'
+                            # Follow products_catalog logic: only use explicit Urdu attachment label.
+                            product_desc_urdu = row[8]
+                            if product_desc_urdu:
+                                urdu_url = f'/media/product_images/{folder_name}/{product_desc_urdu}'
                             else:
-                                urdu_url = f'/media/product_images/{folder_name}/{product_name}-urdu.jpg'
+                                urdu_url = None
+
+                            product_image_url = _media_url(product_image_url)
+                            urdu_url = _media_url(urdu_url)
+                            # Keep only relative URLs in response (requested by client).
+                            # product_image_url_full = request.build_absolute_uri(product_image_url)
+                            # urdu_url_full = request.build_absolute_uri(urdu_url)
                             
                             product = {
                                 'priority': idx,
