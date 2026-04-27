@@ -274,7 +274,12 @@ class SalesStaffProfile(models.Model):
 #     territory = models.ForeignKey('FieldAdvisoryService.Territory', on_delete=models.SET_NULL, null=True, blank=True)
   
   # ✅ Many-to-Many instead of ForeignKey
-    companies   = models.ManyToManyField('FieldAdvisoryService.Company', blank=True, related_name="sales_profiles")
+    companies   = models.ManyToManyField(
+        'FieldAdvisoryService.Company',
+        through='SalesStaffCompany',
+        blank=True,
+        related_name="sales_profiles",
+    )
     regions     = models.ManyToManyField('FieldAdvisoryService.Region', blank=True, related_name="sales_profiles")
     zones       = models.ManyToManyField('FieldAdvisoryService.Zone', blank=True, related_name="sales_profiles")
     territories = models.ManyToManyField('FieldAdvisoryService.Territory', blank=True, related_name="sales_profiles")
@@ -403,7 +408,8 @@ class SalesStaffProfile(models.Model):
     
     def __str__(self):
         if self.user:
-            return f"{self.user.get_full_name()} ({self.designation})"
+            full_name = f"{self.user.first_name} {self.user.last_name}".strip() or self.user.email
+            return f"{full_name} ({self.designation})"
         return f"Vacant - {self.designation}"
     
     def clean(self):
@@ -459,13 +465,47 @@ class SalesStaffProfile(models.Model):
             ('view_all_hierarchy', 'Can view entire organization hierarchy'),
         ]
 
+
+class SalesStaffCompany(models.Model):
+    """
+    Through table for the SalesStaffProfile ↔ Company M2M.
+    Each row stores the employee_code that the user has *within that company*.
+    A CEO who belongs to two companies will have two rows — one per company.
+    """
+    sales_profile = models.ForeignKey(
+        SalesStaffProfile,
+        on_delete=models.CASCADE,
+        related_name='company_memberships',
+    )
+    company = models.ForeignKey(
+        'FieldAdvisoryService.Company',
+        on_delete=models.CASCADE,
+        related_name='staff_memberships',
+    )
+    employee_code = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Employee ID specific to this company (e.g. SAP employee number in that schema)",
+    )
+    is_primary = models.BooleanField(
+        default=False,
+        help_text="Primary company for this user (used as default when no company context is given)",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'accounts_salesstaffcompany'
+        unique_together = [
+            ('sales_profile', 'company'),          # one row per user-company pair
+            ('company', 'employee_code'),            # employee_code is unique within a company
+        ]
+        verbose_name = 'Staff Company Membership'
+        verbose_name_plural = 'Staff Company Memberships'
+
     def __str__(self):
-        designation_text = self.designation.name if self.designation else "No Designation"
-        if self.is_vacant:
-            return f"Vacant ({designation_text})"
-        elif self.user:
-            return f"{self.user.email} ({designation_text})"
-        return f"Unassigned ({designation_text})"
+        code = self.employee_code or '(no code)'
+        return f"{self.sales_profile} @ {self.company} [{code}]"
 
 
 class PasswordResetOTP(models.Model):

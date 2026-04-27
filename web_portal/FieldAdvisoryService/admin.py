@@ -1614,8 +1614,7 @@ class CompanyAdmin(admin.ModelAdmin):
     list_display = ('Company_name', 'name', 'logo_thumb', 'color_swatch_primary', 'color_swatch_secondary', 'extra_settings_summary', 'is_active')
     search_fields = ('Company_name', 'name', 'email')
     list_filter = ('is_active',)
-    list_per_page = 25  # Updated to 25 records per page for better admin experience
-
+    list_per_page = 25
     fieldsets = (
         ('Company Information', {
             'fields': ('Company_name', 'description', 'is_active')
@@ -1630,9 +1629,10 @@ class CompanyAdmin(admin.ModelAdmin):
             )
         }),
         ('HANA Database Schema', {
-            'fields': ('name',),
-            'description': '<strong>Note:</strong> The "Name" field represents the HANA database schema name '
-                           '(e.g., 4B-BIO_APP, 4B-ORANG_APP). This value is used in HANA Connect.'
+            'fields': ('name', 'series'),
+            'description': '<strong>Note:</strong> The "Name" field is the HANA database schema '
+                           '(e.g., 4B-BIO_APP, 4B-ORANG_APP). "Series" is the SAP Series number '
+                           'used for product catalog queries (default: 77).'
         }),
         ('Contact Information', {
             'fields': ('email', 'contact_number', 'address')
@@ -1714,6 +1714,7 @@ class CompanyAdmin(admin.ModelAdmin):
             'all': ('FieldAdvisoryService/css/company_admin.css',)
         }
         js = ('FieldAdvisoryService/js/company_admin.js',)
+
 
 @admin.register(Region, site=admin_site)
 class RegionAdmin(admin.ModelAdmin, _CompanySessionResolver):

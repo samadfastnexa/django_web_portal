@@ -55,6 +55,10 @@ class Company(BaseInfoModel):
             "Use keys: primary_color, secondary_color, accent_color, font_family, etc."
         )
     )
+    series = models.IntegerField(
+        default=77,
+        help_text="SAP Series number used for this company's product catalog queries (e.g. 77)."
+    )
 
     def __str__(self):
         return self.Company_name  # or self.name if BaseInfoModel has 'name'
@@ -63,7 +67,8 @@ class Company(BaseInfoModel):
         db_table = 'fieldadvisoryservice_company'
         verbose_name = "Company"
         verbose_name_plural = "Companies"
-    
+
+
 class Region(models.Model):
     company = models.ForeignKey('Company', on_delete=models.PROTECT, related_name='regions')
     name = models.CharField(max_length=100)  # ✅ Region's own name

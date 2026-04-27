@@ -75,6 +75,45 @@ def get_default_company_key():
         return ''
 
 
+def resolve_employee_for_company(user_id_param: str, company_param: str) -> str | None:
+    """
+    Return the employee_code for a portal user scoped to a specific company.
+
+    Queries SalesStaffCompany (the through table that stores per-company employee IDs)
+    matching by Company.name (schema) OR Company.Company_name (display name).
+    Falls back to SalesStaffProfile.employee_code if no company-specific row is found.
+
+    Example:
+        user_id=123  +  database=4B-AGRI_LIVE
+            → SalesStaffCompany.filter(profile__user=123, company__name="4B-AGRI_LIVE")
+            → employee_code = "101"   # company-scoped
+
+        user_id=123  +  database=4B-ORANG_APP
+            → employee_code = "205"   # different company, different ID
+    """
+    if not user_id_param:
+        return None
+    try:
+        from accounts.models import User, SalesStaffCompany
+        target_user = User.objects.select_related('sales_profile').get(id=int(user_id_param))
+        if not hasattr(target_user, 'sales_profile') or not target_user.sales_profile:
+            return None
+        profile = target_user.sales_profile
+        if company_param:
+            membership = SalesStaffCompany.objects.filter(
+                sales_profile=profile,
+                is_active=True,
+            ).filter(
+                Q(company__name=company_param) | Q(company__Company_name=company_param)
+            ).first()
+            if membership and membership.employee_code:
+                return membership.employee_code
+        # Fall back to the flat legacy field on the profile
+        return profile.employee_code
+    except Exception:
+        return None
+
+
 def resolve_company_to_schema(company_param: str) -> str:
     """
     Directly resolve company parameter to schema name.
@@ -1036,22 +1075,16 @@ def hana_connect_admin(request):
                                     start_date_param = today.replace(month=1, day=1).strftime('%Y-%m-%d')
                                     end_date_param = today.strftime('%Y-%m-%d')
                             
-                            # Handle user_id parameter to fetch employee_code from sales_profile
+                            # Resolve company-specific employee_code for multi-company users
                             emp_val = None
                             if user_id_param:
-                                try:
-                                    from accounts.models import User
-                                    user_id_int = int(user_id_param)
-                                    target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
-                                    if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
-                                        employee_code = target_user.sales_profile.employee_code
-                                        if employee_code:
-                                            try:
-                                                emp_val = int(employee_code)
-                                            except ValueError:
-                                                pass
-                                except Exception as e_user:
-                                    error = f'Invalid user_id: {str(e_user)}'
+                                _db_param = (request.GET.get('database') or '').strip()
+                                employee_code = resolve_employee_for_company(user_id_param, _db_param)
+                                if employee_code:
+                                    try:
+                                        emp_val = int(employee_code)
+                                    except ValueError:
+                                        pass
                             
                             # emp_id overrides user_id if both provided
                             if emp_id_param is not None and emp_id_param != '':
@@ -1523,20 +1556,15 @@ def hana_connect_admin(request):
                             emp_val = None
                             employee_code = None
 
+                            # Resolve company-specific employee_code for multi-company users
                             if user_id_param:
-                                try:
-                                    from accounts.models import User
-                                    user_id_int = int(user_id_param)
-                                    target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
-                                    if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
-                                        employee_code = target_user.sales_profile.employee_code
-                                        if employee_code:
-                                            try:
-                                                emp_val = int(employee_code)
-                                            except ValueError:
-                                                pass
-                                except Exception:
-                                    pass
+                                _db_param = (request.GET.get('database') or '').strip()
+                                employee_code = resolve_employee_for_company(user_id_param, _db_param)
+                                if employee_code:
+                                    try:
+                                        emp_val = int(employee_code)
+                                    except ValueError:
+                                        pass
 
                             if emp_id_param is not None and emp_id_param != '':
                                 try:
@@ -4706,22 +4734,16 @@ def sales_vs_achievement_territory_api(request):
     
     emp_val = None
     employee_code = None  # Track original employee_code for CEO check
-    
-    # If user_id provided, fetch employee_code from sales_profile
+
+    # Resolve company-specific employee_code for multi-company users
+    # db_param is already set above from request.query_params.get('database')
     if user_id_param:
-        try:
-            from accounts.models import User
-            user_id_int = int(user_id_param)
-            target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
-            if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
-                employee_code = target_user.sales_profile.employee_code
-                if employee_code:
-                    try:
-                        emp_val = int(employee_code)
-                    except ValueError:
-                        pass
-        except Exception:
-            pass
+        employee_code = resolve_employee_for_company(user_id_param, db_param)
+        if employee_code:
+            try:
+                emp_val = int(employee_code)
+            except ValueError:
+                pass
     
     # emp_id overrides user_id if both provided
     if emp_id_param:
@@ -9158,9 +9180,16 @@ def recommended_products_api(request):
             
             if product_item_codes:
                 # Extract database folder name for images
-                # Examples: 4B-BIO_APP -> 4B-BIO, 4B-ORANG_APP -> 4B-ORANG, 4B-AGRI_LIVE -> 4B-AGRI
                 folder_name = hana_schema.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
-                
+
+                # Resolve series from Company model; fall back to 77 if not configured
+                try:
+                    from FieldAdvisoryService.models import Company
+                    _series = Company.objects.filter(name=hana_schema).values_list('series', flat=True).first() or 77
+                except Exception:
+                    _series = 77
+                _series_clause = f"T0.\"Series\" = '{_series}'"
+
                 for idx, prod_code in enumerate(product_item_codes, 1):
                     try:
                         cur = conn.cursor()
@@ -9181,7 +9210,7 @@ def recommended_products_api(request):
                         INNER JOIN {_oitb} T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"
                         LEFT JOIN {_atc1} A ON A."AbsEntry" = T0."AtcEntry"
                         WHERE T0."ItemCode" = ?
-                                                    AND T0."Series" = '77'
+                                                    AND {_series_clause}
                                                     AND T0."validFor" = 'Y'
                                                     AND T0."U_IsActive" = 'Y'
                         GROUP BY

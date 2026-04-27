@@ -68,6 +68,48 @@ def get_default_schema():
         return os.environ.get('HANA_SCHEMA', '')
 
 
+def resolve_employee_for_company(user_id_param: str, company_param: str) -> str | None:
+    """
+    Resolve the correct employee_code for a portal user within a specific company.
+
+    When a user (e.g. CEO, Manager) belongs to multiple companies, each company
+    stores a different employee_code in the SalesStaffCompany through table.
+    This function looks up the company-specific code using the company schema name
+    (Company.name) or display name (Company.Company_name).
+
+    Falls back to SalesStaffProfile.employee_code if no company-specific record exists.
+
+    Args:
+        user_id_param: String portal user ID (e.g. '123').
+        company_param: Company schema (e.g. '4B-AGRI_LIVE') or display name.
+
+    Returns:
+        employee_code string, or None if not found.
+    """
+    if not user_id_param:
+        return None
+    try:
+        from accounts.models import User, SalesStaffCompany
+        target_user = User.objects.select_related('sales_profile').get(id=int(user_id_param))
+        if not hasattr(target_user, 'sales_profile') or not target_user.sales_profile:
+            return None
+        profile = target_user.sales_profile
+        if company_param:
+            # Match by schema name (Company.name) OR display name (Company.Company_name)
+            membership = SalesStaffCompany.objects.filter(
+                sales_profile=profile,
+                is_active=True,
+            ).filter(
+                Q(company__name=company_param) | Q(company__Company_name=company_param)
+            ).first()
+            if membership and membership.employee_code:
+                return membership.employee_code
+        # Fall back to the flat legacy field on the profile
+        return profile.employee_code
+    except Exception:
+        return None
+
+
 class HANAConnectionTestView(APIView):
     """
     Test HANA connection and environment variables
@@ -253,29 +295,16 @@ class DashboardOverviewView(APIView):
         
         # Handle user_id parameter to fetch employee_code
         emp_val = None
-        employee_code_from_user = None
         employee_code = None  # Track original employee_code for CEO check
-        
-        # If user_id is provided, fetch employee_code from that user's sales_profile
-        if user_id_param:
-            try:
-                from accounts.models import User
-                user_id_int = int(user_id_param)
-                target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
-                if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
-                    employee_code_from_user = target_user.sales_profile.employee_code
-                    employee_code = employee_code_from_user  # Track for CEO check
-                    # Use employee_code as emp_id_param
-                    if employee_code_from_user and not emp_id_param:
-                        emp_id_param = str(employee_code_from_user)
-            except Exception:
-                pass
-        
-        # emp_id parameter overrides user_id if both are provided
-        # Also track the employee_code string value
-        if emp_id_param and not employee_code:
+
+        # Resolve employee_code: emp_id takes priority; otherwise look up per-company from user_id
+        if emp_id_param:
             employee_code = emp_id_param
-        
+        elif user_id_param:
+            employee_code = resolve_employee_for_company(user_id_param, company_param)
+            if employee_code:
+                emp_id_param = employee_code
+
         # CEO SPECIAL CASE: Employee code '00' means show OVERALL data for entire organization
         # When emp_id is '00', treat it as if no employee filter was specified
         if emp_id_param and str(emp_id_param).strip() == '00':
@@ -1413,35 +1442,23 @@ class CollectionAnalyticsView(APIView):
             emp_id_param = request.GET.get('emp_id', '').strip()
             
             emp_val = None
-            employee_code_from_user = None
             employee_code = None  # Track original employee_code for CEO check
-            
-            # If user_id is provided, fetch employee_code from that user's sales_profile
-            if user_id_param:
-                try:
-                    from accounts.models import User
-                    user_id_int = int(user_id_param)
-                    target_user = User.objects.select_related('sales_profile').get(id=user_id_int)
-                    if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
-                        employee_code_from_user = target_user.sales_profile.employee_code
-                        employee_code = employee_code_from_user  # Track for CEO check
-                        # Convert employee_code to integer if it's numeric
-                        if employee_code_from_user:
-                            try:
-                                emp_val = int(employee_code_from_user)
-                            except ValueError:
-                                # If employee_code is not numeric, try to use it as-is
-                                pass
-                except Exception:
-                    pass
-            
-            # emp_id parameter overrides user_id if both are provided
+
+            # Resolve employee_code: emp_id takes priority; otherwise look up per-company from user_id
+            # db_param may be a Company_name or schema name — pass as-is; helper handles both
             if emp_id_param:
+                employee_code = emp_id_param
                 try:
-                    employee_code = emp_id_param  # Track the string value for CEO check
                     emp_val = int(emp_id_param)
                 except Exception:
                     pass
+            elif user_id_param:
+                employee_code = resolve_employee_for_company(user_id_param, db_param)
+                if employee_code:
+                    try:
+                        emp_val = int(employee_code)
+                    except ValueError:
+                        pass
             
             # If ignore_emp_filter is true, we pass emp_id=None to SAP function
             sap_emp_id = None if ignore_emp_filter else emp_val
