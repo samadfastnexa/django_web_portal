@@ -37,6 +37,8 @@ from .views import (
     product_catalog_list_view,
     product_document_view,
     product_document_api,
+    # Product Catalog by Category API
+    products_catalog_by_category_api,
     # Product Description APIs
     get_product_description_api,
     download_product_description_api,
@@ -97,6 +99,9 @@ urlpatterns = [
     path('policies/', projects_list_api, name='projects_list_api'),
     path('policies/detail/', policy_detail_api, name='policy_detail_api'),
     
+    # Product Catalog - Category-grouped API
+    path('products-catalog-by-category/', products_catalog_by_category_api, name='products_catalog_by_category_api'),
+
     # Product Catalog with Document Display (Web Pages)
     path('products/', product_catalog_list_view, name='product_catalog_list'),
     path('products/<str:item_code>/', product_document_view, name='product_document_detail'),

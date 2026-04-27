@@ -222,6 +222,17 @@ class CustomUserAdmin(BaseUserAdmin):
         )
         return super().changeform_view(request, object_id, form_url, extra_context)
 
+    def get_queryset(self, request):
+        """
+        Prefetch related objects to avoid N+1 queries on list display.
+        Without this, employee_code and dealer_card_code each trigger a
+        separate query per row (25 rows = 50+ extra queries per page).
+        """
+        qs = super().get_queryset(request)
+        qs = qs.select_related('role', 'company')
+        qs = qs.prefetch_related('sales_profile', 'dealer')
+        return qs
+
     def get_search_fields(self, request):
         """
         Add dealer card code to search fields when Dealer model is available.
@@ -465,6 +476,17 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
         }),
     )
     
+    def get_queryset(self, request):
+        """
+        select_related to avoid N+1 for user, designation, manager display columns.
+        Annotate subordinates_count to avoid a COUNT query per row.
+        """
+        from django.db.models import Count
+        qs = super().get_queryset(request)
+        qs = qs.select_related('user', 'designation', 'manager__user')
+        qs = qs.annotate(_subordinates_count=Count('subordinates', filter=Q(subordinates__is_vacant=False)))
+        return qs
+
     def user_display(self, obj):
         """Display user safely"""
         if obj.user:
@@ -482,14 +504,14 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
     manager_display.short_description = 'Reports To'
     
     def subordinates_count(self, obj):
-        """Display count of subordinates"""
-        try:
+        """Display count of subordinates (uses annotation to avoid N+1)"""
+        count = getattr(obj, '_subordinates_count', None)
+        if count is None:
+            # fallback if annotation not present
             count = obj.subordinates.filter(is_vacant=False).count()
-            if count > 0:
-                return f"👥 {count}"
-            return "—"
-        except:
-            return "—"
+        if count > 0:
+            return f"👥 {count}"
+        return "—"
     subordinates_count.short_description = 'Team Size'
     
     def save_model(self, request, obj, form, change):

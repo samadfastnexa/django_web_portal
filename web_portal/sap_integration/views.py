@@ -5592,6 +5592,182 @@ def products_catalog_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@swagger_auto_schema(
+    tags=['SAP - Products'],
+    method='get',
+    operation_description="""Returns all active products grouped by their SAP item group (category).
+
+Supports the same filters as /api/sap/products-catalog/.
+
+Response structure:
+  data[]:
+    category_id, category_name, product_count, products[]
+      product fields: item_code, item_name, generic_name, brand_name,
+                      price, is_active, product_image_url, has_document, ...
+""",
+    manual_parameters=[
+        openapi.Parameter('database',    openapi.IN_QUERY, description="HANA schema name (e.g. 4B-AGRI_LIVE, 4B-ORANG_LIVE). Uses env default if omitted.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('search',      openapi.IN_QUERY, description="Keyword search across ItemCode, ItemName, GenericName, BrandName", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('item_group',  openapi.IN_QUERY, description="Filter by a single item group code (e.g. 101)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('item_groups', openapi.IN_QUERY, description="Filter by multiple item group codes, comma-separated (e.g. 101,102,103)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('brand',       openapi.IN_QUERY, description="Filter by brand name", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('is_active',   openapi.IN_QUERY, description="Filter by U_IsActive: 'Y' = active only (default), 'N' = inactive, '' = all", type=openapi.TYPE_STRING, required=False, default='Y'),
+        openapi.Parameter('only_priced', openapi.IN_QUERY, description="Pass 'true' to return only products with price > 0", type=openapi.TYPE_BOOLEAN, required=False),
+    ],
+    responses={200: openapi.Response(description="Grouped category response"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def products_catalog_by_category_api(request):
+    """
+    GET /api/sap/products-catalog-by-category/
+
+    Returns all active products grouped by their SAP item group (category).
+
+    Query params (same as /api/sap/products-catalog/):
+        database    - HANA schema name (e.g. 4B-AGRI_LIVE)
+        search      - Keyword search across ItemCode, ItemName, GenericName, BrandName
+        item_group  - Filter by a single item group code (e.g. 101)
+        item_groups - Filter by multiple item group codes, comma-separated (e.g. 101,102,103)
+        brand       - Filter by brand name
+        is_active   - Filter by U_IsActive ('Y' default, 'N', or '' for all)
+        only_priced - 'true'/'1' to include only products with a price > 0
+    """
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    db_name     = (request.GET.get('database') or os.environ.get('HANA_SCHEMA') or '').strip()
+    search      = (request.GET.get('search') or '').strip() or None
+    item_group  = (request.GET.get('item_group') or '').strip() or None
+    item_groups = (request.GET.get('item_groups') or '').strip() or None  # comma-separated e.g. "101,102"
+    brand       = (request.GET.get('brand') or '').strip() or None
+    is_active   = (request.GET.get('is_active') or 'Y').strip() or 'Y'
+    only_priced = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': db_name,
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'] or '',
+            'password': pwd or '',
+        }
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (
+                    str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes')
+                )
+
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                cur.close()
+
+            # Fetch all matching products (no pagination — grouping is done in Python)
+            result = products_catalog(
+                conn,
+                cfg['schema'],
+                search=search,
+                item_group=item_group,
+                item_groups=item_groups,
+                brand=brand,
+                limit=None,
+                offset=0,
+                fetch_prices=True,
+                only_priced=only_priced,
+                is_active=is_active,
+            )
+            all_products = result.get('products', [])
+
+            # Add document URLs (same logic as products_catalog_api)
+            base_url = request.build_absolute_uri('/').rstrip('/')
+            for product in all_products:
+                if product.get('Product_Urdu_Name') and product.get('Product_Urdu_Ext'):
+                    from django.urls import reverse as _reverse
+                    doc_url = _reverse('product_document_detail', kwargs={'item_code': product['ItemCode']})
+                    product['document_detail_url'] = doc_url
+                    product['document_detail_page_url'] = f"{base_url}{doc_url}?database={cfg['schema']}"
+                    product['has_document'] = True
+                else:
+                    product['document_detail_url'] = None
+                    product['document_detail_page_url'] = None
+                    product['has_document'] = False
+
+            # Group products by category (ItmsGrpCod / ItmsGrpNam)
+            # Use an ordered dict to preserve the ORDER BY T1."ItmsGrpCod" from the SQL
+            from collections import OrderedDict
+            category_map = OrderedDict()
+            for product in all_products:
+                cat_id = product.get('ItmsGrpCod')
+                cat_name = product.get('ItmsGrpNam') or ''
+
+                if cat_id not in category_map:
+                    category_map[cat_id] = {
+                        'category_id': cat_id,
+                        'category_name': cat_name,
+                        'products': [],
+                    }
+
+                # Build a clean per-product dict with normalised field names
+                category_map[cat_id]['products'].append({
+                    'item_code': product.get('ItemCode'),
+                    'item_name': product.get('ItemName'),
+                    'generic_name': product.get('U_GenericName'),
+                    'brand_name': product.get('U_BrandName'),
+                    'product_catalog_code': product.get('Product_Catalog_Code'),
+                    'sale_pack_msr': product.get('SalPackMsr'),
+                    'inventory_uom': product.get('InvntryUom'),
+                    'is_active': product.get('U_IsActive'),
+                    'price': product.get('price'),
+                    'product_image_url': product.get('product_image_url'),
+                    'product_description_urdu_url': product.get('product_description_urdu_url'),
+                    'has_document': product.get('has_document', False),
+                    'document_detail_url': product.get('document_detail_url'),
+                    'document_detail_page_url': product.get('document_detail_page_url'),
+                })
+
+            # Annotate each category with product count and convert to list
+            categories = []
+            for cat in category_map.values():
+                cat['product_count'] = len(cat['products'])
+                categories.append(cat)
+
+            return Response({
+                'success': True,
+                'database': cfg['schema'],
+                'category_count': len(categories),
+                'total_products': len(all_products),
+                'data': categories,
+            }, status=status.HTTP_200_OK)
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # Core function that handles both list all and specific card_code
 def get_policy_customer_balance_data(request, card_code=None):
     """
