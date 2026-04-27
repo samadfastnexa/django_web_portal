@@ -6,7 +6,7 @@ from django.urls import path
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
-from .models import User, Role, SalesStaffProfile, DesignationModel, AccountDeletionRequest
+from .models import User, Role, SalesStaffProfile, SalesStaffCompany, DesignationModel, AccountDeletionRequest
 from web_portal.admin import admin_site
 
 # Import Dealer model for the inline
@@ -16,34 +16,55 @@ try:
 except ImportError:
     HAS_DEALER = False
 
+class SalesStaffCompanyInline(admin.TabularInline):
+    """Inline to manage per-company employee codes directly from a SalesStaffProfile."""
+    model = SalesStaffCompany
+    extra = 1
+    fields = ('company', 'employee_code', 'is_primary', 'is_active')
+
+
 # Inline for Sales Staff profile
 class SalesProfileInline(admin.StackedInline):
     model = SalesStaffProfile
     can_delete = True
     verbose_name_plural = 'Sales Profile'
-    extra = 0  # Don't show empty forms by default
-    max_num = 1  # Only one sales profile per user
-    show_change_link = True  # Add link to edit profile separately
-    
+    extra = 0
+    max_num = 1
+    show_change_link = True
+
     # Make fields not required for deletion
     def get_formset(self, request, obj=None, **kwargs):
         """Customize the formset to allow deletion even with required fields empty"""
         formset = super().get_formset(request, obj, **kwargs)
-        
-        # Make fields optional in the form to allow deletion
         for field_name in ['phone_number', 'address', 'designation']:
             if field_name in formset.form.base_fields:
                 formset.form.base_fields[field_name].required = False
-        
         return formset
-    
+
+    def get_extra_description(self, obj):
+        """Build a description with a direct link to the profile if it exists."""
+        if obj and hasattr(obj, 'sales_profile') and obj.sales_profile.pk:
+            profile_url = f'/admin/accounts/salesstaffprofile/{obj.sales_profile.pk}/change/'
+            return (
+                '📱 Phone number can be used for login instead of email.<br>'
+                '<strong>⚠️ To assign MULTIPLE employee IDs (one per company):</strong> '
+                f'<a href="{profile_url}" target="_blank" style="color:red;font-weight:bold;">'
+                '👉 Click here to open the Sales Profile page</a> '
+                '→ scroll to the <strong>"Staff Company Memberships"</strong> table at the bottom.'
+            )
+        return (
+            '📱 Phone number can be used for login instead of email.<br>'
+            '<strong>⚠️ To assign MULTIPLE employee IDs:</strong> '
+            'First <strong>Save</strong> this user, then reopen and click the <strong>"CHANGE"</strong> '
+            'link on the Sales Profile section → scroll to <strong>"Staff Company Memberships"</strong> at the bottom.'
+        )
+
     fieldsets = (
         ('Basic Info', {
-            'fields': ('employee_code', 'phone_number', 'designation', 'address'),
-            'description': '📱 Phone number can be used for login instead of email'
+            'fields': ('phone_number', 'designation', 'address'),
         }),
         ('Location', {
-            'fields': ('companies', 'regions', 'zones', 'territories')  # ✅ updated M2M
+            'fields': ('regions', 'zones', 'territories')
         }),
         ('Reporting Hierarchy', {
             'fields': ('manager', 'hod', 'master_hod'),
@@ -53,14 +74,12 @@ class SalesProfileInline(admin.StackedInline):
             'fields': ('sick_leave_quota', 'casual_leave_quota', 'others_leave_quota')
         }),
     )
-    filter_horizontal = ('companies', 'regions', 'zones', 'territories')  # ✅ better M2M UI
-    
+    filter_horizontal = ('regions', 'zones', 'territories')
+
     def has_add_permission(self, request, obj=None):
-        """Allow adding profiles from User edit if user is marked as sales_staff"""
         return True
-    
+
     def has_delete_permission(self, request, obj=None):
-        """Allow deletion of sales profiles"""
         return True
 
 
@@ -144,7 +163,11 @@ class CustomUserAdmin(BaseUserAdmin):
 
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Custom Fields', {'fields': ('role', 'phone_number', 'company', 'profile_image', 'is_sales_staff', 'is_dealer')}),
+        ('Employee IDs per Company', {
+            'fields': ('company_employee_ids',),
+        }),
     )
+    readonly_fields = ('company_employee_ids',)
 
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
         (None, {'fields': ('email', 'phone_number', 'company', 'role', 'profile_image', 'is_sales_staff', 'is_dealer')}),
@@ -154,6 +177,50 @@ class CustomUserAdmin(BaseUserAdmin):
     inlines = [SalesProfileInline]
     if HAS_DEALER:
         inlines.append(DealerInline)
+
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        """Inject dynamic description into SalesProfileInline fieldsets based on whether profile exists."""
+        # Patch the Basic Info fieldset description dynamically
+        user_obj = None
+        if object_id:
+            try:
+                user_obj = User.objects.get(pk=object_id)
+            except User.DoesNotExist:
+                pass
+
+        profile = getattr(user_obj, 'sales_profile', None) if user_obj else None
+        if profile and profile.pk:
+            profile_url = f'/admin/accounts/salesstaffprofile/{profile.pk}/change/'
+            desc = (
+                '📱 Phone number can be used for login instead of email. &nbsp;|&nbsp; '
+                '<strong style="color:red">⚠️ To assign MULTIPLE employee IDs (one per company):</strong> '
+                f'<a href="{profile_url}" target="_blank" style="color:#cc0000;font-weight:bold;font-size:13px">'
+                '👉 Open Sales Profile page</a> → scroll to '
+                '<strong>"Staff Company Memberships"</strong> table at the bottom.'
+            )
+        else:
+            desc = (
+                '📱 Phone number can be used for login instead of email.<br>'
+                '<strong style="color:red">⚠️ To assign MULTIPLE employee IDs:</strong> '
+                'First <strong>Save</strong> this user, then reopen and use the '
+                '<strong>"CHANGE"</strong> link on the Sales Profile section → '
+                'scroll to <strong>"Staff Company Memberships"</strong> at the bottom.'
+            )
+
+        # Patch fieldsets on the inline class temporarily
+        SalesProfileInline.fieldsets = (
+            ('Basic Info', {
+                'fields': ('phone_number', 'designation', 'address'),
+                'description': desc,
+            }),
+            ('Location', {'fields': ('regions', 'zones', 'territories')}),
+            ('Reporting Hierarchy', {
+                'fields': ('manager', 'hod', 'master_hod'),
+                'description': 'Reporting hierarchy: manager = direct supervisor in reporting chain',
+            }),
+            ('Leave Quotas', {'fields': ('sick_leave_quota', 'casual_leave_quota', 'others_leave_quota')}),
+        )
+        return super().changeform_view(request, object_id, form_url, extra_context)
 
     def get_search_fields(self, request):
         """
@@ -168,6 +235,43 @@ class CustomUserAdmin(BaseUserAdmin):
     def employee_code(self, obj):
         sales_profile = getattr(obj, 'sales_profile', None)
         return getattr(sales_profile, 'employee_code', '') if sales_profile else ''
+
+    @admin.display(description='Employee IDs per Company')
+    def company_employee_ids(self, obj):
+        from django.utils.html import format_html, mark_safe
+        profile = getattr(obj, 'sales_profile', None)
+        if not profile:
+            return format_html('<em style="color:#999">No sales profile yet. Save the user first, then add a Sales Profile.</em>')
+        memberships = profile.company_memberships.select_related('company').filter(is_active=True)
+        if not memberships.exists():
+            profile_url = f'/admin/accounts/salesstaffprofile/{profile.pk}/change/'
+            return format_html(
+                '<em style="color:#999">No company memberships yet.</em> '
+                '<a href="{}" target="_blank" style="color:#cc0000;font-weight:bold">'
+                '➕ Add employee IDs on the Sales Profile page</a>',
+                profile_url
+            )
+        profile_url = f'/admin/accounts/salesstaffprofile/{profile.pk}/change/'
+        rows = mark_safe(''.join(
+            '<tr>'
+            f'<td style="padding:4px 10px;border:1px solid #ddd">{m.company.Company_name}</td>'
+            f'<td style="padding:4px 10px;border:1px solid #ddd"><strong>{m.employee_code or "—"}</strong></td>'
+            f'<td style="padding:4px 10px;border:1px solid #ddd">{"✅ Primary" if m.is_primary else ""}</td>'
+            '</tr>'
+            for m in memberships
+        ))
+        return format_html(
+            '<table style="border-collapse:collapse;margin-bottom:6px">'
+            '<thead><tr>'
+            '<th style="padding:4px 10px;border:1px solid #ccc;background:#f5f5f5">Company</th>'
+            '<th style="padding:4px 10px;border:1px solid #ccc;background:#f5f5f5">Employee ID</th>'
+            '<th style="padding:4px 10px;border:1px solid #ccc;background:#f5f5f5">Primary</th>'
+            '</tr></thead><tbody>{}</tbody></table>'
+            '<a href="{}" target="_blank" style="color:#cc0000;font-weight:bold">'
+            '✏️ Edit employee IDs on the Sales Profile page</a>',
+            rows,
+            profile_url,
+        )
 
     @admin.display(description='Dealer Card Code', ordering='dealer__card_code')
     def dealer_card_code(self, obj):
@@ -335,7 +439,8 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
     list_display = ['id', 'designation', 'employee_code', 'phone_number', 'user_display', 'manager_display', 'subordinates_count', 'is_vacant']
     list_filter = ['designation', 'is_vacant', 'employee_code']
     search_fields = ['user__email', 'user__username', 'employee_code', 'phone_number']
-    filter_horizontal = ('companies', 'regions', 'zones', 'territories')
+    filter_horizontal = ('regions', 'zones', 'territories')
+    inlines = [SalesStaffCompanyInline]
     raw_id_fields = ('manager', 'hod', 'master_hod')
     list_per_page = 25  # Updated to 25 records per page for better admin experience
     
@@ -344,11 +449,12 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
             'fields': ('user', 'is_vacant')
         }),
         ('Basic Info', {
-            'fields': ('employee_code', 'phone_number', 'designation', 'address'),
+            'fields': ('phone_number', 'designation', 'address'),
             'description': '📱 Phone number can be used for login instead of email'
         }),
         ('Location', {
-            'fields': ('companies', 'regions', 'zones', 'territories')
+            'fields': ('regions', 'zones', 'territories'),
+            'description': '⬇️ Employee IDs per company are assigned in the "Staff Company Memberships" table below.'
         }),
         ('Reporting Hierarchy', {
             'fields': ('manager', 'hod', 'master_hod'),
@@ -536,6 +642,17 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
                     f'❌ Error saving: {error_msg[:100]}',
                     messages.ERROR
                 )
+
+
+@admin.register(SalesStaffCompany, site=admin_site)
+class SalesStaffCompanyAdmin(admin.ModelAdmin):
+    """Direct admin to manage per-company employee IDs for any user."""
+    list_display = ['sales_profile', 'company', 'employee_code', 'is_primary', 'is_active']
+    list_filter = ['company', 'is_primary', 'is_active']
+    search_fields = ['sales_profile__user__email', 'sales_profile__user__username', 'employee_code', 'company__Company_name']
+    raw_id_fields = ['sales_profile']
+    list_per_page = 25
+    list_editable = ['employee_code', 'is_primary', 'is_active']
 
 
 @admin.register(DesignationModel, site=admin_site)

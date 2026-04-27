@@ -1185,19 +1185,28 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     Args:
         db: Database connection object
         schema_name: Schema name (e.g., '4B-BIO_APP', '4B-ORANG_APP')
-        search: Search in ItemCode, ItemName, GenericName, or BrandName (e.g., 'baap', 'roshan')
+        search: Search in ItemCode, ItemName, GenericName, or BrandName
         item_group: Filter by single item group code (deprecated, use item_groups)
         item_groups: Filter by multiple item group codes (comma-separated or list)
-        brand: Filter by brand name (not available in this schema)
+        brand: Filter by brand name
         limit: Maximum number of records to return (pagination)
         offset: Number of records to skip (pagination)
-        fetch_prices: Whether to fetch prices (default True, set False if fetching separately)
+        fetch_prices: Whether to fetch prices (default True)
         only_priced: If True, show only products with price > 0 (default False)
-        is_active: Filter by active status (default 'Y' for active products, 'N' for inactive, None for all)
+        is_active: Filter by active status ('Y', 'N', or None for all)
 
     Returns:
         dict with 'products' list, 'total_count', 'limit', 'offset'
     """
+    # Resolve series from Company model; fall back to 77 if not configured
+    try:
+        from FieldAdvisoryService.models import Company
+        series = Company.objects.filter(name=schema_name).values_list('series', flat=True).first() or 77
+    except Exception:
+        series = 77
+
+    series_clause = f'T0."Series" = \'{series}\''
+
     # First, get total count for pagination
     if only_priced and fetch_prices:
         # Include price join in count query when filtering by price
@@ -1212,7 +1221,7 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
             '    WHERE T1."U_itc" IS NOT NULL '
             '    GROUP BY T1."U_itc"'
             ') PR ON PR."U_itc" = T0."ItemCode" '
-            'WHERE T0."Series" = \'77\' '
+            f'WHERE {series_clause} '
             'AND T0."validFor" = \'Y\' '
             'AND COALESCE(PR."U_np", 0) > 0 '
         )
@@ -1221,7 +1230,7 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
             'SELECT COUNT(*) AS "total" '
             'FROM OITM T0 '
             'INNER JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod" '
-            'WHERE T0."Series" = \'77\' '
+            f'WHERE {series_clause} '
             'AND T0."validFor" = \'Y\' '
         )
     count_params = []
@@ -1266,7 +1275,7 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         )
     
     sql += (
-        'WHERE T0."Series" = \'77\' '
+        f'WHERE {series_clause} '
         'AND T0."validFor" = \'Y\' '
     )
 
