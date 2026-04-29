@@ -136,12 +136,36 @@ class MyTokenObtainPairSerializer(serializers.Serializer):
             except Exception:
                 pass
 
-        # Fetch ALL companies with essential branding/settings only
-        all_companies = Company.objects.all()
+        # Fetch only companies assigned to this user
+        user_company_ids = set()
+
+        # Source 1: direct User.company FK
+        if hasattr(user, 'company') and user.company_id:
+            user_company_ids.add(user.company_id)
+
+        # Source 2: SalesStaffProfile companies (through SalesStaffCompany)
+        profile = getattr(user, 'sales_profile', None)
+        if profile:
+            user_company_ids.update(
+                profile.companies.values_list('id', flat=True)
+            )
+
+        # Source 3: Dealer company
+        try:
+            from FieldAdvisoryService.models import Dealer
+            dealer_company_id = Dealer.objects.filter(
+                user=user, company__isnull=False
+            ).values_list('company_id', flat=True).first()
+            if dealer_company_id:
+                user_company_ids.add(dealer_company_id)
+        except Exception:
+            pass
+
+        user_companies = Company.objects.filter(id__in=user_company_ids) if user_company_ids else Company.objects.none()
         all_companies_data = CompanyMobileSerializer(
-            all_companies,
+            user_companies,
             many=True,
-            context={'request': None}  # No request context needed for basic serialization
+            context={'request': None}
         ).data
 
         return {

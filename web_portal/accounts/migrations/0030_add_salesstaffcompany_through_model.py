@@ -30,19 +30,23 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # The DB was already partially modified by a failed migration attempt:
-        # - accounts_salesstaffprofile_companies (auto M2M) was already dropped
-        # - accounts_salesstaffcompany was already created
-        # Use SeparateDatabaseAndState to sync Django state without touching the DB.
+        # Handles both cases:
+        # A) Fresh server: old M2M table still exists, new table doesn't exist yet.
+        # B) Dev server (partial migration): old M2M table already dropped, new table already created.
 
-        # 1. Update state: remove old companies M2M (auto table already gone in DB)
+        # 1. Update state: remove old companies M2M; drop the auto table if it still exists in DB
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.RemoveField(model_name='salesstaffprofile', name='companies'),
             ],
-            database_operations=[],
+            database_operations=[
+                migrations.RunSQL(
+                    sql="DROP TABLE IF EXISTS `accounts_salesstaffprofile_companies`;",
+                    reverse_sql=migrations.RunSQL.noop,
+                ),
+            ],
         ),
-        # 2. Update state: register SalesStaffCompany model (table already exists in DB)
+        # 2. Update state: register SalesStaffCompany model; create the table if it doesn't exist yet
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
@@ -63,7 +67,30 @@ class Migration(migrations.Migration):
                     },
                 ),
             ],
-            database_operations=[],
+            database_operations=[
+                migrations.RunSQL(
+                    sql="""
+                        CREATE TABLE IF NOT EXISTS `accounts_salesstaffcompany` (
+                            `id` bigint NOT NULL AUTO_INCREMENT,
+                            `employee_code` varchar(50) NULL,
+                            `is_primary` tinyint(1) NOT NULL DEFAULT 0,
+                            `is_active` tinyint(1) NOT NULL DEFAULT 1,
+                            `company_id` bigint NOT NULL,
+                            `sales_profile_id` bigint NOT NULL,
+                            PRIMARY KEY (`id`),
+                            UNIQUE KEY `uq_company_employee_code` (`company_id`, `employee_code`),
+                            UNIQUE KEY `uq_sales_profile_company` (`sales_profile_id`, `company_id`),
+                            KEY `idx_company_id` (`company_id`),
+                            KEY `idx_sales_profile_id` (`sales_profile_id`),
+                            CONSTRAINT `fk_ssc_company` FOREIGN KEY (`company_id`)
+                                REFERENCES `fieldadvisoryservice_company` (`id`) ON DELETE CASCADE,
+                            CONSTRAINT `fk_ssc_sales_profile` FOREIGN KEY (`sales_profile_id`)
+                                REFERENCES `accounts_salesstaffprofile` (`id`) ON DELETE CASCADE
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                    """,
+                    reverse_sql="DROP TABLE IF EXISTS `accounts_salesstaffcompany`;",
+                ),
+            ],
         ),
         # 3. Re-add companies M2M with through= (M2M with through never creates its own table)
         migrations.AddField(
