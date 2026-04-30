@@ -598,6 +598,7 @@
         <a href="{% url 'export_ledger_csv' %}?{{ request.GET.urlencode }}" class="btn btn-success">📥 Export CSV</a>
         <a href="{% url 'export_ledger_pdf' %}?{{ request.GET.urlencode }}" class="btn btn-danger">📄 Export PDF</a>
       {% endif %}
+      <a href="/admin/general-ledger/settings/" class="btn" style="background:#7c3aed;color:#fff;" title="Edit PDF header, Urdu footer text and stamp image">⚙️ PDF Settings</a>
     </div>
   </form>
 

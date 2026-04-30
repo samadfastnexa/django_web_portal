@@ -17,6 +17,7 @@ from general_ledger.views import (
     general_ledger_admin,
     export_ledger_csv,
     export_ledger_pdf,
+    ledger_settings_redirect,
 )
 from django.urls import path, include, re_path
 from rest_framework import permissions
@@ -80,6 +81,7 @@ urlpatterns = [
     path('admin/general-ledger/', admin_site.admin_view(general_ledger_admin), name='general_ledger_admin'),
     path('admin/general-ledger/export-csv/', admin_site.admin_view(export_ledger_csv), name='export_ledger_csv'),
     path('admin/general-ledger/export-pdf/', admin_site.admin_view(export_ledger_pdf), name='export_ledger_pdf'),
+    path('admin/general-ledger/settings/', admin_site.admin_view(ledger_settings_redirect), name='ledger_settings_redirect'),
     path('admin/hana-connect/', admin_site.admin_view(hana_connect_admin), name='hana_connect_admin'),
     path('admin/sap-bp-entry/', admin_site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
     path('admin/sap-bp-lookup/', admin_site.admin_view(bp_lookup_admin), name='sap_bp_lookup_admin'),
