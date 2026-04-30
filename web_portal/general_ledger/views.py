@@ -49,18 +49,27 @@ try:
 except ImportError:
     ARABIC_AVAILABLE = False
 
-# Register Tahoma once at module load (supports Urdu/Arabic glyphs)
+# Register a Unicode/Urdu-capable font once at module load.
+# Try several Windows fonts in order of preference.
 _URDU_FONT = 'Helvetica'
 if REPORTLAB_AVAILABLE:
+    _URDU_FONT_CANDIDATES = [
+        ('NotoNastaliqUrdu', r'C:\Windows\Fonts\NotoNastaliqUrdu-Regular.ttf'),
+        ('Tahoma',          r'C:\Windows\Fonts\tahoma.ttf'),
+        ('Arial',           r'C:\Windows\Fonts\arial.ttf'),
+        ('Calibri',         r'C:\Windows\Fonts\calibri.ttf'),
+        ('TimesNewRoman',   r'C:\Windows\Fonts\times.ttf'),
+    ]
     try:
         import os as _font_os
-        _tahoma = r'C:\Windows\Fonts\tahoma.ttf'
-        if _font_os.path.exists(_tahoma):
-            from reportlab.pdfbase import pdfmetrics as _pm
-            from reportlab.pdfbase.ttfonts import TTFont as _TTFont
-            if 'Tahoma' not in _pm.getRegisteredFontNames():
-                _pm.registerFont(_TTFont('Tahoma', _tahoma))
-            _URDU_FONT = 'Tahoma'
+        from reportlab.pdfbase import pdfmetrics as _pm
+        from reportlab.pdfbase.ttfonts import TTFont as _TTFont
+        for _fname, _fpath in _URDU_FONT_CANDIDATES:
+            if _font_os.path.exists(_fpath):
+                if _fname not in _pm.getRegisteredFontNames():
+                    _pm.registerFont(_TTFont(_fname, _fpath))
+                _URDU_FONT = _fname
+                break
     except Exception:
         pass
 
@@ -666,6 +675,17 @@ def export_ledger_excel_api(request):
 # ============================================================================
 
 @staff_member_required
+def ledger_settings_redirect(request):
+    """
+    Ensure the singleton LedgerSettings row exists, then redirect to its change page.
+    """
+    from django.shortcuts import redirect
+    from .models import LedgerSettings
+    obj = LedgerSettings.get()   # creates row with defaults if not yet saved
+    return redirect(f'/admin/general_ledger/ledgersettings/{obj.pk}/change/')
+
+
+@staff_member_required
 def general_ledger_admin(request):
     """
     Admin web interface for General Ledger Report.
@@ -1026,10 +1046,7 @@ def export_ledger_pdf_api(request):
         elements = []
         styles = getSampleStyleSheet()
 
-        cell_style = ParagraphStyle(
-            'PDFCell', parent=styles['Normal'],
-            fontSize=7, fontName='Helvetica', leading=9, alignment=TA_LEFT,
-        )
+        # cell_style defined after _cfg is loaded (below)
 
         # ── Date range strings ────────────────────────────────────────────────
         from_disp = from_date or '01/01/2000'
@@ -1060,44 +1077,103 @@ def export_ledger_pdf_api(request):
         except Exception:
             pass
 
+        # ── Load admin-managed settings ────────────────────────────────────
+        from .models import LedgerSettings as _LedgerSettings
+        _cfg = _LedgerSettings.get()
+
+        _fs_grp  = int(_cfg.font_size_group_name   or 11)
+        _fs_ent  = int(_cfg.font_size_company_name  or 13)
+        _fs_ttl  = int(_cfg.font_size_report_title  or 10)
+        _fs_dt   = int(_cfg.font_size_dates         or 9)
+        _fs_td   = int(_cfg.font_size_table_data    or 8)
+
+        cell_style = ParagraphStyle(
+            'PDFCell', parent=styles['Normal'],
+            fontSize=_fs_td, fontName='Helvetica', leading=_fs_td + 2, alignment=TA_LEFT,
+        )
+
         # ── Header styles ─────────────────────────────────────────────────────
         _h_group  = ParagraphStyle('HDRGroup',  parent=styles['Normal'],
-            fontSize=11, fontName='Helvetica-Bold', leading=14)
+            fontSize=_fs_grp, fontName='Helvetica-Bold', leading=_fs_grp + 3)
         _h_entity = ParagraphStyle('HDREntity', parent=styles['Normal'],
-            fontSize=13, fontName='Helvetica-Bold', leading=17)
+            fontSize=_fs_ent, fontName='Helvetica-Bold', leading=_fs_ent + 4)
         _h_title  = ParagraphStyle('HDRTitle',  parent=styles['Normal'],
-            fontSize=10, fontName='Helvetica',      leading=13)
+            fontSize=_fs_ttl, fontName='Helvetica',      leading=_fs_ttl + 3)
         _h_dates  = ParagraphStyle('HDRDates',  parent=styles['Normal'],
-            fontSize=9,  fontName='Helvetica',      leading=12)
+            fontSize=_fs_dt,  fontName='Helvetica',      leading=_fs_dt + 3)
         _h_print  = ParagraphStyle('HDRPrint',  parent=styles['Normal'],
             fontSize=8,  fontName='Helvetica',      leading=11, alignment=TA_RIGHT)
 
-        # ── Logo ──────────────────────────────────────────────────────────────
+        # ── Logo (from admin-uploaded image or legacy path) ────────────────────
         import os as _os
-        _logo_path = _os.path.join(
-            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
-            'media', 'Ledger_template', 'smart_stamp.png'
-        )
+        if _cfg.smart_stamp_image:
+            _logo_path = _cfg.smart_stamp_image.path
+        else:
+            _logo_path = _os.path.join(
+                _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                'media', 'Ledger_template', 'smart_stamp.png'
+            )
 
         # ── 2-column header table ─────────────────────────────────────────────
+        _page_w = landscape(letter)[0] - 0.6 * inch
+        _right_col_w = _page_w * 0.30
+
+        # SAP logo: use uploaded image if available, else draw programmatically
+        _sap_logo2 = None
+        if _cfg.sap_logo_image:
+            try:
+                _sap_logo2 = RLImage(_cfg.sap_logo_image.path, width=0.65 * inch, height=0.33 * inch)
+            except Exception:
+                _sap_logo2 = None
+        if _sap_logo2 is None:
+            try:
+                from reportlab.graphics.shapes import Drawing as _RLDrawing, Rect as _RLRect, String as _RLString
+                _sap_w2, _sap_h2 = 0.55 * inch, 0.28 * inch
+                _sap_d2 = _RLDrawing(_sap_w2, _sap_h2)
+                _sap_d2.add(_RLRect(0, 0, _sap_w2, _sap_h2,
+                                    fillColor=colors.HexColor('#0070f3'),
+                                    strokeColor=colors.HexColor('#0070f3')))
+                _sap_d2.add(_RLString(_sap_w2 / 2, (_sap_h2 / 2) - 4, 'SAP',
+                                      fontSize=12, fontName='Helvetica-Bold',
+                                      fillColor=colors.white, textAnchor='middle'))
+                _sap_logo2 = _sap_d2
+            except Exception:
+                _sap_logo2 = None
+
+        _pdate_para2 = Paragraph(f'Print Date:   {print_date_str}', _h_print)
+        _sap_cell2 = _sap_logo2 if _sap_logo2 is not None else Paragraph('SAP', _h_print)
+        _right_top2 = Table(
+            [[_pdate_para2, _sap_cell2]],
+            colWidths=[_right_col_w - 0.65 * inch, 0.65 * inch],
+        )
+        _right_top2.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('ALIGN',         (0, 0), (0, 0),   'RIGHT'),
+            ('ALIGN',         (1, 0), (1, 0),   'RIGHT'),
+        ]))
+
         _left_content = [
-            Paragraph('Four Brothers Group', _h_group),
-            Paragraph('General Ledger', _h_title),
-            Spacer(1, 6),
+            Paragraph(_cfg.group_name or 'Four Brothers Group', _h_group),
+            Paragraph((_cfg.company_name or _company_full_name or '').upper(), _h_entity),
+            Paragraph(_cfg.report_title or 'General Ledger', _h_title),
+            Spacer(1, 8),
             Paragraph(f'From:  {from_disp}     To:  {to_disp}', _h_dates),
         ]
 
-        _right_content = [Paragraph(f'Print Date:   {print_date_str}', _h_print)]
+        _right_content = [_right_top2]
         if _os.path.exists(_logo_path):
             _stamp = RLImage(_logo_path, width=1.1 * inch, height=1.1 * inch)
             _stamp.hAlign = 'RIGHT'
             _right_content.append(Spacer(1, 4))
             _right_content.append(_stamp)
 
-        _page_w = landscape(letter)[0] - 0.6 * inch
         _hdr_table = Table(
             [[_left_content, _right_content]],
-            colWidths=[_page_w * 0.70, _page_w * 0.30],
+            colWidths=[_page_w * 0.70, _right_col_w],
         )
         _hdr_table.setStyle(TableStyle([
             ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
@@ -1117,185 +1193,233 @@ def export_ledger_pdf_api(request):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
         elements.append(_divider)
-        elements.append(Spacer(1, 6))
+        elements.append(Spacer(1, 14))
 
-        # ── Colour palette ────────────────────────────────────────────────────
-        C_HEADER_BG     = colors.HexColor('#1e293b')
-        C_HEADER_TEXT   = colors.white
-        C_ACCOUNT_BG    = colors.HexColor('#c7d2fe')
-        C_ACCOUNT_BORD  = colors.HexColor('#6366f1')
-        C_ACCOUNT_TEXT  = colors.HexColor('#1e293b')
-        C_OPENING_BG    = colors.HexColor('#fef3c7')
-        C_OPENING_TEXT  = colors.HexColor('#92400e')
-        C_ROW_EVEN      = colors.white
-        C_ROW_ODD       = colors.HexColor('#f8fafc')
-        C_SUBTOTAL_BG   = colors.HexColor('#dbeafe')
-        C_SUBTOTAL_BORD = colors.HexColor('#60a5fa')
-        C_SUBTOTAL_TEXT = colors.HexColor('#1e40af')
-        C_GRAND_BG      = colors.HexColor('#f3e8ff')
-        C_GRAND_BORD    = colors.HexColor('#a855f7')
-        C_GRAND_TEXT    = colors.HexColor('#6b21a8')
-        C_GRID          = colors.HexColor('#e5e7eb')
+        # ── Build territory lookup from Dealer model ──────────────────────────
+        _bp_territory_map = {}
+        try:
+            from FieldAdvisoryService.models import Dealer as _Dealer
+            for _d in _Dealer.objects.filter(card_code__isnull=False).select_related('region', 'zone', 'territory'):
+                _parts = [p for p in [
+                    getattr(_d.region,    'name', None),
+                    getattr(_d.zone,      'name', None),
+                    getattr(_d.territory, 'name', None),
+                ] if p]
+                _bp_territory_map[_d.card_code] = ' / '.join(_parts)
+        except Exception:
+            pass
 
-        # ── Column widths ─────────────────────────────────────────────────────
+        # ── Group flat transactions by BP ─────────────────────────────────────
+        _bp_groups = {}
+        _all_txns = [t for acct in accounts_grouped for t in acct['transactions']]
+        for _txn in _all_txns:
+            _bpc = str(_txn.get('BPCode', '') or '')
+            if _bpc not in _bp_groups:
+                _bp_groups[_bpc] = {
+                    'BPCode': _bpc,
+                    'BPName': str(_txn.get('BPName', '') or ''),
+                    'Territory': _bp_territory_map.get(_bpc, ''),
+                    'transactions': [],
+                }
+            _bp_groups[_bpc]['transactions'].append(_txn)
+
+        # Recalculate running balance per BP
+        for _bpg in _bp_groups.values():
+            _bal = 0.0
+            for _t in _bpg['transactions']:
+                _bal += float(_t.get('Debit', 0) or 0) - float(_t.get('Credit', 0) or 0)
+                _t['RunningBalance'] = _bal
+
+        # ── Column widths (landscape letter ≈ 10.4" usable) ──────────────────
         col_widths = [
-            0.75 * inch,   # Date
-            0.58 * inch,   # Trans #
-            0.82 * inch,   # Account
-            0.72 * inch,   # BP Code
-            1.15 * inch,   # BP Name
+            0.65 * inch,   # VNo.
+            0.80 * inch,   # VDate
             0.68 * inch,   # Type
-            0.72 * inch,   # Reference
-            0.72 * inch,   # Project
-            1.20 * inch,   # Description
-            0.76 * inch,   # Debit
-            0.76 * inch,   # Credit
-            0.76 * inch,   # Balance
+            1.70 * inch,   # Policy Name (Account Name)
+            2.50 * inch,   # Narration (Description)
+            0.90 * inch,   # PR NO. (Reference)
+            0.90 * inch,   # Debit
+            0.90 * inch,   # Credit
+            0.90 * inch,   # Balance
         ]
         NCOLS = len(col_widths)
 
-        # ── Table rows ────────────────────────────────────────────────────────
+        C_HEADER_BG  = colors.HexColor(_cfg.table_header_bg_color   or '#1e293b')
+        C_HEADER_TXT = colors.HexColor(_cfg.table_header_text_color  or '#ffffff')
+        C_TERR_BG    = colors.HexColor(_cfg.territory_row_bg_color   or '#f1f5f9')
+        C_CLOSE_BG   = colors.HexColor(_cfg.closing_balance_bg_color or '#f1f5f9')
+        C_GRAND_BG2  = colors.HexColor(_cfg.grand_total_bg_color     or '#e2e8f0')
+        C_GRID       = colors.HexColor(_cfg.grid_color               or '#d1d5db')
+
+        _fs_th = int(_cfg.font_size_table_header or 8)
+
         table_data   = []
         table_styles = [
-            ('FONTSIZE',      (0, 0), (-1, -1), 7),
+            ('FONTSIZE',      (0, 0), (-1, -1), _fs_td),
             ('FONTNAME',      (0, 0), (-1, -1), 'Helvetica'),
             ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING',   (0, 0), (-1, -1), 3),
             ('RIGHTPADDING',  (0, 0), (-1, -1), 3),
-            ('TOPPADDING',    (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-            ('GRID',          (0, 0), (-1, -1), 0.25, C_GRID),
-            ('ALIGN',         (9, 0), (11, -1), 'RIGHT'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            # Horizontal lines only - no vertical column borders
+            ('LINEBELOW',     (0, 0), (-1, -1), 0.25, C_GRID),
+            ('LINEBEFORE',    (0, 0), (0, -1),  0,    colors.white),
+            ('LINEAFTER',     (-1, 0), (-1, -1), 0,   colors.white),
+            ('ALIGN',         (6, 0), (8, -1), 'RIGHT'),
         ]
 
-        headers = [
-            'Date', 'Trans #', 'Account', 'BP Code', 'BP Name',
-            'Type', 'Reference', 'Project', 'Description',
-            'Debit', 'Credit', 'Balance',
-        ]
+        headers = ['VNo.', 'VDate', 'Type', 'Policy Name', 'Narration', 'PR NO.', 'Debit', 'Credit', 'Balance']
         table_data.append(headers)
         ri = 0
         table_styles += [
             ('BACKGROUND',    (0, ri), (-1, ri), C_HEADER_BG),
-            ('TEXTCOLOR',     (0, ri), (-1, ri), C_HEADER_TEXT),
+            ('TEXTCOLOR',     (0, ri), (-1, ri), C_HEADER_TXT),
             ('FONTNAME',      (0, ri), (-1, ri), 'Helvetica-Bold'),
-            ('FONTSIZE',      (0, ri), (-1, ri), 8),
+            ('FONTSIZE',      (0, ri), (-1, ri), _fs_th),
             ('ALIGN',         (0, ri), (-1, ri), 'CENTER'),
-            ('BOTTOMPADDING', (0, ri), (-1, ri), 6),
-            ('TOPPADDING',    (0, ri), (-1, ri), 6),
+            ('BOTTOMPADDING', (0, ri), (-1, ri), 5),
+            ('TOPPADDING',    (0, ri), (-1, ri), 5),
+            # Top and bottom border around header row
+            ('LINEABOVE',     (0, ri), (-1, ri), 0.75, C_GRID),
+            ('LINEBELOW',     (0, ri), (-1, ri), 0.75, C_GRID),
         ]
         ri += 1
 
-        for account in accounts_grouped:
-            label = f"{account['Account']} — {account['AccountName']}"
-            table_data.append([label] + [''] * (NCOLS - 1))
-            table_styles += [
-                ('SPAN',       (0, ri), (NCOLS - 1, ri)),
-                ('BACKGROUND', (0, ri), (-1, ri), C_ACCOUNT_BG),
-                ('TEXTCOLOR',  (0, ri), (-1, ri), C_ACCOUNT_TEXT),
-                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
-                ('FONTSIZE',   (0, ri), (-1, ri), 8),
-                ('LINEABOVE',  (0, ri), (-1, ri), 2, C_ACCOUNT_BORD),
-            ]
-            ri += 1
+        # Deduplicate transactions per BP by TransId
+        for _bpg in _bp_groups.values():
+            _seen_ids = set()
+            _deduped  = []
+            for _t in _bpg['transactions']:
+                _tid = str(_t.get('TransId', '') or '')
+                if _tid and _tid in _seen_ids:
+                    continue
+                if _tid:
+                    _seen_ids.add(_tid)
+                _deduped.append(_t)
+            _bpg['transactions'] = _deduped
 
-            if from_date:
-                ob = account['OpeningBalance']
-                ob_debit  = f"{ob:.2f}"      if ob > 0 else '-'
-                ob_credit = f"{abs(ob):.2f}" if ob < 0 else '-'
-                ob_bal    = f"{ob:.2f}"
-                row = (
-                    [f'Opening Balance (as of {from_disp})']
-                    + [''] * (NCOLS - 4)
-                    + [ob_debit, ob_credit, ob_bal]
+        # Recalculate running balance after deduplication
+        for _bpg in _bp_groups.values():
+            _bal = 0.0
+            for _t in _bpg['transactions']:
+                _bal += float(_t.get('Debit', 0) or 0) - float(_t.get('Credit', 0) or 0)
+                _t['RunningBalance'] = _bal
+
+        # Group BP groups under their territory for display ordering
+        _by_territory = {}
+        for _bpg in _bp_groups.values():
+            _by_territory.setdefault(_bpg['Territory'] or '', []).append(_bpg)
+
+        grand_debit = grand_credit = 0.0
+
+        for _terr_label, _bp_list in _by_territory.items():
+            if _terr_label:
+                table_data.append([_terr_label] + [''] * (NCOLS - 1))
+                table_styles += [
+                    ('SPAN',       (0, ri), (NCOLS - 1, ri)),
+                    ('BACKGROUND', (0, ri), (-1, ri), C_TERR_BG),
+                    ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('FONTSIZE',   (0, ri), (-1, ri), 8),
+                    ('LINEABOVE',  (0, ri), (-1, ri), 0.5, C_GRID),
+                ]
+                ri += 1
+
+            for _bpg in _bp_list:
+                _bp_label = (
+                    f"{_bpg['BPName']} ({_bpg['BPCode']})"
+                    if _bpg['BPCode'] else (_bpg['BPName'] or 'No BP')
                 )
-                table_data.append(row)
+                table_data.append([_bp_label] + [''] * (NCOLS - 1))
+                table_styles += [
+                    ('SPAN',         (0, ri), (NCOLS - 1, ri)),
+                    ('FONTNAME',     (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('FONTSIZE',     (0, ri), (-1, ri), 7),
+                    ('LINEABOVE',    (0, ri), (-1, ri), 0.5, C_GRID),
+                    ('LINEBELOW',    (0, ri), (-1, ri), 0.5, C_GRID),
+                    ('BOTTOMPADDING',(0, ri), (-1, ri), 4),
+                ]
+                ri += 1
+
+                bp_debit = bp_credit = 0.0
+                for _txn in _bpg['transactions']:
+                    _debit   = float(_txn.get('Debit',  0) or 0)
+                    _credit  = float(_txn.get('Credit', 0) or 0)
+                    _running = float(_txn.get('RunningBalance', 0) or 0)
+                    bp_debit  += _debit
+                    bp_credit += _credit
+
+                    _pdate = str(_txn.get('PostingDate', ''))[:10]
+                    try:
+                        _pd = datetime.strptime(_pdate, '%Y-%m-%d')
+                        _pdate = f"{_pd.month}/{_pd.day}/{_pd.year}"
+                    except Exception:
+                        pass
+
+                    _pol_name  = str(_txn.get('AccountName', '') or '')
+                    _narration = str(_txn.get('Description', '') or '')
+                    # Suppress narration when it is identical to policy name
+                    if _narration.strip() == _pol_name.strip():
+                        _narration = ''
+
+                    table_data.append([
+                        str(_txn.get('TransId', '')),
+                        _pdate,
+                        str(_txn.get('TransTypeName') or _txn.get('TransType', '') or ''),
+                        Paragraph(_pol_name,  cell_style),
+                        Paragraph(_narration, cell_style),
+                        str(_txn.get('Reference1', '') or ''),
+                        '{:,.2f}'.format(_debit)   if _debit   > 0 else '',
+                        '{:,.2f}'.format(_credit)  if _credit  > 0 else '',
+                        '{:,.2f}'.format(_running) if _running != 0 else '0',
+                    ])
+                    ri += 1
+
+                # Closing balance per BP
+                _bp_close = bp_debit - bp_credit
+                table_data.append(
+                    ['Closing Balance'] + [''] * (NCOLS - 4)
+                    + [
+                        '{:,.2f}'.format(bp_debit),
+                        '{:,.2f}'.format(bp_credit),
+                        '{:,.2f}'.format(_bp_close) if _bp_close != 0 else '0',
+                    ]
+                )
                 table_styles += [
                     ('SPAN',       (0, ri), (NCOLS - 4, ri)),
-                    ('BACKGROUND', (0, ri), (-1, ri), C_OPENING_BG),
-                    ('TEXTCOLOR',  (0, ri), (-1, ri), C_OPENING_TEXT),
-                    ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Oblique'),
+                    ('BACKGROUND', (0, ri), (-1, ri), C_CLOSE_BG),
+                    ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('LINEABOVE',  (0, ri), (-1, ri), 0.5, C_GRID),
                 ]
                 ri += 1
 
-            for i, txn in enumerate(account['transactions']):
-                debit   = float(txn.get('Debit', 0))
-                credit  = float(txn.get('Credit', 0))
-                running = float(txn.get('RunningBalance', 0))
+                grand_debit  += bp_debit
+                grand_credit += bp_credit
 
-                posting_date = str(txn.get('PostingDate', ''))[:10]
-                try:
-                    d = datetime.strptime(posting_date, '%Y-%m-%d')
-                    posting_date = f"{d.month}/{d.day}/{d.year}"
-                except Exception:
-                    pass
-
-                row = [
-                    posting_date,
-                    str(txn.get('TransId', '')),
-                    str(txn.get('Account', '')),
-                    str(txn.get('BPCode', '')  or '-'),
-                    Paragraph(str(txn.get('BPName', '') or '-'), cell_style),
-                    str(txn.get('TransTypeName') or txn.get('TransType', '') or '-'),
-                    str(txn.get('Reference1', '') or '-'),
-                    str(txn.get('ExtractedProject') or txn.get('ProjectCode', '') or '-'),
-                    Paragraph(str(txn.get('Description', '') or '-'), cell_style),
-                    f"{debit:.2f}"  if debit  > 0 else '',
-                    f"{credit:.2f}" if credit > 0 else '',
-                    f"{running:.2f}",
-                ]
-                table_data.append(row)
-                bg = C_ROW_EVEN if i % 2 == 0 else C_ROW_ODD
-                table_styles.append(('BACKGROUND', (0, ri), (-1, ri), bg))
-                ri += 1
-
-            subtotal_label = f"Subtotal: {account['Account']} — {account['AccountName']}"
-            table_data.append(
-                [subtotal_label] + [''] * (NCOLS - 4)
-                + [
-                    f"{account['TotalDebit']:.2f}",
-                    f"{account['TotalCredit']:.2f}",
-                    f"{account['ClosingBalance']:.2f}",
-                ]
-            )
-            table_styles += [
-                ('SPAN',       (0, ri), (NCOLS - 4, ri)),
-                ('BACKGROUND', (0, ri), (-1, ri), C_SUBTOTAL_BG),
-                ('TEXTCOLOR',  (0, ri), (-1, ri), C_SUBTOTAL_TEXT),
-                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
-                ('LINEABOVE',  (0, ri), (-1, ri), 1, C_SUBTOTAL_BORD),
+        # Grand total row
+        _grand_close = grand_debit - grand_credit
+        table_data.append(
+            ['GRAND TOTAL'] + [''] * (NCOLS - 4)
+            + [
+                '{:,.2f}'.format(grand_debit),
+                '{:,.2f}'.format(grand_credit),
+                '{:,.2f}'.format(_grand_close) if _grand_close != 0 else '0',
             ]
-            ri += 1
-
-        if grand_total:
-            table_data.append(
-                ['GRAND TOTAL'] + [''] * (NCOLS - 4)
-                + [
-                    f"{grand_total['TotalDebit']:.2f}",
-                    f"{grand_total['TotalCredit']:.2f}",
-                    f"{grand_total['Difference']:.2f}",
-                ]
-            )
-            table_styles += [
-                ('SPAN',       (0, ri), (NCOLS - 4, ri)),
-                ('BACKGROUND', (0, ri), (-1, ri), C_GRAND_BG),
-                ('TEXTCOLOR',  (0, ri), (-1, ri), C_GRAND_TEXT),
-                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
-                ('FONTSIZE',   (0, ri), (-1, ri), 9),
-                ('LINEABOVE',  (0, ri), (-1, ri), 2, C_GRAND_BORD),
-            ]
+        )
+        table_styles += [
+            ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+            ('BACKGROUND', (0, ri), (-1, ri), C_GRAND_BG2),
+            ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+            ('FONTSIZE',   (0, ri), (-1, ri), 8),
+            ('LINEABOVE',  (0, ri), (-1, ri), 1, colors.HexColor('#64748b')),
+        ]
 
         table = Table(table_data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle(table_styles))
         elements.append(table)
 
-        # ── Urdu footer ───────────────────────────────────────────────────────
-        _urdu_lines = [
-            'معزز بزنس پارٹنر: آپ کے لیجر کی کاپی ارسال کی جا رہی ہے۔ اسکو اپنے کھاتے کے مطابق چیک کر کے بیلنس کی تصدیق کر دیں۔',
-            'دستخط اور مہر لازمی ثبت فرمائیں۔ اگر کسی بھی متم کا فرق ہوتو اسی لیجر کے اوپر نوٹ فرما دیں تا کہ درستگی ہو سکے۔ بصورت دیگر کمپنی کسی کلیم کی ذمہ دارنہ ہوگی',
-            'مزید برآں !',
-            'میں کمپنی کے اس لیجر بیلنس کے ساتھ متفق ہوں اور میرا ....................................... کے ساتھ کوئی ذاتی لین دین نہیں ہے',
-        ]
+        # ── Urdu footer (lines from admin settings) ──────────────────────────
+        _urdu_lines = _cfg.footer_lines()
 
         _urdu_style = ParagraphStyle(
             'UrduFooterStyle', parent=styles['Normal'],
@@ -1312,23 +1436,24 @@ def export_ledger_pdf_api(request):
             ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
         ])
 
-        _footer_paras = []
-        for _line in _urdu_lines:
-            if ARABIC_AVAILABLE and _URDU_FONT != 'Helvetica':
-                try:
-                    _reshaped = arabic_reshaper.reshape(_line)
-                    _display  = bidi_display(_reshaped)
-                    _line     = _display
-                except Exception:
-                    pass
-            _footer_paras.append(Paragraph(_line, _urdu_style))
+        if _urdu_lines:
+            _footer_paras = []
+            for _line in _urdu_lines:
+                if ARABIC_AVAILABLE:
+                    try:
+                        _reshaped = arabic_reshaper.reshape(_line)
+                        _display  = bidi_display(_reshaped)
+                        _line     = _display
+                    except Exception:
+                        pass
+                _footer_paras.append(Paragraph(_line, _urdu_style))
 
-        _footer_table = Table(
-            [[p] for p in _footer_paras],
-            colWidths=[sum(col_widths)],
-        )
-        _footer_table.setStyle(_urdu_border_style)
-        elements.append(KeepTogether([Spacer(1, 0.25 * inch), _footer_table]))
+            _footer_table = Table(
+                [[p] for p in _footer_paras],
+                colWidths=[sum(col_widths)],
+            )
+            _footer_table.setStyle(_urdu_border_style)
+            elements.append(KeepTogether([Spacer(1, 0.25 * inch), _footer_table]))
 
         doc.build(elements)
         pdf_buffer.seek(0)
@@ -1427,10 +1552,7 @@ def export_ledger_pdf(request):
         elements = []
         styles = getSampleStyleSheet()
 
-        cell_style = ParagraphStyle(
-            'PDFCell', parent=styles['Normal'],
-            fontSize=7, fontName='Helvetica', leading=9, alignment=TA_LEFT,
-        )
+        # cell_style defined after _cfg is loaded (below)
 
         # ── Date range display (computed before header table) ─────────────────
         from_disp = from_date or '01/01/2000'
@@ -1461,49 +1583,107 @@ def export_ledger_pdf(request):
         except Exception:
             pass
 
+        # ── Load admin-managed settings ────────────────────────────────────
+        from .models import LedgerSettings as _LedgerSettings
+        _cfg = _LedgerSettings.get()
+
+        _fs_grp  = int(_cfg.font_size_group_name   or 11)
+        _fs_ent  = int(_cfg.font_size_company_name  or 13)
+        _fs_ttl  = int(_cfg.font_size_report_title  or 10)
+        _fs_dt   = int(_cfg.font_size_dates         or 9)
+        _fs_td   = int(_cfg.font_size_table_data    or 8)
+
+        cell_style = ParagraphStyle(
+            'PDFCell', parent=styles['Normal'],
+            fontSize=_fs_td, fontName='Helvetica', leading=_fs_td + 2, alignment=TA_LEFT,
+        )
+
         # ── Header styles ─────────────────────────────────────────────────────
         _h_group = ParagraphStyle('HDRGroup', parent=styles['Normal'],
-            fontSize=11, fontName='Helvetica-Bold', leading=14)
+            fontSize=_fs_grp, fontName='Helvetica-Bold', leading=_fs_grp + 3)
         _h_entity = ParagraphStyle('HDREntity', parent=styles['Normal'],
-            fontSize=13, fontName='Helvetica-Bold', leading=17)
+            fontSize=_fs_ent, fontName='Helvetica-Bold', leading=_fs_ent + 4)
         _h_title = ParagraphStyle('HDRTitle', parent=styles['Normal'],
-            fontSize=10, fontName='Helvetica', leading=13)
+            fontSize=_fs_ttl, fontName='Helvetica', leading=_fs_ttl + 3)
         _h_dates = ParagraphStyle('HDRDates', parent=styles['Normal'],
-            fontSize=9, fontName='Helvetica', leading=12)
+            fontSize=_fs_dt, fontName='Helvetica', leading=_fs_dt + 3)
         _h_print = ParagraphStyle('HDRPrint', parent=styles['Normal'],
             fontSize=8, fontName='Helvetica', leading=11, alignment=TA_RIGHT)
 
-        # ── Logo path ─────────────────────────────────────────────────────────
+        # ── Logo path (from admin-uploaded image or legacy path) ──────────────
         import os as _os
-        _logo_path = _os.path.join(
-            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
-            'media', 'Ledger_template', 'smart_stamp.png'
+        if _cfg.smart_stamp_image:
+            _logo_path = _cfg.smart_stamp_image.path
+        else:
+            _logo_path = _os.path.join(
+                _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                'media', 'Ledger_template', 'smart_stamp.png'
+            )
+
+        # ── Page width (needed for nested tables) ────────────────────────────
+        _page_w = landscape(letter)[0] - 0.6 * inch   # left+right margin = 0.3*2
+        _right_col_w = _page_w * 0.30
+
+        # ── SAP logo: use uploaded image if available, else draw programmatically ──
+        _sap_logo = None
+        if _cfg.sap_logo_image:
+            try:
+                _sap_logo = RLImage(_cfg.sap_logo_image.path, width=0.65 * inch, height=0.33 * inch)
+            except Exception:
+                _sap_logo = None
+        if _sap_logo is None:
+            try:
+                from reportlab.graphics.shapes import Drawing as _RLDrawing, Rect as _RLRect, String as _RLString
+                _sap_w, _sap_h = 0.55 * inch, 0.28 * inch
+                _sap_d = _RLDrawing(_sap_w, _sap_h)
+                _sap_d.add(_RLRect(0, 0, _sap_w, _sap_h,
+                                   fillColor=colors.HexColor('#0070f3'),
+                                   strokeColor=colors.HexColor('#0070f3')))
+                _sap_d.add(_RLString(_sap_w / 2, (_sap_h / 2) - 4, 'SAP',
+                                     fontSize=12, fontName='Helvetica-Bold',
+                                     fillColor=colors.white, textAnchor='middle'))
+                _sap_logo = _sap_d
+            except Exception:
+                _sap_logo = None
+
+        # ── Right sub-table: [ print-date  |  SAP-logo ] ─────────────────────
+        _pdate_para = Paragraph(f'Print Date:   {print_date_str}', _h_print)
+        _sap_cell = _sap_logo if _sap_logo is not None else Paragraph('SAP', _h_print)
+        _right_top = Table(
+            [[_pdate_para, _sap_cell]],
+            colWidths=[_right_col_w - 0.65 * inch, 0.65 * inch],
         )
+        _right_top.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('ALIGN',         (0, 0), (0, 0),   'RIGHT'),
+            ('ALIGN',         (1, 0), (1, 0),   'RIGHT'),
+        ]))
 
         # ── Build header as 2-column table ───────────────────────────────────
         # Left cell: group name / entity name / report title / date range
-        # Right cell: print date (top-right) + logo (bottom-right)
+        # Right cell: print date + SAP logo (top) + Smart Agriculture stamp (below)
         _left_content = [
-            Paragraph('Four Brothers Group', _h_group),
-            Paragraph('General Ledger', _h_title),
-            Spacer(1, 6),
+            Paragraph(_cfg.group_name or 'Four Brothers Group', _h_group),
+            Paragraph((_cfg.company_name or _company_full_name or '').upper(), _h_entity),
+            Paragraph(_cfg.report_title or 'General Ledger', _h_title),
+            Spacer(1, 8),
             Paragraph(f'From:  {from_disp}     To:  {to_disp}', _h_dates),
         ]
 
-        _right_content = [
-            Paragraph(f'Print Date:   {print_date_str}', _h_print),
-        ]
+        _right_content = [_right_top]
         if _os.path.exists(_logo_path):
             _stamp = RLImage(_logo_path, width=1.1 * inch, height=1.1 * inch)
             _stamp.hAlign = 'RIGHT'
             _right_content.append(Spacer(1, 4))
             _right_content.append(_stamp)
 
-        # Total usable width = sum of col_widths (computed later) — use page width
-        _page_w = landscape(letter)[0] - 0.6 * inch   # left+right margin = 0.3*2
         _hdr_table = Table(
             [[_left_content, _right_content]],
-            colWidths=[_page_w * 0.70, _page_w * 0.30],
+            colWidths=[_page_w * 0.70, _right_col_w],
         )
         _hdr_table.setStyle(TableStyle([
             ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
@@ -1524,195 +1704,233 @@ def export_ledger_pdf(request):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
         elements.append(_divider)
-        elements.append(Spacer(1, 6))
+        elements.append(Spacer(1, 14))
 
-        # ── Colour palette (mirrors the HTML CSS) ────────────────────────────
-        C_HEADER_BG     = colors.HexColor('#1e293b')   # thead  dark slate
-        C_HEADER_TEXT   = colors.white
-        C_ACCOUNT_BG    = colors.HexColor('#c7d2fe')   # account-header indigo-200
-        C_ACCOUNT_BORD  = colors.HexColor('#6366f1')   # indigo-500
-        C_ACCOUNT_TEXT  = colors.HexColor('#1e293b')
-        C_OPENING_BG    = colors.HexColor('#fef3c7')   # amber-100
-        C_OPENING_TEXT  = colors.HexColor('#92400e')
-        C_ROW_EVEN      = colors.white
-        C_ROW_ODD       = colors.HexColor('#f8fafc')
-        C_SUBTOTAL_BG   = colors.HexColor('#dbeafe')   # blue-100
-        C_SUBTOTAL_BORD = colors.HexColor('#60a5fa')
-        C_SUBTOTAL_TEXT = colors.HexColor('#1e40af')
-        C_GRAND_BG      = colors.HexColor('#f3e8ff')   # purple-100
-        C_GRAND_BORD    = colors.HexColor('#a855f7')
-        C_GRAND_TEXT    = colors.HexColor('#6b21a8')
-        C_GRID          = colors.HexColor('#e5e7eb')
+        # ── Build territory lookup from Dealer model ──────────────────────────
+        _bp_territory_map = {}
+        try:
+            from FieldAdvisoryService.models import Dealer as _Dealer
+            for _d in _Dealer.objects.filter(card_code__isnull=False).select_related('region', 'zone', 'territory'):
+                _parts = [p for p in [
+                    getattr(_d.region,    'name', None),
+                    getattr(_d.zone,      'name', None),
+                    getattr(_d.territory, 'name', None),
+                ] if p]
+                _bp_territory_map[_d.card_code] = ' / '.join(_parts)
+        except Exception:
+            pass
 
-        # ── Column definitions (landscape letter ≈ 10.4" usable) ─────────────
-        # Date | Trans# | Account | BP Code | BP Name | Type | Ref | Project | Description | Debit | Credit | Balance
+        # ── Group flat transactions by BP ─────────────────────────────────────
+        _bp_groups = {}
+        _all_txns = [t for acct in accounts_grouped for t in acct['transactions']]
+        for _txn in _all_txns:
+            _bpc = str(_txn.get('BPCode', '') or '')
+            if _bpc not in _bp_groups:
+                _bp_groups[_bpc] = {
+                    'BPCode': _bpc,
+                    'BPName': str(_txn.get('BPName', '') or ''),
+                    'Territory': _bp_territory_map.get(_bpc, ''),
+                    'transactions': [],
+                }
+            _bp_groups[_bpc]['transactions'].append(_txn)
+
+        # Recalculate running balance per BP
+        for _bpg in _bp_groups.values():
+            _bal = 0.0
+            for _t in _bpg['transactions']:
+                _bal += float(_t.get('Debit', 0) or 0) - float(_t.get('Credit', 0) or 0)
+                _t['RunningBalance'] = _bal
+
+        # ── Column widths (landscape letter ≈ 10.4" usable) ──────────────────
         col_widths = [
-            0.75 * inch,   # Date
-            0.58 * inch,   # Trans #
-            0.82 * inch,   # Account
-            0.72 * inch,   # BP Code
-            1.15 * inch,   # BP Name
+            0.65 * inch,   # VNo.
+            0.80 * inch,   # VDate
             0.68 * inch,   # Type
-            0.72 * inch,   # Reference
-            0.72 * inch,   # Project
-            1.20 * inch,   # Description
-            0.76 * inch,   # Debit
-            0.76 * inch,   # Credit
-            0.76 * inch,   # Balance
+            1.70 * inch,   # Policy Name (Account Name)
+            2.50 * inch,   # Narration (Description)
+            0.90 * inch,   # PR NO. (Reference)
+            0.90 * inch,   # Debit
+            0.90 * inch,   # Credit
+            0.90 * inch,   # Balance
         ]
         NCOLS = len(col_widths)
 
-        # ── Build table rows & per-row styles ────────────────────────────────
+        C_HEADER_BG  = colors.HexColor(_cfg.table_header_bg_color   or '#1e293b')
+        C_HEADER_TXT = colors.HexColor(_cfg.table_header_text_color  or '#ffffff')
+        C_TERR_BG    = colors.HexColor(_cfg.territory_row_bg_color   or '#f1f5f9')
+        C_CLOSE_BG   = colors.HexColor(_cfg.closing_balance_bg_color or '#f1f5f9')
+        C_GRAND_BG2  = colors.HexColor(_cfg.grand_total_bg_color     or '#e2e8f0')
+        C_GRID       = colors.HexColor(_cfg.grid_color               or '#d1d5db')
+
+        _fs_th = int(_cfg.font_size_table_header or 8)
+
         table_data   = []
         table_styles = [
-            # Global defaults
-            ('FONTSIZE',      (0, 0), (-1, -1), 7),
+            ('FONTSIZE',      (0, 0), (-1, -1), _fs_td),
             ('FONTNAME',      (0, 0), (-1, -1), 'Helvetica'),
             ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING',   (0, 0), (-1, -1), 3),
             ('RIGHTPADDING',  (0, 0), (-1, -1), 3),
-            ('TOPPADDING',    (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-            ('GRID',          (0, 0), (-1, -1), 0.25, C_GRID),
-            # Numeric columns right-aligned
-            ('ALIGN', (9,  0), (11, -1), 'RIGHT'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            # Horizontal lines only - no vertical column borders
+            ('LINEBELOW',     (0, 0), (-1, -1), 0.25, C_GRID),
+            ('LINEBEFORE',    (0, 0), (0, -1),  0,    colors.white),
+            ('LINEAFTER',     (-1, 0), (-1, -1), 0,   colors.white),
+            ('ALIGN',         (6, 0), (8, -1), 'RIGHT'),
         ]
 
-        # Header row
-        headers = [
-            'Date', 'Trans #', 'Account', 'BP Code', 'BP Name',
-            'Type', 'Reference', 'Project', 'Description',
-            'Debit', 'Credit', 'Balance',
-        ]
+        headers = ['VNo.', 'VDate', 'Type', 'Policy Name', 'Narration', 'PR NO.', 'Debit', 'Credit', 'Balance']
         table_data.append(headers)
-        ri = 0  # current row index
+        ri = 0
         table_styles += [
             ('BACKGROUND',    (0, ri), (-1, ri), C_HEADER_BG),
-            ('TEXTCOLOR',     (0, ri), (-1, ri), C_HEADER_TEXT),
+            ('TEXTCOLOR',     (0, ri), (-1, ri), C_HEADER_TXT),
             ('FONTNAME',      (0, ri), (-1, ri), 'Helvetica-Bold'),
-            ('FONTSIZE',      (0, ri), (-1, ri), 8),
+            ('FONTSIZE',      (0, ri), (-1, ri), _fs_th),
             ('ALIGN',         (0, ri), (-1, ri), 'CENTER'),
-            ('BOTTOMPADDING', (0, ri), (-1, ri), 6),
-            ('TOPPADDING',    (0, ri), (-1, ri), 6),
+            ('BOTTOMPADDING', (0, ri), (-1, ri), 5),
+            ('TOPPADDING',    (0, ri), (-1, ri), 5),
+            # Top and bottom border around header row
+            ('LINEABOVE',     (0, ri), (-1, ri), 0.75, C_GRID),
+            ('LINEBELOW',     (0, ri), (-1, ri), 0.75, C_GRID),
         ]
         ri += 1
 
-        for account in accounts_grouped:
-            # ── Account header row ───────────────────────────────────────────
-            label = f"{account['Account']} — {account['AccountName']}"
-            table_data.append([label] + [''] * (NCOLS - 1))
-            table_styles += [
-                ('SPAN',       (0, ri), (NCOLS - 1, ri)),
-                ('BACKGROUND', (0, ri), (-1, ri), C_ACCOUNT_BG),
-                ('TEXTCOLOR',  (0, ri), (-1, ri), C_ACCOUNT_TEXT),
-                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
-                ('FONTSIZE',   (0, ri), (-1, ri), 8),
-                ('LINEABOVE',  (0, ri), (-1, ri), 2, C_ACCOUNT_BORD),
-            ]
-            ri += 1
+        # Deduplicate transactions per BP by TransId
+        for _bpg in _bp_groups.values():
+            _seen_ids = set()
+            _deduped  = []
+            for _t in _bpg['transactions']:
+                _tid = str(_t.get('TransId', '') or '')
+                if _tid and _tid in _seen_ids:
+                    continue
+                if _tid:
+                    _seen_ids.add(_tid)
+                _deduped.append(_t)
+            _bpg['transactions'] = _deduped
 
-            # ── Opening balance row (only when date filter applied) ───────────
-            if from_date:
-                ob = account['OpeningBalance']
-                ob_debit  = f"{ob:.2f}"  if ob > 0 else '-'
-                ob_credit = f"{abs(ob):.2f}" if ob < 0 else '-'
-                ob_bal    = f"{ob:.2f}"
-                row = (
-                    [f'Opening Balance (as of {from_disp})']
-                    + [''] * (NCOLS - 4)
-                    + [ob_debit, ob_credit, ob_bal]
-                )
-                table_data.append(row)
+        # Recalculate running balance after deduplication
+        for _bpg in _bp_groups.values():
+            _bal = 0.0
+            for _t in _bpg['transactions']:
+                _bal += float(_t.get('Debit', 0) or 0) - float(_t.get('Credit', 0) or 0)
+                _t['RunningBalance'] = _bal
+
+        # Group BP groups under their territory for display ordering
+        _by_territory = {}
+        for _bpg in _bp_groups.values():
+            _by_territory.setdefault(_bpg['Territory'] or '', []).append(_bpg)
+
+        grand_debit = grand_credit = 0.0
+
+        for _terr_label, _bp_list in _by_territory.items():
+            if _terr_label:
+                table_data.append([_terr_label] + [''] * (NCOLS - 1))
                 table_styles += [
-                    ('SPAN',      (0, ri), (NCOLS - 4, ri)),
-                    ('BACKGROUND',(0, ri), (-1, ri), C_OPENING_BG),
-                    ('TEXTCOLOR', (0, ri), (-1, ri), C_OPENING_TEXT),
-                    ('FONTNAME',  (0, ri), (-1, ri), 'Helvetica-Oblique'),
+                    ('SPAN',       (0, ri), (NCOLS - 1, ri)),
+                    ('BACKGROUND', (0, ri), (-1, ri), C_TERR_BG),
+                    ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('FONTSIZE',   (0, ri), (-1, ri), 8),
+                    ('LINEABOVE',  (0, ri), (-1, ri), 0.5, C_GRID),
                 ]
                 ri += 1
 
-            # ── Transaction rows ─────────────────────────────────────────────
-            for i, txn in enumerate(account['transactions']):
-                debit   = float(txn.get('Debit', 0))
-                credit  = float(txn.get('Credit', 0))
-                running = float(txn.get('RunningBalance', 0))
-
-                posting_date = str(txn.get('PostingDate', ''))[:10]
-                try:
-                    d = datetime.strptime(posting_date, '%Y-%m-%d')
-                    posting_date = f"{d.month}/{d.day}/{d.year}"
-                except Exception:
-                    pass
-
-                row = [
-                    posting_date,
-                    str(txn.get('TransId', '')),
-                    str(txn.get('Account', '')),
-                    str(txn.get('BPCode', '')  or '-'),
-                    Paragraph(str(txn.get('BPName', '') or '-'), cell_style),
-                    str(txn.get('TransTypeName') or txn.get('TransType', '') or '-'),
-                    str(txn.get('Reference1', '') or '-'),
-                    str(txn.get('ExtractedProject') or txn.get('ProjectCode', '') or '-'),
-                    Paragraph(str(txn.get('Description', '') or '-'), cell_style),
-                    f"{debit:.2f}"  if debit  > 0 else '',
-                    f"{credit:.2f}" if credit > 0 else '',
-                    f"{running:.2f}",
+            for _bpg in _bp_list:
+                _bp_label = (
+                    f"{_bpg['BPName']} ({_bpg['BPCode']})"
+                    if _bpg['BPCode'] else (_bpg['BPName'] or 'No BP')
+                )
+                table_data.append([_bp_label] + [''] * (NCOLS - 1))
+                table_styles += [
+                    ('SPAN',         (0, ri), (NCOLS - 1, ri)),
+                    ('FONTNAME',     (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('FONTSIZE',     (0, ri), (-1, ri), 7),
+                    ('LINEABOVE',    (0, ri), (-1, ri), 0.5, C_GRID),
+                    ('LINEBELOW',    (0, ri), (-1, ri), 0.5, C_GRID),
+                    ('BOTTOMPADDING',(0, ri), (-1, ri), 4),
                 ]
-                table_data.append(row)
-                bg = C_ROW_EVEN if i % 2 == 0 else C_ROW_ODD
-                table_styles.append(('BACKGROUND', (0, ri), (-1, ri), bg))
                 ri += 1
 
-            # ── Account subtotal row ─────────────────────────────────────────
-            subtotal_label = f"Subtotal: {account['Account']} — {account['AccountName']}"
-            table_data.append(
-                [subtotal_label] + [''] * (NCOLS - 4)
-                + [
-                    f"{account['TotalDebit']:.2f}",
-                    f"{account['TotalCredit']:.2f}",
-                    f"{account['ClosingBalance']:.2f}",
-                ]
-            )
-            table_styles += [
-                ('SPAN',       (0, ri), (NCOLS - 4, ri)),
-                ('BACKGROUND', (0, ri), (-1, ri), C_SUBTOTAL_BG),
-                ('TEXTCOLOR',  (0, ri), (-1, ri), C_SUBTOTAL_TEXT),
-                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
-                ('LINEABOVE',  (0, ri), (-1, ri), 1, C_SUBTOTAL_BORD),
-            ]
-            ri += 1
+                bp_debit = bp_credit = 0.0
+                for _txn in _bpg['transactions']:
+                    _debit   = float(_txn.get('Debit',  0) or 0)
+                    _credit  = float(_txn.get('Credit', 0) or 0)
+                    _running = float(_txn.get('RunningBalance', 0) or 0)
+                    bp_debit  += _debit
+                    bp_credit += _credit
 
-        # ── Grand total row ───────────────────────────────────────────────────
-        if grand_total:
-            table_data.append(
-                ['GRAND TOTAL'] + [''] * (NCOLS - 4)
-                + [
-                    f"{grand_total['TotalDebit']:.2f}",
-                    f"{grand_total['TotalCredit']:.2f}",
-                    f"{grand_total['Difference']:.2f}",
-                ]
-            )
-            table_styles += [
-                ('SPAN',       (0, ri), (NCOLS - 4, ri)),
-                ('BACKGROUND', (0, ri), (-1, ri), C_GRAND_BG),
-                ('TEXTCOLOR',  (0, ri), (-1, ri), C_GRAND_TEXT),
-                ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
-                ('FONTSIZE',   (0, ri), (-1, ri), 9),
-                ('LINEABOVE',  (0, ri), (-1, ri), 2, C_GRAND_BORD),
-            ]
+                    _pdate = str(_txn.get('PostingDate', ''))[:10]
+                    try:
+                        _pd = datetime.strptime(_pdate, '%Y-%m-%d')
+                        _pdate = f"{_pd.month}/{_pd.day}/{_pd.year}"
+                    except Exception:
+                        pass
 
-        # ── Assemble & build ──────────────────────────────────────────────────
+                    _pol_name  = str(_txn.get('AccountName', '') or '')
+                    _narration = str(_txn.get('Description', '') or '')
+                    # Suppress narration when it is identical to policy name
+                    if _narration.strip() == _pol_name.strip():
+                        _narration = ''
+
+                    table_data.append([
+                        str(_txn.get('TransId', '')),
+                        _pdate,
+                        str(_txn.get('TransTypeName') or _txn.get('TransType', '') or ''),
+                        Paragraph(_pol_name,  cell_style),
+                        Paragraph(_narration, cell_style),
+                        str(_txn.get('Reference1', '') or ''),
+                        '{:,.2f}'.format(_debit)   if _debit   > 0 else '',
+                        '{:,.2f}'.format(_credit)  if _credit  > 0 else '',
+                        '{:,.2f}'.format(_running) if _running != 0 else '0',
+                    ])
+                    ri += 1
+
+                # Closing balance per BP
+                _bp_close = bp_debit - bp_credit
+                table_data.append(
+                    ['Closing Balance'] + [''] * (NCOLS - 4)
+                    + [
+                        '{:,.2f}'.format(bp_debit),
+                        '{:,.2f}'.format(bp_credit),
+                        '{:,.2f}'.format(_bp_close) if _bp_close != 0 else '0',
+                    ]
+                )
+                table_styles += [
+                    ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+                    ('BACKGROUND', (0, ri), (-1, ri), C_CLOSE_BG),
+                    ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('LINEABOVE',  (0, ri), (-1, ri), 0.5, C_GRID),
+                ]
+                ri += 1
+
+                grand_debit  += bp_debit
+                grand_credit += bp_credit
+
+        # Grand total row
+        _grand_close = grand_debit - grand_credit
+        table_data.append(
+            ['GRAND TOTAL'] + [''] * (NCOLS - 4)
+            + [
+                '{:,.2f}'.format(grand_debit),
+                '{:,.2f}'.format(grand_credit),
+                '{:,.2f}'.format(_grand_close) if _grand_close != 0 else '0',
+            ]
+        )
+        table_styles += [
+            ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+            ('BACKGROUND', (0, ri), (-1, ri), C_GRAND_BG2),
+            ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+            ('FONTSIZE',   (0, ri), (-1, ri), 8),
+            ('LINEABOVE',  (0, ri), (-1, ri), 1, colors.HexColor('#64748b')),
+        ]
+
         table = Table(table_data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle(table_styles))
         elements.append(table)
 
         # ── Urdu footer ───────────────────────────────────────────────────────
-        _urdu_lines = [
-            'معزز بزنس پارٹنر: آپ کے لیجر کی کاپی ارسال کی جا رہی ہے۔ اسکو اپنے کھاتے کے مطابق چیک کر کے بیلنس کی تصدیق کر دیں۔',
-            'دستخط اور مہر لازمی ثبت فرمائیں۔ اگر کسی بھی متم کا فرق ہوتو اسی لیجر کے اوپر نوٹ فرما دیں تا کہ درستگی ہو سکے۔ بصورت دیگر کمپنی کسی کلیم کی ذمہ دارنہ ہوگی',
-            'مزید برآں !',
-            'میں کمپنی کے اس لیجر بیلنس کے ساتھ متفق ہوں اور میرا ....................................... کے ساتھ کوئی ذاتی لین دین نہیں ہے',
-        ]
+        _urdu_lines = _cfg.footer_lines()
 
         _urdu_style = ParagraphStyle(
             'UrduFooterStyle', parent=styles['Normal'],
@@ -1732,7 +1950,7 @@ def export_ledger_pdf(request):
 
         _footer_paras = []
         for _line in _urdu_lines:
-            if ARABIC_AVAILABLE and _URDU_FONT != 'Helvetica':
+            if ARABIC_AVAILABLE:
                 try:
                     _reshaped = arabic_reshaper.reshape(_line)
                     _display  = bidi_display(_reshaped)
