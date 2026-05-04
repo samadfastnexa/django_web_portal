@@ -5484,7 +5484,10 @@ def territory_summary_api(request):
     manual_parameters=[
         openapi.Parameter('database', openapi.IN_QUERY, description="Database name (e.g., 4B-BIO_APP, 4B-ORANG_APP). Uses default from env if not provided.", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search by ItemCode, ItemName, GenericName, or BrandName (e.g., 'baap', 'roshan', 'FG00023')", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('item_group', openapi.IN_QUERY, description="Filter by item group code", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('item_group', openapi.IN_QUERY, description="Filter by a single item group code (e.g. 101)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('item_groups', openapi.IN_QUERY, description="Filter by multiple item group codes, comma-separated (e.g. 101,102,103)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('category_id', openapi.IN_QUERY, description="Alias for item_group — filter by a single category ID (e.g. 101)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('category_ids', openapi.IN_QUERY, description="Alias for item_groups — filter by multiple category IDs, comma-separated (e.g. 101,103,107)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('is_active', openapi.IN_QUERY, description="Filter by active status: 'Y' for active (default), 'N' for inactive, or leave empty for all products", type=openapi.TYPE_STRING, required=False, default='Y'),
         openapi.Parameter('only_priced', openapi.IN_QUERY, description="Show only products with price > 0 (true/false)", type=openapi.TYPE_BOOLEAN, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
@@ -5503,11 +5506,14 @@ def products_catalog_api(request):
         pass
     
     # Get database parameter from query string
-    db_name = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
-    search = (request.GET.get('search') or '').strip() or None
-    item_group = (request.GET.get('item_group') or '').strip() or None
-    is_active = (request.GET.get('is_active') or 'Y').strip() or 'Y'  # Default to 'Y' (active products)
-    only_priced = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
+    db_name      = request.GET.get('database', os.environ.get('HANA_SCHEMA') or '')
+    search       = (request.GET.get('search') or '').strip() or None
+    category_id  = (request.GET.get('category_id') or '').strip() or None
+    category_ids = (request.GET.get('category_ids') or '').strip() or None
+    item_group   = (request.GET.get('item_group') or category_id or '').strip() or None
+    item_groups  = (request.GET.get('item_groups') or category_ids or '').strip() or None
+    is_active    = (request.GET.get('is_active') or 'Y').strip() or 'Y'  # Default to 'Y' (active products)
+    only_priced  = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     
@@ -5550,7 +5556,7 @@ def products_catalog_api(request):
                 cur.close()
             
             # Pass pagination parameters to products_catalog for database-level pagination
-            result = products_catalog(conn, cfg['schema'], search, item_group, limit=page_size, offset=(page_num-1)*page_size, fetch_prices=True, only_priced=only_priced, is_active=is_active)
+            result = products_catalog(conn, cfg['schema'], search, item_group, item_groups=item_groups, limit=page_size, offset=(page_num-1)*page_size, fetch_prices=True, only_priced=only_priced, is_active=is_active)
             
             # Extract data from result dictionary
             data = result.get('products', [])
@@ -5611,7 +5617,8 @@ Response structure:
         openapi.Parameter('search',      openapi.IN_QUERY, description="Keyword search across ItemCode, ItemName, GenericName, BrandName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('item_group',  openapi.IN_QUERY, description="Filter by a single item group code (e.g. 101)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('item_groups', openapi.IN_QUERY, description="Filter by multiple item group codes, comma-separated (e.g. 101,102,103)", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('brand',       openapi.IN_QUERY, description="Filter by brand name", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('brand',         openapi.IN_QUERY, description="Filter by brand name", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('category_name', openapi.IN_QUERY, description="Filter categories by name (case-insensitive, partial match, e.g. 'rice')", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('is_active',   openapi.IN_QUERY, description="Filter by U_IsActive: 'Y' = active only (default), 'N' = inactive, '' = all", type=openapi.TYPE_STRING, required=False, default='Y'),
         openapi.Parameter('only_priced', openapi.IN_QUERY, description="Pass 'true' to return only products with price > 0", type=openapi.TYPE_BOOLEAN, required=False),
     ],
@@ -5629,9 +5636,10 @@ def products_catalog_by_category_api(request):
         search      - Keyword search across ItemCode, ItemName, GenericName, BrandName
         item_group  - Filter by a single item group code (e.g. 101)
         item_groups - Filter by multiple item group codes, comma-separated (e.g. 101,102,103)
-        brand       - Filter by brand name
-        is_active   - Filter by U_IsActive ('Y' default, 'N', or '' for all)
-        only_priced - 'true'/'1' to include only products with a price > 0
+        brand         - Filter by brand name
+        category_name - Filter categories by name (case-insensitive partial match, e.g. 'rice')
+        is_active     - Filter by U_IsActive ('Y' default, 'N', or '' for all)
+        only_priced   - 'true'/'1' to include only products with a price > 0
     """
     try:
         _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
@@ -5641,13 +5649,14 @@ def products_catalog_by_category_api(request):
     except Exception:
         pass
 
-    db_name     = (request.GET.get('database') or os.environ.get('HANA_SCHEMA') or '').strip()
-    search      = (request.GET.get('search') or '').strip() or None
-    item_group  = (request.GET.get('item_group') or '').strip() or None
-    item_groups = (request.GET.get('item_groups') or '').strip() or None  # comma-separated e.g. "101,102"
-    brand       = (request.GET.get('brand') or '').strip() or None
-    is_active   = (request.GET.get('is_active') or 'Y').strip() or 'Y'
-    only_priced = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
+    db_name       = (request.GET.get('database') or os.environ.get('HANA_SCHEMA') or '').strip()
+    search        = (request.GET.get('search') or '').strip() or None
+    item_group    = (request.GET.get('item_group') or '').strip() or None
+    item_groups   = (request.GET.get('item_groups') or '').strip() or None  # comma-separated e.g. "101,102"
+    brand         = (request.GET.get('brand') or '').strip() or None
+    category_name = (request.GET.get('category_name') or '').strip() or None
+    is_active     = (request.GET.get('is_active') or 'Y').strip() or 'Y'
+    only_priced   = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
 
     cfg = {
         'host': os.environ.get('HANA_HOST') or '',
@@ -5750,11 +5759,176 @@ def products_catalog_by_category_api(request):
                 cat['product_count'] = len(cat['products'])
                 categories.append(cat)
 
+            # Apply category_name filter (case-insensitive partial match)
+            if category_name:
+                categories = [
+                    cat for cat in categories
+                    if category_name.lower() in (cat['category_name'] or '').lower()
+                ]
+
             return Response({
                 'success': True,
                 'database': cfg['schema'],
                 'category_count': len(categories),
                 'total_products': len(all_products),
+                'data': categories,
+            }, status=status.HTTP_200_OK)
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Product Categories List API
+# ─────────────────────────────────────────────────────────────────────────────
+@swagger_auto_schema(
+    method='get',
+    operation_summary="List product categories",
+    operation_description="""
+    Returns a flat list of product categories (item groups) available in SAP HANA.
+
+    Query params:
+        database      - HANA schema name (e.g. 4B-AGRI_LIVE)
+        search        - Partial / case-insensitive match against category name
+        category_id   - Filter by a single category (item group) ID (e.g. 101)
+        category_ids  - Filter by multiple category IDs, comma-separated (e.g. 101,103,107)
+        is_active     - 'Y' (default) | 'N' | '' (all) — filters products used to derive categories
+        only_priced   - 'true'/'1' to include only categories that have at least one priced product
+        item_group    - Alias for category_id (single item group code)
+        item_groups   - Alias for category_ids (comma-separated item group codes)
+""",
+    manual_parameters=[
+        openapi.Parameter('database',      openapi.IN_QUERY, description="HANA schema name (e.g. 4B-AGRI_LIVE)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('search',        openapi.IN_QUERY, description="Partial / case-insensitive match against category name", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('category_id',   openapi.IN_QUERY, description="Filter by a single category ID (e.g. 101)", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('category_ids',  openapi.IN_QUERY, description="Filter by multiple category IDs, comma-separated (e.g. 101,103,107)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('is_active',     openapi.IN_QUERY, description="'Y' = active only (default), 'N' = inactive, '' = all", type=openapi.TYPE_STRING, required=False, default='Y'),
+        openapi.Parameter('only_priced',   openapi.IN_QUERY, description="'true' to include only categories with at least one priced product", type=openapi.TYPE_BOOLEAN, required=False),
+        openapi.Parameter('item_group',    openapi.IN_QUERY, description="Alias for category_id — single item group code", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('item_groups',   openapi.IN_QUERY, description="Alias for category_ids — comma-separated item group codes", type=openapi.TYPE_STRING, required=False),
+    ],
+    responses={200: openapi.Response(description="List of categories"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def product_categories_api(request):
+    """
+    GET /api/sap/product-categories/
+
+    Returns a flat list of product categories (SAP item groups) with their IDs,
+    names, and product counts.
+    """
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    db_name      = (request.GET.get('database') or os.environ.get('HANA_SCHEMA') or '').strip()
+    search       = (request.GET.get('search') or '').strip() or None
+    # category_id / category_ids are post-grouping filters; item_group/item_groups pass through to SQL
+    category_id  = (request.GET.get('category_id') or '').strip() or None
+    category_ids = (request.GET.get('category_ids') or '').strip() or None
+    item_group   = (request.GET.get('item_group') or category_id or '').strip() or None
+    item_groups  = (request.GET.get('item_groups') or category_ids or '').strip() or None
+    is_active    = (request.GET.get('is_active') or 'Y').strip() or 'Y'
+    only_priced  = request.GET.get('only_priced', '').strip().lower() in ('true', '1', 'yes')
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': db_name,
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {
+            'address': cfg['host'],
+            'port': int(cfg['port']),
+            'user': cfg['user'] or '',
+            'password': pwd or '',
+        }
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (
+                    str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes')
+                )
+
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{cfg["schema"]}"')
+                cur.close()
+
+            result = products_catalog(
+                conn,
+                cfg['schema'],
+                search=None,           # no keyword search at product level
+                item_group=item_group,
+                item_groups=item_groups,
+                brand=None,
+                limit=None,
+                offset=0,
+                fetch_prices=only_priced,
+                only_priced=only_priced,
+                is_active=is_active,
+            )
+            all_products = result.get('products', [])
+
+            # Build category map
+            from collections import OrderedDict
+            category_map = OrderedDict()
+            for product in all_products:
+                cat_id   = product.get('ItmsGrpCod')
+                cat_name = product.get('ItmsGrpNam') or ''
+                if cat_id not in category_map:
+                    category_map[cat_id] = {
+                        'category_id': cat_id,
+                        'category_name': cat_name,
+                        'product_count': 0,
+                    }
+                category_map[cat_id]['product_count'] += 1
+
+            categories = list(category_map.values())
+
+            # Apply category name search filter
+            if search:
+                categories = [
+                    cat for cat in categories
+                    if search.lower() in (cat['category_name'] or '').lower()
+                ]
+
+            # Apply category_id / category_ids post-grouping filter
+            if category_id:
+                try:
+                    _cid = int(category_id)
+                    categories = [cat for cat in categories if cat['category_id'] == _cid]
+                except ValueError:
+                    pass
+            elif category_ids:
+                try:
+                    _cids = {int(x.strip()) for x in category_ids.split(',') if x.strip()}
+                    categories = [cat for cat in categories if cat['category_id'] in _cids]
+                except ValueError:
+                    pass
+
+            return Response({
+                'success': True,
+                'database': cfg['schema'],
+                'category_count': len(categories),
                 'data': categories,
             }, status=status.HTTP_200_OK)
 
