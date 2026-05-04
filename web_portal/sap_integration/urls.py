@@ -39,6 +39,7 @@ from .views import (
     product_document_api,
     # Product Catalog by Category API
     products_catalog_by_category_api,
+    product_categories_api,
     # Product Description APIs
     get_product_description_api,
     download_product_description_api,
@@ -101,6 +102,7 @@ urlpatterns = [
     
     # Product Catalog - Category-grouped API
     path('products-catalog-by-category/', products_catalog_by_category_api, name='products_catalog_by_category_api'),
+    path('product-categories/', product_categories_api, name='product_categories_api'),
 
     # Product Catalog with Document Display (Web Pages)
     path('products/', product_catalog_list_view, name='product_catalog_list'),
