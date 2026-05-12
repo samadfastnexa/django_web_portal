@@ -135,6 +135,9 @@ if REPORTLAB_AVAILABLE:
             print(f"[UrduTextBox] Box dimensions: {self.width} x {self.height}")
             
             try:
+                # Save graphics state
+                canvas.saveState()
+                
                 # Draw background box
                 canvas.setFillColor(self.bg_color)
                 canvas.setStrokeColor(colors.HexColor('#6366f1'))
@@ -142,15 +145,32 @@ if REPORTLAB_AVAILABLE:
                 canvas.rect(0, 0, self.width, self.height, fill=1, stroke=1)
                 print(f"[UrduTextBox] Background drawn")
                 
-                # Draw text (right-aligned for RTL)
+                # Set text rendering mode to fill
                 canvas.setFillColor(self.text_color)
+                
+                # Try to register font in canvas context if not already done
+                try:
+                    from reportlab.pdfbase import pdfmetrics
+                    if self.font_name not in pdfmetrics.getRegisteredFontNames():
+                        print(f"[UrduTextBox] WARNING: Font {self.font_name} not in registered fonts!")
+                except Exception as e:
+                    print(f"[UrduTextBox] Could not check font registration: {e}")
+                
                 canvas.setFont(self.font_name, self.font_size)
-                # Position text right-aligned with proper vertical centering
+                
+                # Position text right-aligned with proper baseline
                 text_x = self.width - self.padding
-                # Center text vertically in the box
-                text_y = (self.height / 2) - (self.font_size / 3)
+                # Use simpler baseline calculation - bottom padding + small offset
+                text_y = self.padding + 2
+                
                 print(f"[UrduTextBox] Drawing text at position ({text_x}, {text_y})")
+                
+                # Draw the text
                 canvas.drawRightString(text_x, text_y, self.text)
+                
+                # Restore graphics state
+                canvas.restoreState()
+                
                 print(f"[UrduTextBox] Text drawn successfully")
             except Exception as e:
                 print(f"[UrduTextBox] ERROR in draw(): {e}")
