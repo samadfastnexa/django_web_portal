@@ -107,6 +107,44 @@ from .utils import (
 
 logger = logging.getLogger("general_ledger")
 
+# Custom Flowable for Urdu text that draws directly on canvas
+# This is necessary because Paragraph class breaks reshaped RTL text
+if REPORTLAB_AVAILABLE:
+    from reportlab.platypus.flowables import Flowable
+    
+    class UrduTextBox(Flowable):
+        """Custom flowable that draws Urdu text directly on canvas"""
+        def __init__(self, text, font_name, font_size, width, text_color, bg_color, padding=8):
+            Flowable.__init__(self)
+            self.text = text
+            self.font_name = font_name
+            self.font_size = font_size
+            self.width = width
+            self.text_color = text_color
+            self.bg_color = bg_color
+            self.padding = padding
+            # Calculate height based on font size and padding
+            self.height = font_size + (padding * 2)
+        
+        def draw(self):
+            """Draw the Urdu text on the canvas"""
+            canvas = self.canv
+            
+            # Draw background
+            canvas.setFillColor(self.bg_color)
+            canvas.setStrokeColor(colors.HexColor('#6366f1'))
+            canvas.setLineWidth(0.75)
+            canvas.rect(0, 0, self.width, self.height, fill=1, stroke=1)
+            
+            # Draw text (right-aligned for RTL)
+            canvas.setFillColor(self.text_color)
+            canvas.setFont(self.font_name, self.font_size)
+            # Position text right-aligned with padding
+            text_x = self.width - self.padding
+            text_y = self.padding + (self.font_size * 0.25)  # Baseline adjustment
+            canvas.drawRightString(text_x, text_y, self.text)
+
+
 
 # ============================================================================
 # REST API Views for Mobile/React App
@@ -1460,9 +1498,12 @@ def export_ledger_pdf_api(request):
         ])
 
         if _urdu_lines:
-            _footer_paras = []
             print(f"[General Ledger] ARABIC_AVAILABLE: {ARABIC_AVAILABLE}")
             print(f"[General Ledger] Using font: {_URDU_FONT}")
+            
+            # Calculate total width for the text box
+            _total_width = sum(col_widths)
+            
             for _line in _urdu_lines:
                 print(f"[General Ledger] Original line: {_line}")
                 if ARABIC_AVAILABLE:
@@ -1475,14 +1516,19 @@ def export_ledger_pdf_api(request):
                         print(f"[General Ledger] Reshape failed: {e}")
                 else:
                     print(f"[General Ledger] WARNING: Arabic libraries not available!")
-                _footer_paras.append(Paragraph(_line, _urdu_style))
-
-            _footer_table = Table(
-                [[p] for p in _footer_paras],
-                colWidths=[sum(col_widths)],
-            )
-            _footer_table.setStyle(_urdu_border_style)
-            elements.append(KeepTogether([Spacer(1, 0.25 * inch), _footer_table]))
+                
+                # Use custom UrduTextBox instead of Paragraph to preserve reshaped text
+                urdu_box = UrduTextBox(
+                    text=_line,
+                    font_name=_URDU_FONT,
+                    font_size=10,
+                    width=_total_width,
+                    text_color=colors.HexColor('#1e293b'),
+                    bg_color=colors.HexColor('#f8f9ff'),
+                    padding=8
+                )
+                elements.append(Spacer(1, 0.1 * inch))
+                elements.append(urdu_box)
 
         doc.build(elements)
         pdf_buffer.seek(0)
@@ -1977,9 +2023,12 @@ def export_ledger_pdf(request):
             ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
         ])
 
-        _footer_paras = []
         print(f"[General Ledger] ARABIC_AVAILABLE: {ARABIC_AVAILABLE}")
         print(f"[General Ledger] Using font: {_URDU_FONT}")
+        
+        # Calculate total width for the text box
+        _total_width = sum(col_widths)
+        
         for _line in _urdu_lines:
             print(f"[General Ledger] Original line: {_line}")
             if ARABIC_AVAILABLE:
@@ -1992,15 +2041,19 @@ def export_ledger_pdf(request):
                     print(f"[General Ledger] Reshape failed: {e}")
             else:
                 print(f"[General Ledger] WARNING: Arabic libraries not available!")
-            _footer_paras.append(Paragraph(_line, _urdu_style))
-
-        _footer_table = Table(
-            [[p] for p in _footer_paras],
-            colWidths=[sum(col_widths)],
-        )
-        _footer_table.setStyle(_urdu_border_style)
-        # KeepTogether ensures footer never splits across pages
-        elements.append(KeepTogether([Spacer(1, 0.25 * inch), _footer_table]))
+            
+            # Use custom UrduTextBox instead of Paragraph to preserve reshaped text
+            urdu_box = UrduTextBox(
+                text=_line,
+                font_name=_URDU_FONT,
+                font_size=10,
+                width=_total_width,
+                text_color=colors.HexColor('#1e293b'),
+                bg_color=colors.HexColor('#f8f9ff'),
+                padding=8
+            )
+            elements.append(Spacer(1, 0.1 * inch))
+            elements.append(urdu_box)
 
         doc.build(elements)
         pdf_buffer.seek(0)
