@@ -1461,14 +1461,20 @@ def export_ledger_pdf_api(request):
 
         if _urdu_lines:
             _footer_paras = []
+            print(f"[General Ledger] ARABIC_AVAILABLE: {ARABIC_AVAILABLE}")
+            print(f"[General Ledger] Using font: {_URDU_FONT}")
             for _line in _urdu_lines:
+                print(f"[General Ledger] Original line: {_line}")
                 if ARABIC_AVAILABLE:
                     try:
                         _reshaped = arabic_reshaper.reshape(_line)
                         _display  = bidi_display(_reshaped)
                         _line     = _display
-                    except Exception:
-                        pass
+                        print(f"[General Ledger] Reshaped line: {_line}")
+                    except Exception as e:
+                        print(f"[General Ledger] Reshape failed: {e}")
+                else:
+                    print(f"[General Ledger] WARNING: Arabic libraries not available!")
                 _footer_paras.append(Paragraph(_line, _urdu_style))
 
             _footer_table = Table(
@@ -1972,14 +1978,20 @@ def export_ledger_pdf(request):
         ])
 
         _footer_paras = []
+        print(f"[General Ledger] ARABIC_AVAILABLE: {ARABIC_AVAILABLE}")
+        print(f"[General Ledger] Using font: {_URDU_FONT}")
         for _line in _urdu_lines:
+            print(f"[General Ledger] Original line: {_line}")
             if ARABIC_AVAILABLE:
                 try:
                     _reshaped = arabic_reshaper.reshape(_line)
                     _display  = bidi_display(_reshaped)
                     _line     = _display
-                except Exception:
-                    pass
+                    print(f"[General Ledger] Reshaped line: {_line}")
+                except Exception as e:
+                    print(f"[General Ledger] Reshape failed: {e}")
+            else:
+                print(f"[General Ledger] WARNING: Arabic libraries not available!")
             _footer_paras.append(Paragraph(_line, _urdu_style))
 
         _footer_table = Table(
