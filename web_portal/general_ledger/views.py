@@ -1514,28 +1514,11 @@ def export_ledger_pdf_api(request):
 
         # ── Urdu footer (lines from admin settings) ──────────────────────────
         _urdu_lines = _cfg.footer_lines()
-
-        _urdu_style = ParagraphStyle(
-            'UrduFooterStyle', parent=styles['Normal'],
-            fontSize=10, fontName=_URDU_FONT,
-            alignment=TA_RIGHT, leading=16, spaceAfter=4,
-            textColor=colors.HexColor('#1e293b'),
-        )
-        _urdu_border_style = TableStyle([
-            ('BOX',           (0, 0), (-1, -1), 0.75, colors.HexColor('#6366f1')),
-            ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#f8f9ff')),
-            ('TOPPADDING',    (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
-            ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
-        ])
+        _urdu_reshaped_lines = []
 
         if _urdu_lines:
             print(f"[General Ledger] ARABIC_AVAILABLE: {ARABIC_AVAILABLE}")
             print(f"[General Ledger] Using font: {_URDU_FONT}")
-            
-            # Calculate total width for the text box
-            _total_width = sum(col_widths)
             
             for _line in _urdu_lines:
                 print(f"[General Ledger] Original line: {_line}")
@@ -1543,33 +1526,62 @@ def export_ledger_pdf_api(request):
                     try:
                         _reshaped = arabic_reshaper.reshape(_line)
                         _display  = bidi_display(_reshaped)
-                        _line     = _display
-                        print(f"[General Ledger] Reshaped line: {_line}")
+                        _urdu_reshaped_lines.append(_display)
+                        print(f"[General Ledger] Reshaped line: {_display}")
                     except Exception as e:
                         print(f"[General Ledger] Reshape failed: {e}")
+                        _urdu_reshaped_lines.append(_line)
                 else:
                     print(f"[General Ledger] WARNING: Arabic libraries not available!")
-                
-                # Use custom UrduTextBox instead of Paragraph to preserve reshaped text
-                try:
-                    urdu_box = UrduTextBox(
-                        text=_line,
-                        font_name=_URDU_FONT,
-                        font_size=10,
-                        width=_total_width,
-                        text_color=colors.HexColor('#1e293b'),
-                        bg_color=colors.HexColor('#f8f9ff'),
-                        padding=8
-                    )
-                    elements.append(Spacer(1, 0.1 * inch))
-                    elements.append(urdu_box)
-                    print(f"[General Ledger] UrduTextBox created successfully for line")
-                except Exception as e:
-                    print(f"[General Ledger] ERROR creating UrduTextBox: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    _urdu_reshaped_lines.append(_line)
 
-        doc.build(elements)
+        # Page callback to draw Urdu footer at the bottom of last page
+        def draw_urdu_footer(canvas, doc):
+            """Draw Urdu footer using canvas directly (like test_urdu_pdf.py)"""
+            if not _urdu_reshaped_lines:
+                return
+            
+            canvas.saveState()
+            try:
+                print(f"[General Ledger] Drawing Urdu footer on page {doc.page}")
+                
+                # Calculate positions (from bottom of page)
+                page_width = landscape(letter)[0]
+                page_height = landscape(letter)[1]
+                bottom_margin = 0.4 * inch
+                box_width = page_width - 0.6 * inch  # Same as content width
+                box_x = 0.3 * inch  # Left margin
+                
+                # Starting Y position (from bottom)
+                y_pos = bottom_margin + 10
+                line_height = 25  # Height per line
+                
+                for line_text in reversed(_urdu_reshaped_lines):  # Draw from bottom up
+                    # Draw background box
+                    canvas.setFillColor(colors.HexColor('#f8f9ff'))
+                    canvas.setStrokeColor(colors.HexColor('#6366f1'))
+                    canvas.setLineWidth(0.75)
+                    canvas.rect(box_x, y_pos, box_width, line_height, fill=1, stroke=1)
+                    
+                    # Draw text (right-aligned)
+                    canvas.setFillColor(colors.HexColor('#1e293b'))
+                    canvas.setFont(_URDU_FONT, 10)
+                    text_x = box_x + box_width - 10  # 10pt padding from right
+                    text_y = y_pos + 8  # 8pt padding from bottom
+                    canvas.drawRightString(text_x, text_y, line_text)
+                    print(f"[General Ledger] Drew line at y={y_pos}: {line_text[:50]}...")
+                    
+                    y_pos += line_height + 2  # Move up for next line
+                
+                print(f"[General Ledger] Urdu footer drawn successfully")
+            except Exception as e:
+                print(f"[General Ledger] ERROR drawing footer: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                canvas.restoreState()
+
+        doc.build(elements, onFirstPage=draw_urdu_footer, onLaterPages=draw_urdu_footer)
         pdf_buffer.seek(0)
         response.write(pdf_buffer.getvalue())
         return response
@@ -2045,28 +2057,10 @@ def export_ledger_pdf(request):
 
         # ── Urdu footer ───────────────────────────────────────────────────────
         _urdu_lines = _cfg.footer_lines()
-
-        _urdu_style = ParagraphStyle(
-            'UrduFooterStyle', parent=styles['Normal'],
-            fontSize=10, fontName=_URDU_FONT,
-            alignment=TA_RIGHT, leading=16,
-            spaceAfter=4,
-            textColor=colors.HexColor('#1e293b'),
-        )
-        _urdu_border_style = TableStyle([
-            ('BOX',           (0, 0), (-1, -1), 0.75, colors.HexColor('#6366f1')),
-            ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#f8f9ff')),
-            ('TOPPADDING',    (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
-            ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
-        ])
+        _urdu_reshaped_lines = []
 
         print(f"[General Ledger] ARABIC_AVAILABLE: {ARABIC_AVAILABLE}")
         print(f"[General Ledger] Using font: {_URDU_FONT}")
-        
-        # Calculate total width for the text box
-        _total_width = sum(col_widths)
         
         for _line in _urdu_lines:
             print(f"[General Ledger] Original line: {_line}")
@@ -2074,27 +2068,62 @@ def export_ledger_pdf(request):
                 try:
                     _reshaped = arabic_reshaper.reshape(_line)
                     _display  = bidi_display(_reshaped)
-                    _line     = _display
-                    print(f"[General Ledger] Reshaped line: {_line}")
+                    _urdu_reshaped_lines.append(_display)
+                    print(f"[General Ledger] Reshaped line: {_display}")
                 except Exception as e:
                     print(f"[General Ledger] Reshape failed: {e}")
+                    _urdu_reshaped_lines.append(_line)
             else:
                 print(f"[General Ledger] WARNING: Arabic libraries not available!")
-            
-            # Use custom UrduTextBox instead of Paragraph to preserve reshaped text
-            urdu_box = UrduTextBox(
-                text=_line,
-                font_name=_URDU_FONT,
-                font_size=10,
-                width=_total_width,
-                text_color=colors.HexColor('#1e293b'),
-                bg_color=colors.HexColor('#f8f9ff'),
-                padding=8
-            )
-            elements.append(Spacer(1, 0.1 * inch))
-            elements.append(urdu_box)
+                _urdu_reshaped_lines.append(_line)
 
-        doc.build(elements)
+        # Page callback to draw Urdu footer at the bottom of every page
+        def draw_urdu_footer(canvas, doc):
+            """Draw Urdu footer using canvas directly (like test_urdu_pdf.py)"""
+            if not _urdu_reshaped_lines:
+                return
+            
+            canvas.saveState()
+            try:
+                print(f"[General Ledger] Drawing Urdu footer on page {doc.page}")
+                
+                # Calculate positions (from bottom of page)
+                page_width = landscape(letter)[0]
+                page_height = landscape(letter)[1]
+                bottom_margin = 0.4 * inch
+                box_width = page_width - 0.6 * inch  # Same as content width
+                box_x = 0.3 * inch  # Left margin
+                
+                # Starting Y position (from bottom)
+                y_pos = bottom_margin + 10
+                line_height = 25  # Height per line
+                
+                for line_text in reversed(_urdu_reshaped_lines):  # Draw from bottom up
+                    # Draw background box
+                    canvas.setFillColor(colors.HexColor('#f8f9ff'))
+                    canvas.setStrokeColor(colors.HexColor('#6366f1'))
+                    canvas.setLineWidth(0.75)
+                    canvas.rect(box_x, y_pos, box_width, line_height, fill=1, stroke=1)
+                    
+                    # Draw text (right-aligned)
+                    canvas.setFillColor(colors.HexColor('#1e293b'))
+                    canvas.setFont(_URDU_FONT, 10)
+                    text_x = box_x + box_width - 10  # 10pt padding from right
+                    text_y = y_pos + 8  # 8pt padding from bottom
+                    canvas.drawRightString(text_x, text_y, line_text)
+                    print(f"[General Ledger] Drew line at y={y_pos}: {line_text[:50]}...")
+                    
+                    y_pos += line_height + 2  # Move up for next line
+                
+                print(f"[General Ledger] Urdu footer drawn successfully")
+            except Exception as e:
+                print(f"[General Ledger] ERROR drawing footer: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                canvas.restoreState()
+
+        doc.build(elements, onFirstPage=draw_urdu_footer, onLaterPages=draw_urdu_footer)
         pdf_buffer.seek(0)
         response.write(pdf_buffer.getvalue())
         return response
