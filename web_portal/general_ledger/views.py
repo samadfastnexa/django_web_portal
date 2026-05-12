@@ -86,15 +86,15 @@ if REPORTLAB_AVAILABLE:
                     if _fname not in _pm.getRegisteredFontNames():
                         _pm.registerFont(_TTFont(_fname, _fpath))
                     _URDU_FONT = _fname
-                    logger.info(f"Successfully registered Urdu font: {_fname} from {_fpath}")
+                    print(f"[General Ledger] Successfully registered Urdu font: {_fname} from {_fpath}")
                     break
                 except Exception as e:
-                    logger.warning(f"Failed to register font {_fname}: {e}")
+                    print(f"[General Ledger] Failed to register font {_fname}: {e}")
                     continue
         else:
-            logger.warning(f"No suitable Urdu font found. Falling back to {_URDU_FONT}")
+            print(f"[General Ledger] No suitable Urdu font found. Falling back to {_URDU_FONT}")
     except Exception as e:
-        logger.error(f"Error during font registration: {e}")
+        print(f"[General Ledger] Error during font registration: {e}")
 
 from . import hana_queries
 from .utils import (
