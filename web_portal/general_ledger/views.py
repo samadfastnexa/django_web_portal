@@ -130,20 +130,32 @@ if REPORTLAB_AVAILABLE:
             """Draw the Urdu text on the canvas"""
             canvas = self.canv
             
-            # Draw background box
-            canvas.setFillColor(self.bg_color)
-            canvas.setStrokeColor(colors.HexColor('#6366f1'))
-            canvas.setLineWidth(0.75)
-            canvas.rect(0, 0, self.width, self.height, fill=1, stroke=1)
+            print(f"[UrduTextBox] Drawing text: {self.text[:50]}...")
+            print(f"[UrduTextBox] Font: {self.font_name}, Size: {self.font_size}")
+            print(f"[UrduTextBox] Box dimensions: {self.width} x {self.height}")
             
-            # Draw text (right-aligned for RTL)
-            canvas.setFillColor(self.text_color)
-            canvas.setFont(self.font_name, self.font_size)
-            # Position text right-aligned with proper vertical centering
-            text_x = self.width - self.padding
-            # Center text vertically in the box
-            text_y = (self.height / 2) - (self.font_size / 3)
-            canvas.drawRightString(text_x, text_y, self.text)
+            try:
+                # Draw background box
+                canvas.setFillColor(self.bg_color)
+                canvas.setStrokeColor(colors.HexColor('#6366f1'))
+                canvas.setLineWidth(0.75)
+                canvas.rect(0, 0, self.width, self.height, fill=1, stroke=1)
+                print(f"[UrduTextBox] Background drawn")
+                
+                # Draw text (right-aligned for RTL)
+                canvas.setFillColor(self.text_color)
+                canvas.setFont(self.font_name, self.font_size)
+                # Position text right-aligned with proper vertical centering
+                text_x = self.width - self.padding
+                # Center text vertically in the box
+                text_y = (self.height / 2) - (self.font_size / 3)
+                print(f"[UrduTextBox] Drawing text at position ({text_x}, {text_y})")
+                canvas.drawRightString(text_x, text_y, self.text)
+                print(f"[UrduTextBox] Text drawn successfully")
+            except Exception as e:
+                print(f"[UrduTextBox] ERROR in draw(): {e}")
+                import traceback
+                traceback.print_exc()
 
 
 
