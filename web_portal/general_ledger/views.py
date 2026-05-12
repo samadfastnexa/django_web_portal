@@ -1254,7 +1254,7 @@ def export_ledger_pdf_api(request):
             Paragraph(_cfg.group_name or 'Four Brothers Group', _h_group),
             Paragraph((_cfg.company_name or _company_full_name or '').upper(), _h_entity),
             Paragraph(_cfg.report_title or 'General Ledger', _h_title),
-            Spacer(1, 8),
+            Spacer(1, 2),
             Paragraph(f'From:  {from_disp}     To:  {to_disp}', _h_dates),
         ]
 
@@ -1262,6 +1262,7 @@ def export_ledger_pdf_api(request):
         if _os.path.exists(_logo_path):
             _stamp = RLImage(_logo_path, width=1.1 * inch, height=1.1 * inch)
             _stamp.hAlign = 'RIGHT'
+            _stamp.preserveAspectRatio = True
             _right_content.append(Spacer(1, 4))
             _right_content.append(_stamp)
 
@@ -1287,7 +1288,7 @@ def export_ledger_pdf_api(request):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
         elements.append(_divider)
-        elements.append(Spacer(1, 14))
+        elements.append(Spacer(1, 4))
 
         # ── Build territory lookup from Dealer model ──────────────────────────
         _bp_territory_map = {}
@@ -1457,8 +1458,8 @@ def export_ledger_pdf_api(request):
                         _narration = ''
 
                     table_data.append([
-                        str(_txn.get('TransId', '')),
-                        _pdate,
+                        '',
+                        '',
                         str(_txn.get('TransTypeName') or _txn.get('TransType', '') or ''),
                         Paragraph(_pol_name,  cell_style),
                         Paragraph(_narration, cell_style),
@@ -1521,59 +1522,60 @@ def export_ledger_pdf_api(request):
             print(f"[General Ledger] Using font: {_URDU_FONT}")
             
             for _line in _urdu_lines:
-                print(f"[General Ledger] Original line: {_line}")
                 if ARABIC_AVAILABLE:
                     try:
                         _reshaped = arabic_reshaper.reshape(_line)
                         _display  = bidi_display(_reshaped)
                         _urdu_reshaped_lines.append(_display)
-                        print(f"[General Ledger] Reshaped line: {_display}")
                     except Exception as e:
-                        print(f"[General Ledger] Reshape failed: {e}")
                         _urdu_reshaped_lines.append(_line)
                 else:
-                    print(f"[General Ledger] WARNING: Arabic libraries not available!")
                     _urdu_reshaped_lines.append(_line)
 
-        # Page callback to draw Urdu footer at the bottom of last page
+        # Page callback to draw Urdu footer at the bottom of every page
         def draw_urdu_footer(canvas, doc):
-            """Draw Urdu footer using canvas directly (like test_urdu_pdf.py)"""
+            """Draw Urdu footer using canvas directly with text wrapping"""
             if not _urdu_reshaped_lines:
                 return
             
             canvas.saveState()
             try:
-                print(f"[General Ledger] Drawing Urdu footer on page {doc.page}")
+                from reportlab.lib.utils import simpleSplit
                 
-                # Calculate positions (from bottom of page)
+                _font_size = 10
+                _padding   = 8
+                _line_gap  = 3
                 page_width = landscape(letter)[0]
-                page_height = landscape(letter)[1]
                 bottom_margin = 0.4 * inch
-                box_width = page_width - 0.6 * inch  # Same as content width
-                box_x = 0.3 * inch  # Left margin
+                box_width  = page_width - 0.6 * inch
+                box_x      = 0.3 * inch
+                max_text_w = box_width - (_padding * 2)
                 
-                # Starting Y position (from bottom)
-                y_pos = bottom_margin + 10
-                line_height = 25  # Height per line
+                # Pre-split all lines accounting for wrapping
+                all_wrapped = []
+                for line_text in _urdu_reshaped_lines:
+                    wrapped = simpleSplit(line_text, _URDU_FONT, _font_size, max_text_w)
+                    all_wrapped.append(wrapped if wrapped else [line_text])
                 
-                for line_text in reversed(_urdu_reshaped_lines):  # Draw from bottom up
-                    # Draw background box
+                # Calculate total height needed
+                single_line_h = _font_size * 1.4
+                y_pos = bottom_margin + 5
+                
+                for wrapped_lines in reversed(all_wrapped):
+                    box_h = (single_line_h * len(wrapped_lines)) + (_padding * 2)
+                    # Draw background box (no border)
                     canvas.setFillColor(colors.HexColor('#f8f9ff'))
-                    canvas.setStrokeColor(colors.HexColor('#6366f1'))
-                    canvas.setLineWidth(0.75)
-                    canvas.rect(box_x, y_pos, box_width, line_height, fill=1, stroke=1)
-                    
-                    # Draw text (right-aligned)
+                    canvas.rect(box_x, y_pos, box_width, box_h, fill=1, stroke=0)
+                    # Draw each wrapped line right-aligned (bidi gives visual order)
                     canvas.setFillColor(colors.HexColor('#1e293b'))
-                    canvas.setFont(_URDU_FONT, 10)
-                    text_x = box_x + box_width - 10  # 10pt padding from right
-                    text_y = y_pos + 8  # 8pt padding from bottom
-                    canvas.drawRightString(text_x, text_y, line_text)
-                    print(f"[General Ledger] Drew line at y={y_pos}: {line_text[:50]}...")
-                    
-                    y_pos += line_height + 2  # Move up for next line
+                    canvas.setFont(_URDU_FONT, _font_size)
+                    text_x = box_x + box_width - _padding
+                    text_y = y_pos + box_h - _padding - _font_size
+                    for sub_line in wrapped_lines:
+                        canvas.drawRightString(text_x, text_y, sub_line)
+                        text_y -= single_line_h
+                    y_pos += box_h + _line_gap
                 
-                print(f"[General Ledger] Urdu footer drawn successfully")
             except Exception as e:
                 print(f"[General Ledger] ERROR drawing footer: {e}")
                 import traceback
@@ -1796,7 +1798,7 @@ def export_ledger_pdf(request):
             Paragraph(_cfg.group_name or 'Four Brothers Group', _h_group),
             Paragraph((_cfg.company_name or _company_full_name or '').upper(), _h_entity),
             Paragraph(_cfg.report_title or 'General Ledger', _h_title),
-            Spacer(1, 8),
+            Spacer(1, 2),
             Paragraph(f'From:  {from_disp}     To:  {to_disp}', _h_dates),
         ]
 
@@ -1804,6 +1806,7 @@ def export_ledger_pdf(request):
         if _os.path.exists(_logo_path):
             _stamp = RLImage(_logo_path, width=1.1 * inch, height=1.1 * inch)
             _stamp.hAlign = 'RIGHT'
+            _stamp.preserveAspectRatio = True
             _right_content.append(Spacer(1, 4))
             _right_content.append(_stamp)
 
@@ -1830,7 +1833,7 @@ def export_ledger_pdf(request):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
         elements.append(_divider)
-        elements.append(Spacer(1, 14))
+        elements.append(Spacer(1, 4))
 
         # ── Build territory lookup from Dealer model ──────────────────────────
         _bp_territory_map = {}
@@ -2000,8 +2003,8 @@ def export_ledger_pdf(request):
                         _narration = ''
 
                     table_data.append([
-                        str(_txn.get('TransId', '')),
-                        _pdate,
+                        '',
+                        '',
                         str(_txn.get('TransTypeName') or _txn.get('TransType', '') or ''),
                         Paragraph(_pol_name,  cell_style),
                         Paragraph(_narration, cell_style),
@@ -2063,59 +2066,50 @@ def export_ledger_pdf(request):
         print(f"[General Ledger] Using font: {_URDU_FONT}")
         
         for _line in _urdu_lines:
-            print(f"[General Ledger] Original line: {_line}")
             if ARABIC_AVAILABLE:
                 try:
                     _reshaped = arabic_reshaper.reshape(_line)
                     _display  = bidi_display(_reshaped)
                     _urdu_reshaped_lines.append(_display)
-                    print(f"[General Ledger] Reshaped line: {_display}")
                 except Exception as e:
-                    print(f"[General Ledger] Reshape failed: {e}")
                     _urdu_reshaped_lines.append(_line)
             else:
-                print(f"[General Ledger] WARNING: Arabic libraries not available!")
                 _urdu_reshaped_lines.append(_line)
 
         # Page callback to draw Urdu footer at the bottom of every page
         def draw_urdu_footer(canvas, doc):
-            """Draw Urdu footer using canvas directly (like test_urdu_pdf.py)"""
+            """Draw Urdu footer using canvas directly with text wrapping"""
             if not _urdu_reshaped_lines:
                 return
-            
             canvas.saveState()
             try:
-                print(f"[General Ledger] Drawing Urdu footer on page {doc.page}")
-                
-                # Calculate positions (from bottom of page)
+                from reportlab.lib.utils import simpleSplit
+                _font_size = 10
+                _padding   = 8
+                _line_gap  = 3
                 page_width = landscape(letter)[0]
-                page_height = landscape(letter)[1]
                 bottom_margin = 0.4 * inch
-                box_width = page_width - 0.6 * inch  # Same as content width
-                box_x = 0.3 * inch  # Left margin
-                
-                # Starting Y position (from bottom)
-                y_pos = bottom_margin + 10
-                line_height = 25  # Height per line
-                
-                for line_text in reversed(_urdu_reshaped_lines):  # Draw from bottom up
-                    # Draw background box
+                box_width  = page_width - 0.6 * inch
+                box_x      = 0.3 * inch
+                max_text_w = box_width - (_padding * 2)
+                single_line_h = _font_size * 1.4
+                all_wrapped = []
+                for line_text in _urdu_reshaped_lines:
+                    wrapped = simpleSplit(line_text, _URDU_FONT, _font_size, max_text_w)
+                    all_wrapped.append(wrapped if wrapped else [line_text])
+                y_pos = bottom_margin + 5
+                for wrapped_lines in reversed(all_wrapped):
+                    box_h = (single_line_h * len(wrapped_lines)) + (_padding * 2)
                     canvas.setFillColor(colors.HexColor('#f8f9ff'))
-                    canvas.setStrokeColor(colors.HexColor('#6366f1'))
-                    canvas.setLineWidth(0.75)
-                    canvas.rect(box_x, y_pos, box_width, line_height, fill=1, stroke=1)
-                    
-                    # Draw text (right-aligned)
+                    canvas.rect(box_x, y_pos, box_width, box_h, fill=1, stroke=0)
                     canvas.setFillColor(colors.HexColor('#1e293b'))
-                    canvas.setFont(_URDU_FONT, 10)
-                    text_x = box_x + box_width - 10  # 10pt padding from right
-                    text_y = y_pos + 8  # 8pt padding from bottom
-                    canvas.drawRightString(text_x, text_y, line_text)
-                    print(f"[General Ledger] Drew line at y={y_pos}: {line_text[:50]}...")
-                    
-                    y_pos += line_height + 2  # Move up for next line
-                
-                print(f"[General Ledger] Urdu footer drawn successfully")
+                    canvas.setFont(_URDU_FONT, _font_size)
+                    text_x = box_x + box_width - _padding
+                    text_y = y_pos + box_h - _padding - _font_size
+                    for sub_line in wrapped_lines:
+                        canvas.drawRightString(text_x, text_y, sub_line)
+                        text_y -= single_line_h
+                    y_pos += box_h + _line_gap
             except Exception as e:
                 print(f"[General Ledger] ERROR drawing footer: {e}")
                 import traceback
