@@ -1566,13 +1566,13 @@ def export_ledger_pdf_api(request):
                     # Draw background box (no border)
                     canvas.setFillColor(colors.HexColor('#f8f9ff'))
                     canvas.rect(box_x, y_pos, box_width, box_h, fill=1, stroke=0)
-                    # Draw each wrapped line right-aligned (bidi gives visual order)
+                    # Draw each wrapped line left-anchored (bidi puts visual-left char first)
                     canvas.setFillColor(colors.HexColor('#1e293b'))
                     canvas.setFont(_URDU_FONT, _font_size)
-                    text_x = box_x + box_width - _padding
+                    text_x = box_x + _padding
                     text_y = y_pos + box_h - _padding - _font_size
                     for sub_line in wrapped_lines:
-                        canvas.drawRightString(text_x, text_y, sub_line)
+                        canvas.drawString(text_x, text_y, sub_line)
                         text_y -= single_line_h
                     y_pos += box_h + _line_gap
                 
@@ -2102,12 +2102,13 @@ def export_ledger_pdf(request):
                     box_h = (single_line_h * len(wrapped_lines)) + (_padding * 2)
                     canvas.setFillColor(colors.HexColor('#f8f9ff'))
                     canvas.rect(box_x, y_pos, box_width, box_h, fill=1, stroke=0)
+                    # Draw each wrapped line left-anchored (bidi puts visual-left char first)
                     canvas.setFillColor(colors.HexColor('#1e293b'))
                     canvas.setFont(_URDU_FONT, _font_size)
-                    text_x = box_x + box_width - _padding
+                    text_x = box_x + _padding
                     text_y = y_pos + box_h - _padding - _font_size
                     for sub_line in wrapped_lines:
-                        canvas.drawRightString(text_x, text_y, sub_line)
+                        canvas.drawString(text_x, text_y, sub_line)
                         text_y -= single_line_h
                     y_pos += box_h + _line_gap
             except Exception as e:
