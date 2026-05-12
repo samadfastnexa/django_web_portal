@@ -50,28 +50,51 @@ except ImportError:
     ARABIC_AVAILABLE = False
 
 # Register a Unicode/Urdu-capable font once at module load.
-# Try several Windows fonts in order of preference.
+# Try fonts on both Windows and Linux systems.
 _URDU_FONT = 'Helvetica'
 if REPORTLAB_AVAILABLE:
-    _URDU_FONT_CANDIDATES = [
-        ('NotoNastaliqUrdu', r'C:\Windows\Fonts\NotoNastaliqUrdu-Regular.ttf'),
-        ('Tahoma',          r'C:\Windows\Fonts\tahoma.ttf'),
-        ('Arial',           r'C:\Windows\Fonts\arial.ttf'),
-        ('Calibri',         r'C:\Windows\Fonts\calibri.ttf'),
-        ('TimesNewRoman',   r'C:\Windows\Fonts\times.ttf'),
-    ]
+    import os as _font_os
+    import sys as _font_sys
+    
+    # Font candidates for different operating systems
+    if _font_sys.platform.startswith('win'):
+        # Windows font paths
+        _URDU_FONT_CANDIDATES = [
+            ('NotoNastaliqUrdu', r'C:\Windows\Fonts\NotoNastaliqUrdu-Regular.ttf'),
+            ('Tahoma',          r'C:\Windows\Fonts\tahoma.ttf'),
+            ('Arial',           r'C:\Windows\Fonts\arial.ttf'),
+            ('Calibri',         r'C:\Windows\Fonts\calibri.ttf'),
+            ('TimesNewRoman',   r'C:\Windows\Fonts\times.ttf'),
+        ]
+    else:
+        # Linux/Unix font paths
+        _URDU_FONT_CANDIDATES = [
+            ('NotoNastaliqUrdu', '/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf'),
+            ('NotoNastaliqUrdu', '/usr/share/fonts/noto/NotoNastaliqUrdu-Regular.ttf'),
+            ('NotoSans',        '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'),
+            ('DejaVuSans',      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
+            ('LiberationSans',  '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
+            ('FreeSans',        '/usr/share/fonts/truetype/freefont/FreeSans.ttf'),
+        ]
+    
     try:
-        import os as _font_os
         from reportlab.pdfbase import pdfmetrics as _pm
         from reportlab.pdfbase.ttfonts import TTFont as _TTFont
         for _fname, _fpath in _URDU_FONT_CANDIDATES:
             if _font_os.path.exists(_fpath):
-                if _fname not in _pm.getRegisteredFontNames():
-                    _pm.registerFont(_TTFont(_fname, _fpath))
-                _URDU_FONT = _fname
-                break
-    except Exception:
-        pass
+                try:
+                    if _fname not in _pm.getRegisteredFontNames():
+                        _pm.registerFont(_TTFont(_fname, _fpath))
+                    _URDU_FONT = _fname
+                    logger.info(f"Successfully registered Urdu font: {_fname} from {_fpath}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to register font {_fname}: {e}")
+                    continue
+        else:
+            logger.warning(f"No suitable Urdu font found. Falling back to {_URDU_FONT}")
+    except Exception as e:
+        logger.error(f"Error during font registration: {e}")
 
 from . import hana_queries
 from .utils import (
