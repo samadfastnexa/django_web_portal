@@ -123,14 +123,14 @@ if REPORTLAB_AVAILABLE:
             self.text_color = text_color
             self.bg_color = bg_color
             self.padding = padding
-            # Calculate height based on font size and padding
-            self.height = font_size + (padding * 2)
+            # Calculate height with extra space for proper text rendering
+            self.height = (font_size * 1.6) + (padding * 2)
         
         def draw(self):
             """Draw the Urdu text on the canvas"""
             canvas = self.canv
             
-            # Draw background
+            # Draw background box
             canvas.setFillColor(self.bg_color)
             canvas.setStrokeColor(colors.HexColor('#6366f1'))
             canvas.setLineWidth(0.75)
@@ -139,9 +139,10 @@ if REPORTLAB_AVAILABLE:
             # Draw text (right-aligned for RTL)
             canvas.setFillColor(self.text_color)
             canvas.setFont(self.font_name, self.font_size)
-            # Position text right-aligned with padding
+            # Position text right-aligned with proper vertical centering
             text_x = self.width - self.padding
-            text_y = self.padding + (self.font_size * 0.25)  # Baseline adjustment
+            # Center text vertically in the box
+            text_y = (self.height / 2) - (self.font_size / 3)
             canvas.drawRightString(text_x, text_y, self.text)
 
 
@@ -1518,17 +1519,23 @@ def export_ledger_pdf_api(request):
                     print(f"[General Ledger] WARNING: Arabic libraries not available!")
                 
                 # Use custom UrduTextBox instead of Paragraph to preserve reshaped text
-                urdu_box = UrduTextBox(
-                    text=_line,
-                    font_name=_URDU_FONT,
-                    font_size=10,
-                    width=_total_width,
-                    text_color=colors.HexColor('#1e293b'),
-                    bg_color=colors.HexColor('#f8f9ff'),
-                    padding=8
-                )
-                elements.append(Spacer(1, 0.1 * inch))
-                elements.append(urdu_box)
+                try:
+                    urdu_box = UrduTextBox(
+                        text=_line,
+                        font_name=_URDU_FONT,
+                        font_size=10,
+                        width=_total_width,
+                        text_color=colors.HexColor('#1e293b'),
+                        bg_color=colors.HexColor('#f8f9ff'),
+                        padding=8
+                    )
+                    elements.append(Spacer(1, 0.1 * inch))
+                    elements.append(urdu_box)
+                    print(f"[General Ledger] UrduTextBox created successfully for line")
+                except Exception as e:
+                    print(f"[General Ledger] ERROR creating UrduTextBox: {e}")
+                    import traceback
+                    traceback.print_exc()
 
         doc.build(elements)
         pdf_buffer.seek(0)
