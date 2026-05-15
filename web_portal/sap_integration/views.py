@@ -9981,7 +9981,10 @@ def projects_list_api(request):
     tags=['SAP Policies'],
     method='get',
     operation_summary="Policy Detail",
-    operation_description="""Get detailed information for a specific policy from OPLN table.
+    operation_description="""Get detailed information for a specific policy.
+
+    Primary lookup uses OPRJ by PrjCode (string code, e.g. 0123200).
+    Fallback lookup uses OPLN by ListNum for numeric list-number style codes.
     
     **Response includes:**
     - Policy code and name
@@ -10065,10 +10068,10 @@ def projects_list_api(request):
 @api_view(['GET'])
 def policy_detail_api(request):
     """
-    Get detailed information for a specific policy from SAP HANA OPLN table.
+    Get detailed information for a specific policy.
     
     Endpoint: GET /api/sap/policies/detail/
-    Query params: ?database=4B-ORANG_APP&code=1
+    Query params: ?database=4B-ORANG_APP&code=0123200
     """
     try:
         from hdbcli import dbapi
@@ -10127,36 +10130,57 @@ def policy_detail_api(request):
             cursor.execute(f'SET SCHEMA "{schema}"')
             cursor.close()
             
-            # TODO: Update this query with actual OPLN table columns after checking HANA
-            query = '''
-                SELECT 
-                    "ListNum" AS "code",
-                    "ListName" AS "name",
-                    "ValidFrom" AS "valid_from",
-                    "ValidTo" AS "valid_to",
-                    "ValidFor" AS "active",
-                    "CreateDate" AS "created_date",
-                    "UpdateDate" AS "updated_date",
-                    "PrimCurr" AS "currency",
-                    "GroupCode" AS "group_code",
-                    "Factor" AS "factor",
-                    "RoundSys" AS "round_sys",
-                    "IsGrossPrc" AS "is_gross_price",
-                    "BASE_NUM" AS "base_num",
-                    "RoundRule" AS "round_rule",
-                    "ExtAmount" AS "ext_amount"
-                FROM "OPLN"
-                WHERE "ListNum" = ?
-            '''
-            
+            # 1) Primary lookup: OPRJ string project code (matches /api/sap/policies/ output)
+            row = None
+            columns = []
             cursor = conn.cursor()
-            cursor.execute(query, (policy_code,))
-            
-            # Get column names
+            query_oprj = '''
+                SELECT
+                    P."PrjCode" AS "code",
+                    P."PrjName" AS "name",
+                    P."ValidFrom" AS "valid_from",
+                    P."ValidTo" AS "valid_to",
+                    P."U_InvEndDate" AS "u_inv_end_date",
+                    P."U_Ct" AS "u_ct",
+                    CASE
+                        WHEN P."Active" = 'Y' THEN 'tYES'
+                        ELSE 'tNO'
+                    END AS "active",
+                    P."U_pol" AS "policy"
+                FROM "OPRJ" P
+                WHERE P."PrjCode" = ?
+            '''
+            cursor.execute(query_oprj, (policy_code,))
             columns = [desc[0] for desc in cursor.description]
-            
-            # Fetch the result
             row = cursor.fetchone()
+
+            # 2) Fallback lookup: OPLN numeric list number (only when safe integer range)
+            if not row and policy_code.isdigit():
+                list_num = int(policy_code)
+                if 0 <= list_num <= 32767:
+                    query_opln = '''
+                        SELECT
+                            "ListNum" AS "code",
+                            "ListName" AS "name",
+                            "ValidFrom" AS "valid_from",
+                            "ValidTo" AS "valid_to",
+                            "ValidFor" AS "active",
+                            "CreateDate" AS "created_date",
+                            "UpdateDate" AS "updated_date",
+                            "PrimCurr" AS "currency",
+                            "GroupCode" AS "group_code",
+                            "Factor" AS "factor",
+                            "RoundSys" AS "round_sys",
+                            "IsGrossPrc" AS "is_gross_price",
+                            "BASE_NUM" AS "base_num",
+                            "RoundRule" AS "round_rule",
+                            "ExtAmount" AS "ext_amount"
+                        FROM "OPLN"
+                        WHERE "ListNum" = ?
+                    '''
+                    cursor.execute(query_opln, (list_num,))
+                    columns = [desc[0] for desc in cursor.description]
+                    row = cursor.fetchone()
             
             if not row:
                 cursor.close()
