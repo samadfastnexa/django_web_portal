@@ -278,6 +278,35 @@ def _tcp_probe(host, port, timeout_sec=5):
         return {'ok': False, 'detail': str(e)}
 
 
+def _http_probe(host, port, base_path, use_http=True, timeout_sec=10):
+    """
+    Try a lightweight GET /ServerVersion to confirm B1SL is processing HTTP,
+    independent of login. Distinguishes 'TCP open but HTTP hung' from a real login issue.
+    """
+    import http.client as _hc
+    try:
+        if use_http:
+            conn = _hc.HTTPConnection(host, int(port), timeout=timeout_sec)
+        else:
+            import ssl as _ssl
+            ctx = _ssl._create_unverified_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = _ssl.CERT_NONE
+            conn = _hc.HTTPSConnection(host, int(port), context=ctx, timeout=timeout_sec)
+        try:
+            conn.request("GET", f"{base_path}/ServerVersion", '', {'Accept': 'application/json'})
+            resp = conn.getresponse()
+            body = resp.read(512).decode('utf-8', errors='replace')
+            return {'ok': resp.status < 500, 'status': resp.status, 'detail': body[:120]}
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return {'ok': False, 'status': None, 'detail': str(e)}
+
+
 @swagger_auto_schema(
     method='get',
     tags=['General Ledger'],
@@ -294,6 +323,7 @@ def sap_journal_entry_health_api(request):
         company = (request.GET.get('company') or '').strip() or None
         client = SAPClient(company_db_key=company)
         tcp = _tcp_probe(client.host, client.port, timeout_sec=5)
+        http_probe = _http_probe(client.host, client.port, client.base_path, client.use_http, timeout_sec=10)
         session_id = client.get_session_id()
         return Response({
             'success': True,
@@ -303,6 +333,7 @@ def sap_journal_entry_health_api(request):
             'port': client.port,
             'use_http': client.use_http,
             'tcp_probe': tcp,
+            'http_probe': http_probe,
             'session': bool(session_id),
         }, status=200)
     except Exception as e:
@@ -314,19 +345,30 @@ def sap_journal_entry_health_api(request):
         port = None
         use_http = None
         company_db = None
+        base_path = None
         tcp = None
+        http_probe = None
         try:
             host = client.host
             port = client.port
             use_http = client.use_http
             company_db = client.company_db
-            tcp = _tcp_probe(client.host, client.port, timeout_sec=5)
+            base_path = client.base_path
+            tcp = _tcp_probe(host, port, timeout_sec=5)
+            http_probe = _http_probe(host, port, base_path, use_http, timeout_sec=10)
         except Exception:
             pass
 
         hint = 'Check SAP Service Layer status and credentials.'
         if 'timed out' in lowered or 'timeout' in lowered:
-            hint = 'Login timed out. Verify SAP Service Layer is running and reachable on host/port, and check server load.'
+            if http_probe and not http_probe.get('ok'):
+                hint = (
+                    'TCP port is open but SAP B1 Service Layer is not responding to HTTP. '
+                    'The B1SL Windows service is likely stopped or hung on the SAP server. '
+                    'Restart the "SAP Business One Service Layer" service on the SAP host.'
+                )
+            else:
+                hint = 'Login timed out. Verify SAP Service Layer is running and reachable on host/port, and check server load.'
         elif 'ssl' in lowered or 'tls' in lowered:
             hint = 'TLS/SSL handshake failed. Verify Service Layer certificate/protocol settings or use HTTP mode if allowed.'
 
@@ -341,6 +383,7 @@ def sap_journal_entry_health_api(request):
             'port': port,
             'use_http': use_http,
             'tcp_probe': tcp,
+            'http_probe': http_probe,
         }, status=status_code)
 
 
