@@ -94,12 +94,15 @@ class SAPClient:
             if not self.password:
                 raise ImproperlyConfigured('SAP_PASSWORD not found in settings or environment')
             
-            # Get company database
-            # Priority: 1. company_db_key parameter, 2. Database settings, 3. Environment variable
+            # Get company database.
+            # If company_db_key is supplied by the caller (e.g. ?company=4B-AGRI_LIVE),
+            # use it directly. Optionally check the DB mapping to allow short-key aliases
+            # (e.g. "4B-AGRI" → "4B-AGRI_LIVE"), but fall back to the raw key if no
+            # alias is defined — no env var or hardcoded default needed.
             self.company_db = None
-            
-            # First, try to resolve from database settings if a key is provided
+
             if company_db_key:
+                # Try alias mapping in DB (optional convenience — not required)
                 try:
                     raw_db = Setting.objects.get(slug='SAP_COMPANY_DB').value
                     if isinstance(raw_db, str):
@@ -113,37 +116,19 @@ class SAPClient:
                     if isinstance(parsed, dict):
                         picked = parsed.get(company_db_key)
                         if picked:
-                            self.company_db = str(picked or '').strip()
+                            self.company_db = str(picked).strip()
                 except Setting.DoesNotExist:
                     pass
-            
-            # If still not found, try environment variable or default from settings
+                # Use the key itself when no alias found — the caller knows the DB name
+                if not self.company_db:
+                    self.company_db = company_db_key
+
+            # No company_db_key supplied — fall back to env/settings default
             if not self.company_db:
                 self.company_db = _get_sap_config('SAP_COMPANY_DB')
-                
+
             if not self.company_db:
-                try:
-                    raw_db = Setting.objects.get(slug='SAP_COMPANY_DB').value
-                    if isinstance(raw_db, str):
-                        try:
-                            parsed = json.loads(raw_db)
-                        except Exception:
-                            parsed = raw_db
-                    else:
-                        parsed = raw_db
-                    parsed = _normalize_mapping(parsed)
-                    if isinstance(parsed, dict):
-                        # Fallback to first available or BIO
-                        key = '4B-BIO'
-                        picked = parsed.get(key) or parsed.get('4B-ORANG')
-                        self.company_db = str(picked or '').strip()
-                    else:
-                        self.company_db = str(parsed or '').strip()
-                except Setting.DoesNotExist:
-                    pass
-                    
-            if not self.company_db:
-                raise ImproperlyConfigured('SAP_COMPANY_DB not found in settings or environment')
+                raise ImproperlyConfigured('SAP_COMPANY_DB not found: pass ?company=<db> in the request or set SAP_COMPANY_DB in .env')
 
             # Get SAP B1 Service Layer connection details
             self.host = (_get_sap_config('SAP_B1S_HOST') or "fourbtest.vdc.services").strip()
