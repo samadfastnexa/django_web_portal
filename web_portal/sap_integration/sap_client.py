@@ -64,8 +64,9 @@ class SAPClient:
         self._route_id = None
         try:
             try:
-                _load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
-                _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
+                _abs = os.path.abspath(__file__)
+                _load_env_file(os.path.join(os.path.dirname(_abs), '.env'))
+                _load_env_file(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(_abs))), '.env'))
                 _load_env_file(os.path.join(os.getcwd(), '.env'))
             except Exception:
                 pass
