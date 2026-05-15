@@ -11223,3 +11223,202 @@ def hana_connection_test_api(request):
                 "Contact your system administrator"
             ]
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ---------------------------------------------------------------------------
+# Policy Download API (SAP)
+# ---------------------------------------------------------------------------
+
+@swagger_auto_schema(
+    tags=['SAP'],
+    method='get',
+    operation_description=(
+        "Download policies from the local database with optional filters. "
+        "Returns JSON by default; pass ?format=csv to get a CSV file."
+    ),
+    manual_parameters=[
+        openapi.Parameter(
+            'database',
+            openapi.IN_QUERY,
+            description="Company / schema filter (e.g. 4B-AGRI_LIVE). "
+                        "Reserved for future SAP-live pull; currently ignored for DB queries.",
+            type=openapi.TYPE_STRING,
+            required=False,
+        ),
+        openapi.Parameter(
+            'search',
+            openapi.IN_QUERY,
+            description="Search across code, name, and policy fields (case-insensitive).",
+            type=openapi.TYPE_STRING,
+            required=False,
+        ),
+        openapi.Parameter(
+            'active',
+            openapi.IN_QUERY,
+            description="Filter by active flag. true / false.",
+            type=openapi.TYPE_BOOLEAN,
+            required=False,
+        ),
+        openapi.Parameter(
+            'valid_from',
+            openapi.IN_QUERY,
+            description="Return policies whose valid_from is on or after this date (YYYY-MM-DD).",
+            type=openapi.TYPE_STRING,
+            required=False,
+        ),
+        openapi.Parameter(
+            'valid_to',
+            openapi.IN_QUERY,
+            description="Return policies whose valid_to is on or before this date (YYYY-MM-DD).",
+            type=openapi.TYPE_STRING,
+            required=False,
+        ),
+        openapi.Parameter(
+            'code',
+            openapi.IN_QUERY,
+            description="Exact policy code filter.",
+            type=openapi.TYPE_STRING,
+            required=False,
+        ),
+        openapi.Parameter(
+            'format',
+            openapi.IN_QUERY,
+            description="Response format: json (default) or csv.",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['json', 'csv'],
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="Policies downloaded successfully.",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "count": 2,
+                    "filters_applied": {
+                        "search": None,
+                        "active": None,
+                        "valid_from": None,
+                        "valid_to": None,
+                        "code": None,
+                        "database": None,
+                    },
+                    "data": [
+                        {
+                            "id": 1,
+                            "code": "0123001",
+                            "name": "AGRI Policy 2025-26",
+                            "policy": "01",
+                            "valid_from": "2025-04-01",
+                            "valid_to": "2026-03-31",
+                            "active": True,
+                            "created_at": "2025-04-01T00:00:00Z",
+                            "updated_at": "2025-04-01T00:00:00Z",
+                        }
+                    ],
+                }
+            },
+        ),
+        400: openapi.Response(description="Bad request — invalid filter value."),
+        500: openapi.Response(description="Server error."),
+    },
+)
+@api_view(['GET'])
+def policy_download_api(request):
+    """
+    GET /api/sap/policy-download/
+
+    Download policies from the local database with optional filters.
+    Supports JSON and CSV output via ?format=csv.
+
+    Query params:
+      - database   : company/schema (reserved for future SAP-live pull)
+      - search     : partial match on code, name, policy
+      - active     : true/false
+      - valid_from : YYYY-MM-DD  (valid_from >= value)
+      - valid_to   : YYYY-MM-DD  (valid_to <= value)
+      - code       : exact code match
+      - format     : json (default) | csv
+    """
+    import csv
+    from io import StringIO
+
+    # --- collect raw query params ---
+    search_q   = request.query_params.get('search', '').strip()
+    active_q   = request.query_params.get('active', None)
+    valid_from = request.query_params.get('valid_from', '').strip()
+    valid_to   = request.query_params.get('valid_to', '').strip()
+    code_q     = request.query_params.get('code', '').strip()
+    database_q = request.query_params.get('database', '').strip()
+    fmt        = request.query_params.get('format', 'json').lower()
+
+    # --- build queryset ---
+    qs = Policy.objects.all().order_by('-updated_at')
+
+    if search_q:
+        qs = qs.filter(
+            Q(code__icontains=search_q) |
+            Q(name__icontains=search_q) |
+            Q(policy__icontains=search_q)
+        )
+
+    if active_q is not None:
+        active_val = str(active_q).lower() in ('true', '1', 'yes')
+        qs = qs.filter(active=active_val)
+
+    if valid_from:
+        try:
+            qs = qs.filter(valid_from__gte=valid_from)
+        except Exception:
+            return Response(
+                {'success': False, 'error': 'Invalid valid_from date. Use YYYY-MM-DD.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    if valid_to:
+        try:
+            qs = qs.filter(valid_to__lte=valid_to)
+        except Exception:
+            return Response(
+                {'success': False, 'error': 'Invalid valid_to date. Use YYYY-MM-DD.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    if code_q:
+        qs = qs.filter(code__iexact=code_q)
+
+    serializer = PolicySerializer(qs, many=True)
+    records = serializer.data
+
+    filters_applied = {
+        'database': database_q or None,
+        'search': search_q or None,
+        'active': active_q,
+        'valid_from': valid_from or None,
+        'valid_to': valid_to or None,
+        'code': code_q or None,
+    }
+
+    # --- CSV download ---
+    if fmt == 'csv':
+        buf = StringIO()
+        fieldnames = ['id', 'code', 'name', 'policy', 'valid_from', 'valid_to', 'active', 'created_at', 'updated_at']
+        writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for row in records:
+            writer.writerow(row)
+        response = HttpResponse(buf.getvalue(), content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="policies.csv"'
+        return response
+
+    # --- JSON response ---
+    return Response(
+        {
+            'success': True,
+            'count': len(records),
+            'filters_applied': filters_applied,
+            'data': records,
+        },
+        status=status.HTTP_200_OK,
+    )

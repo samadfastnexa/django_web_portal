@@ -45,6 +45,8 @@ from .views import (
     download_product_description_api,
     # Diagnostics endpoints
     hana_connection_test_api,
+    # Policy Download
+    policy_download_api,
 )
 
 # Import debug test endpoint
@@ -114,5 +116,8 @@ urlpatterns = [
     # Product Description APIs
     path('product-description/', get_product_description_api, name='get_product_description_api'),
     path('product-description-download/', download_product_description_api, name='download_product_description_api'),
+
+    # Policy Download
+    path('policy-download/', policy_download_api, name='policy_download_api'),
 ]
 #####
