@@ -11,71 +11,24 @@ from preferences.models import Setting
 from django.core.exceptions import ImproperlyConfigured
 from FieldAdvisoryService.models import Dealer
 
-_SAP_ENV_CACHE: dict = {}
-_SAP_ENV_LOADED: bool = False
-
-
-def _load_sap_env() -> None:
-    """Parse .env once into _SAP_ENV_CACHE. Tries every likely location."""
-    global _SAP_ENV_LOADED
-    if _SAP_ENV_LOADED:
-        return
-    _SAP_ENV_LOADED = True
-
-    candidates = []
-
-    # 1. Django settings.ENV_FILE — settings.py already resolved this correctly
-    try:
-        from django.conf import settings as _dj
-        _p = str(getattr(_dj, 'ENV_FILE', '') or '').strip()
-        if _p:
-            candidates.append(_p)
-    except Exception:
-        pass
-
-    # 2. Three levels above this file: sap_integration/ -> web_portal/ -> django_web_portal/
-    try:
-        _abs = os.path.abspath(__file__)
-        candidates.append(
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(_abs))), '.env')
-        )
-    except Exception:
-        pass
-
-    # 3. Current working directory
-    try:
-        candidates.append(os.path.join(os.getcwd(), '.env'))
-    except Exception:
-        pass
-
-    for env_path in candidates:
-        try:
-            if not (env_path and os.path.isfile(env_path)):
-                continue
-            with open(env_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    s = line.strip()
-                    if not s or s.startswith('#') or '=' not in s:
-                        continue
-                    k, v = s.split('=', 1)
-                    k = k.strip()
-                    v = v.strip()
-                    if len(v) >= 2 and v[0] in ('"', "'") and v[-1] == v[0]:
-                        v = v[1:-1]
-                    if k and k not in _SAP_ENV_CACHE:
-                        _SAP_ENV_CACHE[k] = v
-            break  # stop after first successful load
-        except Exception:
-            continue
-
-
 def _get_sap_config(key, default=''):
-    """Return config value: os.environ first, then .env file."""
+    """
+    Read SAP config in priority order:
+      1. os.environ           — explicit shell/system env vars
+      2. django.conf.settings — values loaded from .env by settings.py at startup
+    Values always originate from the .env file via python-decouple in settings.py.
+    """
     val = os.environ.get(key)
     if val:
         return val
-    _load_sap_env()
-    return _SAP_ENV_CACHE.get(key, default)
+    try:
+        from django.conf import settings as _dj
+        val = str(getattr(_dj, key, '') or '').strip()
+        if val:
+            return val
+    except Exception:
+        pass
+    return default
 
 def _normalize_mapping(obj):
     try:

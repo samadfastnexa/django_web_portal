@@ -49,6 +49,16 @@ print(f"   CORS_ALLOWED_ORIGINS: {config('CORS_ALLOWED_ORIGINS', default='NOT_LO
 print("="*70 + "\n")
 # ============================================================================
 
+# SAP B1 Service Layer — read from .env via decouple, exposed as Django settings
+# so any module can reliably access them via django.conf.settings without
+# needing to locate or re-parse the .env file themselves.
+SAP_USERNAME     = config('SAP_USERNAME',     default='')
+SAP_PASSWORD     = config('SAP_PASSWORD',     default='')
+SAP_B1S_HOST     = config('SAP_B1S_HOST',     default='fourbtest.vdc.services')
+SAP_B1S_PORT     = config('SAP_B1S_PORT',     default='50000')
+SAP_B1S_BASE_PATH= config('SAP_B1S_BASE_PATH',default='/b1s/v1')
+SAP_USE_HTTP     = config('SAP_USE_HTTP',     default='false')
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
