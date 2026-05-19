@@ -131,7 +131,20 @@ def get_schema_from_company_key(company_db_key: Optional[str] = None) -> str:
         logger.info(f"Using schema directly: {company_db_key}")
         return company_db_key
     
-    # Try to get schema mapping from Django settings (SAP_COMPANY_DB)
+    # Try Company model first (display Company_name -> schema name)
+    try:
+        from FieldAdvisoryService.models import Company
+        match = Company.objects.filter(
+            is_active=True, Company_name__iexact=company_db_key
+        ).values_list('name', flat=True).first()
+        if match:
+            clean_value = match.strip().strip('"').strip("'")
+            logger.info(f"Found schema in Company model: {company_db_key} -> {clean_value}")
+            return clean_value
+    except Exception as e:
+        logger.warning(f"Could not fetch schema from Company model: {e}")
+
+    # Fallback: schema mapping from preferences.Setting (SAP_COMPANY_DB)
     try:
         from preferences.models import Setting
         setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
@@ -146,7 +159,7 @@ def get_schema_from_company_key(company_db_key: Optional[str] = None) -> str:
                     db_options = json.loads(setting.value)
                 except:
                     pass
-            
+
             # Clean up keys and values and search for match
             for k, v in db_options.items():
                 clean_key = k.strip().strip('"').strip("'")
@@ -156,7 +169,7 @@ def get_schema_from_company_key(company_db_key: Optional[str] = None) -> str:
                     return clean_value
     except Exception as e:
         logger.warning(f"Could not fetch schema from settings: {e}")
-    
+
     # If no mapping found, append default suffix (_APP) to the key
     default_schema = f"{company_db_key}_APP"
     logger.info(f"No mapping found, using default suffix: {default_schema}")
@@ -166,10 +179,29 @@ def get_schema_from_company_key(company_db_key: Optional[str] = None) -> str:
 def get_company_options() -> dict:
     """
     Get available company database options.
-    
+
+    Source order:
+      1. Active rows from FieldAdvisoryService.Company (Company_name -> name/schema).
+      2. preferences.Setting slug 'SAP_COMPANY_DB' (legacy override).
+      3. Hardcoded fallback.
+
     Returns:
-        Dict of company keys to schema names
+        Dict of company display keys to HANA schema names.
     """
+    try:
+        from FieldAdvisoryService.models import Company
+        companies = Company.objects.filter(is_active=True).order_by('Company_name')
+        options = {}
+        for c in companies:
+            key = (c.Company_name or '').strip()
+            schema = (c.name or '').strip()
+            if key and schema:
+                options[key] = schema
+        if options:
+            return options
+    except Exception:
+        pass
+
     try:
         from preferences.models import Setting
         setting = Setting.objects.filter(slug='SAP_COMPANY_DB').first()
@@ -177,8 +209,7 @@ def get_company_options() -> dict:
             return setting.value
     except Exception:
         pass
-    
-    # Default options
+
     return {
         '4B-BIO': '4B-BIO_APP',
         '4B-ORANG': '4B-ORANG_APP',

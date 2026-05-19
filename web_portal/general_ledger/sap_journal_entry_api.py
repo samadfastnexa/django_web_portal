@@ -278,14 +278,11 @@ def _tcp_probe(host, port, timeout_sec=5):
         return {'ok': False, 'detail': str(e)}
 
 
-def _http_probe(host, port, base_path, use_http=True, timeout_sec=10):
-    """
-    Try a lightweight GET /ServerVersion to confirm B1SL is processing HTTP,
-    independent of login. Distinguishes 'TCP open but HTTP hung' from a real login issue.
-    """
+def _http_probe_once(host, port, base_path, scheme, timeout_sec=10):
+    """Probe a single scheme (http or https) with a GET /ServerVersion."""
     import http.client as _hc
     try:
-        if use_http:
+        if scheme == 'http':
             conn = _hc.HTTPConnection(host, int(port), timeout=timeout_sec)
         else:
             import ssl as _ssl
@@ -297,14 +294,37 @@ def _http_probe(host, port, base_path, use_http=True, timeout_sec=10):
             conn.request("GET", f"{base_path}/ServerVersion", '', {'Accept': 'application/json'})
             resp = conn.getresponse()
             body = resp.read(512).decode('utf-8', errors='replace')
-            return {'ok': resp.status < 500, 'status': resp.status, 'detail': body[:120]}
+            return {'ok': resp.status < 500, 'status': resp.status, 'scheme': scheme, 'detail': body[:120]}
         finally:
             try:
                 conn.close()
             except Exception:
                 pass
     except Exception as e:
-        return {'ok': False, 'status': None, 'detail': str(e)}
+        return {'ok': False, 'status': None, 'scheme': scheme, 'detail': str(e)}
+
+
+def _http_probe(host, port, base_path, use_http=True, timeout_sec=10):
+    """
+    Try both HTTP and HTTPS on the configured port so the response definitively
+    shows which protocol B1SL actually speaks, regardless of .env setting.
+    """
+    primary_scheme = 'http' if use_http else 'https'
+    other_scheme = 'https' if use_http else 'http'
+    primary = _http_probe_once(host, port, base_path, primary_scheme, timeout_sec)
+    other = _http_probe_once(host, port, base_path, other_scheme, timeout_sec)
+    return {
+        'ok': primary.get('ok'),
+        'status': primary.get('status'),
+        'detail': primary.get('detail'),
+        'scheme_tried': primary_scheme,
+        'alt_scheme': {
+            'scheme': other.get('scheme'),
+            'ok': other.get('ok'),
+            'status': other.get('status'),
+            'detail': other.get('detail'),
+        },
+    }
 
 
 @swagger_auto_schema(
@@ -360,15 +380,45 @@ def sap_journal_entry_health_api(request):
             pass
 
         hint = 'Check SAP Service Layer status and credentials.'
-        if 'timed out' in lowered or 'timeout' in lowered:
-            if http_probe and not http_probe.get('ok'):
+        probe_detail = ((http_probe or {}).get('detail') or '').lower()
+        alt = (http_probe or {}).get('alt_scheme') or {}
+        alt_detail = (alt.get('detail') or '').lower()
+        primary_ok = bool((http_probe or {}).get('ok'))
+        alt_ok = bool(alt.get('ok'))
+        scheme_tried = ((http_probe or {}).get('scheme_tried') or '').upper()
+        alt_scheme = (alt.get('scheme') or '').upper()
+
+        def _looks_like_reset(text):
+            return 'reset by peer' in text or 'connection reset' in text or 'connectionresetby' in text
+
+        def _looks_like_wrong_tls(text):
+            return 'wrong_version_number' in text or 'unknown protocol' in text or 'bad record mac' in text or 'record overflow' in text
+
+        if alt_ok and not primary_ok:
+            hint = (
+                f"Port {port} speaks {alt_scheme}, not {scheme_tried}. "
+                f"Set SAP_USE_HTTP={'false' if alt_scheme == 'HTTPS' else 'true'} in .env and restart Django."
+            )
+        elif _looks_like_reset(probe_detail) and not primary_ok:
+            hint = (
+                f"Port {port} actively reset the {scheme_tried} request. "
+                f"Most common cause: Service Layer is HTTPS-only and SAP_USE_HTTP=true was sent as plain HTTP. "
+                f"Set SAP_USE_HTTP=false and restart Django, or verify with: openssl s_client -connect {host}:{port}"
+            )
+        elif _looks_like_wrong_tls(probe_detail) and not primary_ok:
+            hint = (
+                f"TLS handshake mismatch on {scheme_tried}. "
+                f"Port {port} likely speaks plain HTTP — set SAP_USE_HTTP=true and restart Django."
+            )
+        elif 'timed out' in lowered or 'timeout' in lowered:
+            if not primary_ok and not alt_ok:
                 hint = (
-                    'TCP port is open but SAP B1 Service Layer is not responding to HTTP. '
-                    'The B1SL Windows service is likely stopped or hung on the SAP server. '
-                    'Restart the "SAP Business One Service Layer" service on the SAP host.'
+                    'TCP port is open but neither HTTP nor HTTPS responds. '
+                    'B1SL Windows service is likely stopped/hung — restart it on the SAP host. '
+                    'If a proxy/firewall sits in front, check that too.'
                 )
             else:
-                hint = 'Login timed out. Verify SAP Service Layer is running and reachable on host/port, and check server load.'
+                hint = 'HTTP responds but login times out — likely credential, company DB, or server-side load issue.'
         elif 'ssl' in lowered or 'tls' in lowered:
             hint = 'TLS/SSL handshake failed. Verify Service Layer certificate/protocol settings or use HTTP mode if allowed.'
 

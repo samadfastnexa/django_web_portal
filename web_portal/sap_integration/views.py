@@ -6560,8 +6560,7 @@ def get_product_description_api(request):
                 set_schema_sql = f'SET SCHEMA {quote_ident(schema_name)}'
                 cur.execute(set_schema_sql)
             
-            # Query product description - match image by file extension (same as products-catalog)
-            # and urdu by U_IMG_C category. Join ATC1 directly (no OATC intermediate).
+            # Match image and descriptions by U_IMG_C category. Join ATC1 directly (no OATC intermediate).
             sql = """
             SELECT
                 T0."ItemCode",
@@ -6575,7 +6574,7 @@ def get_product_description_api(request):
                 ) AS "Description",
                 MIN(
                     CASE
-                        WHEN LOWER(TRIM(A."FileExt")) IN ('jpeg', 'jpg', 'png')
+                        WHEN A."U_IMG_C" = 'Product Image'
                         THEN A."FileName" || '.' || A."FileExt"
                     END
                 ) AS "Product_Image",
@@ -6584,7 +6583,13 @@ def get_product_description_api(request):
                         WHEN A."U_IMG_C" = 'Product Description Urdu'
                         THEN A."FileName" || '.' || A."FileExt"
                     END
-                ) AS "Product_Description_Urdu"
+                ) AS "Product_Description_Urdu",
+                MAX(
+                    CASE
+                        WHEN A."U_IMG_C" = 'Product Description English'
+                        THEN A."FileName" || '.' || A."FileExt"
+                    END
+                ) AS "Product_Description_English"
             FROM OITM T0
             LEFT JOIN ATC1 A
                 ON A."AbsEntry" = T0."AtcEntry"
@@ -6613,6 +6618,7 @@ def get_product_description_api(request):
             description      = row[3]          # FreeText from Product Image line
             product_image    = row[4]          # e.g. "Black-Gold.png"
             product_desc_urdu = row[5]         # e.g. "بلیک گولڈ 5.docx"
+            product_desc_english = row[6]      # e.g. "Black-Gold-English.docx"
 
             # Split combined FileName.FileExt back into parts for backward-compat fields
             def _split_file(combined):
@@ -6623,21 +6629,26 @@ def get_product_description_api(request):
 
             image_file, image_ext = _split_file(product_image)
             urdu_file,  urdu_ext  = _split_file(product_desc_urdu)
+            english_file, english_ext = _split_file(product_desc_english)
 
             # Extract folder name from schema/database name (e.g., "4B-AGRI_LIVE" -> "4B-AGRI")
             folder_name = 'default'
             if database:
                 folder_name = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
-            
-            # Construct URLs directly from the combined Product_Image / Product_Description_Urdu values
+
+            # Construct URLs directly from the combined Product_Image / Product_Description_* values.
+            # Urdu/English description files live in language subfolders per company.
             product_image_url = f'/media/product_images/{folder_name}/{product_image}' if product_image else None
-            product_description_urdu_url = f'/media/product_images/{folder_name}/{product_desc_urdu}' if product_desc_urdu else None
+            product_description_urdu_url = f'/media/product_images/{folder_name}/urdu/{product_desc_urdu}' if product_desc_urdu else None
+            product_description_english_url = f'/media/product_images/{folder_name}/english/{product_desc_english}' if product_desc_english else None
 
             all_attachments = []
             if product_image:
                 all_attachments.append({'file_name': image_file, 'file_ext': image_ext, 'category': 'Product Image', 'has_description': bool(description)})
             if product_desc_urdu:
                 all_attachments.append({'file_name': urdu_file, 'file_ext': urdu_ext, 'category': 'Product Description Urdu', 'has_description': False})
+            if product_desc_english:
+                all_attachments.append({'file_name': english_file, 'file_ext': english_ext, 'category': 'Product Description English', 'has_description': False})
             
             # Fetch price from @PLR4 for this item
             price = 0.0
@@ -6671,13 +6682,17 @@ def get_product_description_api(request):
                 'atc_entry': atc_entry,
                 'product_image': product_image,          # e.g. "Black-Gold.png"  (FileName.FileExt)
                 'product_description_urdu': product_desc_urdu,  # e.g. "بلیک گولڈ 5.docx"
+                'product_description_english': product_desc_english,  # e.g. "Black-Gold-English.docx"
                 'image_file': image_file,
                 'image_ext': image_ext,
                 'urdu_file': urdu_file,
                 'urdu_ext': urdu_ext,
+                'english_file': english_file,
+                'english_ext': english_ext,
                 'product_image_url': product_image_url,  # Full URL to product image
                 'product_description_urdu_url': product_description_urdu_url,  # Full URL to Urdu description
-                'has_document': bool(description or urdu_file),  # True if has description or Urdu file
+                'product_description_english_url': product_description_english_url,  # Full URL to English description
+                'has_document': bool(description or urdu_file or english_file),  # True if has description or Urdu/English file
                 'attachments': all_attachments  # All attachment details
             }
             
