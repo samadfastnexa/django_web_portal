@@ -1,273 +1,490 @@
 <!DOCTYPE html>
-<html lang="ur" dir="rtl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ product.ItemName }} - تفصیلات</title>
+    <title>{{ product.ItemName }} - Product Detail</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        :root {
+            --brand: #4CAF50;
+            --brand-dark: #2e7d32;
+            --bg: #f4f6f8;
+            --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+        }
+
         body {
-            font-family: 'Jameel Noori Nastaleeq', 'Noto Nastalikh Urdu', 'Alvi Nastaleeq', Arial, sans-serif;
-            background: #f8f9fa;
-        }
-        
-        .rtl-content {
-            direction: rtl;
-            text-align: right;
-            line-height: 2;
-        }
-        
-        .product-document {
-            background: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin: 30px 0;
-        }
-        
-        .product-document h1,
-        .product-document .heading1 {
+            background: var(--bg);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             color: #2c3e50;
-            font-size: 2.5rem;
-            margin: 25px 0 15px 0;
-            font-weight: bold;
-            border-bottom: 3px solid #4CAF50;
+        }
+
+        .topbar {
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+            color: #fff;
+            padding: 16px 0;
+            margin-bottom: 28px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        }
+
+        .topbar .btn-back {
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            transition: background 0.15s;
+        }
+        .topbar .btn-back:hover { background: rgba(255, 255, 255, 0.3); }
+
+        .topbar h4 {
+            margin: 0;
+            font-weight: 600;
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+
+        .product-header {
+            background: #fff;
+            padding: 28px;
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+            margin-bottom: 24px;
+            display: flex;
+            gap: 28px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .product-header .image-wrap {
+            flex: 0 0 220px;
+            background: #fafafa;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 200px;
+        }
+        .product-header .image-wrap img {
+            max-width: 100%;
+            max-height: 200px;
+            object-fit: contain;
+        }
+        .product-header .image-wrap .placeholder {
+            color: #bbb;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+
+        .product-header .info { flex: 1; min-width: 260px; }
+        .product-header h1 {
+            margin: 0 0 12px 0;
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+        .product-header .meta {
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            gap: 6px 16px;
+            font-size: 0.95rem;
+        }
+        .product-header .meta dt { color: #7f8c8d; font-weight: 500; }
+        .product-header .meta dd { margin: 0; color: #2c3e50; }
+
+        .desc-row { display: flex; gap: 24px; flex-wrap: wrap; }
+        .desc-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+            padding: 22px;
+            flex: 1 1 320px;
+        }
+        .desc-card h3 {
+            margin: 0 0 16px 0;
+            font-size: 1.15rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 2px solid var(--brand);
             padding-bottom: 10px;
         }
-        
-        .product-document h2,
-        .product-document .heading2 {
-            color: #34495e;
-            font-size: 2rem;
-            margin: 20px 0 12px 0;
-            font-weight: bold;
+        .desc-card .lang-badge {
+            background: var(--brand);
+            color: #fff;
+            font-size: 0.7rem;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
         }
-        
-        .product-document h3,
-        .product-document .heading3 {
-            color: #7f8c8d;
-            font-size: 1.5rem;
-            margin: 15px 0 10px 0;
-            font-weight: bold;
-        }
-        
-        .product-document h4,
-        .product-document .heading4 {
-            color: #95a5a6;
-            font-size: 1.25rem;
-            margin: 12px 0 8px 0;
-        }
-        
-        .product-document p {
-            line-height: 2.2;
-            margin: 15px 0;
-            font-size: 1.15rem;
-        }
-        
-        .product-document strong {
-            font-weight: bold;
-            color: #2c3e50;
-        }
-        
-        .product-document em {
-            font-style: italic;
-        }
-        
-        .product-table {
-            width: 100%;
-            margin: 25px 0;
-            border-collapse: collapse;
-            direction: rtl;
-            font-size: 1.05rem;
-        }
-        
-        .product-table th {
-            background-color: #4CAF50;
-            color: white;
-            padding: 15px;
-            font-weight: bold;
-            border: 1px solid #45a049;
+        .desc-card .image-frame {
+            background: #fafafa;
+            border: 1px dashed #d8d8d8;
+            border-radius: 8px;
+            padding: 14px;
             text-align: center;
+            min-height: 240px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        
-        .product-table td {
-            padding: 12px;
-            border: 1px solid #ddd;
-            text-align: center;
-        }
-        
-        .product-table tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        
-        .product-table tr:hover {
-            background-color: #f5f5f5;
-        }
-        
-        .product-document img {
+        .desc-card .image-frame img {
             max-width: 100%;
             height: auto;
-            margin: 20px auto;
-            display: block;
-            border-radius: 5px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            border-radius: 4px;
         }
-        
-        .header {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            padding: 20px 0;
-            margin-bottom: 20px;
+        .desc-card .empty {
+            color: #999;
+            font-size: 0.9rem;
         }
-        
-        .doc-info {
-            background: #e8f5e9;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            border-left: 4px solid #4CAF50;
+        .desc-card .doc-fallback {
+            text-align: center;
+            padding: 18px;
         }
-        
-        .method-switch {
-            margin-bottom: 20px;
+        .desc-card .doc-fallback .file-icon {
+            font-size: 2.5rem;
+            color: var(--brand);
+            margin-bottom: 10px;
         }
-        
-        .method-switch .btn {
-            margin: 0 5px;
+        .desc-card .doc-fallback .file-name {
+            font-size: 0.9rem;
+            color: #555;
+            margin-bottom: 14px;
+            word-break: break-all;
         }
-        
-        .product-header-card {
-            background: white;
-            padding: 25px;
+        .desc-card a.btn-open {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--brand);
+            color: #fff;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: background 0.15s;
+        }
+        .desc-card a.btn-open:hover { background: var(--brand-dark); }
+
+        .urdu-card .image-frame { direction: rtl; }
+
+        .desc-card .image-frame img {
+            cursor: zoom-in;
+            transition: transform 0.15s;
+        }
+        .desc-card .image-frame img:hover { transform: scale(1.02); }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #ffffff;
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+        }
+        .lightbox.active { display: flex; }
+
+        .lightbox-stage {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .lightbox-img {
+            max-width: 90vw;
+            max-height: 90vh;
+            transition: transform 0.1s ease-out;
+            transform-origin: center center;
+            cursor: grab;
+            will-change: transform;
+        }
+        .lightbox-img.grabbing { cursor: grabbing; }
+
+        .lightbox-toolbar {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 8px;
+            background: #2c3e50;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+            padding: 10px;
+            border-radius: 12px;
+            z-index: 10000;
+        }
+        .lightbox-toolbar button {
+            background: #3b536b;
+            border: none;
+            color: #ffffff;
+            width: 44px;
+            height: 44px;
             border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
+            cursor: pointer;
+            font-size: 1.05rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
         }
-        
-        .product-image-header {
-            max-width: 200px;
-            height: auto;
-            border-radius: 5px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        .lightbox-toolbar button i { color: #ffffff; }
+        .lightbox-toolbar button:hover { background: var(--brand); }
+        .lightbox-toolbar button.close-btn { background: #d9534f; }
+        .lightbox-toolbar button.close-btn:hover { background: #b52b27; }
+        .lightbox-toolbar .zoom-level {
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            font-size: 0.9rem;
+            min-width: 60px;
+            justify-content: center;
+            font-weight: 600;
+        }
+
+        .alert-bar {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #7a5b00;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+        }
+        .alert-bar.error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #842029;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="container">
-            <a href="{% url 'product_catalog_list' %}?database={{ database }}" class="btn btn-light">
-                <i class="fas fa-arrow-right"></i> واپس فہرست میں
+    <div class="topbar">
+        <div class="container d-flex justify-content-between align-items-center">
+            <a href="#" class="btn-back" onclick="goBack(event)">
+                <i class="fas fa-arrow-left"></i> Back
             </a>
+            <h4>Product Detail</h4>
+            <span style="width: 80px;"></span>
         </div>
     </div>
-    
-    <div class="container">
-        {% if product_description %}
-        <!-- Product Description from FreeText -->
-        <div class="alert alert-info rtl-content">
-            <h4><i class="fas fa-info-circle"></i> تفصیل پروڈکٹ</h4>
-            <div class="product-description-text" style="white-space: pre-wrap; font-size: 1.1rem; line-height: 1.8;">{{ product_description }}</div>
-        </div>
-        {% endif %}
-        
-        {% if download_url %}
-        <!-- Download Available -->
-        <div class="alert alert-success rtl-content">
-            <h4><i class="fas fa-file-download"></i> دستاویز دستیاب ہے</h4>
-            <p>پروڈکٹ کی تفصیلی دستاویز ڈاؤن لوڈ کرنے کے لیے نیچے دیے گئے بٹن پر کلک کریں۔</p>
-            <div class="text-center mt-3">
-                <a href="{{ download_url }}" class="btn btn-success btn-lg" download>
-                    <i class="fas fa-download"></i> 
-                    دستاویز ڈاؤن لوڈ کریں 
-                    {% if doc_file_name %}
-                    ({{ doc_file_name }}.{{ doc_file_ext }})
-                    {% endif %}
-                </a>
-            </div>
-        </div>
-        {% elif doc_file_name and not download_url %}
-        <!-- Document exists in database but file not found on server -->
-        <div class="alert alert-warning rtl-content">
-            <h4><i class="fas fa-exclamation-triangle"></i> دستاویز فائل نہیں ملی</h4>
-            <p>ڈیٹا بیس میں دستاویز کا ریکارڈ موجود ہے لیکن فائل سرور پر نہیں ملی۔</p>
-            <p><strong>فائل کا نام:</strong> {{ doc_file_name }}.{{ doc_file_ext }}</p>
-        </div>
-        {% endif %}
-        
-        {% if error_msg and not product_description %}
-        <!-- Show error only if there's no description available -->
-        <div class="alert alert-danger rtl-content">
+
+    <div class="container pb-5">
+        {% if error_msg and not product %}
+        <div class="alert-bar error">
             <i class="fas fa-exclamation-triangle"></i> {{ error_msg }}
         </div>
         {% endif %}
-        
+
         {% if product %}
         <!-- Product Header -->
-        <div class="product-header-card rtl-content">
-            <div class="row">
-                <div class="col-md-8">
-                    <h1 class="mb-3">{{ product.ItemName }}</h1>
-                    <p><strong>کوڈ:</strong> {{ product.ItemCode }}</p>
-                    {% if product.U_BrandName %}
-                    <p><strong>برانڈ:</strong> {{ product.U_BrandName }}</p>
+        <div class="product-header">
+            <div class="image-wrap">
+                {% if product.product_image_url %}
+                    <img src="{{ product.product_image_url }}" alt="{{ product.ItemName }}">
+                {% else %}
+                    <div class="placeholder">
+                        <i class="fas fa-image fa-2x mb-2"></i><br>
+                        No image
+                    </div>
+                {% endif %}
+            </div>
+            <div class="info">
+                <h1>{{ product.ItemName }}</h1>
+                <dl class="meta">
+                    <dt>Item Code</dt><dd>{{ product.ItemCode }}</dd>
+                    <dt>Database</dt><dd>{{ database }}</dd>
+                </dl>
+            </div>
+        </div>
+
+        {% if product_description %}
+        <div class="alert-bar">
+            <strong>Description:</strong>
+            <div style="white-space: pre-wrap; margin-top: 6px;">{{ product_description }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Description Images: Urdu + English -->
+        <div class="desc-row">
+            <!-- Urdu Description -->
+            <div class="desc-card urdu-card">
+                <h3>
+                    <i class="fas fa-file-image"></i>
+                    Urdu Description
+                    <span class="lang-badge">UR</span>
+                </h3>
+                <div class="image-frame">
+                    {% if urdu_url %}
+                        <img src="{{ urdu_url }}"
+                             alt="Urdu description"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <div class="empty" style="display:none;">
+                            <i class="fas fa-image"></i><br>
+                            Image not found at<br>
+                            <small>{{ urdu_url }}</small>
+                        </div>
+                    {% else %}
+                        <div class="empty">
+                            <i class="fas fa-folder-open"></i><br>
+                            No Urdu description uploaded
+                        </div>
                     {% endif %}
-                    {% if product.U_GenericName %}
-                    <p><strong>جینرک نام:</strong> {{ product.U_GenericName }}</p>
-                    {% endif %}
-                    <p><strong>زمرہ:</strong> {{ product.ItmsGrpNam }}</p>
                 </div>
-                <div class="col-md-4 text-center">
-                    {% if product.product_image_url %}
-                    <img src="{{ product.product_image_url }}" alt="{{ product.ItemName }}" class="product-image-header">
+            </div>
+
+            <!-- English Description -->
+            <div class="desc-card english-card">
+                <h3>
+                    <i class="fas fa-file-image"></i>
+                    English Description
+                    <span class="lang-badge">EN</span>
+                </h3>
+                <div class="image-frame">
+                    {% if english_url %}
+                        <img src="{{ english_url }}"
+                             alt="English description"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <div class="empty" style="display:none;">
+                            <i class="fas fa-image"></i><br>
+                            Image not found at<br>
+                            <small>{{ english_url }}</small>
+                        </div>
+                    {% else %}
+                        <div class="empty">
+                            <i class="fas fa-folder-open"></i><br>
+                            No English description uploaded
+                        </div>
                     {% endif %}
                 </div>
             </div>
         </div>
-        
-        {% if doc_info %}
-        <div class="doc-info rtl-content">
-            <h5><i class="fas fa-info-circle"></i> معلومات دستاویز</h5>
-            <p class="mb-0">
-                پیراگراف: {{ doc_info.paragraphs }} | 
-                ٹیبل: {{ doc_info.tables }} | 
-                حصے: {{ doc_info.sections }}
-            </p>
-        </div>
-        {% endif %}
-        
-        <!-- Document Content -->
-        {% if doc_content %}
-        <div class="product-document rtl-content">
-            {{ doc_content|safe }}
-        </div>
-        {% endif %}
-        
-        <!-- Download Button -->
-        {% if download_url %}
-        <div class="text-center mt-4 mb-5">
-            <a href="{{ download_url }}" class="btn btn-success btn-lg" download>
-                <i class="fas fa-download"></i> اصل دستاویز ڈاؤن لوڈ کریں
-                {% if doc_file_name %}
-                <br><small>({{ doc_file_name }}.{{ doc_file_ext }})</small>
-                {% endif %}
-            </a>
-        </div>
-        {% elif product.product_description_urdu_url %}
-        <div class="text-center mt-4 mb-5">
-            <a href="{{ product.product_description_urdu_url }}" class="btn btn-success btn-lg" download>
-                <i class="fas fa-download"></i> اصل دستاویز ڈاؤن لوڈ کریں
-            </a>
-        </div>
-        {% endif %}
-        
-        {% else %}
-        <div class="alert alert-danger rtl-content">
-            <i class="fas fa-exclamation-triangle"></i> پروڈکٹ نہیں ملا
-        </div>
         {% endif %}
     </div>
-    
+
+    <!-- Lightbox for zoomable images -->
+    <div class="lightbox" id="lightbox" onclick="if(event.target===this) closeLightbox()">
+        <div class="lightbox-toolbar">
+            <button onclick="zoomImage(-0.25)" title="Zoom out"><i class="fas fa-search-minus"></i></button>
+            <div class="zoom-level" id="zoomLevel">100%</div>
+            <button onclick="zoomImage(0.25)" title="Zoom in"><i class="fas fa-search-plus"></i></button>
+            <button onclick="resetZoom()" title="Reset"><i class="fas fa-undo"></i></button>
+            <button onclick="closeLightbox()" class="close-btn" title="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="lightbox-stage">
+            <img id="lightboxImg" class="lightbox-img" src="" alt="Preview">
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function goBack(e) {
+            e.preventDefault();
+            var db = "{{ database|escapejs }}";
+            var catalogUrl = '/admin/hana-connect/?action=products_catalog'
+                           + (db ? '&company_db=' + encodeURIComponent(db) : '');
+            // If this tab was opened from another page (new tab), close it
+            if (window.opener && !window.opener.closed) {
+                window.close();
+                // window.close() may be blocked by the browser; navigate as a fallback
+                window.location.href = catalogUrl;
+                return;
+            }
+            // If there is history, go back
+            if (window.history.length > 1) {
+                window.history.back();
+                return;
+            }
+            // Last resort: return to the products catalog for this company
+            window.location.href = catalogUrl;
+        }
+
+        // ---------------- Lightbox / Zoom ----------------
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightboxImg');
+        const zoomLevel = document.getElementById('zoomLevel');
+        let zoom = 1, panX = 0, panY = 0;
+        let dragging = false, dragStartX = 0, dragStartY = 0, dragStartPanX = 0, dragStartPanY = 0;
+
+        function applyTransform() {
+            lightboxImg.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+            zoomLevel.textContent = Math.round(zoom * 100) + '%';
+        }
+
+        function openLightbox(src) {
+            lightboxImg.src = src;
+            resetZoom();
+            lightbox.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeLightbox() {
+            lightbox.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        function zoomImage(delta) {
+            zoom = Math.max(0.25, Math.min(8, zoom + delta));
+            applyTransform();
+        }
+
+        function resetZoom() {
+            zoom = 1; panX = 0; panY = 0;
+            applyTransform();
+        }
+
+        // Wheel to zoom
+        lightbox.addEventListener('wheel', function(e) {
+            e.preventDefault();
+            zoomImage(e.deltaY < 0 ? 0.15 : -0.15);
+        }, { passive: false });
+
+        // Drag to pan
+        lightboxImg.addEventListener('mousedown', function(e) {
+            dragging = true;
+            dragStartX = e.clientX; dragStartY = e.clientY;
+            dragStartPanX = panX; dragStartPanY = panY;
+            lightboxImg.classList.add('grabbing');
+            e.preventDefault();
+        });
+        window.addEventListener('mousemove', function(e) {
+            if (!dragging) return;
+            panX = dragStartPanX + (e.clientX - dragStartX);
+            panY = dragStartPanY + (e.clientY - dragStartY);
+            applyTransform();
+        });
+        window.addEventListener('mouseup', function() {
+            dragging = false;
+            lightboxImg.classList.remove('grabbing');
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (!lightbox.classList.contains('active')) return;
+            if (e.key === 'Escape') closeLightbox();
+            else if (e.key === '+' || e.key === '=') zoomImage(0.25);
+            else if (e.key === '-') zoomImage(-0.25);
+            else if (e.key === '0') resetZoom();
+        });
+
+        // Wire description images to open lightbox
+        document.querySelectorAll('.desc-card .image-frame img').forEach(function(img) {
+            img.addEventListener('click', function() { openLightbox(img.src); });
+        });
+    </script>
 </body>
 </html>

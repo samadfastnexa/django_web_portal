@@ -6348,25 +6348,29 @@ def select_oitm_api(request):
     except Exception as e:
         return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(tags=['SAP - Products'], 
+@swagger_auto_schema(tags=['SAP - Products'],
     method='get',
     operation_summary="Get Product Description",
     operation_description="""Retrieve product description (FreeText field) from SAP HANA for a specific ItemCode.
-    
+
 This endpoint queries the OITM (Items Master) and ATC1 (Attachments) tables to retrieve:
 - Product ItemCode and ItemName
-- Product description from the FreeText field (searches all attachment lines)
-- Image files (PNG, JPG)
-- Urdu document files (DOCX, PDF)
+- Product description from the FreeText field
+- Product image (matched by `U_IMG_C = 'Product Image'`)
+- Urdu description (matched by `U_IMG_C = 'Product Description Urdu'`)
+- English description (matched by `U_IMG_C = 'Product Description English'`)
 - Complete list of all attachments
 
-**Note**: Products can have multiple attachment lines in ATC1. This API searches all lines to find the FreeText description.
+**Description files**: Urdu and English description files live in language subfolders per
+company: `media/product_images/{company}/urdu/` and `media/product_images/{company}/english/`.
+The API serves whichever image file (`.png/.jpg/.jpeg/.webp/.gif`) matches SAP's `FileName`,
+falling back to SAP's exact filename if no image is found on disk.
 
 **Use Case**: Display detailed product information and descriptions in mobile/web applications.
 
-**Example Request**: 
+**Example Request**:
 ```
-GET /api/sap/product-description/?item_code=FG00055&database=4B-AGRI_LIVE
+GET /api/sap/product-description/?item_code=FG00904&database=4B-AGRI_LIVE
 ```
 
 **SQL Query**:
@@ -6375,15 +6379,17 @@ SELECT
     T0."ItemCode",
     T0."ItemName",
     T0."AtcEntry",
-    A1."Line",
-    A1."FreeText",     -- Product description (may be on different lines)
-    A1."FileName",
-    A1."FileExt",
-    A1."U_IMG_C"       -- Attachment category
+    MAX(CASE WHEN A."U_IMG_C" = 'Product Image' THEN A."FreeText" END) AS "Description",
+    MIN(CASE WHEN A."U_IMG_C" = 'Product Image'
+             THEN A."FileName" || '.' || A."FileExt" END) AS "Product_Image",
+    MAX(CASE WHEN A."U_IMG_C" = 'Product Description Urdu'
+             THEN A."FileName" || '.' || A."FileExt" END) AS "Product_Description_Urdu",
+    MAX(CASE WHEN A."U_IMG_C" = 'Product Description English'
+             THEN A."FileName" || '.' || A."FileExt" END) AS "Product_Description_English"
 FROM OITM T0
-LEFT JOIN ATC1 A1 ON A1."AbsEntry" = T0."AtcEntry"
+LEFT JOIN ATC1 A ON A."AbsEntry" = T0."AtcEntry"
 WHERE T0."ItemCode" = ?
-ORDER BY A1."Line"
+GROUP BY T0."ItemCode", T0."ItemName", T0."AtcEntry"
 ```
 """,
     manual_parameters=[
@@ -6409,28 +6415,42 @@ ORDER BY A1."Line"
                 "application/json": {
                     "success": True,
                     "data": {
-                        "item_code": "FG00055",
-                        "item_name": "Black Gold 5G - 7-Kgs.",
-                        "description": "بلیک گولڈایک مختلف دانے دار زہر ہے، جو بوررز پر بہترین اثر دکھاتا ہے۔",
-                        "atc_entry": 974,
-                        "image_file": "Black-Gold",
+                        "item_code": "FG00904",
+                        "item_name": "BAAP- 18-Ltrs.",
+                        "description": None,
+                        "price": 0,
+                        "atc_entry": 1083,
+                        "product_image": "Baap-3-Ltr2802202611501087213.png",
+                        "product_description_urdu": "باپ28022026115027569347.docx",
+                        "product_description_english": "BAAP.docx",
+                        "image_file": "Baap-3-Ltr2802202611501087213",
                         "image_ext": "png",
-                        "urdu_file": "بلیک گولڈ 5",
+                        "urdu_file": "باپ28022026115027569347",
                         "urdu_ext": "docx",
+                        "english_file": "BAAP",
+                        "english_ext": "docx",
+                        "product_image_url": "/media/product_images/4B-AGRI/Baap-3-Ltr2802202611501087213.png",
+                        "product_description_urdu_url": "/media/product_images/4B-AGRI/urdu/باپ28022026115027569347.png",
+                        "product_description_english_url": "/media/product_images/4B-AGRI/english/BAAP.png",
+                        "has_document": True,
                         "attachments": [
                             {
-                                "line": 1,
-                                "file_name": "Black-Gold",
+                                "file_name": "Baap-3-Ltr2802202611501087213",
                                 "file_ext": "png",
                                 "category": "Product Image",
                                 "has_description": False
                             },
                             {
-                                "line": 2,
-                                "file_name": "بلیک گولڈ 5",
+                                "file_name": "باپ28022026115027569347",
                                 "file_ext": "docx",
                                 "category": "Product Description Urdu",
-                                "has_description": True
+                                "has_description": False
+                            },
+                            {
+                                "file_name": "BAAP",
+                                "file_ext": "docx",
+                                "category": "Product Description English",
+                                "has_description": False
                             }
                         ]
                     }
@@ -6636,11 +6656,37 @@ def get_product_description_api(request):
             if database:
                 folder_name = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
 
-            # Construct URLs directly from the combined Product_Image / Product_Description_* values.
-            # Urdu/English description files live in language subfolders per company.
+            # Construct URLs from SAP attachment filenames.
+            # For Urdu/English descriptions: SAP often stores the attachment as .docx, but the
+            # actual files on disk are images. So we use SAP's FileName (without extension) and
+            # scan the language subfolder for any matching image extension (png/jpg/jpeg/webp/gif).
+            # If no image is found we fall back to SAP's exact filename so the URL still resolves
+            # to a real attachment when one exists.
+            try:
+                media_root = settings.MEDIA_ROOT
+            except Exception:
+                media_root = 'media'
+
+            _IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif')
+
+            def _resolve_desc_url(subfolder: str, filename_no_ext: str, sap_full: str) -> str | None:
+                """Return the URL of an image matching filename_no_ext in subfolder, or the SAP filename verbatim."""
+                if not filename_no_ext and not sap_full:
+                    return None
+                if filename_no_ext:
+                    disk_dir = os.path.join(media_root, 'product_images', folder_name, subfolder)
+                    for ext in _IMAGE_EXTS:
+                        candidate_name = f'{filename_no_ext}.{ext}'
+                        if os.path.isfile(os.path.join(disk_dir, candidate_name)):
+                            return f'/media/product_images/{folder_name}/{subfolder}/{candidate_name}'
+                # Fallback: SAP's exact filename (works when SAP holds an image attachment)
+                if sap_full:
+                    return f'/media/product_images/{folder_name}/{subfolder}/{sap_full}'
+                return None
+
             product_image_url = f'/media/product_images/{folder_name}/{product_image}' if product_image else None
-            product_description_urdu_url = f'/media/product_images/{folder_name}/urdu/{product_desc_urdu}' if product_desc_urdu else None
-            product_description_english_url = f'/media/product_images/{folder_name}/english/{product_desc_english}' if product_desc_english else None
+            product_description_urdu_url = _resolve_desc_url('urdu', urdu_file or '', product_desc_urdu or '')
+            product_description_english_url = _resolve_desc_url('english', english_file or '', product_desc_english or '')
 
             all_attachments = []
             if product_image:
@@ -10382,6 +10428,10 @@ def product_document_view(request, item_code):
     doc_file_name = None
     doc_file_ext = None
     product_description = None
+    urdu_url = None
+    english_url = None
+    english_file = None
+    english_ext = None
     
     try:
         # Call the product description API internally
@@ -10422,15 +10472,26 @@ def product_document_view(request, item_code):
                 # Extract document file info
                 doc_file_name = data.get('urdu_file')
                 doc_file_ext = data.get('urdu_ext')
-                
+                english_file = data.get('english_file')
+                english_ext = data.get('english_ext')
+
+                # API-provided URLs (already include /urdu/ and /english/ subfolders)
+                urdu_url = data.get('product_description_urdu_url')
+                english_url = data.get('product_description_english_url')
+
                 # Determine folder for image URL
                 folder = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
-                
+
                 # Build basic product info for display
                 product = {
                     'ItemCode': data.get('item_code'),
                     'ItemName': data.get('item_name'),
-                    'product_image_url': f"/media/product_images/{folder}/{data.get('image_file')}.{data.get('image_ext')}" if data.get('image_file') and data.get('image_ext') else None,
+                    'product_image_url': data.get('product_image_url') or (
+                        f"/media/product_images/{folder}/{data.get('image_file')}.{data.get('image_ext')}"
+                        if data.get('image_file') and data.get('image_ext') else None
+                    ),
+                    'product_description_urdu_url': urdu_url,
+                    'product_description_english_url': english_url,
                 }
                 
                 # Build download URL only if document file exists
@@ -10474,10 +10535,14 @@ def product_document_view(request, item_code):
         'download_url': download_url,
         'doc_file_name': doc_file_name,
         'doc_file_ext': doc_file_ext,
+        'english_file': english_file,
+        'english_ext': english_ext,
+        'urdu_url': urdu_url,
+        'english_url': english_url,
         'item_code': item_code,
         'product_description': product_description,
     }
-    
+
     return render(request, 'sap_integration/product_document_detail.html', context)
 
 
