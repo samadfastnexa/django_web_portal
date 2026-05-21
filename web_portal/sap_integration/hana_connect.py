@@ -1148,35 +1148,6 @@ def get_item_groups(db) -> list:
     )
     return _fetch_all(db, sql, None)
 
-# Cache for file listings per folder to avoid repeated directory scans
-_product_image_cache = {}
-_cache_timestamp = {}
-
-def _get_image_files_cache(folder_path, cache_timeout=300):
-    """Get cached list of image files in a folder. Cache expires after cache_timeout seconds."""
-    import time
-    current_time = time.time()
-    
-    # Check if cache exists and is still valid
-    if folder_path in _product_image_cache:
-        if current_time - _cache_timestamp.get(folder_path, 0) < cache_timeout:
-            return _product_image_cache[folder_path]
-    
-    # Build new cache
-    import os
-    import glob
-    file_set = set()
-    
-    if os.path.exists(folder_path):
-        for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
-            files = glob.glob(os.path.join(folder_path, f'*{ext}'))
-            for f in files:
-                file_set.add(os.path.basename(f).lower())  # Store lowercase for case-insensitive matching
-    
-    _product_image_cache[folder_path] = file_set
-    _cache_timestamp[folder_path] = current_time
-    return file_set
-
 def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None, item_groups: list | None = None, brand: str | None = None, limit: int | None = None, offset: int = 0, fetch_prices: bool = True, only_priced: bool = False, is_active: str | None = 'Y') -> dict:
     """
     Fetch products catalog with image URLs based on database name.
@@ -1366,77 +1337,242 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     # Examples: 4B-BIO_APP -> 4B-BIO, 4B-ORANG_APP -> 4B-ORANG, 4B-AGRI_LIVE -> 4B-AGRI
     folder_name = 'default'
     if schema_name:
-        # Remove common suffixes to get folder name
         folder_name = schema_name.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
-    
-    # Add image URLs to each product using actual filenames from SAP attachments
-    # Images stored in media/product_images/{folder_name}/{FileName}.{FileExt}
+
+    # Resolve URLs in priority order per product:
+    #   1. SAP's FileName (without extension) -> scan disk for any image extension
+    #   2. ItemCode (e.g. FG00682) -> scan disk for any image extension
+    #   3. Simplified item name (first word before space/dash/paren) -> scan disk
+    #   4. Fallback: SAP's verbatim filename URL when SAP holds an attachment
     import os
     from django.conf import settings
-    
-    # Get the base media directory path
     try:
         media_root = settings.MEDIA_ROOT
-    except:
+    except Exception:
         media_root = 'media'
-    
-    # Build cached list of available files once for all products
-    product_images_dir = os.path.join(media_root, 'product_images', folder_name)
-    available_files = _get_image_files_cache(product_images_dir)
-    
-    # Process all products in a single loop
+
+    _IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif')
+
+    def _scan_disk(disk_dir: str, base: str):
+        """Exact match: {base}.{ext} for any image ext."""
+        if not base:
+            return None
+        for ext in _IMAGE_EXTS:
+            candidate = f'{base}.{ext}'
+            if os.path.isfile(os.path.join(disk_dir, candidate)):
+                return candidate
+        return None
+
+    def _scan_disk_digit_suffix(disk_dir: str, base: str):
+        """Match {base}{digits}.{ext} (e.g. Greenia -> greenia2.jpeg). Picks alphabetically first."""
+        if not base or not os.path.isdir(disk_dir):
+            return None
+        base_lower = base.lower()
+        candidates = []
+        try:
+            for fname in os.listdir(disk_dir):
+                name, _dot, ext = fname.rpartition('.')
+                if not _dot or ext.lower() not in _IMAGE_EXTS:
+                    continue
+                if not name.lower().startswith(base_lower):
+                    continue
+                rest = name[len(base):]
+                if rest.isdigit() or rest == '':
+                    candidates.append(fname)
+        except OSError:
+            return None
+        return sorted(candidates)[0] if candidates else None
+
+    def _simple_name(name: str) -> str:
+        if not name:
+            return ''
+        return name.split()[0].split('-')[0].split('(')[0].strip()
+
+    def _resolve_url(subfolder: str, sap_full: str, item_code: str, item_name: str) -> str | None:
+        sub_path = f'{subfolder}/' if subfolder else ''
+        disk_dir = (os.path.join(media_root, 'product_images', folder_name, subfolder)
+                    if subfolder else os.path.join(media_root, 'product_images', folder_name))
+        # 1. SAP filename (without extension)
+        if sap_full:
+            sap_base = sap_full.rsplit('.', 1)[0]
+            found = _scan_disk(disk_dir, sap_base)
+            if found:
+                return f'/media/product_images/{folder_name}/{sub_path}{found}'
+        # 2. ItemCode
+        found = _scan_disk(disk_dir, item_code or '')
+        if found:
+            return f'/media/product_images/{folder_name}/{sub_path}{found}'
+        # 3. Simplified item name (e.g. "Parwaz-10-Grm" -> "Parwaz")
+        #    Also matches with trailing digits (Greenia -> greenia2.jpeg)
+        simple = _simple_name(item_name or '')
+        if simple and len(simple) > 2:
+            found = _scan_disk_digit_suffix(disk_dir, simple)
+            if found:
+                return f'/media/product_images/{folder_name}/{sub_path}{found}'
+        # 4. Fallback: SAP exact filename verbatim
+        if sap_full:
+            return f'/media/product_images/{folder_name}/{sub_path}{sap_full}'
+        return None
+
     for row in results:
-        # Convert price if fetched
         if fetch_prices:
             row['price'] = float(row.get('Price', 0.0))
-        
-        # Product Image URL (combined FileName.FileExt, matched by extension)
-        product_image = row.get('Product_Image')
-        
-        # Product Description Urdu (matched by U_IMG_C = 'Product Description Urdu')
-        product_desc_urdu = row.get('Product_Description_Urdu')
-        
-        image_url = None
-        
-        # Primary: Use aggregated Product_Image from SAP — always build URL if SAP returned a filename
-        if product_image:
-            image_url = f'/media/product_images/{folder_name}/{product_image}'
-        
-        # Fallback 2: Quick check for brand name or simplified item name
-        # Skip complex regex/fuzzy matching for performance
-        if not image_url:
-            brand_name = row.get('U_BrandName') or ''
-            item_name = row.get('ItemName') or ''
-            
-            # Try brand name first (simple exact match only)
-            if brand_name:
-                for ext in ['png', 'jpg', 'jpeg']:
-                    file_key = f'{brand_name}.{ext}'.lower()
-                    if file_key in available_files:
-                        image_url = f'/media/product_images/{folder_name}/{brand_name}.{ext}'
-                        break
-            
-            # Try simple item name (first word before space/hyphen/parenthesis)
-            if not image_url and item_name:
-                # Extract first word only for simple matching
-                simple_name = item_name.split()[0].split('-')[0].split('(')[0].strip()
-                
-                if simple_name and len(simple_name) > 2:
-                    for ext in ['png', 'jpg', 'jpeg']:
-                        file_key = f'{simple_name}.{ext}'.lower()
-                        if file_key in available_files:
-                            image_url = f'/media/product_images/{folder_name}/{simple_name}.{ext}'
-                            break
-        
-        row['product_image_url'] = image_url
-        
-        # Urdu URL: Use Product Description Urdu attachment
-        if product_desc_urdu:
-            row['product_description_urdu_url'] = f'/media/product_images/{folder_name}/{product_desc_urdu}'
-        else:
-            row['product_description_urdu_url'] = None
-    
+
+        item_code = row.get('ItemCode') or ''
+        item_name = row.get('ItemName') or ''
+        # Product image (matched by U_IMG_C = 'Product Image')
+        row['product_image_url'] = _resolve_url('', row.get('Product_Image') or '', item_code, item_name)
+        # Urdu description (matched by U_IMG_C = 'Product Description Urdu')
+        row['product_description_urdu_url'] = _resolve_url('urdu', row.get('Product_Description_Urdu') or '', item_code, item_name)
+
     return {'products': results, 'total_count': total_count, 'limit': limit, 'offset': offset}
+
+
+def policy_attachments(db, schema_name: str = '', search: str | None = None,
+                        code: str | None = None, status: str | None = None,
+                        limit: int | None = None, offset: int = 0) -> dict:
+    """
+    Fetch policies from SAP UDO tables @ATCH_H (header) and @ATCH_R (rows), joined on DocEntry.
+
+    @ATCH_H columns (actual): DocEntry, U_POLICY (code), U_PLNAME (name), DocNum, Status, ...
+    @ATCH_R columns: DocEntry, LineId, U_EXCEL (PDF filename), U_IMGE, U_REMK, VisOrder
+
+    Returns dict with 'policies' list and 'total_count'.
+    Each policy: { doc_entry, code, name, doc_num, status, pdf_filename, download_url }.
+    download_url scans media/product_images/{company}/policies/ for the file (any pdf/xlsx/xls
+    extension), falling back to U_EXCEL verbatim.
+    """
+    import os
+    from django.conf import settings
+    try:
+        media_root = settings.MEDIA_ROOT
+    except Exception:
+        media_root = 'media'
+
+    folder_name = 'default'
+    if schema_name:
+        folder_name = schema_name.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
+
+    where_clauses = []
+    params: list = []
+
+    if code:
+        where_clauses.append('H."U_POLICY" = ?')
+        params.append(code)
+    if search:
+        where_clauses.append('('
+                             'UPPER(COALESCE(H."U_POLICY", \'\')) LIKE UPPER(?) OR '
+                             'UPPER(COALESCE(H."U_PLNAME", \'\')) LIKE UPPER(?) OR '
+                             'UPPER(COALESCE(R."U_EXCEL", \'\')) LIKE UPPER(?)'
+                             ')')
+        s = f'%{search}%'
+        params.extend([s, s, s])
+    if status is not None and str(status).strip() != '':
+        where_clauses.append('H."Status" = ?')
+        params.append(str(status))
+
+    where_sql = (' WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
+
+    count_sql = (
+        'SELECT COUNT(DISTINCT H."DocEntry") AS "total" '
+        'FROM "@ATCH_H" H '
+        'LEFT JOIN "@ATCH_R" R ON R."DocEntry" = H."DocEntry"'
+        f'{where_sql}'
+    )
+    count_row = _fetch_all(db, count_sql, tuple(params) if params else None)
+    total_count = count_row[0].get('total', 0) if count_row else 0
+
+    sql = (
+        'SELECT '
+        ' H."DocEntry", '
+        ' H."DocNum", '
+        ' H."U_POLICY" AS "Code", '
+        ' H."U_PLNAME" AS "Name", '
+        ' H."Status", '
+        ' R."LineId", '
+        ' CAST(R."U_EXCEL" AS NVARCHAR(500)) AS "PdfFilename" '
+        'FROM "@ATCH_H" H '
+        'LEFT JOIN "@ATCH_R" R ON R."DocEntry" = H."DocEntry"'
+        f'{where_sql} '
+        'ORDER BY H."DocEntry", R."LineId"'
+    )
+    if limit is not None and limit > 0:
+        sql += f' LIMIT {int(limit)}'
+    if offset > 0:
+        sql += f' OFFSET {int(offset)}'
+
+    rows = _fetch_all(db, sql, tuple(params) if params else None)
+
+    _DOC_EXTS = ('pdf', 'xlsx', 'xls')
+    disk_dir = os.path.join(media_root, 'product_images', folder_name, 'policies')
+
+    def _basename(raw: str) -> str:
+        """Extract a clean filename from raw U_EXCEL values which may be:
+        - a UNC path:  \\\\server\\share\\folder\\name.pdf
+        - a file URL:  file:///C:/folder/name%20with%20spaces.pdf
+        - a plain filename
+        """
+        if not raw:
+            return ''
+        from urllib.parse import unquote
+        s = raw.strip()
+        if s.lower().startswith('file:'):
+            # Strip file://, file:///, etc.
+            s = s.split(':', 1)[1].lstrip('/')
+            s = unquote(s)
+        # Both Windows backslashes and Unix slashes
+        s = s.replace('\\', '/').rstrip('/')
+        return s.rsplit('/', 1)[-1] if '/' in s else s
+
+    def _scan_disk(base: str):
+        if not base:
+            return None
+        for ext in _DOC_EXTS:
+            candidate = f'{base}.{ext}'
+            if os.path.isfile(os.path.join(disk_dir, candidate)):
+                return candidate
+        return None
+
+    def _resolve(pdf_raw: str, code: str) -> str | None:
+        pdf_filename = _basename(pdf_raw)
+        if pdf_filename:
+            # 1. SAP filename without extension -> scan for any allowed ext
+            stem = pdf_filename.rsplit('.', 1)[0] if '.' in pdf_filename else pdf_filename
+            found = _scan_disk(stem)
+            if found:
+                return f'/media/product_images/{folder_name}/policies/{found}'
+        # 2. Policy code
+        found = _scan_disk(code or '')
+        if found:
+            return f'/media/product_images/{folder_name}/policies/{found}'
+        # 3. Verbatim SAP basename (URL points at expected disk location even if missing)
+        if pdf_filename:
+            from urllib.parse import quote
+            return f'/media/product_images/{folder_name}/policies/{quote(pdf_filename)}'
+        return None
+
+    policies = []
+    seen = set()
+    for r in rows:
+        de = r.get('DocEntry')
+        if de in seen:
+            continue
+        seen.add(de)
+        pdf_raw = (r.get('PdfFilename') or '').strip()
+        c = (r.get('Code') or '').strip()
+        clean_filename = _basename(pdf_raw)
+        policies.append({
+            'doc_entry': de,
+            'doc_num': r.get('DocNum'),
+            'code': c or None,
+            'name': r.get('Name'),
+            'status': r.get('Status'),
+            'pdf_filename': clean_filename or None,
+            'download_url': _resolve(pdf_raw, c),
+        })
+
+    return {'policies': policies, 'total_count': total_count, 'limit': limit, 'offset': offset}
+
 
 def policy_customer_balance(db, card_code: str) -> list:
     # First try the original query with CUSTLEDG12

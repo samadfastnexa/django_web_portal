@@ -6656,12 +6656,11 @@ def get_product_description_api(request):
             if database:
                 folder_name = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
 
-            # Construct URLs from SAP attachment filenames.
-            # For Urdu/English descriptions: SAP often stores the attachment as .docx, but the
-            # actual files on disk are images. So we use SAP's FileName (without extension) and
-            # scan the language subfolder for any matching image extension (png/jpg/jpeg/webp/gif).
-            # If no image is found we fall back to SAP's exact filename so the URL still resolves
-            # to a real attachment when one exists.
+            # Resolve URLs in priority order:
+            #   1. SAP's FileName (without extension) -> scan disk for any image extension
+            #   2. ItemCode (e.g. FG00682) -> scan disk for any image extension
+            #   3. Simplified item name (first word before space/dash/paren) -> scan disk
+            #   4. Fallback: SAP's verbatim filename URL when SAP holds an attachment
             try:
                 media_root = settings.MEDIA_ROOT
             except Exception:
@@ -6669,24 +6668,71 @@ def get_product_description_api(request):
 
             _IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif')
 
-            def _resolve_desc_url(subfolder: str, filename_no_ext: str, sap_full: str) -> str | None:
-                """Return the URL of an image matching filename_no_ext in subfolder, or the SAP filename verbatim."""
-                if not filename_no_ext and not sap_full:
+            def _scan_disk(disk_dir: str, base: str):
+                """Exact match: {base}.{ext} for any image ext."""
+                if not base:
                     return None
-                if filename_no_ext:
-                    disk_dir = os.path.join(media_root, 'product_images', folder_name, subfolder)
-                    for ext in _IMAGE_EXTS:
-                        candidate_name = f'{filename_no_ext}.{ext}'
-                        if os.path.isfile(os.path.join(disk_dir, candidate_name)):
-                            return f'/media/product_images/{folder_name}/{subfolder}/{candidate_name}'
-                # Fallback: SAP's exact filename (works when SAP holds an image attachment)
-                if sap_full:
-                    return f'/media/product_images/{folder_name}/{subfolder}/{sap_full}'
+                for ext in _IMAGE_EXTS:
+                    candidate = f'{base}.{ext}'
+                    if os.path.isfile(os.path.join(disk_dir, candidate)):
+                        return candidate
                 return None
 
-            product_image_url = f'/media/product_images/{folder_name}/{product_image}' if product_image else None
-            product_description_urdu_url = _resolve_desc_url('urdu', urdu_file or '', product_desc_urdu or '')
-            product_description_english_url = _resolve_desc_url('english', english_file or '', product_desc_english or '')
+            def _scan_disk_digit_suffix(disk_dir: str, base: str):
+                """Match {base}{digits}.{ext} (e.g. Greenia -> greenia2.jpeg). Picks alphabetically first."""
+                if not base or not os.path.isdir(disk_dir):
+                    return None
+                base_lower = base.lower()
+                candidates = []
+                try:
+                    for fname in os.listdir(disk_dir):
+                        name, _dot, ext = fname.rpartition('.')
+                        if not _dot or ext.lower() not in _IMAGE_EXTS:
+                            continue
+                        if not name.lower().startswith(base_lower):
+                            continue
+                        rest = name[len(base):]
+                        # Require the part after `base` to be purely digits (allow empty so exact match also lands here)
+                        if rest.isdigit() or rest == '':
+                            candidates.append(fname)
+                except OSError:
+                    return None
+                return sorted(candidates)[0] if candidates else None
+
+            def _simple_name(name: str) -> str:
+                if not name:
+                    return ''
+                return name.split()[0].split('-')[0].split('(')[0].strip()
+
+            def _resolve_url(subfolder: str, sap_full: str) -> str | None:
+                sub_path = f'{subfolder}/' if subfolder else ''
+                disk_dir = (os.path.join(media_root, 'product_images', folder_name, subfolder)
+                            if subfolder else os.path.join(media_root, 'product_images', folder_name))
+                # 1. SAP filename (without extension)
+                if sap_full:
+                    sap_base = sap_full.rsplit('.', 1)[0]
+                    found = _scan_disk(disk_dir, sap_base)
+                    if found:
+                        return f'/media/product_images/{folder_name}/{sub_path}{found}'
+                # 2. ItemCode
+                found = _scan_disk(disk_dir, item_code_result or '')
+                if found:
+                    return f'/media/product_images/{folder_name}/{sub_path}{found}'
+                # 3. Simplified item name (e.g. "Parwaz-10-Grm" -> "Parwaz")
+                #    Also matches with trailing digits (Greenia -> greenia2.jpeg)
+                simple = _simple_name(item_name or '')
+                if simple and len(simple) > 2:
+                    found = _scan_disk_digit_suffix(disk_dir, simple)
+                    if found:
+                        return f'/media/product_images/{folder_name}/{sub_path}{found}'
+                # 4. Fallback: SAP exact filename verbatim
+                if sap_full:
+                    return f'/media/product_images/{folder_name}/{sub_path}{sap_full}'
+                return None
+
+            product_image_url = _resolve_url('', product_image or '')
+            product_description_urdu_url = _resolve_url('urdu', product_desc_urdu or '')
+            product_description_english_url = _resolve_url('english', product_desc_english or '')
 
             all_attachments = []
             if product_image:
@@ -11312,96 +11358,37 @@ def hana_connection_test_api(request):
 @swagger_auto_schema(
     tags=['SAP'],
     method='get',
+    operation_summary='Policy download',
     operation_description=(
-        "Download policies from the local database with optional filters. "
-        "Returns JSON by default; pass ?format=csv to get a CSV file."
+        "Two modes:\n\n"
+        "- `?code=X` — **streams the PDF/XLSX file** attached to policy X "
+        "(`Content-Disposition: attachment`). Returns 404 JSON with the expected "
+        "disk path if the file isn't found.\n"
+        "- no `code` — JSON list of all policies (filter with `search`/`status`, "
+        "or use `?format=csv` for CSV)."
     ),
     manual_parameters=[
-        openapi.Parameter(
-            'database',
-            openapi.IN_QUERY,
-            description="Company / schema filter (e.g. 4B-AGRI_LIVE). "
-                        "Reserved for future SAP-live pull; currently ignored for DB queries.",
-            type=openapi.TYPE_STRING,
-            required=False,
-        ),
-        openapi.Parameter(
-            'search',
-            openapi.IN_QUERY,
-            description="Search across code, name, and policy fields (case-insensitive).",
-            type=openapi.TYPE_STRING,
-            required=False,
-        ),
-        openapi.Parameter(
-            'active',
-            openapi.IN_QUERY,
-            description="Filter by active flag. true / false.",
-            type=openapi.TYPE_BOOLEAN,
-            required=False,
-        ),
-        openapi.Parameter(
-            'valid_from',
-            openapi.IN_QUERY,
-            description="Return policies whose valid_from is on or after this date (YYYY-MM-DD).",
-            type=openapi.TYPE_STRING,
-            required=False,
-        ),
-        openapi.Parameter(
-            'valid_to',
-            openapi.IN_QUERY,
-            description="Return policies whose valid_to is on or before this date (YYYY-MM-DD).",
-            type=openapi.TYPE_STRING,
-            required=False,
-        ),
-        openapi.Parameter(
-            'code',
-            openapi.IN_QUERY,
-            description="Exact policy code filter.",
-            type=openapi.TYPE_STRING,
-            required=False,
-        ),
-        openapi.Parameter(
-            'format',
-            openapi.IN_QUERY,
-            description="Response format: json (default) or csv.",
-            type=openapi.TYPE_STRING,
-            required=False,
-            enum=['json', 'csv'],
-        ),
+        openapi.Parameter('database', openapi.IN_QUERY,
+            description='Company / schema (e.g. 4B-AGRI_LIVE). Required.',
+            type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('code', openapi.IN_QUERY,
+            description='Exact H.U_POLICY code. Triggers file download.',
+            type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('search', openapi.IN_QUERY,
+            description='List mode: case-insensitive partial match across U_POLICY, U_PLNAME, U_EXCEL.',
+            type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('status', openapi.IN_QUERY,
+            description='List mode: filter by H.Status.',
+            type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('format', openapi.IN_QUERY,
+            description='List mode output: json (default) or csv.',
+            type=openapi.TYPE_STRING, required=False, enum=['json', 'csv']),
     ],
     responses={
-        200: openapi.Response(
-            description="Policies downloaded successfully.",
-            examples={
-                "application/json": {
-                    "success": True,
-                    "count": 2,
-                    "filters_applied": {
-                        "search": None,
-                        "active": None,
-                        "valid_from": None,
-                        "valid_to": None,
-                        "code": None,
-                        "database": None,
-                    },
-                    "data": [
-                        {
-                            "id": 1,
-                            "code": "0123001",
-                            "name": "AGRI Policy 2025-26",
-                            "policy": "01",
-                            "valid_from": "2025-04-01",
-                            "valid_to": "2026-03-31",
-                            "active": True,
-                            "created_at": "2025-04-01T00:00:00Z",
-                            "updated_at": "2025-04-01T00:00:00Z",
-                        }
-                    ],
-                }
-            },
-        ),
-        400: openapi.Response(description="Bad request — invalid filter value."),
-        500: openapi.Response(description="Server error."),
+        200: openapi.Response(description='File binary when code is set, otherwise JSON / CSV list.'),
+        400: openapi.Response(description='Bad request.'),
+        404: openapi.Response(description='Policy or file not found.'),
+        500: openapi.Response(description='Server error.'),
     },
 )
 @api_view(['GET'])
@@ -11409,81 +11396,164 @@ def policy_download_api(request):
     """
     GET /api/sap/policy-download/
 
-    Download policies from the local database with optional filters.
-    Supports JSON and CSV output via ?format=csv.
+    Two modes:
+      - With `code` -> stream the PDF/XLSX file attached to that policy.
+      - Without `code` -> JSON (or CSV) list of policies from @ATCH_H + @ATCH_R.
 
     Query params:
-      - database   : company/schema (reserved for future SAP-live pull)
-      - search     : partial match on code, name, policy
-      - active     : true/false
-      - valid_from : YYYY-MM-DD  (valid_from >= value)
-      - valid_to   : YYYY-MM-DD  (valid_to <= value)
-      - code       : exact code match
-      - format     : json (default) | csv
+      - database : company/schema (e.g. 4B-AGRI_LIVE) — required
+      - code     : exact H.U_POLICY match — triggers file download
+      - search   : list mode, partial match on U_POLICY/U_PLNAME/U_EXCEL
+      - status   : list mode, matches H.Status
+      - format   : list mode, json (default) | csv
     """
     import csv
+    import mimetypes
     from io import StringIO
+    from urllib.parse import unquote
+    from hdbcli import dbapi
+    from sap_integration.hana_connect import policy_attachments, quote_ident
 
     # --- collect raw query params ---
     search_q   = request.query_params.get('search', '').strip()
-    active_q   = request.query_params.get('active', None)
-    valid_from = request.query_params.get('valid_from', '').strip()
-    valid_to   = request.query_params.get('valid_to', '').strip()
+    status_q   = (request.query_params.get('status') or '').strip()
     code_q     = request.query_params.get('code', '').strip()
-    database_q = request.query_params.get('database', '').strip()
+    database_q = (request.query_params.get('database') or os.environ.get('HANA_SCHEMA') or '').strip()
     fmt        = request.query_params.get('format', 'json').lower()
+    is_download = bool(code_q)  # presence of code triggers download mode
 
-    # --- build queryset ---
-    qs = Policy.objects.all().order_by('-updated_at')
+    # Load env files (same pattern as get_product_description_api)
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
 
-    if search_q:
-        qs = qs.filter(
-            Q(code__icontains=search_q) |
-            Q(name__icontains=search_q) |
-            Q(policy__icontains=search_q)
+    cfg = {
+        'host': os.environ.get('HANA_HOST', ''),
+        'port': os.environ.get('HANA_PORT', '30015'),
+        'user': os.environ.get('HANA_USER', ''),
+        'encrypt': os.environ.get('HANA_ENCRYPT', ''),
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE', ''),
+        'schema': database_q,
+    }
+    pwd = os.environ.get('HANA_PASSWORD', '')
+    if not all([cfg['host'], cfg['port'], cfg['user'], pwd, cfg['schema']]):
+        return Response(
+            {'success': False, 'error': 'SAP HANA configuration incomplete or database param missing'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-    if active_q is not None:
-        active_val = str(active_q).lower() in ('true', '1', 'yes')
-        qs = qs.filter(active=active_val)
+    kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'], 'password': pwd}
+    if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+        kwargs['encrypt'] = True
+        if cfg['ssl_validate']:
+            kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
 
-    if valid_from:
+    try:
+        conn = dbapi.connect(**kwargs)
+    except Exception as e:
+        return Response(
+            {'success': False, 'error': f'Database connection failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    try:
+        cur = conn.cursor()
+        cur.execute('SET SCHEMA ' + quote_ident(cfg['schema']))
+        cur.close()
+
+        result = policy_attachments(
+            conn,
+            schema_name=cfg['schema'],
+            search=search_q or None,
+            code=code_q or None,
+            status=status_q or None,
+        )
+    except Exception as e:
         try:
-            qs = qs.filter(valid_from__gte=valid_from)
+            conn.close()
         except Exception:
+            pass
+        return Response(
+            {'success': False, 'error': f'SAP query failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    records = result.get('policies', [])
+
+    # --- File download mode ---
+    if is_download:
+        if not records:
             return Response(
-                {'success': False, 'error': 'Invalid valid_from date. Use YYYY-MM-DD.'},
-                status=status.HTTP_400_BAD_REQUEST,
+                {'success': False, 'error': f"No policy found in SAP for code '{code_q}'."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        policy = records[0]
+        pdf_filename = policy.get('pdf_filename')
+        if not pdf_filename:
+            return Response(
+                {
+                    'success': False,
+                    'error': f"Policy '{code_q}' exists but has no attachment in SAP (U_EXCEL is empty).",
+                    'policy': policy,
+                },
+                status=status.HTTP_404_NOT_FOUND,
             )
 
-    if valid_to:
         try:
-            qs = qs.filter(valid_to__lte=valid_to)
+            media_root = settings.MEDIA_ROOT
         except Exception:
+            media_root = 'media'
+        download_url = policy.get('download_url') or ''
+        rel_path = unquote(download_url.lstrip('/'))
+        if rel_path.startswith('media/'):
+            rel_path = rel_path[len('media/'):]
+        file_path = os.path.join(media_root, rel_path)
+
+        if not os.path.isfile(file_path):
+            folder_name = database_q.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
+            expected_dir = os.path.join(media_root, 'product_images', folder_name, 'policies')
             return Response(
-                {'success': False, 'error': 'Invalid valid_to date. Use YYYY-MM-DD.'},
-                status=status.HTTP_400_BAD_REQUEST,
+                {
+                    'success': False,
+                    'error': (
+                        f"Policy '{code_q}' has '{pdf_filename}' in SAP, but the file is not "
+                        f"on disk. Place it at: {os.path.join(expected_dir, pdf_filename)}"
+                    ),
+                    'expected_filename': pdf_filename,
+                    'expected_path': os.path.join(expected_dir, pdf_filename),
+                    'policy': policy,
+                },
+                status=status.HTTP_404_NOT_FOUND,
             )
 
-    if code_q:
-        qs = qs.filter(code__iexact=code_q)
-
-    serializer = PolicySerializer(qs, many=True)
-    records = serializer.data
+        content_type, _ = mimetypes.guess_type(file_path)
+        if not content_type:
+            content_type = 'application/octet-stream'
+        response = FileResponse(open(file_path, 'rb'), content_type=content_type)
+        safe_name = pdf_filename.replace('"', '_')
+        response['Content-Disposition'] = f'attachment; filename="{safe_name}"'
+        return response
 
     filters_applied = {
         'database': database_q or None,
         'search': search_q or None,
-        'active': active_q,
-        'valid_from': valid_from or None,
-        'valid_to': valid_to or None,
         'code': code_q or None,
+        'status': status_q or None,
     }
 
     # --- CSV download ---
     if fmt == 'csv':
         buf = StringIO()
-        fieldnames = ['id', 'code', 'name', 'policy', 'valid_from', 'valid_to', 'active', 'created_at', 'updated_at']
+        fieldnames = ['doc_entry', 'doc_num', 'code', 'name', 'status', 'pdf_filename', 'download_url']
         writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
         for row in records:
@@ -11502,3 +11572,5 @@ def policy_download_api(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
