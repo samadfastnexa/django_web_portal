@@ -1427,6 +1427,153 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
 
     return {'products': results, 'total_count': total_count, 'limit': limit, 'offset': offset}
 
+
+def policy_attachments(db, schema_name: str = '', search: str | None = None,
+                        code: str | None = None, status: str | None = None,
+                        limit: int | None = None, offset: int = 0) -> dict:
+    """
+    Fetch policies from SAP UDO tables @ATCH_H (header) and @ATCH_R (rows), joined on DocEntry.
+
+    @ATCH_H columns (actual): DocEntry, U_POLICY (code), U_PLNAME (name), DocNum, Status, ...
+    @ATCH_R columns: DocEntry, LineId, U_EXCEL (PDF filename), U_IMGE, U_REMK, VisOrder
+
+    Returns dict with 'policies' list and 'total_count'.
+    Each policy: { doc_entry, code, name, doc_num, status, pdf_filename, download_url }.
+    download_url scans media/product_images/{company}/policies/ for the file (any pdf/xlsx/xls
+    extension), falling back to U_EXCEL verbatim.
+    """
+    import os
+    from django.conf import settings
+    try:
+        media_root = settings.MEDIA_ROOT
+    except Exception:
+        media_root = 'media'
+
+    folder_name = 'default'
+    if schema_name:
+        folder_name = schema_name.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
+
+    where_clauses = []
+    params: list = []
+
+    if code:
+        where_clauses.append('H."U_POLICY" = ?')
+        params.append(code)
+    if search:
+        where_clauses.append('('
+                             'UPPER(COALESCE(H."U_POLICY", \'\')) LIKE UPPER(?) OR '
+                             'UPPER(COALESCE(H."U_PLNAME", \'\')) LIKE UPPER(?) OR '
+                             'UPPER(COALESCE(R."U_EXCEL", \'\')) LIKE UPPER(?)'
+                             ')')
+        s = f'%{search}%'
+        params.extend([s, s, s])
+    if status is not None and str(status).strip() != '':
+        where_clauses.append('H."Status" = ?')
+        params.append(str(status))
+
+    where_sql = (' WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
+
+    count_sql = (
+        'SELECT COUNT(DISTINCT H."DocEntry") AS "total" '
+        'FROM "@ATCH_H" H '
+        'LEFT JOIN "@ATCH_R" R ON R."DocEntry" = H."DocEntry"'
+        f'{where_sql}'
+    )
+    count_row = _fetch_all(db, count_sql, tuple(params) if params else None)
+    total_count = count_row[0].get('total', 0) if count_row else 0
+
+    sql = (
+        'SELECT '
+        ' H."DocEntry", '
+        ' H."DocNum", '
+        ' H."U_POLICY" AS "Code", '
+        ' H."U_PLNAME" AS "Name", '
+        ' H."Status", '
+        ' R."LineId", '
+        ' CAST(R."U_EXCEL" AS NVARCHAR(500)) AS "PdfFilename" '
+        'FROM "@ATCH_H" H '
+        'LEFT JOIN "@ATCH_R" R ON R."DocEntry" = H."DocEntry"'
+        f'{where_sql} '
+        'ORDER BY H."DocEntry", R."LineId"'
+    )
+    if limit is not None and limit > 0:
+        sql += f' LIMIT {int(limit)}'
+    if offset > 0:
+        sql += f' OFFSET {int(offset)}'
+
+    rows = _fetch_all(db, sql, tuple(params) if params else None)
+
+    _DOC_EXTS = ('pdf', 'xlsx', 'xls')
+    disk_dir = os.path.join(media_root, 'product_images', folder_name, 'policies')
+
+    def _basename(raw: str) -> str:
+        """Extract a clean filename from raw U_EXCEL values which may be:
+        - a UNC path:  \\\\server\\share\\folder\\name.pdf
+        - a file URL:  file:///C:/folder/name%20with%20spaces.pdf
+        - a plain filename
+        """
+        if not raw:
+            return ''
+        from urllib.parse import unquote
+        s = raw.strip()
+        if s.lower().startswith('file:'):
+            # Strip file://, file:///, etc.
+            s = s.split(':', 1)[1].lstrip('/')
+            s = unquote(s)
+        # Both Windows backslashes and Unix slashes
+        s = s.replace('\\', '/').rstrip('/')
+        return s.rsplit('/', 1)[-1] if '/' in s else s
+
+    def _scan_disk(base: str):
+        if not base:
+            return None
+        for ext in _DOC_EXTS:
+            candidate = f'{base}.{ext}'
+            if os.path.isfile(os.path.join(disk_dir, candidate)):
+                return candidate
+        return None
+
+    def _resolve(pdf_raw: str, code: str) -> str | None:
+        pdf_filename = _basename(pdf_raw)
+        if pdf_filename:
+            # 1. SAP filename without extension -> scan for any allowed ext
+            stem = pdf_filename.rsplit('.', 1)[0] if '.' in pdf_filename else pdf_filename
+            found = _scan_disk(stem)
+            if found:
+                return f'/media/product_images/{folder_name}/policies/{found}'
+        # 2. Policy code
+        found = _scan_disk(code or '')
+        if found:
+            return f'/media/product_images/{folder_name}/policies/{found}'
+        # 3. Verbatim SAP basename (URL points at expected disk location even if missing)
+        if pdf_filename:
+            from urllib.parse import quote
+            return f'/media/product_images/{folder_name}/policies/{quote(pdf_filename)}'
+        return None
+
+    policies = []
+    seen = set()
+    for r in rows:
+        de = r.get('DocEntry')
+        if de in seen:
+            continue
+        seen.add(de)
+        pdf_raw = (r.get('PdfFilename') or '').strip()
+        c = (r.get('Code') or '').strip()
+        clean_filename = _basename(pdf_raw)
+        policies.append({
+            'doc_entry': de,
+            'doc_num': r.get('DocNum'),
+            'code': c or None,
+            'name': r.get('Name'),
+            'status': r.get('Status'),
+            'pdf_filename': clean_filename or None,
+            'download_url': _resolve(pdf_raw, c),
+        })
+
+    return {'policies': policies, 'total_count': total_count, 'limit': limit, 'offset': offset}
+
+
 def policy_customer_balance(db, card_code: str) -> list:
     # First try the original query with CUSTLEDG12
     sql_custledg = (
