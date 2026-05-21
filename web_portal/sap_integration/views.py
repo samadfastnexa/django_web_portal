@@ -6659,7 +6659,8 @@ def get_product_description_api(request):
             # Resolve URLs in priority order:
             #   1. SAP's FileName (without extension) -> scan disk for any image extension
             #   2. ItemCode (e.g. FG00682) -> scan disk for any image extension
-            #   3. Fallback: SAP's verbatim filename URL when SAP holds an attachment
+            #   3. Simplified item name (first word before space/dash/paren) -> scan disk
+            #   4. Fallback: SAP's verbatim filename URL when SAP holds an attachment
             try:
                 media_root = settings.MEDIA_ROOT
             except Exception:
@@ -6668,6 +6669,7 @@ def get_product_description_api(request):
             _IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif')
 
             def _scan_disk(disk_dir: str, base: str):
+                """Exact match: {base}.{ext} for any image ext."""
                 if not base:
                     return None
                 for ext in _IMAGE_EXTS:
@@ -6675,6 +6677,32 @@ def get_product_description_api(request):
                     if os.path.isfile(os.path.join(disk_dir, candidate)):
                         return candidate
                 return None
+
+            def _scan_disk_digit_suffix(disk_dir: str, base: str):
+                """Match {base}{digits}.{ext} (e.g. Greenia -> greenia2.jpeg). Picks alphabetically first."""
+                if not base or not os.path.isdir(disk_dir):
+                    return None
+                base_lower = base.lower()
+                candidates = []
+                try:
+                    for fname in os.listdir(disk_dir):
+                        name, _dot, ext = fname.rpartition('.')
+                        if not _dot or ext.lower() not in _IMAGE_EXTS:
+                            continue
+                        if not name.lower().startswith(base_lower):
+                            continue
+                        rest = name[len(base):]
+                        # Require the part after `base` to be purely digits (allow empty so exact match also lands here)
+                        if rest.isdigit() or rest == '':
+                            candidates.append(fname)
+                except OSError:
+                    return None
+                return sorted(candidates)[0] if candidates else None
+
+            def _simple_name(name: str) -> str:
+                if not name:
+                    return ''
+                return name.split()[0].split('-')[0].split('(')[0].strip()
 
             def _resolve_url(subfolder: str, sap_full: str) -> str | None:
                 sub_path = f'{subfolder}/' if subfolder else ''
@@ -6690,7 +6718,14 @@ def get_product_description_api(request):
                 found = _scan_disk(disk_dir, item_code_result or '')
                 if found:
                     return f'/media/product_images/{folder_name}/{sub_path}{found}'
-                # 3. Fallback: SAP exact filename verbatim
+                # 3. Simplified item name (e.g. "Parwaz-10-Grm" -> "Parwaz")
+                #    Also matches with trailing digits (Greenia -> greenia2.jpeg)
+                simple = _simple_name(item_name or '')
+                if simple and len(simple) > 2:
+                    found = _scan_disk_digit_suffix(disk_dir, simple)
+                    if found:
+                        return f'/media/product_images/{folder_name}/{sub_path}{found}'
+                # 4. Fallback: SAP exact filename verbatim
                 if sap_full:
                     return f'/media/product_images/{folder_name}/{sub_path}{sap_full}'
                 return None

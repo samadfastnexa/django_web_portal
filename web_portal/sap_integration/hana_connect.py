@@ -1342,7 +1342,8 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     # Resolve URLs in priority order per product:
     #   1. SAP's FileName (without extension) -> scan disk for any image extension
     #   2. ItemCode (e.g. FG00682) -> scan disk for any image extension
-    #   3. Fallback: SAP's verbatim filename URL when SAP holds an attachment
+    #   3. Simplified item name (first word before space/dash/paren) -> scan disk
+    #   4. Fallback: SAP's verbatim filename URL when SAP holds an attachment
     import os
     from django.conf import settings
     try:
@@ -1353,6 +1354,7 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     _IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif')
 
     def _scan_disk(disk_dir: str, base: str):
+        """Exact match: {base}.{ext} for any image ext."""
         if not base:
             return None
         for ext in _IMAGE_EXTS:
@@ -1361,7 +1363,32 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
                 return candidate
         return None
 
-    def _resolve_url(subfolder: str, sap_full: str, item_code: str) -> str | None:
+    def _scan_disk_digit_suffix(disk_dir: str, base: str):
+        """Match {base}{digits}.{ext} (e.g. Greenia -> greenia2.jpeg). Picks alphabetically first."""
+        if not base or not os.path.isdir(disk_dir):
+            return None
+        base_lower = base.lower()
+        candidates = []
+        try:
+            for fname in os.listdir(disk_dir):
+                name, _dot, ext = fname.rpartition('.')
+                if not _dot or ext.lower() not in _IMAGE_EXTS:
+                    continue
+                if not name.lower().startswith(base_lower):
+                    continue
+                rest = name[len(base):]
+                if rest.isdigit() or rest == '':
+                    candidates.append(fname)
+        except OSError:
+            return None
+        return sorted(candidates)[0] if candidates else None
+
+    def _simple_name(name: str) -> str:
+        if not name:
+            return ''
+        return name.split()[0].split('-')[0].split('(')[0].strip()
+
+    def _resolve_url(subfolder: str, sap_full: str, item_code: str, item_name: str) -> str | None:
         sub_path = f'{subfolder}/' if subfolder else ''
         disk_dir = (os.path.join(media_root, 'product_images', folder_name, subfolder)
                     if subfolder else os.path.join(media_root, 'product_images', folder_name))
@@ -1375,7 +1402,14 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         found = _scan_disk(disk_dir, item_code or '')
         if found:
             return f'/media/product_images/{folder_name}/{sub_path}{found}'
-        # 3. Fallback: SAP exact filename verbatim
+        # 3. Simplified item name (e.g. "Parwaz-10-Grm" -> "Parwaz")
+        #    Also matches with trailing digits (Greenia -> greenia2.jpeg)
+        simple = _simple_name(item_name or '')
+        if simple and len(simple) > 2:
+            found = _scan_disk_digit_suffix(disk_dir, simple)
+            if found:
+                return f'/media/product_images/{folder_name}/{sub_path}{found}'
+        # 4. Fallback: SAP exact filename verbatim
         if sap_full:
             return f'/media/product_images/{folder_name}/{sub_path}{sap_full}'
         return None
@@ -1385,10 +1419,11 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
             row['price'] = float(row.get('Price', 0.0))
 
         item_code = row.get('ItemCode') or ''
+        item_name = row.get('ItemName') or ''
         # Product image (matched by U_IMG_C = 'Product Image')
-        row['product_image_url'] = _resolve_url('', row.get('Product_Image') or '', item_code)
+        row['product_image_url'] = _resolve_url('', row.get('Product_Image') or '', item_code, item_name)
         # Urdu description (matched by U_IMG_C = 'Product Description Urdu')
-        row['product_description_urdu_url'] = _resolve_url('urdu', row.get('Product_Description_Urdu') or '', item_code)
+        row['product_description_urdu_url'] = _resolve_url('urdu', row.get('Product_Description_Urdu') or '', item_code, item_name)
 
     return {'products': results, 'total_count': total_count, 'limit': limit, 'offset': offset}
 
