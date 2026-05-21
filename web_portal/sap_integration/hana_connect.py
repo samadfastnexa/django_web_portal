@@ -1148,35 +1148,6 @@ def get_item_groups(db) -> list:
     )
     return _fetch_all(db, sql, None)
 
-# Cache for file listings per folder to avoid repeated directory scans
-_product_image_cache = {}
-_cache_timestamp = {}
-
-def _get_image_files_cache(folder_path, cache_timeout=300):
-    """Get cached list of image files in a folder. Cache expires after cache_timeout seconds."""
-    import time
-    current_time = time.time()
-    
-    # Check if cache exists and is still valid
-    if folder_path in _product_image_cache:
-        if current_time - _cache_timestamp.get(folder_path, 0) < cache_timeout:
-            return _product_image_cache[folder_path]
-    
-    # Build new cache
-    import os
-    import glob
-    file_set = set()
-    
-    if os.path.exists(folder_path):
-        for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
-            files = glob.glob(os.path.join(folder_path, f'*{ext}'))
-            for f in files:
-                file_set.add(os.path.basename(f).lower())  # Store lowercase for case-insensitive matching
-    
-    _product_image_cache[folder_path] = file_set
-    _cache_timestamp[folder_path] = current_time
-    return file_set
-
 def products_catalog(db, schema_name: str = '', search: str | None = None, item_group: str | None = None, item_groups: list | None = None, brand: str | None = None, limit: int | None = None, offset: int = 0, fetch_prices: bool = True, only_priced: bool = False, is_active: str | None = 'Y') -> dict:
     """
     Fetch products catalog with image URLs based on database name.
@@ -1366,76 +1337,52 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     # Examples: 4B-BIO_APP -> 4B-BIO, 4B-ORANG_APP -> 4B-ORANG, 4B-AGRI_LIVE -> 4B-AGRI
     folder_name = 'default'
     if schema_name:
-        # Remove common suffixes to get folder name
         folder_name = schema_name.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
-    
-    # Add image URLs to each product using actual filenames from SAP attachments
-    # Images stored in media/product_images/{folder_name}/{FileName}.{FileExt}
+
+    # Source of truth: SAP's ATC1 FileName. For each product we take the FileName SAP returned
+    # and scan the media folder for any matching image extension (png/jpg/jpeg/webp/gif).
+    # Falls back to SAP's exact filename if no image is found on disk.
     import os
     from django.conf import settings
-    
-    # Get the base media directory path
     try:
         media_root = settings.MEDIA_ROOT
-    except:
+    except Exception:
         media_root = 'media'
-    
-    # Build cached list of available files once for all products
-    product_images_dir = os.path.join(media_root, 'product_images', folder_name)
-    available_files = _get_image_files_cache(product_images_dir)
-    
-    # Process all products in a single loop
+
+    _IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif')
+
+    def _split_name(combined):
+        if not combined:
+            return '', ''
+        parts = combined.rsplit('.', 1)
+        return (parts[0], parts[1]) if len(parts) == 2 else (parts[0], '')
+
+    def _resolve_url(subfolder: str, sap_full: str) -> str | None:
+        """Take SAP's '{FileName}.{FileExt}', scan {company}/{subfolder}/ for any image ext, fall back to SAP's exact name."""
+        if not sap_full:
+            return None
+        base, _ext = _split_name(sap_full)
+        disk_dir = os.path.join(media_root, 'product_images', folder_name, subfolder) if subfolder else \
+                   os.path.join(media_root, 'product_images', folder_name)
+        if base:
+            for ext in _IMAGE_EXTS:
+                candidate = f'{base}.{ext}'
+                if os.path.isfile(os.path.join(disk_dir, candidate)):
+                    sub = f'{subfolder}/' if subfolder else ''
+                    return f'/media/product_images/{folder_name}/{sub}{candidate}'
+        # Fallback: SAP's exact filename
+        sub = f'{subfolder}/' if subfolder else ''
+        return f'/media/product_images/{folder_name}/{sub}{sap_full}'
+
     for row in results:
-        # Convert price if fetched
         if fetch_prices:
             row['price'] = float(row.get('Price', 0.0))
-        
-        # Product Image URL (combined FileName.FileExt, matched by extension)
-        product_image = row.get('Product_Image')
-        
-        # Product Description Urdu (matched by U_IMG_C = 'Product Description Urdu')
-        product_desc_urdu = row.get('Product_Description_Urdu')
-        
-        image_url = None
-        
-        # Primary: Use aggregated Product_Image from SAP — always build URL if SAP returned a filename
-        if product_image:
-            image_url = f'/media/product_images/{folder_name}/{product_image}'
-        
-        # Fallback 2: Quick check for brand name or simplified item name
-        # Skip complex regex/fuzzy matching for performance
-        if not image_url:
-            brand_name = row.get('U_BrandName') or ''
-            item_name = row.get('ItemName') or ''
-            
-            # Try brand name first (simple exact match only)
-            if brand_name:
-                for ext in ['png', 'jpg', 'jpeg']:
-                    file_key = f'{brand_name}.{ext}'.lower()
-                    if file_key in available_files:
-                        image_url = f'/media/product_images/{folder_name}/{brand_name}.{ext}'
-                        break
-            
-            # Try simple item name (first word before space/hyphen/parenthesis)
-            if not image_url and item_name:
-                # Extract first word only for simple matching
-                simple_name = item_name.split()[0].split('-')[0].split('(')[0].strip()
-                
-                if simple_name and len(simple_name) > 2:
-                    for ext in ['png', 'jpg', 'jpeg']:
-                        file_key = f'{simple_name}.{ext}'.lower()
-                        if file_key in available_files:
-                            image_url = f'/media/product_images/{folder_name}/{simple_name}.{ext}'
-                            break
-        
-        row['product_image_url'] = image_url
-        
-        # Urdu URL: Use Product Description Urdu attachment
-        if product_desc_urdu:
-            row['product_description_urdu_url'] = f'/media/product_images/{folder_name}/{product_desc_urdu}'
-        else:
-            row['product_description_urdu_url'] = None
-    
+
+        # Product image (matched by U_IMG_C = 'Product Image')
+        row['product_image_url'] = _resolve_url('', row.get('Product_Image') or '')
+        # Urdu description (matched by U_IMG_C = 'Product Description Urdu')
+        row['product_description_urdu_url'] = _resolve_url('urdu', row.get('Product_Description_Urdu') or '')
+
     return {'products': results, 'total_count': total_count, 'limit': limit, 'offset': offset}
 
 def policy_customer_balance(db, card_code: str) -> list:
