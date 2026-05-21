@@ -16,26 +16,65 @@ def check_fonts():
     print(f"Python: {sys.version}")
     print()
     
+    # Project-bundled font dir (preferred — checked first by views.py)
+    bundled_dir = os.path.join(os.path.dirname(__file__), 'fonts')
+    bundled_candidates = [
+        ('NotoNastaliqUrdu', os.path.join(bundled_dir, 'NotoNastaliqUrdu-Regular.ttf')),
+        ('NotoNaskhArabic',  os.path.join(bundled_dir, 'NotoNaskhArabic-Regular.ttf')),
+    ]
+
     # List of fonts to check based on platform
     if sys.platform.startswith('win'):
         # Windows font paths
-        font_candidates = [
+        system_candidates = [
             ('NotoNastaliqUrdu', r'C:\Windows\Fonts\NotoNastaliqUrdu-Regular.ttf'),
+            ('JameelNooriNastaleeq', r'C:\Windows\Fonts\Jameel Noori Nastaleeq.ttf'),
             ('Tahoma',          r'C:\Windows\Fonts\tahoma.ttf'),
             ('Arial',           r'C:\Windows\Fonts\arial.ttf'),
             ('Calibri',         r'C:\Windows\Fonts\calibri.ttf'),
             ('TimesNewRoman',   r'C:\Windows\Fonts\times.ttf'),
         ]
     else:
-        # Linux/Unix font paths
-        font_candidates = [
+        # Linux/Unix font paths — opentype path added because apt puts it there
+        system_candidates = [
+            ('NotoNastaliqUrdu', '/usr/share/fonts/opentype/noto/NotoNastaliqUrdu-Regular.ttf'),
             ('NotoNastaliqUrdu', '/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf'),
             ('NotoNastaliqUrdu', '/usr/share/fonts/noto/NotoNastaliqUrdu-Regular.ttf'),
-            ('NotoSans',        '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'),
-            ('DejaVuSans',      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
-            ('LiberationSans',  '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
-            ('FreeSans',        '/usr/share/fonts/truetype/freefont/FreeSans.ttf'),
+            ('NotoNaskhArabic',  '/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf'),
+            ('NotoNaskhArabic',  '/usr/share/fonts/opentype/noto/NotoNaskhArabic-Regular.ttf'),
+            ('NotoSans',         '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'),
+            ('DejaVuSans',       '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
+            ('LiberationSans',   '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
+            ('FreeSans',         '/usr/share/fonts/truetype/freefont/FreeSans.ttf'),
         ]
+
+    font_candidates = bundled_candidates + system_candidates
+
+    # Recursive scan for NotoNastaliqUrdu under common font roots (Linux)
+    if not sys.platform.startswith('win'):
+        import glob
+        for pat in (
+            '/usr/share/fonts/**/NotoNastaliqUrdu*.ttf',
+            '/usr/share/fonts/**/NotoNastaliqUrdu*.otf',
+            '/usr/local/share/fonts/**/NotoNastaliqUrdu*.ttf',
+            '/root/.fonts/**/NotoNastaliqUrdu*.ttf',
+        ):
+            for match in glob.glob(pat, recursive=True):
+                font_candidates.append(('NotoNastaliqUrdu', match))
+
+        # fc-match fallback
+        try:
+            import subprocess
+            out = subprocess.run(
+                ['fc-match', '-f', '%{file}', 'Noto Nastaliq Urdu'],
+                capture_output=True, text=True, timeout=5,
+            )
+            fc_path = (out.stdout or '').strip()
+            if fc_path and os.path.exists(fc_path):
+                print(f"  (fc-match reports: {fc_path})")
+                font_candidates.append(('NotoNastaliqUrdu', fc_path))
+        except Exception as e:
+            print(f"  (fc-match unavailable: {e})")
     
     print("1. Checking font files on disk:")
     print("-" * 70)
