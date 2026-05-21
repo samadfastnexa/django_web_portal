@@ -1248,7 +1248,7 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
         ' T0."SalPackMsr", '
         ' T0."InvntryUom", '
         ' T0."U_IsActive", '
-        ' MIN(CASE WHEN LOWER(TRIM(A."FileExt")) IN (\'jpeg\', \'jpg\', \'png\') THEN A."FileName" || \'.\'  || A."FileExt" END) AS "Product_Image", '
+        ' MIN(CASE WHEN A."U_IMG_C" = \'Product Image\' THEN A."FileName" || \'.\'  || A."FileExt" END) AS "Product_Image", '
         ' MAX(CASE WHEN A."U_IMG_C" = \'Product Description Urdu\' THEN A."FileName" || \'.\'  || A."FileExt" END) AS "Product_Description_Urdu"'
     )
     
