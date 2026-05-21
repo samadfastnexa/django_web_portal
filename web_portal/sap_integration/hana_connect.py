@@ -1339,9 +1339,10 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
     if schema_name:
         folder_name = schema_name.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
 
-    # Source of truth: SAP's ATC1 FileName. For each product we take the FileName SAP returned
-    # and scan the media folder for any matching image extension (png/jpg/jpeg/webp/gif).
-    # Falls back to SAP's exact filename if no image is found on disk.
+    # Resolve URLs in priority order per product:
+    #   1. SAP's FileName (without extension) -> scan disk for any image extension
+    #   2. ItemCode (e.g. FG00682) -> scan disk for any image extension
+    #   3. Fallback: SAP's verbatim filename URL when SAP holds an attachment
     import os
     from django.conf import settings
     try:
@@ -1351,37 +1352,43 @@ def products_catalog(db, schema_name: str = '', search: str | None = None, item_
 
     _IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif')
 
-    def _split_name(combined):
-        if not combined:
-            return '', ''
-        parts = combined.rsplit('.', 1)
-        return (parts[0], parts[1]) if len(parts) == 2 else (parts[0], '')
-
-    def _resolve_url(subfolder: str, sap_full: str) -> str | None:
-        """Take SAP's '{FileName}.{FileExt}', scan {company}/{subfolder}/ for any image ext, fall back to SAP's exact name."""
-        if not sap_full:
+    def _scan_disk(disk_dir: str, base: str):
+        if not base:
             return None
-        base, _ext = _split_name(sap_full)
-        disk_dir = os.path.join(media_root, 'product_images', folder_name, subfolder) if subfolder else \
-                   os.path.join(media_root, 'product_images', folder_name)
-        if base:
-            for ext in _IMAGE_EXTS:
-                candidate = f'{base}.{ext}'
-                if os.path.isfile(os.path.join(disk_dir, candidate)):
-                    sub = f'{subfolder}/' if subfolder else ''
-                    return f'/media/product_images/{folder_name}/{sub}{candidate}'
-        # Fallback: SAP's exact filename
-        sub = f'{subfolder}/' if subfolder else ''
-        return f'/media/product_images/{folder_name}/{sub}{sap_full}'
+        for ext in _IMAGE_EXTS:
+            candidate = f'{base}.{ext}'
+            if os.path.isfile(os.path.join(disk_dir, candidate)):
+                return candidate
+        return None
+
+    def _resolve_url(subfolder: str, sap_full: str, item_code: str) -> str | None:
+        sub_path = f'{subfolder}/' if subfolder else ''
+        disk_dir = (os.path.join(media_root, 'product_images', folder_name, subfolder)
+                    if subfolder else os.path.join(media_root, 'product_images', folder_name))
+        # 1. SAP filename (without extension)
+        if sap_full:
+            sap_base = sap_full.rsplit('.', 1)[0]
+            found = _scan_disk(disk_dir, sap_base)
+            if found:
+                return f'/media/product_images/{folder_name}/{sub_path}{found}'
+        # 2. ItemCode
+        found = _scan_disk(disk_dir, item_code or '')
+        if found:
+            return f'/media/product_images/{folder_name}/{sub_path}{found}'
+        # 3. Fallback: SAP exact filename verbatim
+        if sap_full:
+            return f'/media/product_images/{folder_name}/{sub_path}{sap_full}'
+        return None
 
     for row in results:
         if fetch_prices:
             row['price'] = float(row.get('Price', 0.0))
 
+        item_code = row.get('ItemCode') or ''
         # Product image (matched by U_IMG_C = 'Product Image')
-        row['product_image_url'] = _resolve_url('', row.get('Product_Image') or '')
+        row['product_image_url'] = _resolve_url('', row.get('Product_Image') or '', item_code)
         # Urdu description (matched by U_IMG_C = 'Product Description Urdu')
-        row['product_description_urdu_url'] = _resolve_url('urdu', row.get('Product_Description_Urdu') or '')
+        row['product_description_urdu_url'] = _resolve_url('urdu', row.get('Product_Description_Urdu') or '', item_code)
 
     return {'products': results, 'total_count': total_count, 'limit': limit, 'offset': offset}
 

@@ -6656,12 +6656,10 @@ def get_product_description_api(request):
             if database:
                 folder_name = database.replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
 
-            # Construct URLs from SAP attachment filenames.
-            # For Urdu/English descriptions: SAP often stores the attachment as .docx, but the
-            # actual files on disk are images. So we use SAP's FileName (without extension) and
-            # scan the language subfolder for any matching image extension (png/jpg/jpeg/webp/gif).
-            # If no image is found we fall back to SAP's exact filename so the URL still resolves
-            # to a real attachment when one exists.
+            # Resolve URLs in priority order:
+            #   1. SAP's FileName (without extension) -> scan disk for any image extension
+            #   2. ItemCode (e.g. FG00682) -> scan disk for any image extension
+            #   3. Fallback: SAP's verbatim filename URL when SAP holds an attachment
             try:
                 media_root = settings.MEDIA_ROOT
             except Exception:
@@ -6669,24 +6667,37 @@ def get_product_description_api(request):
 
             _IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif')
 
-            def _resolve_desc_url(subfolder: str, filename_no_ext: str, sap_full: str) -> str | None:
-                """Return the URL of an image matching filename_no_ext in subfolder, or the SAP filename verbatim."""
-                if not filename_no_ext and not sap_full:
+            def _scan_disk(disk_dir: str, base: str):
+                if not base:
                     return None
-                if filename_no_ext:
-                    disk_dir = os.path.join(media_root, 'product_images', folder_name, subfolder)
-                    for ext in _IMAGE_EXTS:
-                        candidate_name = f'{filename_no_ext}.{ext}'
-                        if os.path.isfile(os.path.join(disk_dir, candidate_name)):
-                            return f'/media/product_images/{folder_name}/{subfolder}/{candidate_name}'
-                # Fallback: SAP's exact filename (works when SAP holds an image attachment)
-                if sap_full:
-                    return f'/media/product_images/{folder_name}/{subfolder}/{sap_full}'
+                for ext in _IMAGE_EXTS:
+                    candidate = f'{base}.{ext}'
+                    if os.path.isfile(os.path.join(disk_dir, candidate)):
+                        return candidate
                 return None
 
-            product_image_url = f'/media/product_images/{folder_name}/{product_image}' if product_image else None
-            product_description_urdu_url = _resolve_desc_url('urdu', urdu_file or '', product_desc_urdu or '')
-            product_description_english_url = _resolve_desc_url('english', english_file or '', product_desc_english or '')
+            def _resolve_url(subfolder: str, sap_full: str) -> str | None:
+                sub_path = f'{subfolder}/' if subfolder else ''
+                disk_dir = (os.path.join(media_root, 'product_images', folder_name, subfolder)
+                            if subfolder else os.path.join(media_root, 'product_images', folder_name))
+                # 1. SAP filename (without extension)
+                if sap_full:
+                    sap_base = sap_full.rsplit('.', 1)[0]
+                    found = _scan_disk(disk_dir, sap_base)
+                    if found:
+                        return f'/media/product_images/{folder_name}/{sub_path}{found}'
+                # 2. ItemCode
+                found = _scan_disk(disk_dir, item_code_result or '')
+                if found:
+                    return f'/media/product_images/{folder_name}/{sub_path}{found}'
+                # 3. Fallback: SAP exact filename verbatim
+                if sap_full:
+                    return f'/media/product_images/{folder_name}/{sub_path}{sap_full}'
+                return None
+
+            product_image_url = _resolve_url('', product_image or '')
+            product_description_urdu_url = _resolve_url('urdu', product_desc_urdu or '')
+            product_description_english_url = _resolve_url('english', product_desc_english or '')
 
             all_attachments = []
             if product_image:
