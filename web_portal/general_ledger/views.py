@@ -50,49 +50,105 @@ except ImportError:
     ARABIC_AVAILABLE = False
 
 # Register a Unicode/Urdu-capable font once at module load.
-# Try fonts on both Windows and Linux systems.
+# Discovery order:
+#   1. Project-bundled font in general_ledger/fonts/  (deployment-agnostic)
+#   2. Hardcoded common system paths (Windows / Linux)
+#   3. Recursive scan of /usr/share/fonts/ for NotoNastaliqUrdu*
+#   4. fc-match query (Linux only)
 _URDU_FONT = 'Helvetica'
 if REPORTLAB_AVAILABLE:
     import os as _font_os
     import sys as _font_sys
-    
-    # Font candidates for different operating systems
+    import glob as _font_glob
+    import subprocess as _font_subproc
+
+    # 1. Project-bundled font directory — drop NotoNastaliqUrdu-Regular.ttf here
+    #    and it works on any OS without depending on system fonts.
+    _bundled_font_dir = _font_os.path.join(_font_os.path.dirname(__file__), 'fonts')
+    _bundled_candidates = [
+        ('NotoNastaliqUrdu', _font_os.path.join(_bundled_font_dir, 'NotoNastaliqUrdu-Regular.ttf')),
+        ('NotoNaskhArabic',  _font_os.path.join(_bundled_font_dir, 'NotoNaskhArabic-Regular.ttf')),
+    ]
+
+    # 2. Common system paths
     if _font_sys.platform.startswith('win'):
-        # Windows font paths
-        _URDU_FONT_CANDIDATES = [
+        _system_candidates = [
             ('NotoNastaliqUrdu', r'C:\Windows\Fonts\NotoNastaliqUrdu-Regular.ttf'),
+            ('JameelNooriNastaleeq', r'C:\Windows\Fonts\Jameel Noori Nastaleeq.ttf'),
             ('Tahoma',          r'C:\Windows\Fonts\tahoma.ttf'),
             ('Arial',           r'C:\Windows\Fonts\arial.ttf'),
             ('Calibri',         r'C:\Windows\Fonts\calibri.ttf'),
             ('TimesNewRoman',   r'C:\Windows\Fonts\times.ttf'),
         ]
     else:
-        # Linux/Unix font paths
-        _URDU_FONT_CANDIDATES = [
+        # Note: on modern Ubuntu the apt package `fonts-noto-nastaliq-urdu`
+        # installs to /usr/share/fonts/opentype/noto/ (NOT truetype/), so we
+        # check both locations.
+        _system_candidates = [
+            ('NotoNastaliqUrdu', '/usr/share/fonts/opentype/noto/NotoNastaliqUrdu-Regular.ttf'),
             ('NotoNastaliqUrdu', '/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf'),
             ('NotoNastaliqUrdu', '/usr/share/fonts/noto/NotoNastaliqUrdu-Regular.ttf'),
-            ('NotoSans',        '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'),
-            ('DejaVuSans',      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
-            ('LiberationSans',  '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
-            ('FreeSans',        '/usr/share/fonts/truetype/freefont/FreeSans.ttf'),
+            ('NotoNaskhArabic',  '/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf'),
+            ('NotoNaskhArabic',  '/usr/share/fonts/opentype/noto/NotoNaskhArabic-Regular.ttf'),
+            ('NotoSans',         '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'),
+            ('DejaVuSans',       '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
+            ('LiberationSans',   '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
+            ('FreeSans',         '/usr/share/fonts/truetype/freefont/FreeSans.ttf'),
         ]
-    
+
+    _URDU_FONT_CANDIDATES = _bundled_candidates + _system_candidates
+
+    # 3. Recursive scan of /usr/share/fonts/ for any NotoNastaliqUrdu* file
+    #    (catches non-standard install locations on various distros).
+    if not _font_sys.platform.startswith('win'):
+        try:
+            for _pat in (
+                '/usr/share/fonts/**/NotoNastaliqUrdu*.ttf',
+                '/usr/share/fonts/**/NotoNastaliqUrdu*.otf',
+                '/usr/local/share/fonts/**/NotoNastaliqUrdu*.ttf',
+                '/root/.fonts/**/NotoNastaliqUrdu*.ttf',
+            ):
+                for _match in _font_glob.glob(_pat, recursive=True):
+                    _URDU_FONT_CANDIDATES.append(('NotoNastaliqUrdu', _match))
+        except Exception:
+            pass
+
+    # 4. fc-match fallback — ask fontconfig where Urdu fonts live
+    if not _font_sys.platform.startswith('win'):
+        try:
+            _fc_out = _font_subproc.run(
+                ['fc-match', '-f', '%{file}', 'Noto Nastaliq Urdu'],
+                capture_output=True, text=True, timeout=5,
+            )
+            _fc_path = (_fc_out.stdout or '').strip()
+            if _fc_path and _font_os.path.exists(_fc_path):
+                _URDU_FONT_CANDIDATES.append(('NotoNastaliqUrdu', _fc_path))
+        except Exception:
+            pass
+
     try:
         from reportlab.pdfbase import pdfmetrics as _pm
         from reportlab.pdfbase.ttfonts import TTFont as _TTFont
+        _registered = False
+        _seen_paths = set()
         for _fname, _fpath in _URDU_FONT_CANDIDATES:
+            if not _fpath or _fpath in _seen_paths:
+                continue
+            _seen_paths.add(_fpath)
             if _font_os.path.exists(_fpath):
                 try:
                     if _fname not in _pm.getRegisteredFontNames():
                         _pm.registerFont(_TTFont(_fname, _fpath))
                     _URDU_FONT = _fname
                     print(f"[General Ledger] Successfully registered Urdu font: {_fname} from {_fpath}")
+                    _registered = True
                     break
                 except Exception as e:
-                    print(f"[General Ledger] Failed to register font {_fname}: {e}")
+                    print(f"[General Ledger] Failed to register font {_fname} at {_fpath}: {e}")
                     continue
-        else:
+        if not _registered:
             print(f"[General Ledger] No suitable Urdu font found. Falling back to {_URDU_FONT}")
+            print(f"[General Ledger] Searched {len(_seen_paths)} paths. Drop a TTF into {_bundled_font_dir} for guaranteed support.")
     except Exception as e:
         print(f"[General Ledger] Error during font registration: {e}")
 
