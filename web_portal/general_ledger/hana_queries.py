@@ -135,11 +135,127 @@ def account_opening_balance(
         params.append(bp_code)
     
     result = _fetch_one(db, sql, tuple(params))
-    
+
     if not result:
         return {"Debit": 0, "Credit": 0, "Balance": 0}
-    
+
     return result
+
+
+def project_opening_balance(db, bp_code: str, project_code: str, before_date: str) -> float:
+    """
+    Cumulative Debit - Credit on JDT1 for a single (BPCode, ProjectCode)
+    pair, posted strictly before before_date. Returns 0.0 when no rows.
+    """
+    sql = """
+    SELECT COALESCE(SUM("Debit"), 0) - COALESCE(SUM("Credit"), 0) AS "Balance"
+    FROM "JDT1"
+    WHERE "ShortName" = ?
+      AND "Project" = ?
+      AND "RefDate" < TO_DATE(?, 'YYYY-MM-DD')
+    """
+    row = _fetch_one(db, sql, (bp_code, project_code, before_date))
+    if not row:
+        return 0.0
+    try:
+        return float(row.get('Balance') or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def project_summary_report(
+    db,
+    account_from: Optional[str] = None,
+    account_to: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    bp_code=None,
+    project_code: Optional[str] = None,
+    trans_type: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Per-(BPCode, ProjectCode) summary of activity grouped by SAP B1 TransType
+    buckets used in the per-policy summary page of the GL PDF:
+
+        Sales      = SUM(Debit)  WHERE TransType='13' AND account is NOT a tax account
+        Tax        = SUM(Credit) WHERE TransType='13' AND account IS a tax account
+        Return     = SUM(Credit) WHERE TransType IN ('14','16')
+        Collection = SUM(Credit) WHERE TransType='24'
+        TotalDebit / TotalCredit = unconditional sums
+
+    Tax-account detection: OACT.AcctName matches '%TAX%' / '%VAT%' / '%GST%'.
+
+    Filters mirror general_ledger_report so the summary stays consistent
+    with whatever was shown in the main ledger above it.
+    """
+    sql = """
+    SELECT
+        T1."ShortName"            AS "BPCode",
+        COALESCE(T3."CardName",'') AS "BPName",
+        T1."Project"              AS "ProjectCode",
+        COALESCE(T4."PrjName",'') AS "ProjectName",
+        SUM(CASE WHEN T0."TransType"='13' AND
+                      NOT (UPPER(T2."AcctName") LIKE '%TAX%' OR
+                           UPPER(T2."AcctName") LIKE '%VAT%' OR
+                           UPPER(T2."AcctName") LIKE '%GST%')
+                 THEN T1."Debit"  ELSE 0 END) AS "Sales",
+        SUM(CASE WHEN T0."TransType"='13' AND
+                      (UPPER(T2."AcctName") LIKE '%TAX%' OR
+                       UPPER(T2."AcctName") LIKE '%VAT%' OR
+                       UPPER(T2."AcctName") LIKE '%GST%')
+                 THEN T1."Credit" ELSE 0 END) AS "Tax",
+        SUM(CASE WHEN T0."TransType" IN ('14','16') THEN T1."Credit" ELSE 0 END) AS "Return",
+        SUM(CASE WHEN T0."TransType"='24'           THEN T1."Credit" ELSE 0 END) AS "Collection",
+        SUM(T1."Debit")  AS "TotalDebit",
+        SUM(T1."Credit") AS "TotalCredit"
+    FROM "OJDT" T0
+    INNER JOIN "JDT1" T1 ON T0."TransId"  = T1."TransId"
+    LEFT  JOIN "OACT" T2 ON T1."Account"  = T2."AcctCode"
+    LEFT  JOIN "OCRD" T3 ON T1."ShortName" = T3."CardCode"
+    LEFT  JOIN "OPRJ" T4 ON T1."Project"   = T4."PrjCode"
+    WHERE T1."Project"   <> ''
+      AND T1."ShortName" <> ''
+    """
+
+    params: List[Any] = []
+
+    if account_from:
+        sql += ' AND T1."Account" >= ?'
+        params.append(account_from.strip())
+    if account_to:
+        sql += ' AND T1."Account" <= ?'
+        params.append(account_to.strip())
+
+    if from_date:
+        sql += " AND T0.\"RefDate\" >= TO_DATE(?, 'YYYY-MM-DD')"
+        params.append(from_date.strip())
+    if to_date:
+        sql += " AND T0.\"RefDate\" <= TO_DATE(?, 'YYYY-MM-DD')"
+        params.append(to_date.strip())
+
+    if bp_code:
+        if isinstance(bp_code, list):
+            placeholders = ','.join(['?' for _ in bp_code])
+            sql += f' AND T1."ShortName" IN ({placeholders})'
+            params.extend([str(c).strip() for c in bp_code])
+        else:
+            sql += ' AND T1."ShortName" = ?'
+            params.append(str(bp_code).strip())
+
+    if project_code:
+        sql += ' AND T1."Project" = ?'
+        params.append(project_code.strip())
+
+    if trans_type:
+        sql += ' AND T0."TransType" = ?'
+        params.append(trans_type.strip())
+
+    sql += """
+    GROUP BY T1."ShortName", T3."CardName", T1."Project", T4."PrjName"
+    ORDER BY T1."ShortName", T1."Project"
+    """
+
+    return _fetch_all(db, sql, tuple(params))
 
 
 def general_ledger_report(

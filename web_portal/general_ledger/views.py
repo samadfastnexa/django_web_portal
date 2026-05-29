@@ -38,16 +38,59 @@ try:
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfgen.canvas import Canvas as _RLCanvas
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
+
+
+def _make_last_page_only_canvas(footer_fn):
+    """
+    Build a reportlab Canvas subclass that calls footer_fn(canvas) only on the
+    final page. footer_fn receives just the canvas; it must not depend on the
+    SimpleDocTemplate doc argument.
+    """
+    class _LastPageOnlyCanvas(_RLCanvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved_page_states = []
+
+        def showPage(self):
+            self._saved_page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._saved_page_states)
+            for idx, state in enumerate(self._saved_page_states):
+                self.__dict__.update(state)
+                if idx == total - 1:
+                    try:
+                        footer_fn(self)
+                    except Exception:
+                        pass
+                _RLCanvas.showPage(self)
+            _RLCanvas.save(self)
+
+    return _LastPageOnlyCanvas
 
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display as bidi_display
     ARABIC_AVAILABLE = True
+    # Urdu-tuned reshaper: enables Urdu-specific ligatures and presentation
+    # forms. The default config is Arabic-centric and misses some Urdu
+    # letterforms (e.g. ٹ ڈ ڑ ۂ).
+    try:
+        _urdu_reshaper = arabic_reshaper.ArabicReshaper(configuration={
+            'language': 'Urdu',
+            'support_ligatures': True,
+            'delete_harakat': False,
+        })
+    except Exception:
+        _urdu_reshaper = None
 except ImportError:
     ARABIC_AVAILABLE = False
+    _urdu_reshaper = None
 
 # Register a Unicode/Urdu-capable font once at module load.
 # Discovery order:
@@ -62,69 +105,81 @@ if REPORTLAB_AVAILABLE:
     import glob as _font_glob
     import subprocess as _font_subproc
 
-    # 1. Project-bundled font directory — drop NotoNastaliqUrdu-Regular.ttf here
-    #    and it works on any OS without depending on system fonts.
+    # 1. Project-bundled font directory.
+    #    Naskh-style fonts (NotoNaskhArabic, Amiri) ship precomposed glyphs for
+    #    Arabic Presentation Forms (U+FE70-FEFF) — they render correctly with
+    #    ReportLab. Nastaliq fonts (NotoNastaliqUrdu, JameelNooriNastaleeq)
+    #    rely on OpenType GSUB shaping which ReportLab does NOT perform, so
+    #    they render as blank/missing glyphs. Naskh is checked FIRST.
     _bundled_font_dir = _font_os.path.join(_font_os.path.dirname(__file__), 'fonts')
     _bundled_candidates = [
-        ('NotoNastaliqUrdu', _font_os.path.join(_bundled_font_dir, 'NotoNastaliqUrdu-Regular.ttf')),
-        ('NotoNaskhArabic',  _font_os.path.join(_bundled_font_dir, 'NotoNaskhArabic-Regular.ttf')),
+        ('NotoNaskhArabic',     _font_os.path.join(_bundled_font_dir, 'NotoNaskhArabic-Regular.ttf')),
+        ('Amiri',               _font_os.path.join(_bundled_font_dir, 'Amiri-Regular.ttf')),
+        ('JameelNooriNastaleeq',_font_os.path.join(_bundled_font_dir, 'Jameel Noori Nastaleeq.ttf')),
+        ('NotoNastaliqUrdu',    _font_os.path.join(_bundled_font_dir, 'NotoNastaliqUrdu-Regular.ttf')),
     ]
 
-    # 2. Common system paths
+    # 2. Common system paths — Naskh-style fonts first.
     if _font_sys.platform.startswith('win'):
         _system_candidates = [
-            ('NotoNastaliqUrdu', r'C:\Windows\Fonts\NotoNastaliqUrdu-Regular.ttf'),
-            ('JameelNooriNastaleeq', r'C:\Windows\Fonts\Jameel Noori Nastaleeq.ttf'),
             ('Tahoma',          r'C:\Windows\Fonts\tahoma.ttf'),
             ('Arial',           r'C:\Windows\Fonts\arial.ttf'),
             ('Calibri',         r'C:\Windows\Fonts\calibri.ttf'),
             ('TimesNewRoman',   r'C:\Windows\Fonts\times.ttf'),
+            ('NotoNastaliqUrdu', r'C:\Windows\Fonts\NotoNastaliqUrdu-Regular.ttf'),
+            ('JameelNooriNastaleeq', r'C:\Windows\Fonts\Jameel Noori Nastaleeq.ttf'),
         ]
     else:
         # Note: on modern Ubuntu the apt package `fonts-noto-nastaliq-urdu`
         # installs to /usr/share/fonts/opentype/noto/ (NOT truetype/), so we
         # check both locations.
         _system_candidates = [
-            ('NotoNastaliqUrdu', '/usr/share/fonts/opentype/noto/NotoNastaliqUrdu-Regular.ttf'),
-            ('NotoNastaliqUrdu', '/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf'),
-            ('NotoNastaliqUrdu', '/usr/share/fonts/noto/NotoNastaliqUrdu-Regular.ttf'),
             ('NotoNaskhArabic',  '/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf'),
             ('NotoNaskhArabic',  '/usr/share/fonts/opentype/noto/NotoNaskhArabic-Regular.ttf'),
+            ('Amiri',            '/usr/share/fonts/truetype/amiri/amiri-regular.ttf'),
             ('NotoSans',         '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'),
             ('DejaVuSans',       '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
             ('LiberationSans',   '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
             ('FreeSans',         '/usr/share/fonts/truetype/freefont/FreeSans.ttf'),
+            ('NotoNastaliqUrdu', '/usr/share/fonts/opentype/noto/NotoNastaliqUrdu-Regular.ttf'),
+            ('NotoNastaliqUrdu', '/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf'),
         ]
 
     _URDU_FONT_CANDIDATES = _bundled_candidates + _system_candidates
 
-    # 3. Recursive scan of /usr/share/fonts/ for any NotoNastaliqUrdu* file
-    #    (catches non-standard install locations on various distros).
+    # 3. Recursive scan for Arabic-capable fonts under common roots — Naskh
+    #    style preferred (it actually renders with ReportLab).
     if not _font_sys.platform.startswith('win'):
         try:
-            for _pat in (
-                '/usr/share/fonts/**/NotoNastaliqUrdu*.ttf',
-                '/usr/share/fonts/**/NotoNastaliqUrdu*.otf',
-                '/usr/local/share/fonts/**/NotoNastaliqUrdu*.ttf',
-                '/root/.fonts/**/NotoNastaliqUrdu*.ttf',
+            for _name, _pat in (
+                ('NotoNaskhArabic',  '/usr/share/fonts/**/NotoNaskhArabic*.ttf'),
+                ('NotoNaskhArabic',  '/usr/share/fonts/**/NotoNaskhArabic*.otf'),
+                ('Amiri',            '/usr/share/fonts/**/[Aa]miri*.ttf'),
+                ('NotoNastaliqUrdu', '/usr/share/fonts/**/NotoNastaliqUrdu*.ttf'),
+                ('NotoNastaliqUrdu', '/usr/share/fonts/**/NotoNastaliqUrdu*.otf'),
             ):
                 for _match in _font_glob.glob(_pat, recursive=True):
-                    _URDU_FONT_CANDIDATES.append(('NotoNastaliqUrdu', _match))
+                    _URDU_FONT_CANDIDATES.append((_name, _match))
         except Exception:
             pass
 
-    # 4. fc-match fallback — ask fontconfig where Urdu fonts live
+    # 4. fc-match fallback — ask fontconfig where Arabic fonts live (Naskh first)
     if not _font_sys.platform.startswith('win'):
-        try:
-            _fc_out = _font_subproc.run(
-                ['fc-match', '-f', '%{file}', 'Noto Nastaliq Urdu'],
-                capture_output=True, text=True, timeout=5,
-            )
-            _fc_path = (_fc_out.stdout or '').strip()
-            if _fc_path and _font_os.path.exists(_fc_path):
-                _URDU_FONT_CANDIDATES.append(('NotoNastaliqUrdu', _fc_path))
-        except Exception:
-            pass
+        for _name, _query in (
+            ('NotoNaskhArabic',  'Noto Naskh Arabic'),
+            ('Amiri',            'Amiri'),
+            ('NotoNastaliqUrdu', 'Noto Nastaliq Urdu'),
+        ):
+            try:
+                _fc_out = _font_subproc.run(
+                    ['fc-match', '-f', '%{file}', _query],
+                    capture_output=True, text=True, timeout=5,
+                )
+                _fc_path = (_fc_out.stdout or '').strip()
+                if _fc_path and _font_os.path.exists(_fc_path):
+                    _URDU_FONT_CANDIDATES.append((_name, _fc_path))
+            except Exception:
+                pass
 
     try:
         from reportlab.pdfbase import pdfmetrics as _pm
@@ -1569,6 +1624,141 @@ def export_ledger_pdf_api(request):
         table.setStyle(TableStyle(table_styles))
         elements.append(table)
 
+        # ── Per-policy summary page ──────────────────────────────────────────
+        # Aggregates each (Customer, Project) pair across the same filters
+        # used for the main ledger. Rendered on its own page after the detail.
+        try:
+            conn2 = get_hana_connection(company)
+            summary_rows = hana_queries.project_summary_report(
+                conn2,
+                account_from=account_from or None,
+                account_to=account_to   or None,
+                from_date=from_date     or None,
+                to_date=to_date         or None,
+                bp_code=bp_code if bp_code else None,
+                project_code=project_code or None,
+                trans_type=trans_type   or None,
+            )
+
+            # Group by BP and attach per-policy opening + closing balance
+            _by_bp = {}
+            for _r in summary_rows:
+                _bpc = str(_r.get('BPCode') or '')
+                _bp = _by_bp.setdefault(_bpc, {
+                    'BPCode': _bpc,
+                    'BPName': str(_r.get('BPName') or ''),
+                    'rows': [],
+                })
+                _opening = 0.0
+                if from_date:
+                    try:
+                        _opening = hana_queries.project_opening_balance(
+                            conn2, _bpc, str(_r.get('ProjectCode') or ''), from_date
+                        )
+                    except Exception:
+                        _opening = 0.0
+                _td = float(_r.get('TotalDebit')  or 0)
+                _tc = float(_r.get('TotalCredit') or 0)
+                _r['Opening'] = _opening
+                _r['Balance'] = _opening + _td - _tc
+                _bp['rows'].append(_r)
+            conn2.close()
+        except Exception as _summary_err:
+            logger.exception("Error building per-policy summary: %s", _summary_err)
+            _by_bp = {}
+
+        if _by_bp:
+            elements.append(PageBreak())
+
+            _sum_col_widths = [
+                3.40 * inch,   # Policy Name
+                0.80 * inch,   # Opening
+                0.80 * inch,   # Sales
+                0.70 * inch,   # Tax
+                0.80 * inch,   # Return
+                0.90 * inch,   # Collection
+                0.85 * inch,   # Total Debit
+                0.85 * inch,   # Total Credit
+                0.85 * inch,   # Balance
+            ]
+            _SUM_NCOLS = len(_sum_col_widths)
+
+            _sum_data = []
+            _sum_styles = [
+                ('FONTSIZE',      (0, 0), (-1, -1), _fs_td),
+                ('FONTNAME',      (0, 0), (-1, -1), 'Helvetica'),
+                ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING',   (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING',  (0, 0), (-1, -1), 3),
+                ('TOPPADDING',    (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('LINEBELOW',     (0, 0), (-1, -1), 0.25, C_GRID),
+                ('ALIGN',         (1, 0), (-1, -1), 'RIGHT'),
+            ]
+
+            _sum_headers = [
+                'Policy Name', 'Opening', 'Sales', 'Tax', 'Return',
+                'Collection', 'Total Debit', 'Total Credit', 'Balance',
+            ]
+            _sum_data.append(_sum_headers)
+            _sri = 0
+            _sum_styles += [
+                ('BACKGROUND',    (0, _sri), (-1, _sri), C_HEADER_BG),
+                ('TEXTCOLOR',     (0, _sri), (-1, _sri), C_HEADER_TXT),
+                ('FONTNAME',      (0, _sri), (-1, _sri), 'Helvetica-Bold'),
+                ('FONTSIZE',      (0, _sri), (-1, _sri), _fs_th),
+                ('ALIGN',         (0, _sri), (-1, _sri), 'CENTER'),
+                ('BOTTOMPADDING', (0, _sri), (-1, _sri), 5),
+                ('TOPPADDING',    (0, _sri), (-1, _sri), 5),
+                ('LINEABOVE',     (0, _sri), (-1, _sri), 0.75, C_GRID),
+                ('LINEBELOW',     (0, _sri), (-1, _sri), 0.75, C_GRID),
+            ]
+            _sri += 1
+
+            def _fmt(v):
+                try:
+                    f = float(v or 0)
+                except (TypeError, ValueError):
+                    f = 0.0
+                return '{:,.2f}'.format(f) if f else '0'
+
+            for _bpc, _bp in _by_bp.items():
+                _bp_label = (
+                    f"{_bpc}    {_bp['BPName']}".strip()
+                    if _bpc else (_bp['BPName'] or 'No BP')
+                )
+                _sum_data.append([_bp_label] + [''] * (_SUM_NCOLS - 1))
+                _sum_styles += [
+                    ('SPAN',         (0, _sri), (_SUM_NCOLS - 1, _sri)),
+                    ('BACKGROUND',   (0, _sri), (-1, _sri), C_TERR_BG),
+                    ('FONTNAME',     (0, _sri), (-1, _sri), 'Helvetica-Bold'),
+                    ('FONTSIZE',     (0, _sri), (-1, _sri), 8),
+                    ('LINEABOVE',    (0, _sri), (-1, _sri), 0.5, C_GRID),
+                    ('LINEBELOW',    (0, _sri), (-1, _sri), 0.5, C_GRID),
+                ]
+                _sri += 1
+
+                for _r in _bp['rows']:
+                    _pname = (
+                        f"{_r.get('ProjectCode','')} {_r.get('ProjectName','')}"
+                    ).strip()
+                    _sum_data.append([
+                        Paragraph(_pname, cell_style),
+                        _fmt(_r.get('Opening')),
+                        _fmt(_r.get('Sales')),
+                        _fmt(_r.get('Tax')),
+                        _fmt(_r.get('Return')),
+                        _fmt(_r.get('Collection')),
+                        _fmt(_r.get('TotalDebit')),
+                        _fmt(_r.get('TotalCredit')),
+                        _fmt(_r.get('Balance')),
+                    ])
+                    _sri += 1
+
+            _sum_table = Table(_sum_data, colWidths=_sum_col_widths, repeatRows=1)
+            _sum_table.setStyle(TableStyle(_sum_styles))
+            elements.append(_sum_table)
+
         # ── Urdu footer (lines from admin settings) ──────────────────────────
         _urdu_lines = _cfg.footer_lines()
         _urdu_reshaped_lines = []
@@ -1580,7 +1770,10 @@ def export_ledger_pdf_api(request):
             for _line in _urdu_lines:
                 if ARABIC_AVAILABLE:
                     try:
-                        _reshaped = arabic_reshaper.reshape(_line)
+                        if _urdu_reshaper is not None:
+                            _reshaped = _urdu_reshaper.reshape(_line)
+                        else:
+                            _reshaped = arabic_reshaper.reshape(_line)
                         _display  = bidi_display(_reshaped)
                         _urdu_reshaped_lines.append(_display)
                     except Exception as e:
@@ -1588,16 +1781,17 @@ def export_ledger_pdf_api(request):
                 else:
                     _urdu_reshaped_lines.append(_line)
 
-        # Page callback to draw Urdu footer at the bottom of every page
-        def draw_urdu_footer(canvas, doc):
+        # Callback to draw Urdu footer — invoked by _LastPageOnlyCanvas on the
+        # final page only.
+        def draw_urdu_footer(canvas):
             """Draw Urdu footer using canvas directly with text wrapping"""
             if not _urdu_reshaped_lines:
                 return
-            
+
             canvas.saveState()
             try:
                 from reportlab.lib.utils import simpleSplit
-                
+
                 _font_size = 10
                 _padding   = 8
                 _line_gap  = 3
@@ -1606,17 +1800,17 @@ def export_ledger_pdf_api(request):
                 box_width  = page_width - 0.6 * inch
                 box_x      = 0.3 * inch
                 max_text_w = box_width - (_padding * 2)
-                
+
                 # Pre-split all lines accounting for wrapping
                 all_wrapped = []
                 for line_text in _urdu_reshaped_lines:
                     wrapped = simpleSplit(line_text, _URDU_FONT, _font_size, max_text_w)
                     all_wrapped.append(wrapped if wrapped else [line_text])
-                
+
                 # Calculate total height needed
                 single_line_h = _font_size * 1.4
                 y_pos = bottom_margin + 5
-                
+
                 for wrapped_lines in reversed(all_wrapped):
                     box_h = (single_line_h * len(wrapped_lines)) + (_padding * 2)
                     # Draw background box (no border)
@@ -1631,7 +1825,7 @@ def export_ledger_pdf_api(request):
                         canvas.drawString(text_x, text_y, sub_line)
                         text_y -= single_line_h
                     y_pos += box_h + _line_gap
-                
+
             except Exception as e:
                 print(f"[General Ledger] ERROR drawing footer: {e}")
                 import traceback
@@ -1639,7 +1833,7 @@ def export_ledger_pdf_api(request):
             finally:
                 canvas.restoreState()
 
-        doc.build(elements, onFirstPage=draw_urdu_footer, onLaterPages=draw_urdu_footer)
+        doc.build(elements, canvasmaker=_make_last_page_only_canvas(draw_urdu_footer))
         pdf_buffer.seek(0)
         response.write(pdf_buffer.getvalue())
         return response
@@ -2132,8 +2326,9 @@ def export_ledger_pdf(request):
             else:
                 _urdu_reshaped_lines.append(_line)
 
-        # Page callback to draw Urdu footer at the bottom of every page
-        def draw_urdu_footer(canvas, doc):
+        # Callback to draw Urdu footer — invoked by _LastPageOnlyCanvas on the
+        # final page only.
+        def draw_urdu_footer(canvas):
             """Draw Urdu footer using canvas directly with text wrapping"""
             if not _urdu_reshaped_lines:
                 return
@@ -2174,7 +2369,7 @@ def export_ledger_pdf(request):
             finally:
                 canvas.restoreState()
 
-        doc.build(elements, onFirstPage=draw_urdu_footer, onLaterPages=draw_urdu_footer)
+        doc.build(elements, canvasmaker=_make_last_page_only_canvas(draw_urdu_footer))
         pdf_buffer.seek(0)
         response.write(pdf_buffer.getvalue())
         return response
