@@ -431,14 +431,15 @@
   border-collapse: collapse;
   font-size: 13px;
 }
-#changelist .results th, #changelist .results td { 
-  white-space: nowrap; 
-  overflow: hidden; 
-  text-overflow: ellipsis; 
+#changelist .results th, #changelist .results td {
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 6px 10px !important;
-  max-width: 200px;
-  word-break: break-all;
-  word-wrap: normal;
+  max-width: 260px;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+  vertical-align: top;
 }
 
 /* Force all content inside cells to respect boundaries */
@@ -744,28 +745,17 @@
 #changelist .results td div,
 #changelist .results td strong,
 #changelist .results td em {
-  display: inline-block;
+  display: inline;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
   vertical-align: middle;
   line-height: 1.4;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
 }
 
-/* Prevent any text node from overflowing */
 #changelist .results td {
   position: relative;
-}
-#changelist .results td::before {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 20px;
-  background: linear-gradient(to right, transparent, white);
-  pointer-events: none;
 }
 
 /* Make links more compact */
@@ -1274,16 +1264,23 @@ select.sap-crop-lov {
   -moz-appearance: auto;
 }
 
-/* Fix for dropdowns in generic result tables (not changelist) */
-.results {
+/* Fix for dropdowns in generic result tables (not changelist).
+   Scoped to cells that actually contain a <select> so long text in
+   plain cells no longer bleeds into neighbouring columns. */
+.results:has(td select) {
   overflow: visible !important;
   overflow-x: visible !important;
-  overflow-y: visible !important; /* Ensure vertical overflow is allowed */
+  overflow-y: visible !important;
+}
+
+#changelist .results td:has(select),
+#changelist .results td:has(.related-widget-wrapper),
+#changelist .results td:has(.select2-container) {
+  overflow: visible !important;
 }
 
 #changelist .results td {
-  overflow: visible !important;
-  position: relative; /* Ensure z-index works contextually */
+  position: relative; /* Keep z-index context for the select rule above */
 }
 
 #changelist .results select {

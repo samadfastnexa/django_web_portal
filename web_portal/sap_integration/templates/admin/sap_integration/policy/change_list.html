@@ -1,5 +1,61 @@
 {% extends "admin/change_list.html" %}
 
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    /* The project's custom admin theme (sap_integration/admin.css) forces
+       white-space:nowrap + overflow:visible on #changelist .results cells AND
+       their children, which makes the long Name column bleed over Policy/
+       Active. Override with matching specificity + !important. */
+
+    #changelist #result_list,
+    #changelist .results {
+      table-layout: fixed !important;
+      width: 100% !important;
+    }
+
+    #changelist #result_list th,
+    #changelist #result_list td,
+    #changelist .results th,
+    #changelist .results td {
+      white-space: normal !important;
+      word-wrap: break-word !important;
+      overflow-wrap: anywhere !important;
+      text-overflow: clip !important;
+      overflow: hidden !important;
+      max-width: none !important;
+      vertical-align: top !important;
+    }
+
+    /* Theme also wraps inline-children in nowrap — undo on this page. */
+    #changelist .results td a,
+    #changelist .results td span,
+    #changelist .results td div,
+    #changelist .results td strong,
+    #changelist .results td em {
+      white-space: normal !important;
+      display: block !important;
+      max-width: 100% !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+      word-break: break-word !important;
+    }
+
+    /* Kill the fade-to-white gradient the theme paints on the right edge of
+       every cell — it visually hides truncation that no longer exists. */
+    #changelist .results td::before { content: none !important; }
+
+    /* Per-column widths. */
+    #changelist .results th.column-code,       #changelist .results td.field-code        { width: 100px !important; min-width: 100px !important; }
+    #changelist .results th.column-policy,     #changelist .results td.field-policy      { width: 90px  !important; min-width: 90px  !important; }
+    #changelist .results th.column-active,     #changelist .results td.field-active      { width: 70px  !important; min-width: 70px  !important; text-align: center; }
+    #changelist .results th.column-valid_from, #changelist .results td.field-valid_from  { width: 110px !important; min-width: 110px !important; }
+    #changelist .results th.column-valid_to,   #changelist .results td.field-valid_to    { width: 110px !important; min-width: 110px !important; }
+    #changelist .results th.column-updated_at, #changelist .results td.field-updated_at  { width: 170px !important; min-width: 170px !important; }
+    #changelist .results th.column-name,       #changelist .results td.field-name        { width: auto  !important; min-width: 260px !important; }
+  </style>
+{% endblock %}
+
 {% block object-tools-items %}
   <li>
     <form action="{% url 'admin:sap_integration_policy_sync' %}" method="post" style="display:inline">

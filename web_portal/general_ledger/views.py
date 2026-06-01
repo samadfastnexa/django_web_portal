@@ -1759,6 +1759,23 @@ def export_ledger_pdf_api(request):
             _sum_table.setStyle(TableStyle(_sum_styles))
             elements.append(_sum_table)
 
+        # ── Urdu footer image (flows immediately after the last table) ───────
+        if _cfg.footer_image:
+            try:
+                from reportlab.lib.utils import ImageReader as _ImgReader
+                _ir = _ImgReader(_cfg.footer_image.path)
+                _iw, _ih = _ir.getSize()
+                _img_w = landscape(letter)[0] - 0.6 * inch
+                _img_h = _img_w * (_ih / _iw) if _iw else 1.2 * inch
+                _img_max_h = 2.0 * inch
+                if _img_h > _img_max_h:
+                    _img_h = _img_max_h
+                    _img_w = _img_h * (_iw / _ih) if _ih else _img_w
+                elements.append(RLImage(_cfg.footer_image.path,
+                                        width=_img_w, height=_img_h))
+            except Exception as _e:
+                print(f"[General Ledger] ERROR appending footer image: {_e}")
+
         # ── Urdu footer (lines from admin settings) ──────────────────────────
         _urdu_lines = _cfg.footer_lines()
         _urdu_reshaped_lines = []
@@ -1781,12 +1798,21 @@ def export_ledger_pdf_api(request):
                 else:
                     _urdu_reshaped_lines.append(_line)
 
-        # Callback to draw Urdu footer — invoked by _LastPageOnlyCanvas on the
-        # final page only.
+        # Callback to draw Urdu text footer — invoked by _LastPageOnlyCanvas on
+        # the final page only. Skipped entirely when a footer_image is set
+        # (the image is appended as a flowable above so it sits right after
+        # the table).
         def draw_urdu_footer(canvas):
-            """Draw Urdu footer using canvas directly with text wrapping"""
+            """Draw Urdu text footer at the bottom of the last page."""
+            if _cfg.footer_image:
+                return
             if not _urdu_reshaped_lines:
                 return
+
+            page_width    = landscape(letter)[0]
+            bottom_margin = 0.4 * inch
+            box_width     = page_width - 0.6 * inch
+            box_x         = 0.3 * inch
 
             canvas.saveState()
             try:
@@ -1795,10 +1821,6 @@ def export_ledger_pdf_api(request):
                 _font_size = 10
                 _padding   = 8
                 _line_gap  = 3
-                page_width = landscape(letter)[0]
-                bottom_margin = 0.4 * inch
-                box_width  = page_width - 0.6 * inch
-                box_x      = 0.3 * inch
                 max_text_w = box_width - (_padding * 2)
 
                 # Pre-split all lines accounting for wrapping
@@ -2308,6 +2330,23 @@ def export_ledger_pdf(request):
         table.setStyle(TableStyle(table_styles))
         elements.append(table)
 
+        # ── Urdu footer image (flows immediately after the table) ────────────
+        if _cfg.footer_image:
+            try:
+                from reportlab.lib.utils import ImageReader as _ImgReader
+                _ir = _ImgReader(_cfg.footer_image.path)
+                _iw, _ih = _ir.getSize()
+                _img_w = landscape(letter)[0] - 0.6 * inch
+                _img_h = _img_w * (_ih / _iw) if _iw else 1.2 * inch
+                _img_max_h = 2.0 * inch
+                if _img_h > _img_max_h:
+                    _img_h = _img_max_h
+                    _img_w = _img_h * (_iw / _ih) if _ih else _img_w
+                elements.append(RLImage(_cfg.footer_image.path,
+                                        width=_img_w, height=_img_h))
+            except Exception as _e:
+                print(f"[General Ledger] ERROR appending footer image: {_e}")
+
         # ── Urdu footer ───────────────────────────────────────────────────────
         _urdu_lines = _cfg.footer_lines()
         _urdu_reshaped_lines = []
@@ -2326,22 +2365,26 @@ def export_ledger_pdf(request):
             else:
                 _urdu_reshaped_lines.append(_line)
 
-        # Callback to draw Urdu footer — invoked by _LastPageOnlyCanvas on the
-        # final page only.
+        # Callback to draw Urdu text footer — invoked by _LastPageOnlyCanvas on
+        # the final page only. Skipped entirely when a footer_image is set
+        # (the image is appended as a flowable above so it sits right after
+        # the table).
         def draw_urdu_footer(canvas):
-            """Draw Urdu footer using canvas directly with text wrapping"""
+            """Draw Urdu text footer at the bottom of the last page."""
+            if _cfg.footer_image:
+                return
             if not _urdu_reshaped_lines:
                 return
+            page_width    = landscape(letter)[0]
+            bottom_margin = 0.4 * inch
+            box_width     = page_width - 0.6 * inch
+            box_x         = 0.3 * inch
             canvas.saveState()
             try:
                 from reportlab.lib.utils import simpleSplit
                 _font_size = 10
                 _padding   = 8
                 _line_gap  = 3
-                page_width = landscape(letter)[0]
-                bottom_margin = 0.4 * inch
-                box_width  = page_width - 0.6 * inch
-                box_x      = 0.3 * inch
                 max_text_w = box_width - (_padding * 2)
                 single_line_h = _font_size * 1.4
                 all_wrapped = []

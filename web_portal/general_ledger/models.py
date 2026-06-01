@@ -114,6 +114,15 @@ class LedgerSettings(models.Model):
     )
 
     # ── Urdu Footer ───────────────────────────────────────────────────────────
+    footer_image = models.ImageField(
+        upload_to='ledger_settings/',
+        blank=True, null=True,
+        verbose_name='Urdu Footer Image',
+        help_text='Optional: upload a pre-rendered Urdu footer image (PNG/JPG). '
+                  'When set, this image is drawn at the bottom of the LAST page '
+                  'instead of rendering the Urdu Footer Text below. '
+                  'Recommended: full-width landscape image, transparent background.',
+    )
     footer_text = models.TextField(
         blank=True,
         default=(
