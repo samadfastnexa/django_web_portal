@@ -12,7 +12,7 @@ class LedgerSettingsAdmin(admin.ModelAdmin):
 
     # ── Display ───────────────────────────────────────────────────────────────
     list_display = ('__str__', 'group_name', 'stamp_preview', 'sap_logo_preview', 'updated_at')
-    readonly_fields = ('updated_at', 'stamp_preview', 'sap_logo_preview')
+    readonly_fields = ('updated_at', 'stamp_preview', 'sap_logo_preview', 'footer_image_preview')
 
     fieldsets = (
         ('PDF Header', {
@@ -45,12 +45,13 @@ class LedgerSettingsAdmin(admin.ModelAdmin):
                 'font_size_table_header', 'font_size_table_data',
             ),
         }),
-        ('Urdu Footer Text', {
+        ('Urdu Footer', {
             'description': (
-                'Printed as paragraphs in the Urdu footer at the bottom of the PDF. '
-                'Each new line becomes a separate paragraph.'
+                'Footer rendered at the bottom of the LAST page only. '
+                'If an image is uploaded, it replaces the text rendering — '
+                'leave the image empty to fall back to the Urdu Footer Text below.'
             ),
-            'fields': ('footer_text',),
+            'fields': ('footer_image', 'footer_image_preview', 'footer_text'),
         }),
         ('Meta', {
             'fields': ('updated_at',),
@@ -104,6 +105,21 @@ class LedgerSettingsAdmin(admin.ModelAdmin):
             '<em style="color:#888;font-size:11px;">(auto-drawn — upload image to replace)</em>'
         )
     sap_logo_preview.short_description = 'SAP Logo Preview'
+
+    def footer_image_preview(self, obj):
+        if obj and obj.footer_image:
+            return format_html(
+                '<img src="{}" style="max-width:600px;max-height:160px;'
+                'object-fit:contain;border:1px solid #ccc;border-radius:4px;'
+                'padding:4px;background:#fff;" />',
+                obj.footer_image.url,
+            )
+        return format_html(
+            '<em style="color:#888;font-size:11px;">'
+            '(no image uploaded — Urdu Footer Text will be rendered instead)'
+            '</em>'
+        )
+    footer_image_preview.short_description = 'Footer Image Preview'
 
 
 # ── Register with standard Django admin ──────────────────────────────────────

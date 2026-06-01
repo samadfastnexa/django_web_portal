@@ -1,0 +1,23 @@
+{% load i18n %}
+<h3>{% blocktrans with title=title %}By {{ title }}{% endblocktrans %}</h3>
+<div class="user-search-filter" style="padding:6px 12px 12px;">
+  <form method="get" style="margin:0;">
+    {# Preserve every other GET param so applying this filter doesn't drop existing ones. #}
+    {% for k, vlist in spec.other_get_items %}
+      {% for item in vlist %}<input type="hidden" name="{{ k }}" value="{{ item }}">{% endfor %}
+    {% endfor %}
+    <input type="text"
+           name="{{ spec.parameter_name }}"
+           value="{{ spec.value|default_if_none:'' }}"
+           placeholder="{% trans 'name, email or username' %}"
+           autocomplete="off"
+           style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;box-sizing:border-box;">
+    <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
+      <button type="submit" class="button" style="padding:4px 10px;font-size:12px;">{% trans 'Search' %}</button>
+      {% if spec.value %}
+        <a href="?{% for k, vlist in spec.other_get_items %}{% for item in vlist %}{{ k }}={{ item }}&amp;{% endfor %}{% endfor %}"
+           style="font-size:12px;">{% trans 'Clear' %}</a>
+      {% endif %}
+    </div>
+  </form>
+</div>

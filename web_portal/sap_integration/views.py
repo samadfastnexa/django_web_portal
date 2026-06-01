@@ -3205,7 +3205,16 @@ def bp_lookup_admin(request):
     rows = []
     cols = []
     table_rows = []
-    if request.method in ('POST',) or (request.method == 'GET'):
+
+    # Only hit SAP when the admin actually searches. Previously the view
+    # pre-loaded the first 100 BPs on every page open, which caused the page
+    # to hang/time out whenever SAP's Service Layer was slow.
+    list_requested = (
+        request.method == 'POST'
+        or request.GET.get('list') in ('1', 'true', 'yes')
+    )
+
+    if card_code or list_requested:
         try:
             selected_db = request.session.get('selected_db', get_default_company_key())
             client = SAPClient(company_db_key=selected_db)
@@ -3214,7 +3223,26 @@ def bp_lookup_admin(request):
             else:
                 rows = client.list_business_partners(top=100, select='CardCode,CardName,GroupCode,VatGroup') or []
         except Exception as e:
-            error = str(e)
+            raw = str(e)
+            low = raw.lower()
+            if 'timed out' in low or 'timeout' in low:
+                error = (
+                    "SAP Service Layer did not respond in time. "
+                    "The server may be busy or unreachable. "
+                    "Please wait a few seconds and try again."
+                )
+            elif 'not found' in low:
+                error = (
+                    f"No Business Partner found for CardCode '{card_code}'. "
+                    "Check the code and try again."
+                )
+            elif 'connection' in low or 'refused' in low or 'unreachable' in low:
+                error = (
+                    "Cannot reach SAP Service Layer. "
+                    "Check that the SAP server is online and the company database is correctly selected."
+                )
+            else:
+                error = raw
     if isinstance(rows, list) and len(rows) > 0 and isinstance(rows[0], dict):
         try:
             cols = list(rows[0].keys())

@@ -1,47 +1,251 @@
-<div style="padding:16px;">
-  <h2>SAP Business Partner Lookup</h2>
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}SAP Business Partner Lookup | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <strong>SAP Business Partner Lookup</strong>
+  </div>
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .bp-page          { max-width: 1100px; margin: 0 auto; padding: 8px 0 24px; }
+    .bp-intro         { background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:12px; padding:18px 20px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,0.04); }
+    .bp-intro h1      { margin:0 0 8px; font-size:22px; font-weight:800; color: var(--orange-dark, #C75A2A); display:flex; align-items:center; gap:10px; }
+    .bp-intro h1 .ico { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:50%; background:var(--orange-soft, #FFE4D6); color:var(--orange-dark, #C75A2A); }
+    .bp-intro p       { margin:0 0 6px; color:#374151; font-size:14px; line-height:1.5; }
+    .bp-intro ul      { margin:8px 0 0 18px; padding:0; color:#374151; font-size:13px; line-height:1.6; }
+    .bp-intro ul li   { margin:2px 0; }
+
+    .bp-card          { background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:12px; padding:18px 20px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,0.04); }
+    .bp-card h2       { margin:0 0 12px; font-size:15px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:.3px; }
+
+    .bp-error         { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; padding:12px 14px; border-radius:10px; margin-bottom:14px; font-size:14px; }
+
+    .bp-form          { display:grid; grid-template-columns: 1fr auto auto auto; gap:10px; align-items:end; }
+    .bp-form label    { display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; text-transform:uppercase; letter-spacing:.3px; }
+    .bp-form input[type=text] { width:100%; padding:10px 12px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:14px; box-sizing:border-box; transition:border-color .15s, box-shadow .15s; }
+    .bp-form input[type=text]:focus { outline:none; border-color:var(--orange, #E26830); box-shadow:0 0 0 3px rgba(226,104,48,0.18); }
+
+    .bp-btn           { display:inline-flex; align-items:center; gap:6px; padding:10px 16px; border-radius:8px; font-size:14px; font-weight:600; text-decoration:none; cursor:pointer; border:1px solid transparent; transition:background .15s, border-color .15s, transform .1s; }
+    .bp-btn-primary   { background:var(--orange, #E26830); color:#fff; border-color:var(--orange, #E26830); }
+    .bp-btn-primary:hover { background:var(--orange-dark, #C75A2A); border-color:var(--orange-dark, #C75A2A); }
+    .bp-btn-secondary { background:#fff; color:#0f172a; border-color:#e5e7eb; }
+    .bp-btn-secondary:hover { background:#f8fafc; border-color:var(--orange, #E26830); color:var(--orange-dark, #C75A2A); }
+    .bp-btn-ghost     { background:transparent; color:#475569; border-color:#e5e7eb; }
+    .bp-btn-ghost:hover { background:#f1f5f9; }
+
+    .bp-tip           { margin-top:10px; font-size:12px; color:#64748b; display:flex; align-items:center; gap:6px; }
+    .bp-tip-warn      { color:#9a3412; }
+    .bp-tip .dot      { width:6px; height:6px; border-radius:50%; background:#cbd5e1; }
+    .bp-tip-warn .dot { background:#f59e0b; }
+
+    .bp-api-row       { display:grid; grid-template-columns:90px 1fr; gap:6px 12px; font-size:13px; color:#334155; }
+    .bp-api-row strong{ color:#0f172a; }
+    code              { background:#f1f5f9; padding:2px 6px; border-radius:4px; font-size:12.5px; color:#0f172a; }
+
+    .bp-response      { white-space:pre-wrap; background:#0b1224; color:#e2e8f0; border:1px solid #1f2937; padding:14px; border-radius:10px; max-height:520px; overflow:auto; font-size:12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    .bp-table         { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:10px; overflow:hidden; font-size:13px; }
+    .bp-table thead th { background:var(--orange-soft, #FFE4D6); color:#0f172a; text-align:left; padding:10px 12px; font-weight:700; border-bottom:1px solid var(--orange-soft-border, #F7BFA8); font-size:12px; text-transform:uppercase; letter-spacing:.3px; }
+    .bp-table tbody td { padding:10px 12px; border-bottom:1px solid #f1f5f9; color:#334155; }
+    .bp-table tbody tr:last-child td { border-bottom:0; }
+    .bp-table tbody tr:hover { background:rgba(226,104,48,0.06); }
+
+    .bp-empty         { color:#6b7280; font-size:13px; padding:8px 0; }
+
+    @media (max-width: 720px) {
+      .bp-form { grid-template-columns: 1fr; }
+      .bp-form .bp-btn { width:100%; justify-content:center; }
+    }
+
+    /* ── Loading overlay (same pattern as HANA Connect, orange-themed) ── */
+    .loading-overlay {
+      position: fixed; inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      animation: bpFadeIn 0.2s ease-out;
+    }
+    .loading-overlay.active { display: flex; }
+    @keyframes bpFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .loading-content {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 32px 48px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.30);
+      display: flex; flex-direction: column;
+      align-items: center; gap: 18px;
+      animation: bpSlideUp 0.3s ease-out;
+      min-width: 320px;
+    }
+    @keyframes bpSlideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .loading-spinner {
+      width: 60px; height: 60px;
+      border: 4px solid var(--orange-soft, #FFE4D6);
+      border-top-color: var(--orange, #E26830);
+      border-radius: 50%;
+      animation: bpSpin 0.8s linear infinite;
+    }
+    @keyframes bpSpin { to { transform: rotate(360deg); } }
+    .loading-text {
+      font-size: 17px; font-weight: 700;
+      color: var(--orange-dark, #C75A2A); text-align: center;
+    }
+    .loading-subtext {
+      font-size: 13px; color: #64748b; text-align: center; margin-top: -6px;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="bp-loading-overlay" role="status" aria-live="polite">
+  <div class="loading-content">
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <div class="loading-text" id="bp-loading-text">Contacting SAP…</div>
+    <div class="loading-subtext" id="bp-loading-subtext">This can take a few seconds while the Service Layer responds.</div>
+  </div>
+</div>
+
+<div class="bp-page">
+
+  <div class="bp-intro">
+    <h1>
+      <span class="ico" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path>
+        </svg>
+      </span>
+      SAP Business Partner Lookup
+    </h1>
+    <p>Look up a single SAP Business Partner (customer, vendor or lead) directly from the SAP Service Layer by its <strong>CardCode</strong>. Use this when you need to:</p>
+    <ul>
+      <li>Verify whether a CardCode exists in SAP before linking it to a dealer.</li>
+      <li>Inspect a partner's master-data attributes (group, VAT, balances) without opening SAP B1.</li>
+      <li>Confirm the integration is reachable and returning the expected JSON shape.</li>
+    </ul>
+    <p style="margin-top:8px;color:#64748b;font-size:12.5px;">
+      Calls the SAP company database currently selected in your admin session. No data is written or modified.
+    </p>
+  </div>
+
   {% if error %}
-    <div style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:8px;margin-bottom:12px;">{{ error }}</div>
+    <div class="bp-error"><strong>Error:</strong> {{ error }}</div>
   {% endif %}
-  <form method="post" style="display:flex;gap:12px;align-items:flex-end;">
-    {% csrf_token %}
-    <label style="flex:1;">CardCode
-      <input type="text" name="card_code" value="{{ card_code }}" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;">
-    </label>
-    <button type="submit" style="background:#0ea5e9;color:#fff;border:none;padding:10px 14px;border-radius:8px;">Get Business Partner</button>
-    <a href="/admin/" style="background:#f1f5f9;color:#111827;border:1px solid #e5e7eb;padding:10px 14px;border-radius:8px;text-decoration:none;">Back to Admin</a>
-  </form>
-  <div style="margin-top:16px;">
-    <h3>API</h3>
-    <div style="background:#f8fafc;border:1px solid #e5e7eb;padding:10px;border-radius:8px;">
-      <div><strong>GET</strong> <code>/sap/business-partner/{card_code}/</code></div>
-      <div><strong>Path param</strong>: <code>card_code</code> (e.g., <code>BIC00001</code>)</div>
-      <div>This form uses the same underlying integration and shows the JSON response below.</div>
+
+  <div class="bp-card">
+    <h2>Search</h2>
+    <form method="post" class="bp-form">
+      {% csrf_token %}
+      <div>
+        <label for="bp-card-code">CardCode</label>
+        <input id="bp-card-code" type="text" name="card_code" value="{{ card_code }}"
+               placeholder="e.g. BIC00001" autocomplete="off">
+      </div>
+      <button type="submit" class="bp-btn bp-btn-primary">Get Business Partner</button>
+      <a href="?list=1" class="bp-btn bp-btn-secondary">List first 100 BPs</a>
+      <a href="/admin/" class="bp-btn bp-btn-ghost">Back to Admin</a>
+    </form>
+    <div class="bp-tip">
+      <span class="dot"></span>
+      Type an exact CardCode and submit. Partial matches aren't supported by the SAP endpoint.
+    </div>
+    <div class="bp-tip bp-tip-warn">
+      <span class="dot"></span>
+      "List first 100 BPs" calls SAP Service Layer and may take a few seconds.
     </div>
   </div>
+
+  <div class="bp-card">
+    <h2>API reference</h2>
+    <div class="bp-api-row">
+      <strong>Endpoint</strong> <code>GET /sap/business-partner/{card_code}/</code>
+      <strong>Param</strong>    <code>card_code</code> &mdash; e.g. <code>BIC00001</code>
+      <strong>Source</strong>   SAP Business One Service Layer (live)
+    </div>
+  </div>
+
   {% if result_json %}
-    <h3 style="margin-top:16px;">Response</h3>
-    <pre style="white-space:pre-wrap;background:#0b1224;color:#e2e8f0;border:1px solid #1f2937;padding:12px;border-radius:12px;max-height:500px;overflow:auto;">{{ result_json }}</pre>
+    <div class="bp-card">
+      <h2>Response</h2>
+      <pre class="bp-response">{{ result_json }}</pre>
+    </div>
   {% endif %}
+
   {% if rows %}
-    <h3 style="margin-top:16px;">Business Partners</h3>
-    <table style="width:100%;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
-      <thead>
-        <tr>
-          {% for c in cols %}
-            <th style="background:#f8fafc;color:#0f172a;text-align:left;padding:10px 12px;font-weight:700;border-bottom:1px solid #e5e7eb;">{{ c }}</th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for rowvals in table_rows %}
-          <tr>
-            {% for v in rowvals %}
-              <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155;">{{ v }}</td>
+    <div class="bp-card">
+      <h2>Business Partners <span style="color:#64748b;font-weight:500;font-size:12px;">(first 100)</span></h2>
+      <div style="overflow:auto;">
+        <table class="bp-table">
+          <thead>
+            <tr>
+              {% for c in cols %}<th>{{ c }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for rowvals in table_rows %}
+              <tr>
+                {% for v in rowvals %}<td>{{ v }}</td>{% endfor %}
+              </tr>
             {% endfor %}
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% elif card_code and not result_json and not error %}
+    <div class="bp-card">
+      <div class="bp-empty">No data returned for CardCode <code>{{ card_code }}</code>.</div>
+    </div>
   {% endif %}
+
 </div>
+
+<script>
+(function () {
+  var overlay  = document.getElementById('bp-loading-overlay');
+  var title    = document.getElementById('bp-loading-text');
+  var subtitle = document.getElementById('bp-loading-subtext');
+
+  function show(text, sub) {
+    if (text) title.textContent = text;
+    if (sub)  subtitle.textContent = sub;
+    overlay.classList.add('active');
+  }
+  function hide() { overlay.classList.remove('active'); }
+
+  // Submit form (CardCode search) → show overlay.
+  var form = document.querySelector('form.bp-form');
+  if (form) {
+    form.addEventListener('submit', function () {
+      var code = (form.querySelector('input[name="card_code"]') || {}).value || '';
+      show(
+        code ? ('Looking up ' + code + '…') : 'Contacting SAP…',
+        'Fetching from SAP Service Layer. This can take a few seconds.'
+      );
+    });
+  }
+
+  // "List first 100 BPs" link → show overlay (the page reloads to ?list=1).
+  document.querySelectorAll('a[href="?list=1"]').forEach(function (a) {
+    a.addEventListener('click', function () {
+      show('Loading Business Partners…', 'Fetching the first 100 partners from SAP.');
+    });
+  });
+
+  // If the user comes back via the browser's Back/Forward cache, the overlay
+  // can remain stuck on the screen. Always clear it when the page is shown.
+  window.addEventListener('pageshow', hide);
+})();
+</script>
+{% endblock %}

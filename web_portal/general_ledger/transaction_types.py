@@ -68,5 +68,23 @@ def get_transaction_type_name(trans_type):
     return TRANSACTION_TYPE_MAP.get(trans_type_str, f'Type {trans_type_str}')
 
 
+CATEGORY_MAP = {
+    '13': 'Sales',
+    '14': 'Return',
+    '16': 'Return',
+    '24': 'Collection',
+}
+
+
+def get_transaction_category(trans_type):
+    """Return summary bucket ('Sales', 'Return', 'Collection') for a TransType, or '' if not categorized."""
+    return CATEGORY_MAP.get(str(trans_type).strip(), '')
+
+
 # Export this for use in other modules
-__all__ = ['TRANSACTION_TYPE_MAP', 'get_transaction_type_name']
+__all__ = [
+    'TRANSACTION_TYPE_MAP',
+    'get_transaction_type_name',
+    'CATEGORY_MAP',
+    'get_transaction_category',
+]

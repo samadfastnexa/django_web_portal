@@ -838,7 +838,18 @@ class AccountDeletionRequestAdmin(admin.ModelAdmin):
     search_fields = ['user__email', 'user__first_name', 'user__last_name', 'reason', 'admin_notes']
     ordering = ['-created_at']
     readonly_fields = ['user', 'created_at', 'updated_at']
+    autocomplete_fields = ['user']
     list_per_page = 25  # Updated to 25 records per page for better admin experience
+
+    def get_readonly_fields(self, request, obj=None):
+        """
+        Lock `user` only when editing an existing request — on the Add form
+        the field must be selectable. `created_at` / `updated_at` are auto
+        timestamps so they stay readonly in both modes.
+        """
+        if obj is None:
+            return ['created_at', 'updated_at']
+        return list(self.readonly_fields)
     
     fieldsets = (
         ('Request Information', {
