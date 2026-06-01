@@ -291,6 +291,118 @@ def get_hana_schema_from_request(request):
     return None
 
 
+def sanitize_hana_schema(schema):
+    """Clean and validate a HANA schema name before it reaches SET SCHEMA.
+
+    Strips surrounding whitespace/quotes and rejects anything that is not a
+    plain schema identifier (letters, digits, hyphen, underscore). This guards
+    against malformed input like '4B-AGRI_LIVE)' causing a 500, and prevents
+    SQL injection via the interpolated SET SCHEMA statement.
+    Returns the cleaned name, or None if invalid.
+    """
+    import re
+    if not schema:
+        return None
+    s = str(schema).strip().strip('"').strip("'").strip()
+    if not re.match(r'^[A-Za-z0-9_\-]+$', s):
+        return None
+    return s
+
+
+def policy_media_dir(schema):
+    """media/product_images/<company>/policies for a schema (drops _APP/_LIVE)."""
+    folder = (schema or '').replace('_APP', '').replace('_LIVE', '').replace('_TEST', '').strip()
+    return os.path.join(settings.MEDIA_ROOT, 'product_images', folder, 'policies')
+
+
+def locate_policy_file(schema, policy_name):
+    """Find the policy document whose filename matches the policy name.
+
+    Documents live in media/product_images/<company>/policies/ with the same
+    base name as the SAP policy (OPRJ.PrjName, synced into Policy.name).
+    Prefers a .pdf; falls back to a normalised (case/whitespace-insensitive)
+    match to tolerate minor naming differences. Returns a path or None.
+    """
+    import re
+
+    base_dir = policy_media_dir(schema)
+    name = (policy_name or '').strip()
+    if not name or not os.path.isdir(base_dir):
+        return None
+
+    # 1) Exact base name, preferring PDF.
+    for ext in ('pdf', 'PDF', 'docx', 'doc', 'DOCX', 'DOC'):
+        p = os.path.join(base_dir, f'{name}.{ext}')
+        if os.path.exists(p):
+            return p
+
+    # 2) Normalised fallback across the folder (prefer PDF among matches).
+    def _norm(s):
+        return re.sub(r'\s+', ' ', str(s)).strip().lower()
+
+    target = _norm(name)
+    fallback = None
+    try:
+        for fn in os.listdir(base_dir):
+            base, ext = os.path.splitext(fn)
+            if _norm(base) == target:
+                full = os.path.join(base_dir, fn)
+                if ext.lower() == '.pdf':
+                    return full
+                fallback = fallback or full
+    except OSError:
+        return None
+    return fallback
+
+
+def fetch_policy_name_from_sap(schema, code):
+    """Return OPRJ.PrjName for a policy code, queried live from SAP HANA.
+
+    Used so document lookup works for any policy code, even ones not in the
+    local synced table (e.g. expired policies that still have a document).
+    Returns the name string, or None.
+    """
+    schema = sanitize_hana_schema(schema)
+    if not schema or not code:
+        return None
+    try:
+        from hdbcli import dbapi
+        from .hana_connect import _load_env_file as _hana_load_env_file
+
+        for path in (
+            os.path.join(os.path.dirname(__file__), '.env'),
+            os.path.join(str(settings.BASE_DIR), '.env'),
+            os.path.join(str(Path(settings.BASE_DIR).parent), '.env'),
+            os.path.join(os.getcwd(), '.env'),
+        ):
+            try:
+                _hana_load_env_file(path)
+            except Exception:
+                pass
+
+        host = os.environ.get('HANA_HOST', '')
+        port = os.environ.get('HANA_PORT', '30015')
+        user = os.environ.get('HANA_USER', '')
+        password = os.environ.get('HANA_PASSWORD', '')
+        if not host or not user or not password:
+            return None
+
+        conn = dbapi.connect(address=host, port=int(port), user=user, password=password)
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SET SCHEMA "{schema}"')
+            cur.close()
+            cur = conn.cursor()
+            cur.execute('SELECT "PrjName" FROM OPRJ WHERE "PrjCode" = ?', (code,))
+            row = cur.fetchone()
+            cur.close()
+            return row[0] if row else None
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
 def get_valid_company_schemas():
     """Return list of active company schemas for documentation."""
     try:
@@ -3996,6 +4108,10 @@ def list_policies(request):
 def list_db_policies(request):
     qs = Policy.objects.all().order_by('-updated_at')
 
+    database = (request.query_params.get('database') or request.query_params.get('company') or '').strip()
+    if database:
+        qs = qs.filter(database__iexact=database)
+
     search = request.query_params.get('search')
     if search:
         qs = qs.filter(models.Q(code__icontains=search) | models.Q(name__icontains=search) | models.Q(policy__icontains=search))
@@ -4084,11 +4200,21 @@ def sync_policies(request):
             return None
         return None
 
+    # Resolve the company schema these policies belong to so rows are stored
+    # per-company (matching the admin and GET /api/sap/policies/).
+    schema = get_hana_schema_from_request(request) or selected_db
+
     created = 0
     updated = 0
+    seen_codes = []
     for row in rows:
+        code = row.get('code')
+        if not code:
+            continue
+        seen_codes.append(code)
         obj, is_created = Policy.objects.update_or_create(
-            code=row.get('code'),
+            database=schema,
+            code=code,
             defaults={
                 'name': row.get('name') or '',
                 'policy': row.get('policy') or '',
@@ -4100,10 +4226,15 @@ def sync_policies(request):
         created += 1 if is_created else 0
         updated += 0 if is_created else 1
 
+    # Remove policies for this company that no longer exist in SAP.
+    removed, _details = Policy.objects.filter(database=schema).exclude(code__in=seen_codes).delete()
+
     return Response({
         'success': True,
+        'database': schema,
         'created': created,
         'updated': updated,
+        'removed': removed,
         'message': 'Policies synced from SAP'
     }, status=status.HTTP_200_OK)
 
@@ -9901,7 +10032,14 @@ def projects_list_api(request):
         )
         schema = explicit_schema or get_hana_schema_from_request(request)
         # logger.info(f"[PROJECTS_LIST] Using schema: {schema}")
-        
+
+        schema = sanitize_hana_schema(schema)
+        if not schema:
+            return Response({
+                'success': False,
+                'error': 'Invalid or missing database/schema name'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         # Get filter parameters
         active_filter = request.GET.get('active', 'Y').upper()  # Default to active only
         code_filter = request.GET.get('code', '').strip()
@@ -10103,7 +10241,7 @@ def projects_list_api(request):
     ],
     responses={
         200: openapi.Response(
-            description="Policy details retrieved successfully",
+            description="Policy details retrieved successfully. If the policy code does not exist, still returns 200 with {success:false, available:false, message:'Policy document not available'}.",
             examples={
                 "application/json": {
                     "success": True,
@@ -10131,15 +10269,6 @@ def projects_list_api(request):
                 "application/json": {
                     "success": False,
                     "error": "code parameter is required"
-                }
-            }
-        ),
-        404: openapi.Response(
-            description="Policy not found",
-            examples={
-                "application/json": {
-                    "success": False,
-                    "error": "Policy with code 999 not found"
                 }
             }
         ),
@@ -10198,7 +10327,14 @@ def policy_detail_api(request):
         )
         schema = explicit_schema or get_hana_schema_from_request(request)
         # logger.info(f"[POLICY_DETAIL] Using schema: {schema}, code: {policy_code}")
-        
+
+        schema = sanitize_hana_schema(schema)
+        if not schema:
+            return Response({
+                'success': False,
+                'error': 'Invalid or missing database/schema name'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         if not hana_host or not hana_user or not hana_password:
             return Response({
                 'success': False,
@@ -10276,8 +10412,10 @@ def policy_detail_api(request):
                 conn.close()
                 return Response({
                     'success': False,
-                    'error': f'Policy with code {policy_code} not found'
-                }, status=status.HTTP_404_NOT_FOUND)
+                    'available': False,
+                    'message': 'Policy document not available',
+                    'code': policy_code,
+                }, status=status.HTTP_200_OK)
             
             # Convert row to dictionary
             policy_data = {}
@@ -11464,6 +11602,9 @@ def policy_download_api(request):
     # --- build queryset ---
     qs = Policy.objects.all().order_by('-updated_at')
 
+    if database_q:
+        qs = qs.filter(database__iexact=database_q)
+
     if search_q:
         qs = qs.filter(
             Q(code__icontains=search_q) |
@@ -11494,7 +11635,31 @@ def policy_download_api(request):
             )
 
     if code_q:
-        qs = qs.filter(code__iexact=code_q)
+        # When a specific policy is requested, return its PDF document file
+        # (from media/product_images/<company>/policies/) instead of the data.
+        # The document filename matches the policy name (OPRJ.PrjName). Resolve
+        # the name LIVE from SAP by code so this works for any policy, including
+        # ones not present in the local synced table.
+        schema = database_q or (Policy.objects.filter(code__iexact=code_q).values_list('database', flat=True).first() or '')
+        name = fetch_policy_name_from_sap(schema, code_q)
+        if not name:
+            # Fall back to the locally synced name if SAP is unavailable.
+            name = Policy.objects.filter(code__iexact=code_q).values_list('name', flat=True).first()
+
+        if name:
+            fpath = locate_policy_file(schema, name)
+            if fpath:
+                return FileResponse(
+                    open(fpath, 'rb'),
+                    as_attachment=True,
+                    filename=os.path.basename(fpath),
+                )
+        return Response({
+            'success': False,
+            'available': False,
+            'message': 'File not found',
+            'code': code_q,
+        }, status=status.HTTP_200_OK)
 
     serializer = PolicySerializer(qs, many=True)
     records = serializer.data
@@ -11511,7 +11676,7 @@ def policy_download_api(request):
     # --- CSV download ---
     if fmt == 'csv':
         buf = StringIO()
-        fieldnames = ['id', 'code', 'name', 'policy', 'valid_from', 'valid_to', 'active', 'created_at', 'updated_at']
+        fieldnames = ['id', 'database', 'code', 'name', 'policy', 'valid_from', 'valid_to', 'active', 'created_at', 'updated_at']
         writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
         for row in records:

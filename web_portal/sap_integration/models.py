@@ -2,8 +2,10 @@ from django.db import models
 
 
 class Policy(models.Model):
-    """Stores policies derived from SAP Projects (UDF U_pol)."""
-    code = models.CharField(max_length=100, unique=True)
+    """Stores policies derived from SAP Projects (UDF U_pol), scoped per company."""
+    # Company schema this policy belongs to (e.g. 4B-AGRI_LIVE, 4B-BIO_APP).
+    database = models.CharField(max_length=100, default='', db_index=True)
+    code = models.CharField(max_length=100)
     name = models.CharField(max_length=255, blank=True, null=True)
     policy = models.CharField(max_length=255, blank=True, null=True)
     valid_from = models.DateField(blank=True, null=True)
@@ -17,12 +19,15 @@ class Policy(models.Model):
         verbose_name = 'Policy'
         verbose_name_plural = 'Policies'
         ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(fields=['database', 'code'], name='uniq_policy_database_code'),
+        ]
         permissions = [
             ('manage_policies', 'Can manage policy records'),
         ]
 
     def __str__(self):
-        return f"{self.code} - {self.policy or 'N/A'}"
+        return f"{self.database}:{self.code} - {self.policy or 'N/A'}"
 
 class HanaConnect(models.Model):
     class Meta:
