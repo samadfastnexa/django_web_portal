@@ -126,6 +126,7 @@ class PolicyAdmin(admin.ModelAdmin):
     list_display = ('code', 'name', 'policy', 'active', 'valid_from', 'valid_to', 'updated_at')
     list_filter = ('active',)
     search_fields = ('database', 'code', 'name', 'policy')
+    ordering = ('-updated_at',)  # newest updated first (matches API sort=updated_date&order=desc)
     change_list_template = 'admin/sap_integration/policy/change_list.html'
     readonly_fields = ('database', 'code', 'name', 'policy', 'valid_from', 'valid_to', 'active', 'created_at', 'updated_at')
     actions = ['download_policy_document']

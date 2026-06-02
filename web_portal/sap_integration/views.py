@@ -9980,6 +9980,24 @@ def recommended_products_api(request):
             type=openapi.TYPE_STRING,
             required=False
         ),
+        openapi.Parameter(
+            'sort',
+            openapi.IN_QUERY,
+            description="Sort field. Default: code.",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['code', 'name', 'valid_from', 'valid_to', 'u_inv_end_date', 'u_ct', 'active', 'policy', 'updated_date'],
+            default='code'
+        ),
+        openapi.Parameter(
+            'order',
+            openapi.IN_QUERY,
+            description="Sort direction: asc or desc. Default: asc.",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['asc', 'desc'],
+            default='asc'
+        ),
     ],
     responses={
         200: openapi.Response(
@@ -10045,11 +10063,14 @@ def projects_list_api(request):
     - is_valid: Filter by validity (true/false) - Default: true
     - code: Filter by project code (exact match)
     - name: Filter by project name (partial match)
-    
+    - sort: Sort field (code, name, valid_from, valid_to, u_inv_end_date, u_ct, active, policy, updated_date) - Default: code
+    - order: Sort direction (asc/desc) - Default: asc
+
     Examples:
     - ?database=4B-AGRI_LIVE - Only valid & active policies (default)
     - ?database=4B-AGRI_LIVE&is_valid=false - Only expired policies
     - ?database=4B-AGRI_LIVE&active=N&is_valid=true - Inactive but valid policies
+    - ?database=4B-AGRI_LIVE&sort=updated_date&order=desc - Newest updated first
     """
     try:
         from hdbcli import dbapi
@@ -10091,6 +10112,23 @@ def projects_list_api(request):
         code_filter = request.GET.get('code', '').strip()
         name_filter = request.GET.get('name', '').strip()
         is_valid_param = request.GET.get('is_valid', 'true').strip().lower()  # Default to valid only
+
+        # Sorting (whitelisted to avoid SQL injection): ?sort=<field>&order=asc|desc
+        sort_param = request.GET.get('sort', 'code').strip().lower()
+        order_param = request.GET.get('order', 'asc').strip().lower()
+        sort_map = {
+            'code': 'PrjCode',
+            'name': 'PrjName',
+            'valid_from': 'ValidFrom',
+            'valid_to': 'ValidTo',
+            'u_inv_end_date': 'U_InvEndDate',
+            'u_ct': 'U_Ct',
+            'active': 'Active',
+            'policy': 'U_pol',
+            'updated_date': 'UpdateDate',
+        }
+        sort_col = sort_map.get(sort_param, 'PrjCode')
+        sort_dir = 'DESC' if order_param in ('desc', 'descending', 'd') else 'ASC'
         
         if not hana_host or not hana_user or not hana_password:
             return Response({
@@ -10125,7 +10163,8 @@ def projects_list_api(request):
                         WHEN P."Active" = 'Y' THEN 'tYES'
                         ELSE 'tNO'
                     END AS "active",
-                    P."U_pol" AS "policy"
+                    P."U_pol" AS "policy",
+                    P."UpdateDate" AS "updated_date"
                 FROM OPRJ P
                 WHERE 1=1
             '''
@@ -10169,7 +10208,7 @@ def projects_list_api(request):
                 '''
             # If is_valid_param is 'all' or other value, don't apply validity filter
             
-            base_query += ' ORDER BY P."PrjCode"'
+            base_query += f' ORDER BY P."{sort_col}" {sort_dir}'
             
             # logger.info(f"[PROJECTS_LIST] Executing query with params: {params}")
             cursor.execute(base_query, params)
