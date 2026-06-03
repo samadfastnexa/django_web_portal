@@ -1663,6 +1663,261 @@ def policy_customer_balance_all(db, limit: int = 200) -> list:
         else:
             raise e
 
+def ar_invoices_by_customer(db, card_code: str, payment_status: str | None = None,
+                            from_date: str | None = None, to_date: str | None = None,
+                            doc_num: str | None = None, project: str | None = None,
+                            min_total: float | None = None, max_total: float | None = None,
+                            sort_by: str | None = None, sort_dir: str | None = None,
+                            limit: int = 25, offset: int = 0) -> dict:
+    """
+    AR Invoices (OINV) for a specific customer, with filtering and pagination.
+
+    Returns posted invoices only. Drafts are stored in ODRF (a separate table),
+    so querying OINV inherently excludes draft invoices. Cancelled invoices are
+    excluded as well.
+
+    Every row carries document-type identifiers so the consumer can tell these
+    are AR invoices: "DocObjType" = '13' (SAP marketing-document object type for
+    AR Invoice) and "DocumentType" = 'AR Invoice'.
+
+    payment_status:
+        'paid'   -> only fully closed invoices (DocStatus = 'C')
+        'unpaid' -> only open invoices         (DocStatus = 'O')
+        None     -> both paid and unpaid
+
+    Returns a dict: { "total": <int>, "data": [ ...rows... ] }
+    """
+    # Shared WHERE clause so the count and the page query stay in sync
+    where = ' WHERE T0."CardCode" = ? AND T0."CANCELED" = \'N\' '
+    params: list = [card_code]
+
+    ps = (payment_status or '').strip().lower()
+    if ps == 'paid':
+        where += ' AND T0."DocStatus" = \'C\' '
+    elif ps == 'unpaid':
+        where += ' AND T0."DocStatus" = \'O\' '
+
+    if from_date and str(from_date).strip():
+        where += " AND T0.\"DocDate\" >= TO_DATE(?, 'YYYY-MM-DD') "
+        params.append(str(from_date).strip())
+
+    if to_date and str(to_date).strip():
+        where += " AND T0.\"DocDate\" <= TO_DATE(?, 'YYYY-MM-DD') "
+        params.append(str(to_date).strip())
+
+    if doc_num and str(doc_num).strip():
+        where += ' AND T0."DocNum" = ? '
+        params.append(int(str(doc_num).strip()))
+
+    if project and str(project).strip():
+        where += ' AND T0."Project" = ? '
+        params.append(str(project).strip())
+
+    if min_total is not None:
+        where += ' AND T0."DocTotal" >= ? '
+        params.append(float(min_total))
+
+    if max_total is not None:
+        where += ' AND T0."DocTotal" <= ? '
+        params.append(float(max_total))
+
+    # Total count for pagination metadata (before LIMIT/OFFSET)
+    count_sql = 'SELECT COUNT(*) AS "TOTAL" FROM "OINV" T0 ' + where
+    count_row = _fetch_one(db, count_sql, tuple(params))
+    total = int((count_row or {}).get('TOTAL', 0) or 0)
+
+    # Whitelist sortable columns to avoid SQL injection via sort_by
+    sort_map = {
+        'docdate': 'T0."DocDate"',
+        'docnum': 'T0."DocNum"',
+        'doctotal': 'T0."DocTotal"',
+        'balancedue': '(T0."DocTotal" - T0."PaidToDate")',
+        'docduedate': 'T0."DocDueDate"',
+    }
+    order_col = sort_map.get((sort_by or '').strip().lower(), 'T0."DocDate"')
+    direction = 'ASC' if (sort_dir or '').strip().lower() == 'asc' else 'DESC'
+
+    sql = (
+        'SELECT '
+        ' T0."DocEntry", '
+        ' T0."DocNum", '
+        ' \'13\' AS "DocObjType", '
+        ' \'AR Invoice\' AS "DocumentType", '
+        ' T0."DocDate", '
+        ' T0."DocDueDate", '
+        ' T0."CardCode", '
+        ' T0."CardName", '
+        ' T0."DocCur", '
+        ' T0."DocTotal", '
+        ' T0."PaidToDate", '
+        ' (T0."DocTotal" - T0."PaidToDate") AS "BalanceDue", '
+        ' T0."DocStatus", '
+        ' CASE WHEN T0."DocStatus" = \'C\' THEN \'Paid\' ELSE \'Unpaid\' END AS "PaymentStatus", '
+        ' CAST(T0."Project" AS NVARCHAR(100)) AS "Project", '
+        ' T0."Comments" '
+        ' FROM "OINV" T0 '
+        + where
+        + f' ORDER BY {order_col} {direction}, T0."DocEntry" {direction} '
+    )
+
+    page_params = list(params)
+    lim = int(limit) if limit and int(limit) > 0 else 25
+    off = int(offset) if offset and int(offset) > 0 else 0
+    sql += ' LIMIT ? OFFSET ? '
+    page_params.append(lim)
+    page_params.append(off)
+
+    data = _fetch_all(db, sql, tuple(page_params))
+    return {'total': total, 'data': data}
+
+def ar_invoice_resolve_docentry(db, doc_num, card_code: str | None = None):
+    """Resolve an AR invoice DocEntry from a human-facing DocNum (optionally
+    scoped to a CardCode). Returns the DocEntry (int) or None."""
+    sql = 'SELECT T0."DocEntry" FROM "OINV" T0 WHERE T0."DocNum" = ? '
+    params = [int(doc_num)]
+    if card_code and str(card_code).strip():
+        sql += ' AND T0."CardCode" = ? '
+        params.append(str(card_code).strip())
+    row = _fetch_one(db, sql, tuple(params))
+    if not row:
+        return None
+    val = row.get('DocEntry')
+    try:
+        return int(val)
+    except Exception:
+        return val
+
+def ar_invoice_header(db, doc_entry) -> dict | None:
+    """AR invoice header (OINV) for a single DocEntry."""
+    sql = (
+        'SELECT '
+        ' T0."DocEntry", '
+        ' T0."DocNum", '
+        ' \'13\' AS "DocObjType", '
+        ' \'AR Invoice\' AS "DocumentType", '
+        ' T0."DocType", '
+        ' CASE WHEN T0."DocType" = \'S\' THEN \'Service\' ELSE \'Item\' END AS "DocTypeLabel", '
+        ' T0."DocDate", '
+        ' T0."DocDueDate", '
+        ' T0."TaxDate", '
+        ' T0."CardCode", '
+        ' T0."CardName", '
+        ' T0."NumAtCard", '
+        ' T0."DocCur", '
+        ' T0."DocTotal", '
+        ' T0."VatSum", '
+        ' T0."DiscSum", '
+        ' T0."PaidToDate", '
+        ' (T0."DocTotal" - T0."PaidToDate") AS "BalanceDue", '
+        ' T0."DocStatus", '
+        ' CASE WHEN T0."DocStatus" = \'C\' THEN \'Paid\' ELSE \'Unpaid\' END AS "PaymentStatus", '
+        ' T0."CANCELED" AS "Cancelled", '
+        ' CAST(T0."Project" AS NVARCHAR(100)) AS "Project", '
+        ' T0."SlpCode", '
+        ' T0."Comments" '
+        ' FROM "OINV" T0 '
+        ' WHERE T0."DocEntry" = ? '
+    )
+    return _fetch_one(db, sql, (int(doc_entry),))
+
+def ar_invoice_lines(db, doc_entry, item_code: str | None = None,
+                     search: str | None = None, line_kind: str | None = None,
+                     min_total: float | None = None, max_total: float | None = None,
+                     sort_by: str | None = None, sort_dir: str | None = None,
+                     limit: int = 100, offset: int = 0) -> dict:
+    """
+    Line items (products / services) of one AR invoice, from INV1.
+
+    Each row carries "LineKind": 'Service' when the row has no ItemCode (service
+    line) and 'Item' when it references an inventory item, so the consumer can
+    tell products from services. OITM is left-joined for the master item name
+    and item group.
+
+    line_kind:
+        'item' / 'product' -> only rows that reference an ItemCode
+        'service'          -> only rows without an ItemCode
+        None               -> all rows
+
+    Returns { "total": <int>, "data": [ ...rows... ] }.
+    """
+    where = ' WHERE T0."DocEntry" = ? '
+    params: list = [int(doc_entry)]
+
+    if item_code and str(item_code).strip():
+        where += ' AND T0."ItemCode" = ? '
+        params.append(str(item_code).strip())
+
+    lk = (line_kind or '').strip().lower()
+    if lk in ('item', 'product'):
+        where += ' AND T0."ItemCode" IS NOT NULL AND T0."ItemCode" <> \'\' '
+    elif lk == 'service':
+        where += ' AND (T0."ItemCode" IS NULL OR T0."ItemCode" = \'\') '
+
+    if search and str(search).strip():
+        where += ' AND (UPPER(T0."ItemCode") LIKE UPPER(?) OR UPPER(T0."Dscription") LIKE UPPER(?)) '
+        like = '%' + str(search).strip() + '%'
+        params.append(like)
+        params.append(like)
+
+    if min_total is not None:
+        where += ' AND T0."LineTotal" >= ? '
+        params.append(float(min_total))
+
+    if max_total is not None:
+        where += ' AND T0."LineTotal" <= ? '
+        params.append(float(max_total))
+
+    count_sql = 'SELECT COUNT(*) AS "TOTAL" FROM "INV1" T0 ' + where
+    count_row = _fetch_one(db, count_sql, tuple(params))
+    total = int((count_row or {}).get('TOTAL', 0) or 0)
+
+    sort_map = {
+        'linenum': 'T0."LineNum"',
+        'itemcode': 'T0."ItemCode"',
+        'quantity': 'T0."Quantity"',
+        'price': 'T0."Price"',
+        'linetotal': 'T0."LineTotal"',
+    }
+    order_col = sort_map.get((sort_by or '').strip().lower(), 'T0."LineNum"')
+    direction = 'DESC' if (sort_dir or '').strip().lower() == 'desc' else 'ASC'
+
+    sql = (
+        'SELECT '
+        ' T0."DocEntry", '
+        ' T0."LineNum", '
+        ' T0."ItemCode", '
+        ' T0."Dscription" AS "Description", '
+        ' T2."ItemName" AS "ItemMasterName", '
+        ' CASE WHEN T0."ItemCode" IS NULL OR T0."ItemCode" = \'\' THEN \'Service\' ELSE \'Item\' END AS "LineKind", '
+        ' T0."Quantity", '
+        ' T0."unitMsr" AS "UoM", '
+        ' T0."Price", '
+        ' T0."DiscPrcnt", '
+        ' T0."Currency", '
+        ' T0."LineTotal", '
+        ' T0."VatGroup", '
+        ' T0."VatPrcnt", '
+        ' T0."WhsCode", '
+        ' CAST(T0."OcrCode" AS NVARCHAR(100)) AS "CostCenter", '
+        ' CAST(T0."Project" AS NVARCHAR(100)) AS "Project", '
+        ' T0."U_policy" AS "Policy", '
+        ' T0."U_crop" AS "Crop" '
+        ' FROM "INV1" T0 '
+        ' LEFT JOIN "OITM" T2 ON T0."ItemCode" = T2."ItemCode" '
+        + where
+        + f' ORDER BY {order_col} {direction} '
+    )
+
+    page_params = list(params)
+    lim = int(limit) if limit and int(limit) > 0 else 100
+    off = int(offset) if offset and int(offset) > 0 else 0
+    sql += ' LIMIT ? OFFSET ? '
+    page_params.append(lim)
+    page_params.append(off)
+
+    data = _fetch_all(db, sql, tuple(page_params))
+    return {'total': total, 'data': data}
+
 def sales_vs_achievement(db, emp_id: int | None = None, territory_name: str | None = None, year: int | None = None, month: int | None = None, start_date: str | None = None, end_date: str | None = None) -> list:
     # DEBUG: Add logging for this function
     print("="*80)

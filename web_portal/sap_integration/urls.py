@@ -4,6 +4,8 @@ from .views import (
     get_business_partner_detail,
     policy_customer_balance_list,
     policy_customer_balance_detail,
+    customer_ar_invoices,
+    ar_invoice_detail,
     list_policies,
     list_db_policies,
     sync_policies,
@@ -62,6 +64,10 @@ urlpatterns = [
     path('policy-customer-balance/<str:card_code>/', policy_customer_balance_detail, name='policy_customer_balance_detail'),
     # Alias without card_code in path (card_code passed as query param)
     path('policy-customer-balance/detail/', policy_customer_balance_detail, name='policy_customer_balance_detail_query'),
+    # AR Invoices (paid/unpaid, excludes drafts) for a specific customer
+    path('customer-ar-invoices/', customer_ar_invoices, name='customer_ar_invoices'),
+    # AR Invoice detail - header + line items (products/services) for one invoice
+    path('ar-invoice-detail/', ar_invoice_detail, name='ar_invoice_detail'),
     path('projects/', list_policies, name='sap_policies'),
     # DB-backed policies APIs and page
     path('policy-records/', list_db_policies, name='policy_records'),

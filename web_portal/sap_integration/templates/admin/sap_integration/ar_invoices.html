@@ -1,0 +1,227 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n %}
+
+{% block title %}Customer AR Invoices | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <strong>Customer AR Invoices</strong>
+  </div>
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .ar-page          { max-width: 1200px; margin: 0 auto; padding: 8px 0 24px; }
+    .ar-intro         { background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:12px; padding:18px 20px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,0.04); }
+    .ar-intro h1      { margin:0 0 8px; font-size:22px; font-weight:800; color: var(--orange-dark, #C75A2A); display:flex; align-items:center; gap:10px; }
+    .ar-intro h1 .ico { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:50%; background:var(--orange-soft, #FFE4D6); color:var(--orange-dark, #C75A2A); }
+    .ar-intro p       { margin:0 0 6px; color:#374151; font-size:14px; line-height:1.5; }
+
+    .ar-card          { background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:12px; padding:18px 20px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,0.04); }
+    .ar-card h2       { margin:0 0 12px; font-size:15px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:.3px; }
+
+    .ar-error         { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; padding:12px 14px; border-radius:10px; margin-bottom:14px; font-size:14px; }
+
+    .ar-form          { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; align-items:end; }
+    .ar-form label    { display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; text-transform:uppercase; letter-spacing:.3px; }
+    .ar-form input, .ar-form select { width:100%; padding:9px 11px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:14px; box-sizing:border-box; transition:border-color .15s, box-shadow .15s; }
+    .ar-form input:focus, .ar-form select:focus { outline:none; border-color:var(--orange, #E26830); box-shadow:0 0 0 3px rgba(226,104,48,0.18); }
+    .ar-form .ar-actions { grid-column: 1 / -1; display:flex; gap:10px; }
+
+    .ar-btn           { display:inline-flex; align-items:center; gap:6px; padding:10px 16px; border-radius:8px; font-size:14px; font-weight:600; text-decoration:none; cursor:pointer; border:1px solid transparent; }
+    .ar-btn-primary   { background:var(--orange, #E26830); color:#fff; border-color:var(--orange, #E26830); }
+    .ar-btn-primary:hover { background:var(--orange-dark, #C75A2A); }
+    .ar-btn-ghost     { background:transparent; color:#475569; border-color:#e5e7eb; }
+    .ar-btn-ghost:hover { background:#f1f5f9; }
+
+    .ar-table         { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:10px; overflow:hidden; font-size:13px; }
+    .ar-table thead th { background:var(--orange-soft, #FFE4D6); color:#0f172a; text-align:left; padding:10px 12px; font-weight:700; border-bottom:1px solid var(--orange-soft-border, #F7BFA8); font-size:12px; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
+    .ar-table tbody td { padding:9px 12px; border-bottom:1px solid #f1f5f9; color:#334155; white-space:nowrap; }
+    .ar-table tbody tr:last-child td { border-bottom:0; }
+    .ar-table tbody tr:hover { background:rgba(226,104,48,0.06); }
+    .ar-table td.num  { text-align:right; font-variant-numeric: tabular-nums; }
+
+    .ar-badge         { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.2px; }
+    .ar-badge.paid    { background:#dcfce7; color:#166534; }
+    .ar-badge.unpaid  { background:#fef3c7; color:#92400e; }
+
+    .ar-meta          { display:flex; flex-wrap:wrap; gap:18px; align-items:center; margin-bottom:12px; font-size:13px; color:#475569; }
+    .ar-meta strong   { color:#0f172a; }
+    .ar-pill          { background:#f1f5f9; border-radius:999px; padding:4px 12px; font-size:12.5px; }
+
+    .ar-pager         { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:14px; font-size:13px; }
+    .ar-pager .ar-btn { padding:7px 12px; }
+    .ar-pager .disabled { opacity:.4; pointer-events:none; }
+
+    .ar-empty         { color:#6b7280; font-size:13px; padding:8px 0; }
+    code              { background:#f1f5f9; padding:2px 6px; border-radius:4px; font-size:12.5px; color:#0f172a; }
+
+    @media (max-width: 860px) { .ar-form { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="ar-page">
+
+  <div class="ar-intro">
+    <h1>
+      <span class="ico" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M9 13h6M9 17h6"></path>
+        </svg>
+      </span>
+      Customer AR Invoices
+    </h1>
+    <p>Browse a customer's <strong>AR invoices</strong> (paid &amp; unpaid). Draft invoices and cancelled invoices are excluded &mdash; data is read live from SAP HANA <code>OINV</code> (object type 13). Latest invoices appear first.</p>
+    <p style="color:#64748b;font-size:12.5px;">Schema: <code>{{ schema|default:"(none selected — pick a company in the top bar)" }}</code></p>
+  </div>
+
+  {% if error %}
+    <div class="ar-error"><strong>Error:</strong> {{ error }}</div>
+  {% endif %}
+
+  <div class="ar-card">
+    <h2>Filters</h2>
+    <form method="get" class="ar-form">
+      <div>
+        <label for="ar-card-code">CardCode *</label>
+        <input id="ar-card-code" type="text" name="card_code" value="{{ card_code }}" placeholder="e.g. AGC00001" autocomplete="off" required>
+      </div>
+      <div>
+        <label for="ar-status">Payment status</label>
+        <select id="ar-status" name="payment_status">
+          <option value="">All (paid + unpaid)</option>
+          <option value="paid"   {% if payment_status == 'paid' %}selected{% endif %}>Paid</option>
+          <option value="unpaid" {% if payment_status == 'unpaid' %}selected{% endif %}>Unpaid</option>
+        </select>
+      </div>
+      <div>
+        <label for="ar-from">From date</label>
+        <input id="ar-from" type="date" name="from_date" value="{{ from_date }}">
+      </div>
+      <div>
+        <label for="ar-to">To date</label>
+        <input id="ar-to" type="date" name="to_date" value="{{ to_date }}">
+      </div>
+      <div>
+        <label for="ar-docnum">Invoice no. (DocNum)</label>
+        <input id="ar-docnum" type="number" name="doc_num" value="{{ doc_num }}" placeholder="exact">
+      </div>
+      <div>
+        <label for="ar-project">Project / policy</label>
+        <input id="ar-project" type="text" name="project" value="{{ project }}" placeholder="e.g. 0123366">
+      </div>
+      <div>
+        <label for="ar-sortby">Sort by</label>
+        <select id="ar-sortby" name="sort_by">
+          <option value="docdate"    {% if sort_by == 'docdate' %}selected{% endif %}>Invoice date</option>
+          <option value="docnum"     {% if sort_by == 'docnum' %}selected{% endif %}>Invoice number</option>
+          <option value="doctotal"   {% if sort_by == 'doctotal' %}selected{% endif %}>Total</option>
+          <option value="balancedue" {% if sort_by == 'balancedue' %}selected{% endif %}>Balance due</option>
+          <option value="docduedate" {% if sort_by == 'docduedate' %}selected{% endif %}>Due date</option>
+        </select>
+      </div>
+      <div>
+        <label for="ar-sortdir">Direction</label>
+        <select id="ar-sortdir" name="sort_dir">
+          <option value="desc" {% if sort_dir == 'desc' %}selected{% endif %}>Newest / highest first</option>
+          <option value="asc"  {% if sort_dir == 'asc' %}selected{% endif %}>Oldest / lowest first</option>
+        </select>
+      </div>
+      <div>
+        <label for="ar-pagesize">Per page</label>
+        <select id="ar-pagesize" name="page_size">
+          <option value="10"  {% if page_size == 10 %}selected{% endif %}>10</option>
+          <option value="25"  {% if page_size == 25 %}selected{% endif %}>25</option>
+          <option value="50"  {% if page_size == 50 %}selected{% endif %}>50</option>
+          <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+          <option value="200" {% if page_size == 200 %}selected{% endif %}>200</option>
+        </select>
+      </div>
+      <div class="ar-actions">
+        <button type="submit" class="ar-btn ar-btn-primary">Search invoices</button>
+        <a href="?" class="ar-btn ar-btn-ghost">Reset</a>
+        <a href="/admin/" class="ar-btn ar-btn-ghost">Back to Admin</a>
+      </div>
+    </form>
+  </div>
+
+  {% if searched and not error %}
+    <div class="ar-card">
+      <div class="ar-meta">
+        <span class="ar-pill">Customer: <strong>{{ card_code }}</strong></span>
+        <span class="ar-pill">Matching invoices: <strong>{{ total_records }}</strong></span>
+        <span class="ar-pill">Page <strong>{{ page }}</strong> of <strong>{{ total_pages|default:1 }}</strong></span>
+      </div>
+
+      {% if rows %}
+      <div style="overflow:auto;">
+        <table class="ar-table">
+          <thead>
+            <tr>
+              <th>Doc No</th>
+              <th>Doc Date</th>
+              <th>Due Date</th>
+              <th>Customer</th>
+              <th>Cur</th>
+              <th class="num">Total</th>
+              <th class="num">Paid</th>
+              <th class="num">Balance Due</th>
+              <th>Status</th>
+              <th>Project</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              <tr>
+                <td><a href="{% url 'sap_ar_invoice_detail_admin' %}?doc_entry={{ r.DocEntry }}" style="color:var(--orange-dark,#C75A2A);font-weight:700;text-decoration:none;">{{ r.DocNum }}</a></td>
+                <td>{{ r.DocDate|stringformat:"s"|slice:":10" }}</td>
+                <td>{{ r.DocDueDate|stringformat:"s"|slice:":10" }}</td>
+                <td>{{ r.CardName }}</td>
+                <td>{{ r.DocCur }}</td>
+                <td class="num">{{ r.DocTotal|floatformat:2 }}</td>
+                <td class="num">{{ r.PaidToDate|floatformat:2 }}</td>
+                <td class="num">{{ r.BalanceDue|floatformat:2 }}</td>
+                <td>
+                  {% if r.PaymentStatus == 'Paid' %}
+                    <span class="ar-badge paid">Paid</span>
+                  {% else %}
+                    <span class="ar-badge unpaid">Unpaid</span>
+                  {% endif %}
+                </td>
+                <td>{{ r.Project }}</td>
+                <td><code>{{ r.DocumentType }}</code></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="ar-pager">
+        {% if has_previous %}
+          <a class="ar-btn ar-btn-ghost" href="?{{ base_qs }}&page={{ prev_page }}">&laquo; Prev</a>
+        {% else %}
+          <span class="ar-btn ar-btn-ghost disabled">&laquo; Prev</span>
+        {% endif %}
+        <span>Page {{ page }} / {{ total_pages|default:1 }}</span>
+        {% if has_next %}
+          <a class="ar-btn ar-btn-ghost" href="?{{ base_qs }}&page={{ next_page }}">Next &raquo;</a>
+        {% else %}
+          <span class="ar-btn ar-btn-ghost disabled">Next &raquo;</span>
+        {% endif %}
+      </div>
+      {% else %}
+        <div class="ar-empty">No AR invoices found for CardCode <code>{{ card_code }}</code> with the selected filters.</div>
+      {% endif %}
+    </div>
+  {% elif not searched %}
+    <div class="ar-card">
+      <div class="ar-empty">Enter a <strong>CardCode</strong> above and click <em>Search invoices</em> to list the customer's AR invoices.</div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
