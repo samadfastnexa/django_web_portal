@@ -1,0 +1,206 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}AR Invoice Detail | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'sap_ar_invoices_admin' %}">AR Invoices</a>
+    &rsaquo; <strong>Invoice Detail</strong>
+  </div>
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .ar-page          { max-width: 1200px; margin: 0 auto; padding: 8px 0 24px; }
+    .ar-card          { background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:12px; padding:18px 20px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,0.04); }
+    .ar-card h2       { margin:0 0 12px; font-size:15px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:.3px; }
+    .ar-h1            { margin:0 0 14px; font-size:22px; font-weight:800; color:var(--orange-dark, #C75A2A); }
+
+    .ar-error         { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; padding:12px 14px; border-radius:10px; margin-bottom:14px; font-size:14px; }
+
+    .ar-grid          { display:grid; grid-template-columns: repeat(4, 1fr); gap:14px 22px; }
+    .ar-field label   { display:block; font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
+    .ar-field .val    { font-size:14px; color:#0f172a; font-weight:600; }
+
+    .ar-badge         { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+    .ar-badge.paid    { background:#dcfce7; color:#166534; }
+    .ar-badge.unpaid  { background:#fef3c7; color:#92400e; }
+    .ar-badge.kind-item    { background:#e0f2fe; color:#075985; }
+    .ar-badge.kind-service { background:#f3e8ff; color:#6b21a8; }
+
+    .ar-filters       { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; align-items:end; }
+    .ar-filters label { display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; text-transform:uppercase; letter-spacing:.3px; }
+    .ar-filters input, .ar-filters select { width:100%; padding:9px 11px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:14px; box-sizing:border-box; }
+    .ar-filters .ar-actions { grid-column:1 / -1; display:flex; gap:10px; }
+
+    .ar-btn           { display:inline-flex; align-items:center; gap:6px; padding:9px 15px; border-radius:8px; font-size:14px; font-weight:600; text-decoration:none; cursor:pointer; border:1px solid transparent; }
+    .ar-btn-primary   { background:var(--orange, #E26830); color:#fff; border-color:var(--orange, #E26830); }
+    .ar-btn-primary:hover { background:var(--orange-dark, #C75A2A); }
+    .ar-btn-ghost     { background:transparent; color:#475569; border-color:#e5e7eb; }
+    .ar-btn-ghost:hover { background:#f1f5f9; }
+
+    .ar-table         { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:10px; overflow:hidden; font-size:13px; }
+    .ar-table thead th { background:var(--orange-soft, #FFE4D6); color:#0f172a; text-align:left; padding:10px 12px; font-weight:700; border-bottom:1px solid var(--orange-soft-border, #F7BFA8); font-size:12px; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
+    .ar-table tbody td { padding:9px 12px; border-bottom:1px solid #f1f5f9; color:#334155; }
+    .ar-table tbody tr:last-child td { border-bottom:0; }
+    .ar-table tbody tr:hover { background:rgba(226,104,48,0.06); }
+    .ar-table td.num  { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
+
+    .ar-pager         { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:14px; font-size:13px; }
+    .ar-pager .disabled { opacity:.4; pointer-events:none; }
+    .ar-empty         { color:#6b7280; font-size:13px; padding:8px 0; }
+    code              { background:#f1f5f9; padding:2px 6px; border-radius:4px; font-size:12.5px; color:#0f172a; }
+
+    @media (max-width: 860px) { .ar-grid, .ar-filters { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="ar-page">
+
+  {% if error %}
+    <div class="ar-error"><strong>Error:</strong> {{ error }}</div>
+  {% endif %}
+
+  {% if header %}
+    <div class="ar-card">
+      <h1 class="ar-h1">AR Invoice #{{ header.DocNum }}</h1>
+      <div class="ar-grid">
+        <div class="ar-field"><label>Doc Entry</label><div class="val">{{ header.DocEntry }}</div></div>
+        <div class="ar-field"><label>Type</label><div class="val">{{ header.DocumentType }} ({{ header.DocTypeLabel }})</div></div>
+        <div class="ar-field"><label>Doc Date</label><div class="val">{{ header.DocDate|stringformat:"s"|slice:":10" }}</div></div>
+        <div class="ar-field"><label>Due Date</label><div class="val">{{ header.DocDueDate|stringformat:"s"|slice:":10" }}</div></div>
+
+        <div class="ar-field"><label>Customer</label><div class="val">{{ header.CardCode }}</div></div>
+        <div class="ar-field" style="grid-column: span 3;"><label>Name</label><div class="val">{{ header.CardName }}</div></div>
+
+        <div class="ar-field"><label>Currency</label><div class="val">{{ header.DocCur }}</div></div>
+        <div class="ar-field"><label>Doc Total</label><div class="val">{{ header.DocTotal|floatformat:2 }}</div></div>
+        <div class="ar-field"><label>Tax (VAT)</label><div class="val">{{ header.VatSum|floatformat:2 }}</div></div>
+        <div class="ar-field"><label>Discount</label><div class="val">{{ header.DiscSum|floatformat:2 }}</div></div>
+
+        <div class="ar-field"><label>Paid To Date</label><div class="val">{{ header.PaidToDate|floatformat:2 }}</div></div>
+        <div class="ar-field"><label>Balance Due</label><div class="val">{{ header.BalanceDue|floatformat:2 }}</div></div>
+        <div class="ar-field"><label>Status</label><div class="val">
+          {% if header.PaymentStatus == 'Paid' %}<span class="ar-badge paid">Paid</span>{% else %}<span class="ar-badge unpaid">Unpaid</span>{% endif %}
+        </div></div>
+        <div class="ar-field"><label>Project</label><div class="val">{{ header.Project|default:"—" }}</div></div>
+      </div>
+      {% if header.Comments %}
+        <div class="ar-field" style="margin-top:14px;"><label>Comments</label><div class="val" style="font-weight:500;">{{ header.Comments }}</div></div>
+      {% endif %}
+    </div>
+
+    <div class="ar-card">
+      <h2>Line Items (products / services)</h2>
+      <form method="get" class="ar-filters">
+        <input type="hidden" name="doc_entry" value="{{ header.DocEntry }}">
+        <div>
+          <label for="f-search">Search</label>
+          <input id="f-search" type="text" name="search" value="{{ search }}" placeholder="item code or description">
+        </div>
+        <div>
+          <label for="f-item">Item code</label>
+          <input id="f-item" type="text" name="item_code" value="{{ item_code }}" placeholder="exact ItemCode">
+        </div>
+        <div>
+          <label for="f-kind">Line kind</label>
+          <select id="f-kind" name="line_kind">
+            <option value="">All</option>
+            <option value="item"    {% if line_kind == 'item' or line_kind == 'product' %}selected{% endif %}>Items / products</option>
+            <option value="service" {% if line_kind == 'service' %}selected{% endif %}>Services</option>
+          </select>
+        </div>
+        <div>
+          <label for="f-sort">Sort by</label>
+          <select id="f-sort" name="sort_by">
+            <option value="linenum"   {% if sort_by == 'linenum' %}selected{% endif %}>Line #</option>
+            <option value="itemcode"  {% if sort_by == 'itemcode' %}selected{% endif %}>Item code</option>
+            <option value="quantity"  {% if sort_by == 'quantity' %}selected{% endif %}>Quantity</option>
+            <option value="price"     {% if sort_by == 'price' %}selected{% endif %}>Price</option>
+            <option value="linetotal" {% if sort_by == 'linetotal' %}selected{% endif %}>Line total</option>
+          </select>
+        </div>
+        <div class="ar-actions">
+          <button type="submit" class="ar-btn ar-btn-primary">Apply</button>
+          <a href="?doc_entry={{ header.DocEntry }}" class="ar-btn ar-btn-ghost">Reset</a>
+          <a href="{% url 'sap_ar_invoices_admin' %}?card_code={{ header.CardCode }}" class="ar-btn ar-btn-ghost">Back to list</a>
+        </div>
+      </form>
+
+      <div style="margin:12px 0; color:#475569; font-size:13px;">Matching lines: <strong>{{ total_records }}</strong> &middot; Page {{ page }} of {{ total_pages|default:1 }}</div>
+
+      {% if lines %}
+      <div style="overflow:auto;">
+        <table class="ar-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Kind</th>
+              <th>Item Code</th>
+              <th>Description</th>
+              <th class="num">Qty</th>
+              <th>UoM</th>
+              <th class="num">Price</th>
+              <th class="num">Disc %</th>
+              <th class="num">VAT %</th>
+              <th class="num">Line Total</th>
+              <th>Whs</th>
+              <th>Project</th>
+              <th>Policy</th>
+              <th>Crop</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for l in lines %}
+              <tr>
+                <td>{{ l.LineNum }}</td>
+                <td>
+                  {% if l.LineKind == 'Service' %}<span class="ar-badge kind-service">Service</span>{% else %}<span class="ar-badge kind-item">Item</span>{% endif %}
+                </td>
+                <td>{{ l.ItemCode|default:"—" }}</td>
+                <td>{{ l.Description }}{% if l.ItemMasterName and l.ItemMasterName != l.Description %} <span style="color:#94a3b8;">({{ l.ItemMasterName }})</span>{% endif %}</td>
+                <td class="num">{{ l.Quantity|floatformat:2 }}</td>
+                <td>{{ l.UoM|default:"" }}</td>
+                <td class="num">{{ l.Price|floatformat:2 }}</td>
+                <td class="num">{{ l.DiscPrcnt|floatformat:2 }}</td>
+                <td class="num">{{ l.VatPrcnt|floatformat:2 }}</td>
+                <td class="num">{{ l.LineTotal|floatformat:2 }}</td>
+                <td>{{ l.WhsCode|default:"" }}</td>
+                <td>{{ l.Project|default:"" }}</td>
+                <td>{{ l.Policy|default:"" }}</td>
+                <td>{{ l.Crop|default:"" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="ar-pager">
+        {% if has_previous %}
+          <a class="ar-btn ar-btn-ghost" href="?{{ base_qs }}&page={{ prev_page }}">&laquo; Prev</a>
+        {% else %}
+          <span class="ar-btn ar-btn-ghost disabled">&laquo; Prev</span>
+        {% endif %}
+        <span>Page {{ page }} / {{ total_pages|default:1 }}</span>
+        {% if has_next %}
+          <a class="ar-btn ar-btn-ghost" href="?{{ base_qs }}&page={{ next_page }}">Next &raquo;</a>
+        {% else %}
+          <span class="ar-btn ar-btn-ghost disabled">Next &raquo;</span>
+        {% endif %}
+      </div>
+      {% else %}
+        <div class="ar-empty">No line items match the current filters.</div>
+      {% endif %}
+    </div>
+  {% elif not error %}
+    <div class="ar-card">
+      <div class="ar-empty">No invoice selected. Open this page from the <a href="{% url 'sap_ar_invoices_admin' %}">AR Invoices</a> list.</div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -24,7 +24,7 @@ import json
 import re
 import logging
 import mimetypes
-from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, sales_vs_achievement_territory, unit_price_by_policy, territories_lov
+from .hana_connect import _load_env_file as _hana_load_env_file, territory_summary, products_catalog, policy_customer_balance, policy_customer_balance_all, ar_invoices_by_customer, ar_invoice_resolve_docentry, ar_invoice_header, ar_invoice_lines, sales_vs_achievement, territory_names, territories_all, territories_all_full, cwl_all_full, table_columns, sales_orders_all, customer_lov, customer_addresses, contact_person_name, item_lov, warehouse_for_item, sales_tax_codes, projects_lov, policy_link, project_balance, policy_balance_by_customer, crop_lov, child_card_code, sales_vs_achievement_geo, sales_vs_achievement_geo_inv, geo_options, sales_vs_achievement_geo_profit, collection_vs_achievement, sales_vs_achievement_territory, unit_price_by_policy, territories_lov
 from django.conf import settings
 from pathlib import Path
 import sys
@@ -6336,7 +6336,595 @@ def policy_customer_balance_detail(request, card_code=None):
     # Delegate to get_policy_customer_balance_data
     return get_policy_customer_balance_data(request, card_code=card_code)
 
-@swagger_auto_schema(tags=['SAP'], 
+@swagger_auto_schema(tags=['SAP'],
+    method='get',
+    operation_summary="Customer AR Invoices (Paid/Unpaid)",
+    operation_description=(
+        "Get AR invoices (OINV) for a specific customer. Returns posted invoices only — "
+        "draft invoices (stored in ODRF) and cancelled invoices are excluded. "
+        "Each row is tagged with DocObjType='13' and DocumentType='AR Invoice' so you can "
+        "confirm the record type, plus PaymentStatus ('Paid' when DocStatus='C', 'Unpaid' when "
+        "DocStatus='O') and BalanceDue. Results are paginated."
+    ),
+    manual_parameters=[
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Required: Customer CardCode (e.g., AGC00001)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (e.g., 4B-AGRI_LIVE). If not provided, uses default from settings.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('payment_status', openapi.IN_QUERY, description="Optional: 'paid' (closed), 'unpaid' (open), or omit for both.", type=openapi.TYPE_STRING, required=False, enum=['paid', 'unpaid']),
+        openapi.Parameter('from_date', openapi.IN_QUERY, description="Optional: Filter invoices with DocDate >= this date (YYYY-MM-DD).", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('to_date', openapi.IN_QUERY, description="Optional: Filter invoices with DocDate <= this date (YYYY-MM-DD).", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('doc_num', openapi.IN_QUERY, description="Optional: Filter by exact invoice number (DocNum).", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('project', openapi.IN_QUERY, description="Optional: Filter by Project / policy code.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('min_total', openapi.IN_QUERY, description="Optional: Minimum DocTotal.", type=openapi.TYPE_NUMBER, required=False),
+        openapi.Parameter('max_total', openapi.IN_QUERY, description="Optional: Maximum DocTotal.", type=openapi.TYPE_NUMBER, required=False),
+        openapi.Parameter('sort_by', openapi.IN_QUERY, description="Optional: Sort column. One of: docdate (default), docnum, doctotal, balancedue, docduedate.", type=openapi.TYPE_STRING, required=False, enum=['docdate', 'docnum', 'doctotal', 'balancedue', 'docduedate']),
+        openapi.Parameter('sort_dir', openapi.IN_QUERY, description="Optional: Sort direction 'asc' or 'desc' (default desc).", type=openapi.TYPE_STRING, required=False, enum=['asc', 'desc']),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Optional: Page number, 1-based (default: 1).", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Optional: Records per page (default: 25, max: 200).", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="card_code is required"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def customer_ar_invoices(request):
+    """
+    AR invoices (paid & unpaid, excluding drafts) for a specific customer.
+    """
+    card_code = (getattr(request, 'query_params', {}).get('card_code') if hasattr(request, 'query_params') else None) or request.GET.get('card_code', '')
+    card_code = (card_code or '').strip()
+    if not card_code:
+        return Response({'success': False, 'error': 'card_code is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    payment_status = (request.GET.get('payment_status') or '').strip().lower() or None
+    from_date = (request.GET.get('from_date') or '').strip() or None
+    to_date = (request.GET.get('to_date') or '').strip() or None
+    doc_num = (request.GET.get('doc_num') or '').strip() or None
+    project = (request.GET.get('project') or '').strip() or None
+    sort_by = (request.GET.get('sort_by') or '').strip() or None
+    sort_dir = (request.GET.get('sort_dir') or '').strip() or None
+
+    def _to_float(val):
+        try:
+            return float(val) if val not in (None, '') else None
+        except Exception:
+            return None
+
+    min_total = _to_float(request.GET.get('min_total'))
+    max_total = _to_float(request.GET.get('max_total'))
+
+    # Pagination params
+    try:
+        page = int(request.GET.get('page', '1'))
+    except Exception:
+        page = 1
+    if page < 1:
+        page = 1
+    try:
+        page_size = int(request.GET.get('page_size', '25'))
+    except Exception:
+        page_size = 25
+    if page_size < 1:
+        page_size = 25
+    if page_size > 200:
+        page_size = 200
+    offset = (page - 1) * page_size
+
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    explicit_schema = (
+        (request.GET.get('database') or '').strip()
+        or (request.GET.get('company') or '').strip()
+    )
+    if explicit_schema:
+        cfg['schema'] = explicit_schema
+    elif not cfg['schema']:
+        cfg['schema'] = get_hana_schema_from_request(request)
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+
+            result = ar_invoices_by_customer(
+                conn, card_code,
+                payment_status=payment_status,
+                from_date=from_date,
+                to_date=to_date,
+                doc_num=doc_num,
+                project=project,
+                min_total=min_total,
+                max_total=max_total,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                limit=page_size,
+                offset=offset,
+            )
+            data = result.get('data', [])
+            total = result.get('total', 0)
+            total_pages = (total + page_size - 1) // page_size if page_size else 0
+            return Response({
+                'success': True,
+                'count': len(data or []),
+                'pagination': {
+                    'page': page,
+                    'page_size': page_size,
+                    'total_records': total,
+                    'total_pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1,
+                },
+                'data': data,
+            }, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@swagger_auto_schema(tags=['SAP'],
+    method='get',
+    operation_summary="AR Invoice Detail (line items)",
+    operation_description=(
+        "Get the detail of a single AR invoice: its header plus all line items "
+        "(products and services) from INV1. Identify the invoice with doc_entry, "
+        "or with doc_num (optionally scoped by card_code). Each line carries "
+        "LineKind ('Item' for inventory items, 'Service' for service rows). "
+        "Line items support filtering, sorting and pagination."
+    ),
+    manual_parameters=[
+        openapi.Parameter('doc_entry', openapi.IN_QUERY, description="Invoice DocEntry (internal key). Required unless doc_num is given.", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('doc_num', openapi.IN_QUERY, description="Invoice DocNum (printed number). Used when doc_entry is not supplied; combine with card_code if a DocNum is not unique.", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('card_code', openapi.IN_QUERY, description="Optional: scope doc_num resolution to this customer.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('database', openapi.IN_QUERY, description="Optional: Database/schema (e.g., 4B-AGRI_LIVE).", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('item_code', openapi.IN_QUERY, description="Optional: filter lines by exact ItemCode.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('search', openapi.IN_QUERY, description="Optional: search lines by ItemCode or description.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('line_kind', openapi.IN_QUERY, description="Optional: 'item'/'product' (lines with an ItemCode) or 'service' (lines without).", type=openapi.TYPE_STRING, required=False, enum=['item', 'product', 'service']),
+        openapi.Parameter('min_total', openapi.IN_QUERY, description="Optional: minimum LineTotal.", type=openapi.TYPE_NUMBER, required=False),
+        openapi.Parameter('max_total', openapi.IN_QUERY, description="Optional: maximum LineTotal.", type=openapi.TYPE_NUMBER, required=False),
+        openapi.Parameter('sort_by', openapi.IN_QUERY, description="Optional: linenum (default), itemcode, quantity, price, linetotal.", type=openapi.TYPE_STRING, required=False, enum=['linenum', 'itemcode', 'quantity', 'price', 'linetotal']),
+        openapi.Parameter('sort_dir', openapi.IN_QUERY, description="Optional: 'asc' (default) or 'desc'.", type=openapi.TYPE_STRING, required=False, enum=['asc', 'desc']),
+        openapi.Parameter('page', openapi.IN_QUERY, description="Optional: page number, 1-based (default: 1).", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('page_size', openapi.IN_QUERY, description="Optional: lines per page (default: 100, max: 500).", type=openapi.TYPE_INTEGER, required=False),
+    ],
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="doc_entry or doc_num is required"), 404: openapi.Response(description="Invoice not found"), 500: openapi.Response(description="Server Error")}
+)
+@api_view(['GET'])
+def ar_invoice_detail(request):
+    """
+    Detail (header + line items) of a single AR invoice.
+    """
+    doc_entry = (request.GET.get('doc_entry') or '').strip()
+    doc_num = (request.GET.get('doc_num') or '').strip()
+    card_code = (request.GET.get('card_code') or '').strip() or None
+    if not doc_entry and not doc_num:
+        return Response({'success': False, 'error': 'doc_entry or doc_num is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    item_code = (request.GET.get('item_code') or '').strip() or None
+    search = (request.GET.get('search') or '').strip() or None
+    line_kind = (request.GET.get('line_kind') or '').strip().lower() or None
+    sort_by = (request.GET.get('sort_by') or '').strip() or None
+    sort_dir = (request.GET.get('sort_dir') or '').strip() or None
+
+    def _to_float(val):
+        try:
+            return float(val) if val not in (None, '') else None
+        except Exception:
+            return None
+
+    min_total = _to_float(request.GET.get('min_total'))
+    max_total = _to_float(request.GET.get('max_total'))
+
+    try:
+        page = int(request.GET.get('page', '1'))
+    except Exception:
+        page = 1
+    if page < 1:
+        page = 1
+    try:
+        page_size = int(request.GET.get('page_size', '100'))
+    except Exception:
+        page_size = 100
+    if page_size < 1:
+        page_size = 100
+    if page_size > 500:
+        page_size = 500
+    offset = (page - 1) * page_size
+
+    try:
+        _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+        _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+        _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+        _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+    except Exception:
+        pass
+
+    cfg = {
+        'host': os.environ.get('HANA_HOST') or '',
+        'port': os.environ.get('HANA_PORT') or '30015',
+        'user': os.environ.get('HANA_USER') or '',
+        'schema': '',
+        'encrypt': os.environ.get('HANA_ENCRYPT') or '',
+        'ssl_validate': os.environ.get('HANA_SSL_VALIDATE') or '',
+    }
+    explicit_schema = (
+        (request.GET.get('database') or '').strip()
+        or (request.GET.get('company') or '').strip()
+    )
+    if explicit_schema:
+        cfg['schema'] = explicit_schema
+    elif not cfg['schema']:
+        cfg['schema'] = get_hana_schema_from_request(request)
+
+    try:
+        from hdbcli import dbapi
+        pwd = os.environ.get('HANA_PASSWORD', '')
+        kwargs = {'address': cfg['host'], 'port': int(cfg['port']), 'user': cfg['user'] or '', 'password': pwd or ''}
+        if str(cfg['encrypt']).strip().lower() in ('true', '1', 'yes'):
+            kwargs['encrypt'] = True
+            if cfg['ssl_validate']:
+                kwargs['sslValidateCertificate'] = (str(cfg['ssl_validate']).strip().lower() in ('true', '1', 'yes'))
+        conn = dbapi.connect(**kwargs)
+        try:
+            if cfg['schema']:
+                sch = cfg['schema']
+                cur = conn.cursor()
+                cur.execute(f'SET SCHEMA "{sch}"')
+                cur.close()
+
+            # Resolve DocEntry from DocNum when needed
+            resolved_entry = None
+            if doc_entry:
+                try:
+                    resolved_entry = int(doc_entry)
+                except Exception:
+                    return Response({'success': False, 'error': 'doc_entry must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                resolved_entry = ar_invoice_resolve_docentry(conn, doc_num, card_code=card_code)
+                if resolved_entry is None:
+                    return Response({'success': False, 'error': f'No AR invoice found for doc_num {doc_num}'}, status=status.HTTP_404_NOT_FOUND)
+
+            header = ar_invoice_header(conn, resolved_entry)
+            if not header:
+                return Response({'success': False, 'error': f'No AR invoice found for doc_entry {resolved_entry}'}, status=status.HTTP_404_NOT_FOUND)
+
+            result = ar_invoice_lines(
+                conn, resolved_entry,
+                item_code=item_code,
+                search=search,
+                line_kind=line_kind,
+                min_total=min_total,
+                max_total=max_total,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                limit=page_size,
+                offset=offset,
+            )
+            lines = result.get('data', [])
+            total = result.get('total', 0)
+            total_pages = (total + page_size - 1) // page_size if page_size else 0
+            return Response({
+                'success': True,
+                'header': header,
+                'count': len(lines or []),
+                'pagination': {
+                    'page': page,
+                    'page_size': page_size,
+                    'total_records': total,
+                    'total_pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1,
+                },
+                'lines': lines,
+            }, status=status.HTTP_200_OK)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@staff_member_required
+def customer_ar_invoices_admin(request):
+    """
+    Admin page: customer AR invoices (paid & unpaid, excluding drafts).
+
+    Mirrors the GET /api/sap/customer-ar-invoices/ endpoint inside the Django
+    admin so staff can browse a customer's AR invoices with the same filters,
+    sorting (latest first) and pagination. Reads only from OINV (drafts in ODRF
+    and cancelled invoices are excluded).
+    """
+    card_code = (request.GET.get('card_code') or '').strip()
+    payment_status = (request.GET.get('payment_status') or '').strip().lower() or None
+    from_date = (request.GET.get('from_date') or '').strip() or None
+    to_date = (request.GET.get('to_date') or '').strip() or None
+    doc_num = (request.GET.get('doc_num') or '').strip() or None
+    project = (request.GET.get('project') or '').strip() or None
+    sort_by = (request.GET.get('sort_by') or '').strip() or None
+    sort_dir = (request.GET.get('sort_dir') or '').strip() or None
+
+    def _to_float(val):
+        try:
+            return float(val) if val not in (None, '') else None
+        except Exception:
+            return None
+
+    min_total = _to_float(request.GET.get('min_total'))
+    max_total = _to_float(request.GET.get('max_total'))
+
+    try:
+        page = int(request.GET.get('page', '1'))
+    except Exception:
+        page = 1
+    if page < 1:
+        page = 1
+    try:
+        page_size = int(request.GET.get('page_size', '25'))
+    except Exception:
+        page_size = 25
+    if page_size < 1:
+        page_size = 25
+    if page_size > 200:
+        page_size = 200
+    offset = (page - 1) * page_size
+
+    error = None
+    rows = []
+    total = 0
+    total_pages = 0
+    # Resolve schema the same way the breadcrumb DB selector / APIs do.
+    schema = get_hana_schema_from_request(request)
+
+    if card_code:
+        try:
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+        except Exception:
+            pass
+        try:
+            from hdbcli import dbapi
+            kwargs = {
+                'address': os.environ.get('HANA_HOST') or '',
+                'port': int(os.environ.get('HANA_PORT') or '30015'),
+                'user': os.environ.get('HANA_USER') or '',
+                'password': os.environ.get('HANA_PASSWORD', '') or '',
+            }
+            if str(os.environ.get('HANA_ENCRYPT') or '').strip().lower() in ('true', '1', 'yes'):
+                kwargs['encrypt'] = True
+                ssl_validate = os.environ.get('HANA_SSL_VALIDATE') or ''
+                if ssl_validate:
+                    kwargs['sslValidateCertificate'] = (str(ssl_validate).strip().lower() in ('true', '1', 'yes'))
+            conn = dbapi.connect(**kwargs)
+            try:
+                if schema:
+                    cur = conn.cursor()
+                    cur.execute(f'SET SCHEMA "{schema}"')
+                    cur.close()
+                result = ar_invoices_by_customer(
+                    conn, card_code,
+                    payment_status=payment_status,
+                    from_date=from_date,
+                    to_date=to_date,
+                    doc_num=doc_num,
+                    project=project,
+                    min_total=min_total,
+                    max_total=max_total,
+                    sort_by=sort_by,
+                    sort_dir=sort_dir,
+                    limit=page_size,
+                    offset=offset,
+                )
+                rows = result.get('data', [])
+                total = result.get('total', 0)
+                total_pages = (total + page_size - 1) // page_size if page_size else 0
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            error = str(e)
+
+    # Preserve the current filters when building pagination links.
+    from urllib.parse import urlencode
+    qd = request.GET.copy()
+    qd.pop('page', None)
+    base_qs = qd.urlencode()
+
+    context = {
+        'card_code': card_code,
+        'payment_status': payment_status or '',
+        'from_date': from_date or '',
+        'to_date': to_date or '',
+        'doc_num': doc_num or '',
+        'project': project or '',
+        'min_total': request.GET.get('min_total', ''),
+        'max_total': request.GET.get('max_total', ''),
+        'sort_by': sort_by or 'docdate',
+        'sort_dir': sort_dir or 'desc',
+        'schema': schema or '',
+        'rows': rows,
+        'error': error,
+        'page': page,
+        'page_size': page_size,
+        'total_records': total,
+        'total_pages': total_pages,
+        'has_next': page < total_pages,
+        'has_previous': page > 1,
+        'next_page': page + 1,
+        'prev_page': page - 1,
+        'base_qs': base_qs,
+        'searched': bool(card_code),
+    }
+    return render(request, 'admin/sap_integration/ar_invoices.html', context)
+
+
+@staff_member_required
+def ar_invoice_detail_admin(request):
+    """
+    Admin page: detail of a single AR invoice (header + product/service lines).
+
+    Mirrors GET /api/sap/ar-invoice-detail/. Reached from the AR Invoices list
+    by clicking an invoice's Doc No.
+    """
+    doc_entry = (request.GET.get('doc_entry') or '').strip()
+    doc_num = (request.GET.get('doc_num') or '').strip()
+    card_code = (request.GET.get('card_code') or '').strip() or None
+    item_code = (request.GET.get('item_code') or '').strip() or None
+    search = (request.GET.get('search') or '').strip() or None
+    line_kind = (request.GET.get('line_kind') or '').strip().lower() or None
+    sort_by = (request.GET.get('sort_by') or '').strip() or None
+    sort_dir = (request.GET.get('sort_dir') or '').strip() or None
+
+    try:
+        page = int(request.GET.get('page', '1'))
+    except Exception:
+        page = 1
+    if page < 1:
+        page = 1
+    try:
+        page_size = int(request.GET.get('page_size', '100'))
+    except Exception:
+        page_size = 100
+    if page_size < 1:
+        page_size = 100
+    if page_size > 500:
+        page_size = 500
+    offset = (page - 1) * page_size
+
+    error = None
+    header = None
+    lines = []
+    total = 0
+    total_pages = 0
+    schema = get_hana_schema_from_request(request)
+
+    if doc_entry or doc_num:
+        try:
+            _hana_load_env_file(os.path.join(os.path.dirname(__file__), '.env'))
+            _hana_load_env_file(os.path.join(str(settings.BASE_DIR), '.env'))
+            _hana_load_env_file(os.path.join(str(Path(settings.BASE_DIR).parent), '.env'))
+            _hana_load_env_file(os.path.join(os.getcwd(), '.env'))
+        except Exception:
+            pass
+        try:
+            from hdbcli import dbapi
+            kwargs = {
+                'address': os.environ.get('HANA_HOST') or '',
+                'port': int(os.environ.get('HANA_PORT') or '30015'),
+                'user': os.environ.get('HANA_USER') or '',
+                'password': os.environ.get('HANA_PASSWORD', '') or '',
+            }
+            if str(os.environ.get('HANA_ENCRYPT') or '').strip().lower() in ('true', '1', 'yes'):
+                kwargs['encrypt'] = True
+                ssl_validate = os.environ.get('HANA_SSL_VALIDATE') or ''
+                if ssl_validate:
+                    kwargs['sslValidateCertificate'] = (str(ssl_validate).strip().lower() in ('true', '1', 'yes'))
+            conn = dbapi.connect(**kwargs)
+            try:
+                if schema:
+                    cur = conn.cursor()
+                    cur.execute(f'SET SCHEMA "{schema}"')
+                    cur.close()
+
+                resolved_entry = None
+                if doc_entry:
+                    try:
+                        resolved_entry = int(doc_entry)
+                    except Exception:
+                        resolved_entry = None
+                else:
+                    resolved_entry = ar_invoice_resolve_docentry(conn, doc_num, card_code=card_code)
+
+                if resolved_entry is None:
+                    error = 'Invoice not found for the given identifier.'
+                else:
+                    header = ar_invoice_header(conn, resolved_entry)
+                    if not header:
+                        error = f'No AR invoice found for DocEntry {resolved_entry}.'
+                    else:
+                        result = ar_invoice_lines(
+                            conn, resolved_entry,
+                            item_code=item_code,
+                            search=search,
+                            line_kind=line_kind,
+                            sort_by=sort_by,
+                            sort_dir=sort_dir,
+                            limit=page_size,
+                            offset=offset,
+                        )
+                        lines = result.get('data', [])
+                        total = result.get('total', 0)
+                        total_pages = (total + page_size - 1) // page_size if page_size else 0
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            error = str(e)
+
+    from urllib.parse import urlencode
+    qd = request.GET.copy()
+    qd.pop('page', None)
+    base_qs = qd.urlencode()
+
+    context = {
+        'header': header,
+        'lines': lines,
+        'error': error,
+        'schema': schema or '',
+        'doc_entry': doc_entry,
+        'doc_num': doc_num,
+        'card_code': card_code or '',
+        'item_code': item_code or '',
+        'search': search or '',
+        'line_kind': line_kind or '',
+        'sort_by': sort_by or 'linenum',
+        'sort_dir': sort_dir or 'asc',
+        'page': page,
+        'page_size': page_size,
+        'total_records': total,
+        'total_pages': total_pages,
+        'has_next': page < total_pages,
+        'has_previous': page > 1,
+        'next_page': page + 1,
+        'prev_page': page - 1,
+        'base_qs': base_qs,
+    }
+    return render(request, 'admin/sap_integration/ar_invoice_detail.html', context)
+
+
+@swagger_auto_schema(tags=['SAP'],
     method='get',
     operation_description="HANA health",
     responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
@@ -9980,6 +10568,24 @@ def recommended_products_api(request):
             type=openapi.TYPE_STRING,
             required=False
         ),
+        openapi.Parameter(
+            'sort',
+            openapi.IN_QUERY,
+            description="Sort field. Default: code.",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['code', 'name', 'valid_from', 'valid_to', 'u_inv_end_date', 'u_ct', 'active', 'policy', 'updated_date'],
+            default='code'
+        ),
+        openapi.Parameter(
+            'order',
+            openapi.IN_QUERY,
+            description="Sort direction: asc or desc. Default: asc.",
+            type=openapi.TYPE_STRING,
+            required=False,
+            enum=['asc', 'desc'],
+            default='asc'
+        ),
     ],
     responses={
         200: openapi.Response(
@@ -10045,11 +10651,14 @@ def projects_list_api(request):
     - is_valid: Filter by validity (true/false) - Default: true
     - code: Filter by project code (exact match)
     - name: Filter by project name (partial match)
-    
+    - sort: Sort field (code, name, valid_from, valid_to, u_inv_end_date, u_ct, active, policy, updated_date) - Default: code
+    - order: Sort direction (asc/desc) - Default: asc
+
     Examples:
     - ?database=4B-AGRI_LIVE - Only valid & active policies (default)
     - ?database=4B-AGRI_LIVE&is_valid=false - Only expired policies
     - ?database=4B-AGRI_LIVE&active=N&is_valid=true - Inactive but valid policies
+    - ?database=4B-AGRI_LIVE&sort=updated_date&order=desc - Newest updated first
     """
     try:
         from hdbcli import dbapi
@@ -10091,6 +10700,23 @@ def projects_list_api(request):
         code_filter = request.GET.get('code', '').strip()
         name_filter = request.GET.get('name', '').strip()
         is_valid_param = request.GET.get('is_valid', 'true').strip().lower()  # Default to valid only
+
+        # Sorting (whitelisted to avoid SQL injection): ?sort=<field>&order=asc|desc
+        sort_param = request.GET.get('sort', 'code').strip().lower()
+        order_param = request.GET.get('order', 'asc').strip().lower()
+        sort_map = {
+            'code': 'PrjCode',
+            'name': 'PrjName',
+            'valid_from': 'ValidFrom',
+            'valid_to': 'ValidTo',
+            'u_inv_end_date': 'U_InvEndDate',
+            'u_ct': 'U_Ct',
+            'active': 'Active',
+            'policy': 'U_pol',
+            'updated_date': 'UpdateDate',
+        }
+        sort_col = sort_map.get(sort_param, 'PrjCode')
+        sort_dir = 'DESC' if order_param in ('desc', 'descending', 'd') else 'ASC'
         
         if not hana_host or not hana_user or not hana_password:
             return Response({
@@ -10125,7 +10751,8 @@ def projects_list_api(request):
                         WHEN P."Active" = 'Y' THEN 'tYES'
                         ELSE 'tNO'
                     END AS "active",
-                    P."U_pol" AS "policy"
+                    P."U_pol" AS "policy",
+                    P."UpdateDate" AS "updated_date"
                 FROM OPRJ P
                 WHERE 1=1
             '''
@@ -10169,7 +10796,7 @@ def projects_list_api(request):
                 '''
             # If is_valid_param is 'all' or other value, don't apply validity filter
             
-            base_query += ' ORDER BY P."PrjCode"'
+            base_query += f' ORDER BY P."{sort_col}" {sort_dir}'
             
             # logger.info(f"[PROJECTS_LIST] Executing query with params: {params}")
             cursor.execute(base_query, params)
