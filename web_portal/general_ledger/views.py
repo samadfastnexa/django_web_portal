@@ -2420,3 +2420,777 @@ def export_ledger_pdf(request):
     except Exception as e:
         logger.exception("Error exporting PDF")
         return HttpResponse(f"Error exporting PDF: {str(e)}", status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Customer Detail Ledger — PDF export
+# ─────────────────────────────────────────────────────────────────────────────
+
+@swagger_auto_schema(
+    method='get',
+    tags=['General Ledger'],
+    operation_summary='Export Customer Detail Ledger to PDF',
+    operation_description='Download customer detail ledger as PDF. Shows invoice line-level product details (Product Name, Qty, Price, Policy Discount, Sale Value) for sales/return transactions, and journal-level detail for payments, credit/debit notes. Use user parameter to filter by user\'s assigned customers.',
+    manual_parameters=[
+        openapi.Parameter('company',      openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: Company database key', required=False),
+        openapi.Parameter('account_from', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Start of account range'),
+        openapi.Parameter('account_to',   openapi.IN_QUERY, type=openapi.TYPE_STRING, description='End of account range'),
+        openapi.Parameter('from_date',    openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Start date (YYYY-MM-DD)'),
+        openapi.Parameter('to_date',      openapi.IN_QUERY, type=openapi.TYPE_STRING, description='End date (YYYY-MM-DD)'),
+        openapi.Parameter('bp_code',      openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Business Partner CardCode. If user parameter is provided, validates that bp_code belongs to that user.'),
+        openapi.Parameter('user',         openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Optional: User ID or username. Filters transactions to only user\'s assigned customers. Can be combined with bp_code for validation.'),
+        openapi.Parameter('project_code', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Project Code'),
+        openapi.Parameter('trans_type',   openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Transaction Type (e.g., 13, 30)'),
+    ],
+    responses={
+        200: openapi.Response(
+            description='PDF file download',
+            schema=openapi.Schema(type=openapi.TYPE_FILE)
+        ),
+        500: 'Error generating PDF file'
+    }
+)
+@api_view(['GET'])
+def export_detail_ledger_pdf_api(request):
+    """
+    GET /api/general-ledger/detail-ledger/export-pdf/
+
+    Export Customer Detail Ledger to PDF. Same header/footer/summary as the
+    General Ledger but with invoice line-item columns:
+    VNo. | VDate | Product Name | Qty | Price | Policy Discount | Sale Value |
+    Type | Policy Name/Narration | PR NO. | Debit | Credit | Balance
+    """
+    if not REPORTLAB_AVAILABLE:
+        return Response({
+            'success': False,
+            'error': 'PDF export not available. Please install reportlab package.'
+        }, status=500)
+
+    try:
+        # ── Query parameters ──────────────────────────────────────────────────
+        company      = (request.GET.get('company')      or '').strip()
+        from_date    = (request.GET.get('from_date')    or '').strip()
+        to_date      = (request.GET.get('to_date')      or '').strip()
+        bp_code      = (request.GET.get('bp_code')      or '').strip()
+        user_param   = (request.GET.get('user')         or '').strip()
+        project_code = (request.GET.get('project_code') or '').strip()
+
+        # ── User-based filtering (mobile/dealer) ──────────────────────────────
+        if user_param:
+            try:
+                from accounts.models import User
+                from FieldAdvisoryService.models import Dealer
+
+                user_obj = None
+                try:
+                    user_obj = User.objects.get(id=int(user_param))
+                except (ValueError, User.DoesNotExist):
+                    user_obj = User.objects.filter(username=user_param).first()
+
+                if not user_obj:
+                    return Response({'success': False, 'error': f'User "{user_param}" not found'}, status=404)
+
+                dealer_card_codes = list(
+                    Dealer.objects.filter(user=user_obj)
+                    .exclude(card_code__isnull=True).exclude(card_code='')
+                    .values_list('card_code', flat=True)
+                )
+
+                if not dealer_card_codes:
+                    bp_code = []
+                elif bp_code:
+                    if bp_code not in dealer_card_codes:
+                        return Response({
+                            'success': False,
+                            'error': f'Business Partner "{bp_code}" does not belong to user "{user_param}"'
+                        }, status=403)
+                else:
+                    bp_code = dealer_card_codes
+
+            except Exception as e:
+                return Response({'success': False, 'error': f'Error processing user filter: {str(e)}'}, status=500)
+
+        # ── Fetch detail ledger data ──────────────────────────────────────────
+        conn = get_hana_connection(company)
+        transactions = hana_queries.detail_ledger_report(
+            conn,
+            from_date=from_date or None,
+            to_date=to_date or None,
+            bp_code=bp_code if bp_code else None,
+            project_code=project_code or None,
+        )
+
+        # Group transactions by BP code
+        _bp_territory_map = {}
+        try:
+            from FieldAdvisoryService.models import Dealer as _Dealer
+            for _d in _Dealer.objects.filter(card_code__isnull=False).select_related('region', 'zone', 'territory'):
+                _parts = [p for p in [
+                    getattr(_d.region,    'name', None),
+                    getattr(_d.zone,      'name', None),
+                    getattr(_d.territory, 'name', None),
+                ] if p]
+                _bp_territory_map[_d.card_code] = ' / '.join(_parts)
+        except Exception:
+            pass
+
+        _bp_groups = {}
+        for _txn in transactions:
+            _bpc = str(_txn.get('BPCode', '') or '')
+            if _bpc not in _bp_groups:
+                _bp_groups[_bpc] = {
+                    'BPCode':    _bpc,
+                    'BPName':    str(_txn.get('BPName', '') or ''),
+                    'Territory': _bp_territory_map.get(_bpc, ''),
+                    'transactions': [],
+                }
+            _bp_groups[_bpc]['transactions'].append(_txn)
+
+        # Calculate per-BP opening balance and running balance
+        _bp_opening = {}
+        for _bpc in _bp_groups:
+            if from_date and _bpc:
+                try:
+                    _ob = hana_queries.bp_opening_balance(conn, _bpc, from_date)
+                    _bp_opening[_bpc] = float(_ob.get('Balance', 0) or 0)
+                except Exception:
+                    _bp_opening[_bpc] = 0.0
+            else:
+                _bp_opening[_bpc] = 0.0
+
+        conn.close()
+
+        # ── PDF setup ─────────────────────────────────────────────────────────
+        response = HttpResponse(content_type='application/pdf')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        response['Content-Disposition'] = (
+            f'attachment; filename="detail_ledger_{company}_{timestamp}.pdf"'
+        )
+
+        pdf_buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=landscape(letter),
+            topMargin=0.4 * inch, bottomMargin=0.4 * inch,
+            leftMargin=0.3 * inch, rightMargin=0.3 * inch,
+        )
+        elements = []
+        styles = getSampleStyleSheet()
+
+        # ── Date range strings ────────────────────────────────────────────────
+        from_disp = from_date or '01/01/2000'
+        to_disp   = to_date   or datetime.now().strftime('%m/%d/%Y')
+        try:
+            if from_date and len(from_date) == 10:
+                d = datetime.strptime(from_date, '%Y-%m-%d')
+                from_disp = f"{d.month}/{d.day}/{d.year}"
+        except Exception:
+            pass
+        try:
+            if to_date and len(to_date) == 10:
+                d = datetime.strptime(to_date, '%Y-%m-%d')
+                to_disp = f"{d.month}/{d.day}/{d.year}"
+        except Exception:
+            pass
+        now = datetime.now()
+        print_date_str = f"{now.month}/{now.day}/{now.year}   {now.strftime('%I:%M:%S%p')}"
+
+        # ── Resolve company full name ─────────────────────────────────────────
+        _company_full_name = company
+        try:
+            from FieldAdvisoryService.models import Company as _CompanyModel
+            _co = _CompanyModel.objects.filter(name=company).first() \
+                  or _CompanyModel.objects.filter(Company_name=company).first()
+            if _co:
+                _company_full_name = getattr(_co, 'Company_name', None) or company
+        except Exception:
+            pass
+
+        # ── Load admin-managed settings ────────────────────────────────────────
+        from .models import LedgerSettings as _LedgerSettings
+        _cfg = _LedgerSettings.get()
+
+        _fs_grp  = int(_cfg.font_size_group_name   or 11)
+        _fs_ent  = int(_cfg.font_size_company_name  or 13)
+        _fs_ttl  = int(_cfg.font_size_report_title  or 10)
+        _fs_dt   = int(_cfg.font_size_dates         or 9)
+        _fs_td   = int(_cfg.font_size_table_data    or 8)
+
+        cell_style = ParagraphStyle(
+            'DLCell', parent=styles['Normal'],
+            fontSize=_fs_td, fontName='Helvetica', leading=_fs_td + 2, alignment=TA_LEFT,
+        )
+
+        # ── Header styles ──────────────────────────────────────────────────────
+        _h_group  = ParagraphStyle('DLHDRGroup',  parent=styles['Normal'],
+            fontSize=_fs_grp, fontName='Helvetica-Bold', leading=_fs_grp + 3)
+        _h_entity = ParagraphStyle('DLHDREntity', parent=styles['Normal'],
+            fontSize=_fs_ent, fontName='Helvetica-Bold', leading=_fs_ent + 4)
+        _h_title  = ParagraphStyle('DLHDRTitle',  parent=styles['Normal'],
+            fontSize=_fs_ttl, fontName='Helvetica',      leading=_fs_ttl + 3)
+        _h_dates  = ParagraphStyle('DLHDRDates',  parent=styles['Normal'],
+            fontSize=_fs_dt,  fontName='Helvetica',      leading=_fs_dt + 3)
+        _h_print  = ParagraphStyle('DLHDRPrint',  parent=styles['Normal'],
+            fontSize=8, fontName='Helvetica', leading=11, alignment=TA_RIGHT)
+
+        # ── Logo ───────────────────────────────────────────────────────────────
+        import os as _os
+        if _cfg.smart_stamp_image:
+            _logo_path = _cfg.smart_stamp_image.path
+        else:
+            _logo_path = _os.path.join(
+                _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                'media', 'Ledger_template', 'smart_stamp.png'
+            )
+
+        # ── 2-column header ────────────────────────────────────────────────────
+        _page_w       = landscape(letter)[0] - 0.6 * inch
+        _right_col_w  = _page_w * 0.30
+
+        _sap_logo_dl = None
+        if _cfg.sap_logo_image:
+            try:
+                _sap_logo_dl = RLImage(_cfg.sap_logo_image.path, width=0.65 * inch, height=0.33 * inch)
+            except Exception:
+                _sap_logo_dl = None
+        if _sap_logo_dl is None:
+            try:
+                from reportlab.graphics.shapes import Drawing as _RLDrawing, Rect as _RLRect, String as _RLString
+                _sw, _sh = 0.55 * inch, 0.28 * inch
+                _sd = _RLDrawing(_sw, _sh)
+                _sd.add(_RLRect(0, 0, _sw, _sh,
+                                fillColor=colors.HexColor('#0070f3'),
+                                strokeColor=colors.HexColor('#0070f3')))
+                _sd.add(_RLString(_sw / 2, (_sh / 2) - 4, 'SAP',
+                                  fontSize=12, fontName='Helvetica-Bold',
+                                  fillColor=colors.white, textAnchor='middle'))
+                _sap_logo_dl = _sd
+            except Exception:
+                _sap_logo_dl = None
+
+        _pdate_para = Paragraph(f'Print Date:   {print_date_str}', _h_print)
+        _sap_cell   = _sap_logo_dl if _sap_logo_dl is not None else Paragraph('SAP', _h_print)
+        _right_top  = Table(
+            [[_pdate_para, _sap_cell]],
+            colWidths=[_right_col_w - 0.65 * inch, 0.65 * inch],
+        )
+        _right_top.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('ALIGN',         (0, 0), (0, 0),   'RIGHT'),
+            ('ALIGN',         (1, 0), (1, 0),   'RIGHT'),
+        ]))
+
+        _left_content = [
+            Paragraph(_cfg.group_name or 'Four Brothers Group', _h_group),
+            Paragraph((_cfg.company_name or _company_full_name or '').upper(), _h_entity),
+            Paragraph('Customer Detail Ledger', _h_title),
+        ]
+        _right_content = [_right_top]
+        if _os.path.exists(_logo_path):
+            try:
+                from reportlab.lib.utils import ImageReader as _IR
+                _ir   = _IR(_logo_path)
+                _iw, _ih = _ir.getSize()
+                _max  = 1.1 * inch
+                if _iw >= _ih:
+                    _sw = _max
+                    _sh = _max * (_ih / _iw)
+                else:
+                    _sh = _max
+                    _sw = _max * (_iw / _ih)
+            except Exception:
+                _sw = _sh = 1.1 * inch
+            _stamp = RLImage(_logo_path, width=_sw, height=_sh)
+            _stamp.hAlign = 'RIGHT'
+            _right_content.append(Spacer(1, 4))
+            _right_content.append(_stamp)
+
+        _hdr_table = Table(
+            [[_left_content, _right_content]],
+            colWidths=[_page_w * 0.70, _right_col_w],
+        )
+        _hdr_table.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('ALIGN',         (1, 0), (1, 0),   'RIGHT'),
+        ]))
+        elements.append(_hdr_table)
+        elements.append(Spacer(1, 4))
+
+        _divider = Table([['']], colWidths=[_page_w])
+        _divider.setStyle(TableStyle([
+            ('LINEBELOW',     (0, 0), (-1, -1), 0.75, colors.HexColor('#1e293b')),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(_divider)
+        elements.append(Spacer(1, 4))
+
+        # ── Colours from settings ──────────────────────────────────────────────
+        C_HEADER_BG  = colors.HexColor(_cfg.table_header_bg_color   or '#1e293b')
+        C_HEADER_TXT = colors.HexColor(_cfg.table_header_text_color  or '#ffffff')
+        C_TERR_BG    = colors.HexColor(_cfg.territory_row_bg_color   or '#f1f5f9')
+        C_CLOSE_BG   = colors.HexColor(_cfg.closing_balance_bg_color or '#f1f5f9')
+        C_GRAND_BG   = colors.HexColor(_cfg.grand_total_bg_color     or '#e2e8f0')
+        C_GRID       = colors.HexColor(_cfg.grid_color               or '#d1d5db')
+
+        _fs_th  = int(_cfg.font_size_table_header or 8)
+        _fs_row = max(6, _fs_td - 1)   # one point smaller for compact transaction rows
+
+        # ── Column widths (landscape letter ≈ 10.4" usable) ──────────────────
+        # VNo | VDate | Product Name | Qty | Price | PolicyDiscount | SaleValue |
+        # Type | Policy Name/Narration | PR NO. | Debit | Credit | Balance
+        col_widths = [
+            0.62 * inch,   # VNo.
+            0.65 * inch,   # VDate
+            1.30 * inch,   # Product Name
+            0.37 * inch,   # Qty
+            0.60 * inch,   # Price
+            0.65 * inch,   # Policy Discount
+            0.65 * inch,   # Sale Value
+            0.75 * inch,   # Type
+            1.90 * inch,   # Policy Name / Narration
+            0.55 * inch,   # PR NO.
+            0.80 * inch,   # Debit
+            0.80 * inch,   # Credit
+            0.80 * inch,   # Balance
+        ]
+        NCOLS = len(col_widths)
+
+        # Column indices for numeric-right alignment
+        _NUM_COLS = [3, 4, 5, 6, 10, 11, 12]   # Qty, Price, Disc, SaleVal, D, C, Bal
+
+        table_data   = []
+        table_styles = [
+            ('FONTSIZE',      (0, 0), (-1, -1), _fs_row),
+            ('FONTNAME',      (0, 0), (-1, -1), 'Helvetica'),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 2),
+            ('TOPPADDING',    (0, 0), (-1, -1), 1),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ('LINEBELOW',     (0, 0), (-1, -1), 0.25, C_GRID),
+            ('LINEBEFORE',    (0, 0), (0, -1),  0,    colors.white),
+            ('LINEAFTER',     (-1, 0), (-1, -1), 0,   colors.white),
+        ]
+        for _nc in _NUM_COLS:
+            table_styles.append(('ALIGN', (_nc, 0), (_nc, -1), 'RIGHT'))
+
+        # Date row — spans all columns, sits right above the column headers
+        table_data.append([f'From:  {from_disp}     To:  {to_disp}'] + [''] * (NCOLS - 1))
+        ri = 0
+        table_styles += [
+            ('SPAN',          (0, ri), (NCOLS - 1, ri)),
+            ('BACKGROUND',    (0, ri), (-1, ri), colors.white),
+            ('FONTNAME',      (0, ri), (-1, ri), 'Helvetica'),
+            ('FONTSIZE',      (0, ri), (-1, ri), int(_cfg.font_size_dates or 9)),
+            ('ALIGN',         (0, ri), (-1, ri), 'LEFT'),
+            ('TOPPADDING',    (0, ri), (-1, ri), 4),
+            ('BOTTOMPADDING', (0, ri), (-1, ri), 2),
+            ('LINEABOVE',     (0, ri), (-1, ri), 0,    colors.white),
+            ('LINEBELOW',     (0, ri), (-1, ri), 0,    colors.white),
+        ]
+        ri += 1
+
+        headers = [
+            'VNo.', 'VDate', 'Product Name', 'Qty', 'Price',
+            'Policy\nDiscount', 'Sale Value', 'Type',
+            'Policy Name / Narration', 'PR NO.', 'Debit', 'Credit', 'Balance',
+        ]
+        table_data.append(headers)
+        table_styles += [
+            ('BACKGROUND',    (0, ri), (-1, ri), C_HEADER_BG),
+            ('TEXTCOLOR',     (0, ri), (-1, ri), C_HEADER_TXT),
+            ('FONTNAME',      (0, ri), (-1, ri), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0, ri), (-1, ri), _fs_th),
+            ('ALIGN',         (0, ri), (-1, ri), 'CENTER'),
+            ('BOTTOMPADDING', (0, ri), (-1, ri), 5),
+            ('TOPPADDING',    (0, ri), (-1, ri), 5),
+            ('LINEABOVE',     (0, ri), (-1, ri), 0.75, C_GRID),
+            ('LINEBELOW',     (0, ri), (-1, ri), 0.75, C_GRID),
+        ]
+        ri += 1
+
+        # ── Group BP groups under territory for display ordering ───────────────
+        _by_territory = {}
+        for _bpg in _bp_groups.values():
+            _by_territory.setdefault(_bpg['Territory'] or '', []).append(_bpg)
+
+        def _fmt_num(v, zero_blank=False):
+            try:
+                f = float(v or 0)
+            except (TypeError, ValueError):
+                f = 0.0
+            if zero_blank and f == 0:
+                return ''
+            return '{:,.0f}'.format(f) if f == int(f) else '{:,.2f}'.format(f)
+
+        def _fmt_money(v):
+            try:
+                f = float(v or 0)
+            except (TypeError, ValueError):
+                f = 0.0
+            return '{:,.2f}'.format(f) if f != 0 else ''
+
+        grand_debit = grand_credit = 0.0
+
+        for _terr_label, _bp_list in _by_territory.items():
+            if _terr_label:
+                table_data.append([_terr_label] + [''] * (NCOLS - 1))
+                table_styles += [
+                    ('SPAN',       (0, ri), (NCOLS - 1, ri)),
+                    ('BACKGROUND', (0, ri), (-1, ri), colors.white),
+                    ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('FONTSIZE',   (0, ri), (-1, ri), _fs_row),
+                    ('LINEABOVE',  (0, ri), (-1, ri), 0.5, C_GRID),
+                ]
+                ri += 1
+
+            for _bpg in _bp_list:
+                _bpc      = _bpg['BPCode']
+                _bp_label = (
+                    f"{_bpg['BPName']} ({_bpc})"
+                    if _bpc else (_bpg['BPName'] or 'No BP')
+                )
+                table_data.append([_bp_label] + [''] * (NCOLS - 1))
+                table_styles += [
+                    ('SPAN',         (0, ri), (NCOLS - 1, ri)),
+                    ('FONTNAME',     (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('FONTSIZE',     (0, ri), (-1, ri), _fs_row),
+                    ('LINEABOVE',    (0, ri), (-1, ri), 0.5, C_GRID),
+                    ('LINEBELOW',    (0, ri), (-1, ri), 0.5, C_GRID),
+                    ('BOTTOMPADDING',(0, ri), (-1, ri), 3),
+                ]
+                ri += 1
+
+                # Opening balance — used for running balance calc but NOT shown as a row
+                _ob = _bp_opening.get(_bpc, 0.0)
+
+                # Period transactions with running balance
+                _running = _ob
+                bp_debit = bp_credit = 0.0
+
+                _row_style = ParagraphStyle(
+                    'DLRowCell', parent=cell_style, fontSize=_fs_row, leading=_fs_row + 2,
+                )
+
+                for _txn in _bpg['transactions']:
+                    _debit  = float(_txn.get('Debit',  0) or 0)
+                    _credit = float(_txn.get('Credit', 0) or 0)
+                    _running += _debit - _credit
+                    bp_debit  += _debit
+                    bp_credit += _credit
+
+                    _pdate = str(_txn.get('PostingDate', ''))[:10]
+                    try:
+                        _pd = datetime.strptime(_pdate, '%Y-%m-%d')
+                        _pdate = f"{_pd.month}/{_pd.day}/{_pd.year}"
+                    except Exception:
+                        pass
+
+                    _item_name = str(_txn.get('ItemName', '') or '')
+                    _qty       = _txn.get('Qty', 0) or 0
+                    _price     = _txn.get('Price', 0) or 0
+                    _disc      = _txn.get('PolicyDiscount', 0) or 0
+                    _sale_val  = _txn.get('SaleValue', 0) or 0
+                    _type_name = str(_txn.get('TransTypeName', '') or '')
+                    _pol_narr  = str(_txn.get('PolicyNarration', '') or '')
+                    _ref1      = str(_txn.get('Reference1', '') or '')
+
+                    # For SIV/SRV rows PolicyNarration is blank — fall back to project name
+                    if not _pol_narr:
+                        _proj_name = str(_txn.get('ProjectName', '') or '')
+                        _proj_code = str(_txn.get('ProjectCode', '') or '')
+                        if _proj_name:
+                            _pol_narr = f"{_proj_code} {_proj_name}".strip()
+
+                    table_data.append([
+                        str(_txn.get('TransId', '') or ''),
+                        _pdate,
+                        Paragraph(_item_name, _row_style),
+                        _fmt_num(_qty, zero_blank=True)      if _item_name else '',
+                        _fmt_num(_price, zero_blank=True)    if _item_name else '',
+                        _fmt_num(_disc, zero_blank=True)     if _item_name else '',
+                        _fmt_num(_sale_val, zero_blank=True) if _item_name else '',
+                        Paragraph(_type_name, _row_style),
+                        Paragraph(_pol_narr, _row_style),
+                        Paragraph(_ref1, _row_style),
+                        _fmt_money(_debit)  if _debit  > 0 else '',
+                        _fmt_money(_credit) if _credit > 0 else '',
+                        '{:,.2f}'.format(_running) if _running != 0 else '0',
+                    ])
+                    ri += 1
+
+                # Closing balance per BP
+                _bp_close = _ob + bp_debit - bp_credit
+                table_data.append(
+                    ['Closing Balance'] + [''] * (NCOLS - 4)
+                    + [
+                        _fmt_money(bp_debit),
+                        _fmt_money(bp_credit),
+                        '{:,.2f}'.format(_bp_close) if _bp_close != 0 else '0',
+                    ]
+                )
+                table_styles += [
+                    ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+                    ('BACKGROUND', (0, ri), (-1, ri), C_CLOSE_BG),
+                    ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+                    ('LINEABOVE',  (0, ri), (-1, ri), 0.5, C_GRID),
+                ]
+                ri += 1
+
+                grand_debit  += bp_debit
+                grand_credit += bp_credit
+
+        # Grand total row
+        _grand_close = grand_debit - grand_credit
+        table_data.append(
+            ['GRAND TOTAL'] + [''] * (NCOLS - 4)
+            + [
+                _fmt_money(grand_debit),
+                _fmt_money(grand_credit),
+                '{:,.2f}'.format(_grand_close) if _grand_close != 0 else '0',
+            ]
+        )
+        table_styles += [
+            ('SPAN',       (0, ri), (NCOLS - 4, ri)),
+            ('BACKGROUND', (0, ri), (-1, ri), C_GRAND_BG),
+            ('FONTNAME',   (0, ri), (-1, ri), 'Helvetica-Bold'),
+            ('FONTSIZE',   (0, ri), (-1, ri), 8),
+            ('LINEABOVE',  (0, ri), (-1, ri), 1, colors.HexColor('#64748b')),
+        ]
+
+        table = Table(table_data, colWidths=col_widths, repeatRows=2)
+        table.setStyle(TableStyle(table_styles))
+        elements.append(table)
+
+        # ── Per-policy summary page (reuses the same project_summary_report) ───
+        try:
+            conn2 = get_hana_connection(company)
+            summary_rows = hana_queries.project_summary_report(
+                conn2,
+                from_date=from_date or None,
+                to_date=to_date     or None,
+                bp_code=bp_code if bp_code else None,
+                project_code=project_code or None,
+            )
+
+            _by_bp = {}
+            for _r in summary_rows:
+                _bpc2 = str(_r.get('BPCode') or '')
+                _bp2  = _by_bp.setdefault(_bpc2, {
+                    'BPCode': _bpc2,
+                    'BPName': str(_r.get('BPName') or ''),
+                    'rows': [],
+                })
+                _opening2 = 0.0
+                if from_date:
+                    try:
+                        _opening2 = hana_queries.project_opening_balance(
+                            conn2, _bpc2, str(_r.get('ProjectCode') or ''), from_date
+                        )
+                    except Exception:
+                        _opening2 = 0.0
+                _td2 = float(_r.get('TotalDebit')  or 0)
+                _tc2 = float(_r.get('TotalCredit') or 0)
+                _r['Opening'] = _opening2
+                _r['Balance'] = _opening2 + _td2 - _tc2
+                _bp2['rows'].append(_r)
+            conn2.close()
+        except Exception as _se:
+            logger.exception("Detail ledger: error building policy summary: %s", _se)
+            _by_bp = {}
+
+        if _by_bp:
+            elements.append(PageBreak())
+
+            _sum_col_widths = [
+                3.40 * inch,
+                0.80 * inch,
+                0.80 * inch,
+                0.70 * inch,
+                0.80 * inch,
+                0.90 * inch,
+                0.85 * inch,
+                0.85 * inch,
+                0.85 * inch,
+            ]
+            _SUM_NCOLS = len(_sum_col_widths)
+
+            _sum_data   = []
+            _sum_styles = [
+                ('FONTSIZE',      (0, 0), (-1, -1), _fs_td),
+                ('FONTNAME',      (0, 0), (-1, -1), 'Helvetica'),
+                ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING',   (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING',  (0, 0), (-1, -1), 3),
+                ('TOPPADDING',    (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('LINEBELOW',     (0, 0), (-1, -1), 0.25, C_GRID),
+                ('ALIGN',         (1, 0), (-1, -1), 'RIGHT'),
+            ]
+
+            # ── 2-row summary header ──────────────────────────────────────────
+            # Row 0: Policy Name | Opening | Sales | Tax | Return | Collection | Total(span6-7) | Balance
+            # Row 1: (spanned)   | (spanned)| ...  | ... | ...    | (spanned)  | Debit | Credit | (spanned)
+            _sum_data.append(['Policy Name', 'Opening', 'Sales', 'Tax', 'Return', 'Collection', 'Total', '', 'Balance'])
+            _sum_data.append(['', '', '', '', '', '', 'Debit', 'Credit', ''])
+            _sri = 0   # row index of first header row
+            _sum_styles += [
+                # Background + text for both header rows
+                ('BACKGROUND',    (0, _sri), (-1, _sri + 1), C_HEADER_BG),
+                ('TEXTCOLOR',     (0, _sri), (-1, _sri + 1), C_HEADER_TXT),
+                ('FONTNAME',      (0, _sri), (-1, _sri + 1), 'Helvetica-Bold'),
+                ('FONTSIZE',      (0, _sri), (-1, _sri + 1), _fs_th),
+                ('ALIGN',         (0, _sri), (-1, _sri + 1), 'CENTER'),
+                ('VALIGN',        (0, _sri), (-1, _sri + 1), 'MIDDLE'),
+                ('TOPPADDING',    (0, _sri), (-1, _sri + 1), 3),
+                ('BOTTOMPADDING', (0, _sri), (-1, _sri + 1), 3),
+                ('LINEABOVE',     (0, _sri),      (-1, _sri),      0.75, C_GRID),
+                ('LINEBELOW',     (0, _sri + 1),  (-1, _sri + 1),  0.75, C_GRID),
+                # Row-spans: cols 0-5 and col 8 span both header rows
+                ('SPAN', (0, _sri), (0, _sri + 1)),
+                ('SPAN', (1, _sri), (1, _sri + 1)),
+                ('SPAN', (2, _sri), (2, _sri + 1)),
+                ('SPAN', (3, _sri), (3, _sri + 1)),
+                ('SPAN', (4, _sri), (4, _sri + 1)),
+                ('SPAN', (5, _sri), (5, _sri + 1)),
+                ('SPAN', (8, _sri), (8, _sri + 1)),
+                # Col-span: "Total" across cols 6-7 in row 0
+                ('SPAN', (6, _sri), (7, _sri)),
+                # Box border only around Total+Debit+Credit group and Balance
+                ('BOX',       (6, _sri), (7, _sri + 1), 1,   C_HEADER_TXT),
+                ('LINEBELOW', (6, _sri), (7, _sri),     0.5, C_HEADER_TXT),
+                ('BOX',       (8, _sri), (8, _sri + 1), 1,   C_HEADER_TXT),
+            ]
+            _sri += 2   # data rows start after both header rows
+
+            def _sfmt(v):
+                try:
+                    f = float(v or 0)
+                except (TypeError, ValueError):
+                    f = 0.0
+                return '{:,.2f}'.format(f) if f else '0'
+
+            for _bpc2, _bp2 in _by_bp.items():
+                _bp_label2 = (
+                    f"{_bpc2}    {_bp2['BPName']}".strip()
+                    if _bpc2 else (_bp2['BPName'] or 'No BP')
+                )
+                _sum_data.append([_bp_label2] + [''] * (_SUM_NCOLS - 1))
+                _sum_styles += [
+                    ('SPAN',         (0, _sri), (_SUM_NCOLS - 1, _sri)),
+                    ('BACKGROUND',   (0, _sri), (-1, _sri), C_TERR_BG),
+                    ('FONTNAME',     (0, _sri), (-1, _sri), 'Helvetica-Bold'),
+                    ('FONTSIZE',     (0, _sri), (-1, _sri), 8),
+                    ('LINEABOVE',    (0, _sri), (-1, _sri), 0.5, C_GRID),
+                    ('LINEBELOW',    (0, _sri), (-1, _sri), 0.5, C_GRID),
+                ]
+                _sri += 1
+                for _r in _bp2['rows']:
+                    _pname = (
+                        f"{_r.get('ProjectCode','')} {_r.get('ProjectName','')}"
+                    ).strip()
+                    _sum_data.append([
+                        Paragraph(_pname, cell_style),
+                        _sfmt(_r.get('Opening')),
+                        _sfmt(_r.get('Sales')),
+                        _sfmt(_r.get('Tax')),
+                        _sfmt(_r.get('Return')),
+                        _sfmt(_r.get('Collection')),
+                        _sfmt(_r.get('TotalDebit')),
+                        _sfmt(_r.get('TotalCredit')),
+                        _sfmt(_r.get('Balance')),
+                    ])
+                    _sri += 1
+
+            _sum_table = Table(_sum_data, colWidths=_sum_col_widths, repeatRows=2)
+            _sum_table.setStyle(TableStyle(_sum_styles))
+            elements.append(_sum_table)
+
+        # ── Urdu footer (shared logic with GL) ────────────────────────────────
+        if _cfg.footer_image:
+            try:
+                from reportlab.lib.utils import ImageReader as _ImgReader
+                _ir  = _ImgReader(_cfg.footer_image.path)
+                _iw, _ih = _ir.getSize()
+                _img_w = landscape(letter)[0] - 0.6 * inch
+                _img_h = _img_w * (_ih / _iw) if _iw else 1.2 * inch
+                _img_max_h = 2.0 * inch
+                if _img_h > _img_max_h:
+                    _img_h = _img_max_h
+                    _img_w = _img_h * (_iw / _ih) if _ih else _img_w
+                elements.append(RLImage(_cfg.footer_image.path, width=_img_w, height=_img_h))
+            except Exception:
+                pass
+
+        _urdu_lines = _cfg.footer_lines()
+        _urdu_reshaped_dl = []
+        if _urdu_lines:
+            for _line in _urdu_lines:
+                if ARABIC_AVAILABLE:
+                    try:
+                        _res = (_urdu_reshaper.reshape(_line)
+                                if _urdu_reshaper is not None
+                                else arabic_reshaper.reshape(_line))
+                        _urdu_reshaped_dl.append(bidi_display(_res))
+                    except Exception:
+                        _urdu_reshaped_dl.append(_line)
+                else:
+                    _urdu_reshaped_dl.append(_line)
+
+        def _draw_dl_footer(canvas):
+            if _cfg.footer_image or not _urdu_reshaped_dl:
+                return
+            page_width    = landscape(letter)[0]
+            bottom_margin = 0.4 * inch
+            box_width     = page_width - 0.6 * inch
+            box_x         = 0.3 * inch
+            canvas.saveState()
+            try:
+                from reportlab.lib.utils import simpleSplit
+                _font_size  = 10
+                _padding    = 8
+                _line_gap   = 3
+                max_text_w  = box_width - (_padding * 2)
+                all_wrapped = []
+                for _lt in _urdu_reshaped_dl:
+                    _wr = simpleSplit(_lt, _URDU_FONT, _font_size, max_text_w)
+                    all_wrapped.append(_wr if _wr else [_lt])
+                single_line_h = _font_size * 1.4
+                y_pos = bottom_margin + 5
+                for _wl in reversed(all_wrapped):
+                    box_h = (single_line_h * len(_wl)) + (_padding * 2)
+                    canvas.setFillColor(colors.HexColor('#f8f9ff'))
+                    canvas.rect(box_x, y_pos, box_width, box_h, fill=1, stroke=0)
+                    canvas.setFillColor(colors.HexColor('#1e293b'))
+                    canvas.setFont(_URDU_FONT, _font_size)
+                    text_x = box_x + _padding
+                    text_y = y_pos + box_h - _padding - _font_size
+                    for _sl in _wl:
+                        canvas.drawString(text_x, text_y, _sl)
+                        text_y -= single_line_h
+                    y_pos += box_h + _line_gap
+            except Exception:
+                pass
+            finally:
+                canvas.restoreState()
+
+        doc.build(elements, canvasmaker=_make_last_page_only_canvas(_draw_dl_footer))
+        pdf_buffer.seek(0)
+        response.write(pdf_buffer.getvalue())
+        return response
+
+    except Exception as e:
+        logger.exception("Error exporting Detail Ledger PDF")
+        return Response({
+            'success': False,
+            'error': f'Error exporting Detail Ledger PDF: {str(e)}'
+        }, status=500)
