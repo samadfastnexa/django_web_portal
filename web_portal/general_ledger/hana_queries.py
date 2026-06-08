@@ -541,6 +541,239 @@ def business_partner_lov(db, bp_type: Optional[str] = 'C', limit: int = 1000) ->
     return _fetch_all(db, sql, tuple(params))
 
 
+def bp_opening_balance(db, bp_code, before_date: str) -> Dict[str, Any]:
+    """
+    Net debit/credit for a BP (or list of BPs) across all GL accounts, before before_date.
+    Used to calculate the opening balance row for the Customer Detail Ledger.
+    """
+    params: List[Any] = []
+    bp_clause = ''
+    if isinstance(bp_code, list):
+        ph = ','.join(['?'] * len(bp_code))
+        bp_clause = f' AND T1."ShortName" IN ({ph})'
+        params.extend([str(c).strip() for c in bp_code])
+    elif bp_code:
+        bp_clause = ' AND T1."ShortName" = ?'
+        params.append(str(bp_code).strip())
+
+    params.append(before_date.strip())
+
+    sql = f"""
+    SELECT
+        COALESCE(SUM(T1."Debit"),  0) AS "Debit",
+        COALESCE(SUM(T1."Credit"), 0) AS "Credit",
+        COALESCE(SUM(T1."Debit"),  0) - COALESCE(SUM(T1."Credit"), 0) AS "Balance"
+    FROM "JDT1" T1
+    INNER JOIN "OJDT" T0 ON T0."TransId" = T1."TransId"
+    WHERE T1."ShortName" <> ''
+      {bp_clause}
+      AND T0."RefDate" < TO_DATE(?, 'YYYY-MM-DD')
+    """
+    result = _fetch_one(db, sql, tuple(params))
+    return result if result else {"Debit": 0, "Credit": 0, "Balance": 0}
+
+
+def detail_ledger_report(
+    db,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    bp_code=None,
+    project_code: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Customer Detail Ledger: one row per invoice line-item for SIV/SRV,
+    one row per journal line for all other transaction types.
+
+    Returns rows with keys:
+        TransId, PostingDate, TransType, TransTypeName, BPCode, BPName,
+        ItemName, Qty, Price, PolicyDiscount, SaleValue,
+        Debit, Credit, ProjectCode, ProjectName, Reference1, PolicyNarration, SortKey
+    """
+
+    # ── Helper: build BP filter clause for invoice (CardCode) tables ──────────
+    def _bp_inv(alias: str = 'H') -> tuple:
+        if not bp_code:
+            return '', []
+        if isinstance(bp_code, list):
+            ph = ','.join(['?'] * len(bp_code))
+            return f' AND {alias}."CardCode" IN ({ph})', [str(c).strip() for c in bp_code]
+        return f' AND {alias}."CardCode" = ?', [str(bp_code).strip()]
+
+    # ── Helper: build BP filter clause for JDT1 (ShortName) ──────────────────
+    def _bp_jdt() -> tuple:
+        if not bp_code:
+            return '', []
+        if isinstance(bp_code, list):
+            ph = ','.join(['?'] * len(bp_code))
+            return f' AND T1."ShortName" IN ({ph})', [str(c).strip() for c in bp_code]
+        return ' AND T1."ShortName" = ?', [str(bp_code).strip()]
+
+    # ── Helper: date filter for invoice (DocDate) ─────────────────────────────
+    def _date_inv(alias: str = 'H', field: str = 'DocDate') -> tuple:
+        clauses, p = [], []
+        if from_date:
+            clauses.append(f" AND {alias}.\"{field}\" >= TO_DATE(?, 'YYYY-MM-DD')")
+            p.append(from_date.strip())
+        if to_date:
+            clauses.append(f" AND {alias}.\"{field}\" <= TO_DATE(?, 'YYYY-MM-DD')")
+            p.append(to_date.strip())
+        return ''.join(clauses), p
+
+    # ── Helper: date filter for JDT (RefDate) ────────────────────────────────
+    def _date_jdt() -> tuple:
+        clauses, p = [], []
+        if from_date:
+            clauses.append(" AND T0.\"RefDate\" >= TO_DATE(?, 'YYYY-MM-DD')")
+            p.append(from_date.strip())
+        if to_date:
+            clauses.append(" AND T0.\"RefDate\" <= TO_DATE(?, 'YYYY-MM-DD')")
+            p.append(to_date.strip())
+        return ''.join(clauses), p
+
+    # ── Helper: project filter for invoice line ───────────────────────────────
+    def _proj_line(alias: str = 'L') -> tuple:
+        if not project_code:
+            return '', []
+        return f' AND {alias}."Project" = ?', [project_code.strip()]
+
+    # ── Part 1: Sales Invoice Lines (TransType 13) ────────────────────────────
+    bp_c1, bp_p1   = _bp_inv('H')
+    dt_c1, dt_p1   = _date_inv('H', 'DocDate')
+    pj_c1, pj_p1   = _proj_line('L')
+
+    sql_inv = f"""
+    SELECT
+        CAST(H."DocNum" AS VARCHAR)         AS "TransId",
+        H."DocDate"                          AS "PostingDate",
+        '13'                                 AS "TransType",
+        'SIV'                                AS "TransTypeName",
+        H."CardCode"                         AS "BPCode",
+        H."CardName"                         AS "BPName",
+        COALESCE(L."Dscription", '')                                           AS "ItemName",
+        COALESCE(L."Quantity",   0)                                            AS "Qty",
+        COALESCE(L."PriceBefDi", 0)                                           AS "Price",
+        GREATEST(0, COALESCE(L."PriceBefDi", 0) * COALESCE(L."Quantity", 0)
+                    - COALESCE(L."LineTotal", 0))                              AS "PolicyDiscount",
+        COALESCE(L."LineTotal",  0)                                            AS "SaleValue",
+        CAST(0 AS DECIMAL)                                                     AS "Debit",
+        CAST(0 AS DECIMAL)                                                     AS "Credit",
+        COALESCE(L."Project",    '')                                           AS "ProjectCode",
+        COALESCE(P."PrjName",    '')                                           AS "ProjectName",
+        COALESCE(H."NumAtCard",  '')                                           AS "Reference1",
+        ''                                                                     AS "PolicyNarration",
+        CAST(L."LineNum" AS DECIMAL)                                           AS "SortKey"
+    FROM "OINV" H
+    INNER JOIN "INV1" L ON H."DocEntry" = L."DocEntry"
+    LEFT  JOIN "OPRJ" P ON L."Project"  = P."PrjCode"
+    WHERE H."CANCELED" = 'N'
+      {bp_c1}
+      {dt_c1}
+      {pj_c1}
+    """
+    params1 = bp_p1 + dt_p1 + pj_p1
+
+    # ── Part 2: Sales Return Lines (TransType 14) ─────────────────────────────
+    bp_c2, bp_p2   = _bp_inv('H')
+    dt_c2, dt_p2   = _date_inv('H', 'DocDate')
+    pj_c2, pj_p2   = _proj_line('L')
+
+    sql_rin = f"""
+    SELECT
+        CAST(H."DocNum" AS VARCHAR)         AS "TransId",
+        H."DocDate"                          AS "PostingDate",
+        '14'                                 AS "TransType",
+        'SRV'                                AS "TransTypeName",
+        H."CardCode"                         AS "BPCode",
+        H."CardName"                         AS "BPName",
+        COALESCE(L."Dscription", '')                                           AS "ItemName",
+        COALESCE(L."Quantity",   0)                                            AS "Qty",
+        COALESCE(L."PriceBefDi", 0)                                           AS "Price",
+        GREATEST(0, COALESCE(L."PriceBefDi", 0) * COALESCE(L."Quantity", 0)
+                    - COALESCE(L."LineTotal", 0))                              AS "PolicyDiscount",
+        COALESCE(L."LineTotal",  0)                                            AS "SaleValue",
+        CAST(0 AS DECIMAL)                                                     AS "Debit",
+        CAST(0 AS DECIMAL)                                                     AS "Credit",
+        COALESCE(L."Project",    '')                                           AS "ProjectCode",
+        COALESCE(P."PrjName",    '')                                           AS "ProjectName",
+        COALESCE(H."NumAtCard",  '')                                           AS "Reference1",
+        ''                                                                     AS "PolicyNarration",
+        CAST(L."LineNum" AS DECIMAL)                                           AS "SortKey"
+    FROM "ORIN" H
+    INNER JOIN "RIN1" L ON H."DocEntry" = L."DocEntry"
+    LEFT  JOIN "OPRJ" P ON L."Project"  = P."PrjCode"
+    WHERE H."CANCELED" = 'N'
+      {bp_c2}
+      {dt_c2}
+      {pj_c2}
+    """
+    params2 = bp_p2 + dt_p2 + pj_p2
+
+    # ── Part 3: All other journal entries (payments, credit/debit notes, etc.) ─
+    bp_c3, bp_p3   = _bp_jdt()
+    dt_c3, dt_p3   = _date_jdt()
+    pj_c3_sql      = ' AND T1."Project" = ?' if project_code else ''
+    pj_p3          = [project_code.strip()] if project_code else []
+
+    sql_jdt = f"""
+    SELECT
+        CAST(T0."TransId" AS VARCHAR)        AS "TransId",
+        T0."RefDate"                          AS "PostingDate",
+        CAST(T0."TransType" AS VARCHAR)       AS "TransType",
+        ''                                    AS "TransTypeName",
+        T1."ShortName"                        AS "BPCode",
+        COALESCE(T3."CardName", '')           AS "BPName",
+        ''                                    AS "ItemName",
+        CAST(0 AS DECIMAL)                    AS "Qty",
+        CAST(0 AS DECIMAL)                    AS "Price",
+        CAST(0 AS DECIMAL)                    AS "PolicyDiscount",
+        CAST(0 AS DECIMAL)                    AS "SaleValue",
+        COALESCE(T1."Debit",  0)              AS "Debit",
+        COALESCE(T1."Credit", 0)              AS "Credit",
+        COALESCE(T1."Project", '')            AS "ProjectCode",
+        COALESCE(T4."PrjName", '')            AS "ProjectName",
+        COALESCE(T0."Ref1",    '')            AS "Reference1",
+        CASE
+            WHEN T2."AcctName" IS NOT NULL
+                 AND T1."LineMemo" IS NOT NULL
+                 AND LENGTH(T1."LineMemo") > 0
+                 AND T1."LineMemo" <> T2."AcctName"
+            THEN T2."AcctName" || ' -- ' || T1."LineMemo"
+            WHEN T2."AcctName" IS NOT NULL THEN T2."AcctName"
+            ELSE COALESCE(T1."LineMemo", '')
+        END                                   AS "PolicyNarration",
+        CAST(T1."Line_ID" AS DECIMAL)         AS "SortKey"
+    FROM "OJDT"  T0
+    INNER JOIN "JDT1"  T1 ON T0."TransId"   = T1."TransId"
+    LEFT  JOIN "OACT"  T2 ON T1."Account"   = T2."AcctCode"
+    LEFT  JOIN "OCRD"  T3 ON T1."ShortName" = T3."CardCode"
+    LEFT  JOIN "OPRJ"  T4 ON T1."Project"   = T4."PrjCode"
+    WHERE T1."ShortName" <> ''
+      {bp_c3}
+      {dt_c3}
+      {pj_c3_sql}
+    """
+    params3 = bp_p3 + dt_p3 + pj_p3
+
+    # ── Combine with UNION ALL ────────────────────────────────────────────────
+    full_sql = f"""
+    ({sql_inv})
+    UNION ALL
+    ({sql_rin})
+    UNION ALL
+    ({sql_jdt})
+    ORDER BY "BPCode", "PostingDate", "TransId", "SortKey"
+    """
+
+    results = _fetch_all(db, full_sql, tuple(params1 + params2 + params3))
+
+    # Map TransType code → short name for Part 3 rows
+    for row in results:
+        if not row.get('TransTypeName'):
+            row['TransTypeName'] = get_transaction_type_name(row.get('TransType', ''))
+
+    return results
+
+
 def projects_lov(db, active_only: bool = True) -> List[Dict[str, Any]]:
     """
     Get Projects list for dropdown filter.
