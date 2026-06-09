@@ -858,6 +858,8 @@ class CompanySerializer(serializers.ModelSerializer):
     # Backward-compat: read primary/secondary color from the unified extra_settings JSON
     primary_color = serializers.SerializerMethodField()
     secondary_color = serializers.SerializerMethodField()
+    logo_width = serializers.SerializerMethodField()
+    logo_height = serializers.SerializerMethodField()
 
     class Meta:
         model = Company
@@ -878,18 +880,26 @@ class CompanySerializer(serializers.ModelSerializer):
     def get_secondary_color(self, obj):
         return (obj.extra_settings or {}).get('secondary_color') or None
 
+    def get_logo_width(self, obj):
+        return (obj.extra_settings or {}).get('logo_width') or None
+
+    def get_logo_height(self, obj):
+        return (obj.extra_settings or {}).get('logo_height') or None
+
 
 class CompanyMobileSerializer(serializers.ModelSerializer):
     """Simplified Company serializer for mobile/login responses with essential fields only"""
     logo = serializers.SerializerMethodField()
     primary_color = serializers.SerializerMethodField()
     secondary_color = serializers.SerializerMethodField()
+    logo_width = serializers.SerializerMethodField()
+    logo_height = serializers.SerializerMethodField()
     display_company_name = serializers.SerializerMethodField()
     schema_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Company
-        fields = ['display_company_name', 'schema_name', 'logo', 'primary_color', 'secondary_color', 'extra_settings']
+        fields = ['display_company_name', 'schema_name', 'logo', 'primary_color', 'secondary_color', 'logo_width', 'logo_height', 'extra_settings']
 
     def get_logo(self, obj):
         if obj.logo:
@@ -904,6 +914,12 @@ class CompanyMobileSerializer(serializers.ModelSerializer):
 
     def get_secondary_color(self, obj):
         return (obj.extra_settings or {}).get('secondary_color') or None
+
+    def get_logo_width(self, obj):
+        return (obj.extra_settings or {}).get('logo_width') or None
+
+    def get_logo_height(self, obj):
+        return (obj.extra_settings or {}).get('logo_height') or None
 
     def get_display_company_name(self, obj):
         return obj.Company_name
