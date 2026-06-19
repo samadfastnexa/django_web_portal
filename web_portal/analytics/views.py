@@ -1521,13 +1521,13 @@ class CollectionAnalyticsView(APIView):
                             try:
                                 v = r.get('Collection_Target')
                                 if v is not None:
-                                    r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                                    r['Collection_Target'] = float(v) / 1000000.0
                             except Exception:
                                 pass
                             try:
                                 v = r.get('Collection_Achievement')
                                 if v is not None:
-                                    r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                                    r['Collection_Achievement'] = float(v) / 1000000.0
                             except Exception:
                                 pass
                             scaled.append(r)
@@ -1622,11 +1622,13 @@ class CollectionAnalyticsView(APIView):
                 for r_name in sorted(hierarchy.keys()):
                     r_data = hierarchy[r_name]
                     
-                    # Round region totals
-                    r_data['target'] = round(r_data['target'], 2)
-                    r_data['achievement'] = round(r_data['achievement'], 2)
+                    # Grand total accumulates UNROUNDED region values (round once at the end)
                     grand_total_target += r_data['target']
                     grand_total_achievement += r_data['achievement']
+
+                    # Round region totals for display
+                    r_data['target'] = round(r_data['target'], 2)
+                    r_data['achievement'] = round(r_data['achievement'], 2)
                     
                     zones_list = []
                     for z_name in sorted(r_data['zones'].keys()):
