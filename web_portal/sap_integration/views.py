@@ -1227,14 +1227,14 @@ def hana_connect_admin(request):
                                                 v = r.get('Collection_Target')
                                                 if v is None: v = r.get('COLLECTION_TARGET')
                                                 if v is not None:
-                                                    r['Collection_Target'] = round((float(v) / 1000000.0), 2)
+                                                    r['Collection_Target'] = float(v) / 1000000.0
                                             except Exception:
                                                 pass
                                             try:
                                                 v = r.get('Collection_Achievement')
                                                 if v is None: v = r.get('COLLECTION_ACHIEVEMENT')
                                                 if v is not None:
-                                                    r['Collection_Achievement'] = round((float(v) / 1000000.0), 2)
+                                                    r['Collection_Achievement'] = float(v) / 1000000.0
                                             except Exception:
                                                 pass
                                             scaled.append(r)
@@ -1358,13 +1358,16 @@ def hana_connect_admin(request):
                                         r_data['zones'] = zones_list
                                         final_list.append(r_data)
                                 
-                                # Rounding
+                                # Rounding (round-after-sum: levels are summed at full precision, rounded only for display)
                                 for r in final_list:
                                     r['sales'] = round(r['sales'], 2)
                                     r['achievement'] = round(r['achievement'], 2)
                                     for z in r['zones']:
                                         z['sales'] = round(z['sales'], 2)
                                         z['achievement'] = round(z['achievement'], 2)
+                                        for t in z.get('territories', []):
+                                            t['sales'] = round(float(t.get('sales') or 0.0), 2)
+                                            t['achievement'] = round(float(t.get('achievement') or 0.0), 2)
 
                                 result = final_list
                                 

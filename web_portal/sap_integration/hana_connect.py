@@ -209,13 +209,13 @@ def sales_vs_achievement_geo(db, emp_id: int | None = None, region: str | None =
 
 def collection_vs_achievement(db, emp_id: int | None = None, region: str | None = None, zone: str | None = None, territory: str | None = None, start_date: str | None = None, end_date: str | None = None, group_by_date: bool = False, ignore_emp_filter: bool = False) -> list:
     """
-    Collection vs Achievement using B4_COLLECTION_TARGET_NEW table.
+    Collection vs Achievement using B4_COLLECTION_TARGET_FINAL table.
     Hierarchy: Region (R3/R2/R1) -> Zone (R1) -> Territory (T)
     Employee data comes from B4_EMP table joined through territory relationship
     
     OPTIMIZED: Removed window functions - Python aggregates hierarchy totals
     """
-    collection_tbl = '"B4_COLLECTION_TARGET_NEW"'
+    collection_tbl = '"B4_COLLECTION_TARGET_FINAL"'
     oter_tbl = '"OTER"'
     emp_tbl = '"B4_EMP"'
     
