@@ -1,0 +1,235 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Shopping Cart & Orders | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <strong>Shopping Cart &amp; Orders</strong>
+  </div>
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .cart-page        { max-width: 1180px; margin: 0 auto; padding: 8px 0 24px; }
+    .cart-intro       { background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:12px; padding:18px 20px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,0.04); }
+    .cart-intro h1    { margin:0 0 6px; font-size:22px; font-weight:800; color: var(--orange-dark, #C75A2A); display:flex; align-items:center; gap:10px; }
+    .cart-intro h1 .ico { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px; border-radius:50%; background:var(--orange-soft, #FFE4D6); color:var(--orange-dark, #C75A2A); }
+    .cart-intro p     { margin:0; color:#374151; font-size:14px; line-height:1.5; }
+
+    /* Stat cards */
+    .stat-section-title { margin:22px 0 10px; font-size:13px; font-weight:700; color:#334155; text-transform:uppercase; letter-spacing:.4px; }
+    .stat-grid        { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:14px; }
+    .stat-card        { background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:12px; padding:16px 18px; box-shadow:0 2px 6px rgba(0,0,0,0.04); position:relative; overflow:hidden; }
+    .stat-card .label { font-size:12px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.3px; }
+    .stat-card .value { font-size:26px; font-weight:800; color:#0f172a; margin-top:6px; line-height:1.1; }
+    .stat-card .sub   { font-size:12px; color:#94a3b8; margin-top:4px; }
+    .stat-card .ico   { position:absolute; top:14px; right:14px; width:30px; height:30px; opacity:.18; color:var(--orange, #E26830); }
+    .stat-card.accent { background:linear-gradient(135deg,#E26830,#d65a2b); border-color:transparent; }
+    .stat-card.accent .label,
+    .stat-card.accent .sub   { color:rgba(255,255,255,.85); }
+    .stat-card.accent .value { color:#fff; }
+    .stat-card.accent .ico   { color:#fff; opacity:.3; }
+
+    /* Recent orders */
+    .cart-card        { background:#fff; border:1px solid var(--hairline-color, #F3C7B4); border-radius:12px; padding:18px 20px; margin-top:22px; box-shadow:0 2px 6px rgba(0,0,0,0.04); }
+    .cart-card-head   { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+    .cart-card-head h2 { margin:0; font-size:15px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:.3px; }
+    .filter-pills     { display:flex; gap:6px; flex-wrap:wrap; }
+    .filter-pill      { display:inline-flex; align-items:center; padding:6px 12px; border-radius:999px; font-size:12px; font-weight:600; text-decoration:none; border:1px solid #e5e7eb; color:#475569; background:#fff; transition:all .15s; }
+    .filter-pill:hover { border-color:var(--orange, #E26830); color:var(--orange-dark, #C75A2A); }
+    .filter-pill.active { background:var(--orange, #E26830); color:#fff; border-color:var(--orange, #E26830); }
+
+    .cart-table       { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+    .cart-table thead th { background:var(--orange-soft, #FFE4D6); color:#0f172a; text-align:left; padding:10px 12px; font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:.3px; border-bottom:1px solid var(--orange-soft-border, #F7BFA8); }
+    .cart-table tbody td { padding:10px 12px; border-bottom:1px solid #f1f5f9; color:#334155; }
+    .cart-table tbody tr:hover { background:rgba(226,104,48,0.06); }
+    .cart-table a.order-link { color:var(--orange-dark, #C75A2A); font-weight:700; text-decoration:none; }
+    .cart-table a.order-link:hover { text-decoration:underline; }
+    .cart-empty       { color:#6b7280; font-size:13px; padding:18px 4px; text-align:center; }
+
+    .badge            { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; text-transform:capitalize; }
+    .badge-pending    { background:#fef3c7; color:#92400e; }
+    .badge-inprogress { background:#dbeafe; color:#1e40af; }
+    .badge-delivered  { background:#dcfce7; color:#166534; }
+    .badge-unpaid     { background:#fee2e2; color:#991b1b; }
+    .badge-partially_paid { background:#fef3c7; color:#92400e; }
+    .badge-paid       { background:#dcfce7; color:#166534; }
+    .badge-refunded   { background:#e2e8f0; color:#475569; }
+
+    .quick-links      { display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
+    .quick-link       { display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; background:#fff; color:#0f172a; border:1px solid #e5e7eb; transition:all .15s; }
+    .quick-link:hover { border-color:var(--orange, #E26830); color:var(--orange-dark, #C75A2A); transform:translateY(-1px); box-shadow:0 4px 10px rgba(226,104,48,.12); }
+    .quick-link svg   { width:18px; height:18px; color:var(--orange, #E26830); }
+
+    @media (max-width: 720px) {
+      .cart-table { display:block; overflow-x:auto; white-space:nowrap; }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="cart-page">
+
+  <div class="cart-intro">
+    <h1>
+      <span class="ico">
+        <svg width="22" height="22" viewBox="0 0 24 24"><path fill="currentColor" d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
+      </span>
+      Shopping Cart &amp; Orders
+    </h1>
+    <p>Overview of customer carts, orders and payments. Click any order number to view or update its status and payment details.</p>
+  </div>
+
+  <!-- ORDERS -->
+  <div class="stat-section-title">Orders</div>
+  <div class="stat-grid">
+    <div class="stat-card accent">
+      <svg class="ico" viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18h2V4h16v14h2V4c0-1.1-.9-2-2-2zm-2 7h-7v2h7V9zm0 4h-7v2h7v-2z"/></svg>
+      <div class="label">Total Orders</div>
+      <div class="value">{{ order_stats.total }}</div>
+      <div class="sub">{{ order_stats.last_30_days }} in last 30 days</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Pending</div>
+      <div class="value">{{ order_stats.pending }}</div>
+      <div class="sub">Awaiting processing</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">In Progress</div>
+      <div class="value">{{ order_stats.inprogress }}</div>
+      <div class="sub">Being fulfilled</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Delivered</div>
+      <div class="value">{{ order_stats.delivered }}</div>
+      <div class="sub">Completed orders</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Synced to SAP</div>
+      <div class="value">{{ order_stats.synced_to_sap }}</div>
+      <div class="sub">Pushed to SAP B1</div>
+    </div>
+  </div>
+
+  <!-- REVENUE -->
+  <div class="stat-section-title">Revenue</div>
+  <div class="stat-grid">
+    <div class="stat-card accent">
+      <div class="label">Total Order Value</div>
+      <div class="value">Rs {{ order_stats.total_amount|floatformat:0 }}</div>
+      <div class="sub">All orders combined</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Amount Collected</div>
+      <div class="value">Rs {{ order_stats.paid_amount|floatformat:0 }}</div>
+      <div class="sub">{{ order_stats.paid_count }} fully paid</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Outstanding</div>
+      <div class="value">Rs {{ order_stats.outstanding|floatformat:0 }}</div>
+      <div class="sub">{{ order_stats.unpaid }} unpaid / {{ order_stats.partially_paid }} partial</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Payments Collected</div>
+      <div class="value">Rs {{ payment_stats.collected|floatformat:0 }}</div>
+      <div class="sub">{{ payment_stats.completed }} of {{ payment_stats.total }} completed</div>
+    </div>
+  </div>
+
+  <!-- CARTS -->
+  <div class="stat-section-title">Active Carts</div>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="label">Active Carts</div>
+      <div class="value">{{ cart_stats.active_carts }}</div>
+      <div class="sub">Currently open</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Items in Carts</div>
+      <div class="value">{{ cart_stats.active_items }}</div>
+      <div class="sub">Active line items</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Carts</div>
+      <div class="value">{{ cart_stats.total_carts }}</div>
+      <div class="sub">Including cleared</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Pending Payments</div>
+      <div class="value">{{ payment_stats.pending }}</div>
+      <div class="sub">{{ payment_stats.failed }} failed</div>
+    </div>
+  </div>
+
+  <!-- RECENT ORDERS -->
+  <div class="cart-card">
+    <div class="cart-card-head">
+      <h2>Recent Orders</h2>
+      <div class="filter-pills">
+        <a class="filter-pill {% if not status_filter %}active{% endif %}" href="?">All</a>
+        {% for value, label in status_choices %}
+          <a class="filter-pill {% if status_filter == value %}active{% endif %}" href="?status={{ value }}">{{ label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if recent_orders %}
+      <table class="cart-table">
+        <thead>
+          <tr>
+            <th>Order #</th>
+            <th>Customer</th>
+            <th>Items</th>
+            <th>Total</th>
+            <th>Status</th>
+            <th>Payment</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in recent_orders %}
+            <tr>
+              <td><a class="order-link" href="{% url 'admin:cart_order_change' order.id %}">{{ order.order_number }}</a></td>
+              <td>
+                {% if order.customer_first_name or order.customer_last_name %}
+                  {{ order.customer_first_name }} {{ order.customer_last_name }}
+                {% else %}
+                  {{ order.user.email|default:order.user.username }}
+                {% endif %}
+                {% if order.shipping_city %}<div style="font-size:11px;color:#94a3b8;">{{ order.shipping_city }}</div>{% endif %}
+              </td>
+              <td>{{ order.get_total_items }}</td>
+              <td>Rs {{ order.total_amount|floatformat:0 }}</td>
+              <td><span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span></td>
+              <td><span class="badge badge-{{ order.payment_status }}">{{ order.get_payment_status_display }}</span></td>
+              <td>{{ order.created_date|date:"d M Y, H:i" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="cart-empty">No orders found{% if status_filter %} for this status{% endif %}.</div>
+    {% endif %}
+  </div>
+
+  <!-- QUICK LINKS -->
+  <div class="quick-links">
+    <a class="quick-link" href="{% url 'admin:cart_order_changelist' %}">
+      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18h2V4h16v14h2V4c0-1.1-.9-2-2-2zm-2 7h-7v2h7V9z"/></svg>
+      Manage Orders
+    </a>
+    <a class="quick-link" href="{% url 'admin:cart_cart_changelist' %}">
+      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1z"/></svg>
+      Manage Carts
+    </a>
+    <a class="quick-link" href="{% url 'admin:cart_payment_changelist' %}">
+      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+      Manage Payments
+    </a>
+  </div>
+
+</div>
+{% endblock %}
