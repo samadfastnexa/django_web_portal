@@ -237,6 +237,16 @@
       {% for app in app_list_all %}
         {% if app.app_label != 'accounts' and app.app_label != 'crop_management' and app.app_label != 'sap_integration' %}
           <li class="menu-item"><span class="menu-text" style="font-weight:700;opacity:.85;">{{ app.name }}</span></li>
+          {% if app.app_label == 'cart' %}
+            <li class="menu-item {% if '/admin/cart-dashboard/' in request.path %}is-active{% endif %}">
+              <a class="menu-link" href="{% url 'cart_dashboard_admin' %}">
+                <span class="menu-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+                </span>
+                <span class="menu-text">Dashboard</span>
+              </a>
+            </li>
+          {% endif %}
           {% for model in app.models %}
             {% if model.admin_url %}
               <li class="menu-item {% if request.path == model.admin_url %}is-active{% endif %}">
@@ -251,6 +261,16 @@
                         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46C10.21 5.23 11.08 5 12 5c3.04 0 5.5 2.46 5.5 5.5v.5H19c1.66 0 3 1.34 3 3 0 1.13-.64 2.11-1.56 2.62l1.45 1.45c.9-.86 1.48-2.04 1.48-3.36C22.5 12.14 21.35 10.75 19.85 10.24z"/></svg>
                       {% elif 'sales order' in n %}
                         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18h2V4h16v14h2V4c0-1.1-.9-2-2-2zm-2 7h-7v2h7V9zm0 4h-7v2h7v-2z"/></svg>
+                      {% elif 'cart item' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                      {% elif 'cart' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                      {% elif 'order item' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+                      {% elif 'order' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18h2V4h16v14h2V4c0-1.1-.9-2-2-2zm-2 7h-7v2h7V9zm0 4h-7v2h7v-2z"/></svg>
+                      {% elif 'payment' in n %}
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
                       {% elif 'company' in n %}
                         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 7V3H2v18h20V7H12zm6 10h-4v4h-4v-4H6v-4h4V9h4v4h4v4z"/></svg>
                       {% elif 'region' in n %}

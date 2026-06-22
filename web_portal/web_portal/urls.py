@@ -21,6 +21,7 @@ from general_ledger.views import (
     export_ledger_pdf,
     ledger_settings_redirect,
 )
+from cart.admin_views import cart_dashboard_admin
 from django.urls import path, include, re_path
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -90,6 +91,7 @@ urlpatterns = [
     path('admin/sap-sales-order/', admin_site.admin_view(sales_order_admin), name='sap_sales_order_admin'),
     path('admin/sap-ar-invoices/', admin_site.admin_view(customer_ar_invoices_admin), name='sap_ar_invoices_admin'),
     path('admin/sap-ar-invoice-detail/', admin_site.admin_view(ar_invoice_detail_admin), name='sap_ar_invoice_detail_admin'),
+    path('admin/cart-dashboard/', admin_site.admin_view(cart_dashboard_admin), name='cart_dashboard_admin'),
     path('api/sap/sales-vs-achievement/', sales_vs_achievement_api, name='sales_vs_achievement_api'),
     path('api/sap/sales-vs-achievement-by-emp/', sales_vs_achievement_by_emp_api, name='sales_vs_achievement_by_emp_api'),
     path('api/sap/territory-summary/', territory_summary_api, name='territory_summary_api'),
