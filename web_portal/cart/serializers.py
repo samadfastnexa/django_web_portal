@@ -41,9 +41,13 @@ class CartItemSerializer(serializers.ModelSerializer):
     
     def get_product_image_url(self, obj):
         """Get product image URL from media folder"""
-        # Get database from context or default to 4B-BIO
-        database = self.context.get('database', '4B-BIO')
-        
+        # Database/company comes from the request (resolved in the view). Only
+        # fall back to the first active company if no context was supplied.
+        database = self.context.get('database')
+        if not database:
+            from .views import get_default_company_key
+            database = get_default_company_key()
+
         # Construct image path based on product_item_code
         # Assuming image naming convention: {ItemCode}-{ProductName}.jpg
         # You may need to adjust this based on your actual SAP data
@@ -56,7 +60,10 @@ class CartItemSerializer(serializers.ModelSerializer):
     
     def get_product_description_urdu_url(self, obj):
         """Get product Urdu description image URL"""
-        database = self.context.get('database', '4B-BIO')
+        database = self.context.get('database')
+        if not database:
+            from .views import get_default_company_key
+            database = get_default_company_key()
         image_filename = f"{obj.product_item_code}-urdu.jpg"
         image_path = f"/media/product_images/{database}/{image_filename}"
         return image_path
@@ -91,9 +98,13 @@ class CartSerializer(serializers.ModelSerializer):
     def get_items(self, obj):
         """Get only active items in cart"""
         active_items = obj.items.filter(is_active=True)
-        # Get database from context if available
-        database = self.context.get('database', '4B-BIO')
-        return CartItemSerializer(active_items, many=True, context={'database': database}).data
+        # Forward the resolved database/request context to item serializers
+        database = self.context.get('database')
+        return CartItemSerializer(
+            active_items,
+            many=True,
+            context={'database': database, 'request': self.context.get('request')},
+        ).data
 
     def get_total_items(self, obj):
         """Get total number of items"""
@@ -122,7 +133,7 @@ class AddToCartSerializer(serializers.Serializer):
         allow_null=True
     )
     notes = serializers.CharField(required=False, allow_blank=True)
-    database = serializers.CharField(max_length=50, default='4B-BIO')
+    database = serializers.CharField(max_length=50, required=False, allow_blank=True)
 
 
 class UpdateCartItemSerializer(serializers.Serializer):
@@ -346,7 +357,7 @@ class CheckoutSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     
     # Database context (for product images)
-    database = serializers.CharField(max_length=20, default='4B-BIO', required=False)
+    database = serializers.CharField(max_length=50, required=False, allow_blank=True)
     
     def validate(self, data):
         """Validate payment phone for mobile wallet payments"""

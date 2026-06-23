@@ -58,6 +58,27 @@ def get_default_company_key():
         return ''
 
 
+def resolve_database(request, explicit=None):
+    """
+    Resolve the company/database used to build product image URLs.
+
+    Priority:
+      1. The value supplied by the frontend (used as-is, no normalization)
+      2. The logged-in user's own company
+      3. The first active company
+
+    This replaces the old hardcoded '4B-BIO' fallback so an AGRI user no longer
+    gets BIO image URLs when the request omits the company.
+    """
+    if explicit:
+        return explicit
+    user = getattr(request, 'user', None)
+    company = getattr(user, 'company', None) if user else None
+    if company and getattr(company, 'Company_name', None):
+        return company.Company_name
+    return get_default_company_key()
+
+
 class CartViewSet(viewsets.ViewSet):
     """
     ViewSet for managing shopping cart.
@@ -134,6 +155,13 @@ class CartViewSet(viewsets.ViewSet):
                 type=openapi.TYPE_BOOLEAN,
                 required=False
             ),
+            openapi.Parameter(
+                'database',
+                openapi.IN_QUERY,
+                description="Company database for product image URLs (e.g. 4B-AGRI, 4B-BIO, 4B-ORANG). If omitted, the logged-in user's company is used.",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
         ],
         responses={
             200: CartSerializer(),
@@ -168,8 +196,11 @@ class CartViewSet(viewsets.ViewSet):
         include_expired = request.query_params.get('include_expired', 'false').lower() == 'true'
         if not include_expired:
             cart.clear_expired_items()
-        
-        serializer = CartSerializer(cart)
+
+        serializer = CartSerializer(cart, context={
+            'database': resolve_database(request, request.query_params.get('database')),
+            'request': request,
+        })
         return Response(serializer.data)
     
     @swagger_auto_schema(
@@ -222,6 +253,13 @@ class CartViewSet(viewsets.ViewSet):
                 openapi.IN_QUERY,
                 description="Items per page (default: 10, max: 100)",
                 type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'database',
+                openapi.IN_QUERY,
+                description="Company database for product image URLs (e.g. 4B-AGRI, 4B-BIO, 4B-ORANG). If omitted, the logged-in user's company is used.",
+                type=openapi.TYPE_STRING,
                 required=False
             ),
         ],
@@ -312,12 +350,14 @@ class CartViewSet(viewsets.ViewSet):
             except ValueError:
                 pass
         
+        database = resolve_database(request, request.query_params.get('database'))
+
         page = paginator.paginate_queryset(queryset, request)
         if page is not None:
-            serializer = CartItemSerializer(page, many=True, context={'database': request.query_params.get('database', get_default_company_key())})
+            serializer = CartItemSerializer(page, many=True, context={'database': database})
             return paginator.get_paginated_response(serializer.data)
-        
-        serializer = CartItemSerializer(queryset, many=True, context={'database': request.query_params.get('database', get_default_company_key())})
+
+        serializer = CartItemSerializer(queryset, many=True, context={'database': database})
         return Response(serializer.data)
     
     @swagger_auto_schema(
@@ -356,8 +396,8 @@ class CartViewSet(viewsets.ViewSet):
             is_active=True
         ).first()
         
-        database = serializer.validated_data.get('database', get_default_company_key())
-        
+        database = resolve_database(request, serializer.validated_data.get('database'))
+
         if existing_item:
             # Update quantity if item exists
             existing_item.quantity += serializer.validated_data.get('quantity', 1)
@@ -413,6 +453,13 @@ class CartViewSet(viewsets.ViewSet):
                 type=openapi.TYPE_INTEGER,
                 required=True
             ),
+            openapi.Parameter(
+                'database',
+                openapi.IN_QUERY,
+                description="Company database for product image URLs (e.g. 4B-AGRI, 4B-BIO, 4B-ORANG). If omitted, the logged-in user's company is used.",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
         ],
         request_body=UpdateCartItemSerializer,
         responses={
@@ -452,7 +499,9 @@ class CartViewSet(viewsets.ViewSet):
             cart_item.notes = serializer.validated_data['notes']
         cart_item.save()
         
-        item_serializer = CartItemSerializer(cart_item)
+        item_serializer = CartItemSerializer(cart_item, context={
+            'database': resolve_database(request, request.query_params.get('database')),
+        })
         return Response({
             'message': 'Cart item updated',
             'cart_id': cart.id,
@@ -751,8 +800,8 @@ class CartViewSet(viewsets.ViewSet):
         
         # Create order items from cart items and build cart details
         total_amount = 0
-        database = serializer.validated_data.get('database', get_default_company_key())
-        
+        database = resolve_database(request, serializer.validated_data.get('database'))
+
         for cart_item in cart_items:
             subtotal = cart_item.get_subtotal()
             
