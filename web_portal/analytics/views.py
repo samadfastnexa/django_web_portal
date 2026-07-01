@@ -1429,7 +1429,21 @@ class CollectionAnalyticsView(APIView):
             if not period and not start_date and not end_date:
                 start_date = today.replace(day=1).strftime('%Y-%m-%d')
                 end_date = today.strftime('%Y-%m-%d')
-            
+
+            # Cap date range to 12 months to prevent unbounded HANA scans
+            if start_date and end_date:
+                try:
+                    sd = datetime.strptime(start_date[:10], '%Y-%m-%d').date()
+                    ed = datetime.strptime(end_date[:10], '%Y-%m-%d').date()
+                    if (ed - sd).days > 366:
+                        from rest_framework.response import Response as DRFResponse
+                        return DRFResponse(
+                            {'error': 'Date range cannot exceed 12 months. Please narrow your filter.'},
+                            status=400
+                        )
+                except Exception:
+                    pass
+
             region = (request.GET.get('region') or '').strip()
             zone = (request.GET.get('zone') or '').strip()
             territory = (request.GET.get('territory') or '').strip()
