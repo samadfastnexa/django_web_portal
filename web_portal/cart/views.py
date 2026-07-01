@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404, render
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
@@ -1097,16 +1098,19 @@ class OrderViewSet(viewsets.ModelViewSet):
         """Get user's order statistics"""
         user_orders = Order.objects.filter(user=request.user)
         
+        agg = user_orders.aggregate(
+            total_spent=Sum('paid_amount'),
+            total_amount_sum=Sum('total_amount'),
+        )
+        total_spent = float(agg['total_spent'] or 0)
+        total_amount_sum = float(agg['total_amount_sum'] or 0)
+
         stats = {
             'total_orders': user_orders.count(),
             'pending_orders': user_orders.filter(status__in=['pending', 'processing']).count(),
             'completed_orders': user_orders.filter(status='delivered').count(),
-            'total_spent': sum(order.paid_amount for order in user_orders),
-            'unpaid_amount': sum(
-                order.total_amount - order.paid_amount 
-                for order in user_orders 
-                if order.total_amount > order.paid_amount
-            ),
+            'total_spent': total_spent,
+            'unpaid_amount': max(total_amount_sum - total_spent, 0),
         }
         
         return Response(stats)

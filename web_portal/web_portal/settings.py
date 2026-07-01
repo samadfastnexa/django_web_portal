@@ -407,5 +407,12 @@ TWILIO_AUTH_TOKEN  = config('TWILIO_AUTH_TOKEN', default='')
 TWILIO_FROM_NUMBER = config('TWILIO_FROM_NUMBER', default='')
 
 # Password Reset Token Settings
-PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in seconds
+PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in sec
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+SECURE_SSL_REDIRECT = False  # nginx handles the redirect
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+CSRF_TRUSTED_ORIGINS = ["https://4b.vdc.services"]
 
