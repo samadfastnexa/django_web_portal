@@ -299,6 +299,12 @@ class OrderListSerializer(serializers.ModelSerializer):
 
 class CreateOrderSerializer(serializers.Serializer):
     """Serializer for creating an order from cart via checkout"""
+    # Source cart to convert into this order. Optional because each user has a
+    # single cart; when supplied it is validated to belong to the requesting user.
+    cart_id = serializers.IntegerField(
+        required=False,
+        help_text="ID of the cart to place the order from. If omitted, the user's active cart is used."
+    )
     # Customer details
     customer_first_name = serializers.CharField(max_length=100, required=True)
     customer_last_name = serializers.CharField(max_length=100, required=True)
@@ -329,6 +335,12 @@ class CreateOrderSerializer(serializers.Serializer):
 
 class CheckoutSerializer(serializers.Serializer):
     """Serializer for checkout - creates order from cart with normalized data"""
+    # Source cart to check out. Optional because each user has a single cart;
+    # when supplied it is validated to belong to the requesting user.
+    cart_id = serializers.IntegerField(
+        required=False,
+        help_text="ID of the cart to check out. If omitted, the user's active cart is used."
+    )
     # Customer details
     customer_first_name = serializers.CharField(max_length=100, required=True)
     customer_last_name = serializers.CharField(max_length=100, required=True)

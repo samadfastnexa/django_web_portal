@@ -721,12 +721,17 @@ class CartViewSet(viewsets.ViewSet):
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Get user's cart
+        # Resolve the cart to convert: explicit cart_id (validated to belong to
+        # the requesting user) or fall back to the user's single active cart.
+        cart_id = serializer.validated_data.get('cart_id')
         try:
-            cart = Cart.objects.get(user=request.user)
+            if cart_id:
+                cart = Cart.objects.get(id=cart_id, user=request.user)
+            else:
+                cart = Cart.objects.get(user=request.user)
         except Cart.DoesNotExist:
             return Response(
-                {'error': 'Cart is empty'},
+                {'error': 'Cart not found for this user' if cart_id else 'Cart is empty'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -971,12 +976,17 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = CreateOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Get user's cart
+        # Resolve the cart to convert: explicit cart_id (validated to belong to
+        # the requesting user) or fall back to the user's single active cart.
+        cart_id = serializer.validated_data.get('cart_id')
         try:
-            cart = Cart.objects.get(user=request.user)
+            if cart_id:
+                cart = Cart.objects.get(id=cart_id, user=request.user)
+            else:
+                cart = Cart.objects.get(user=request.user)
         except Cart.DoesNotExist:
             return Response(
-                {'error': 'Cart is empty'},
+                {'error': 'Cart not found for this user' if cart_id else 'Cart is empty'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1043,6 +1053,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 'message': 'Order created successfully',
+                'cart_id': cart.id,
                 'order': order_serializer.data
             },
             status=status.HTTP_201_CREATED
