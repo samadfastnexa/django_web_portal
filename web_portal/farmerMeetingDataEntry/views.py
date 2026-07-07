@@ -14,6 +14,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from .serializers import FieldDaySerializer
 from FieldAdvisoryService.serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer,Company,Region,Zone,Territory
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MeetingViewSet(viewsets.ModelViewSet):
     # queryset = Meeting.objects.all()  # Use .filter(is_active=True) after adding the field
@@ -541,7 +544,17 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 data['company_id'] = user_companies.first().id
                 request._full_data = data
         
-        return super().create(request, *args, **kwargs)
+        response = super().create(request, *args, **kwargs)
+        try:
+            if getattr(response, 'status_code', None) == status.HTTP_201_CREATED:
+                logger.info(
+                    'Meeting created id=%s by user=%s',
+                    response.data.get('id'),
+                    getattr(request.user, 'pk', None) if getattr(request.user, 'is_authenticated', False) else None,
+                )
+        except Exception:
+            pass
+        return response
 
     # ---------------- Update ----------------
     @swagger_auto_schema(
@@ -1094,7 +1107,17 @@ class FieldDayViewSet(viewsets.ModelViewSet):
                 data['company_id'] = user_companies.first().id
                 request._full_data = data
         
-        return super().create(request, *args, **kwargs)
+        response = super().create(request, *args, **kwargs)
+        try:
+            if getattr(response, 'status_code', None) == status.HTTP_201_CREATED:
+                logger.info(
+                    'FieldDay created id=%s by user=%s',
+                    response.data.get('id'),
+                    getattr(request.user, 'pk', None) if getattr(request.user, 'is_authenticated', False) else None,
+                )
+        except Exception:
+            pass
+        return response
 
     # ---------------- Update ----------------
     @swagger_auto_schema(

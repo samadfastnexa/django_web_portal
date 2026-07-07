@@ -13,6 +13,9 @@ from .filters import FarmerFilter, FarmingHistoryFilter
 
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ✅ Comprehensive Farmer ViewSet with Search and Filtering
 class FarmerViewSet(viewsets.ModelViewSet):
@@ -170,6 +173,12 @@ class FarmerViewSet(viewsets.ModelViewSet):
         
         # Return detailed serializer for response
         farmer = serializer.instance
+        actor = getattr(request, 'user', None)
+        logger.info(
+            'Farmer created id=%s farmer_id=%s by user=%s',
+            farmer.pk, getattr(farmer, 'farmer_id', ''),
+            getattr(actor, 'pk', None) if getattr(actor, 'is_authenticated', False) else None,
+        )
         response_serializer = FarmerDetailSerializer(farmer)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
     
