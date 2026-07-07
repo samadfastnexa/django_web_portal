@@ -103,18 +103,18 @@ class Farmer(models.Model):
                 # Create new user with phone as username
                 # Default password: last 4 digits of CNIC or 'farmer1234'
                 default_password = self.cnic[-4:] if self.cnic and len(self.cnic) >= 4 else 'farmer1234'
+                # Ensure the login user gets the "Farmer" role
+                from accounts.models import Role
+                farmer_role, _created = Role.objects.get_or_create(name='Farmer')
                 self.user = User.objects.create_user(
                     username=self.primary_phone,
                     email=self.email if self.email else f'{self.primary_phone}@farmer.local',
                     password=default_password,
                     first_name=self.first_name,
                     last_name=self.last_name,
-                    is_active=True
+                    is_active=True,
+                    role=farmer_role
                 )
-                # Set farmer flag if exists
-                if hasattr(self.user, 'is_farmer'):
-                    self.user.is_farmer = True
-                    self.user.save(update_fields=['is_farmer'])
         
         super().save(*args, **kwargs)
     

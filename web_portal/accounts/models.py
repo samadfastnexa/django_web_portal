@@ -115,13 +115,11 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('is_staff', False)
         extra_fields.setdefault('is_superuser', False)
 
-        # Default role: FirstRole
+        # Default role: FirstRole (optional). If it doesn't exist on this
+        # database, leave the role unset instead of failing — the role field
+        # is nullable and any user should be able to create accounts/farmers.
         if 'role' not in extra_fields or not extra_fields['role']:
-            try:
-                default_role = Role.objects.get(name="FirstRole")
-            except Role.DoesNotExist:
-                raise ValueError("Role 'FirstRole' does not exist.")
-            extra_fields['role'] = default_role
+            extra_fields['role'] = Role.objects.filter(name="FirstRole").first()
 
         user = self.model(email=email, **extra_fields)
         user.set_password(password)

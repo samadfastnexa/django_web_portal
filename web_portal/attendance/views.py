@@ -810,17 +810,23 @@ class AttendanceReportView(APIView):
             return Response({"error": "Invalid or incomplete report parameters"}, status=400)
 
         # 🔹 Filter attendance
-        qs = Attendance.objects.filter(check_in_time__date__gte=start_date,
-                                       check_in_time__date__lte=end_date)
+        qs = Attendance.objects.select_related('attendee').filter(
+            check_in_time__date__gte=start_date,
+            check_in_time__date__lte=end_date,
+        )
 
         if user_id:
             qs = qs.filter(attendee_id=user_id)
+
+        total_count = qs.count()
+        qs = qs[:5000]
 
         serializer = AttendanceReportSerializer(qs, many=True)
         return Response({
             "report_type": report_type,
             "start_date": str(start_date),
             "end_date": str(end_date),
+            "total_count": total_count,
             "records": serializer.data
         })
         

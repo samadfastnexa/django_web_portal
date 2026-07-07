@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404, render
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
@@ -56,6 +57,27 @@ def get_default_company_key():
         return ''
     except Exception:
         return ''
+
+
+def resolve_database(request, explicit=None):
+    """
+    Resolve the company/database used to build product image URLs.
+
+    Priority:
+      1. The value supplied by the frontend (used as-is, no normalization)
+      2. The logged-in user's own company
+      3. The first active company
+
+    This replaces the old hardcoded '4B-BIO' fallback so an AGRI user no longer
+    gets BIO image URLs when the request omits the company.
+    """
+    if explicit:
+        return explicit
+    user = getattr(request, 'user', None)
+    company = getattr(user, 'company', None) if user else None
+    if company and getattr(company, 'Company_name', None):
+        return company.Company_name
+    return get_default_company_key()
 
 
 class CartViewSet(viewsets.ViewSet):
@@ -134,6 +156,13 @@ class CartViewSet(viewsets.ViewSet):
                 type=openapi.TYPE_BOOLEAN,
                 required=False
             ),
+            openapi.Parameter(
+                'database',
+                openapi.IN_QUERY,
+                description="Company database for product image URLs (e.g. 4B-AGRI, 4B-BIO, 4B-ORANG). If omitted, the logged-in user's company is used.",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
         ],
         responses={
             200: CartSerializer(),
@@ -168,8 +197,11 @@ class CartViewSet(viewsets.ViewSet):
         include_expired = request.query_params.get('include_expired', 'false').lower() == 'true'
         if not include_expired:
             cart.clear_expired_items()
-        
-        serializer = CartSerializer(cart)
+
+        serializer = CartSerializer(cart, context={
+            'database': resolve_database(request, request.query_params.get('database')),
+            'request': request,
+        })
         return Response(serializer.data)
     
     @swagger_auto_schema(
@@ -222,6 +254,13 @@ class CartViewSet(viewsets.ViewSet):
                 openapi.IN_QUERY,
                 description="Items per page (default: 10, max: 100)",
                 type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'database',
+                openapi.IN_QUERY,
+                description="Company database for product image URLs (e.g. 4B-AGRI, 4B-BIO, 4B-ORANG). If omitted, the logged-in user's company is used.",
+                type=openapi.TYPE_STRING,
                 required=False
             ),
         ],
@@ -312,12 +351,14 @@ class CartViewSet(viewsets.ViewSet):
             except ValueError:
                 pass
         
+        database = resolve_database(request, request.query_params.get('database'))
+
         page = paginator.paginate_queryset(queryset, request)
         if page is not None:
-            serializer = CartItemSerializer(page, many=True, context={'database': request.query_params.get('database', get_default_company_key())})
+            serializer = CartItemSerializer(page, many=True, context={'database': database})
             return paginator.get_paginated_response(serializer.data)
-        
-        serializer = CartItemSerializer(queryset, many=True, context={'database': request.query_params.get('database', get_default_company_key())})
+
+        serializer = CartItemSerializer(queryset, many=True, context={'database': database})
         return Response(serializer.data)
     
     @swagger_auto_schema(
@@ -356,8 +397,8 @@ class CartViewSet(viewsets.ViewSet):
             is_active=True
         ).first()
         
-        database = serializer.validated_data.get('database', get_default_company_key())
-        
+        database = resolve_database(request, serializer.validated_data.get('database'))
+
         if existing_item:
             # Update quantity if item exists
             existing_item.quantity += serializer.validated_data.get('quantity', 1)
@@ -413,6 +454,13 @@ class CartViewSet(viewsets.ViewSet):
                 type=openapi.TYPE_INTEGER,
                 required=True
             ),
+            openapi.Parameter(
+                'database',
+                openapi.IN_QUERY,
+                description="Company database for product image URLs (e.g. 4B-AGRI, 4B-BIO, 4B-ORANG). If omitted, the logged-in user's company is used.",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
         ],
         request_body=UpdateCartItemSerializer,
         responses={
@@ -452,7 +500,9 @@ class CartViewSet(viewsets.ViewSet):
             cart_item.notes = serializer.validated_data['notes']
         cart_item.save()
         
-        item_serializer = CartItemSerializer(cart_item)
+        item_serializer = CartItemSerializer(cart_item, context={
+            'database': resolve_database(request, request.query_params.get('database')),
+        })
         return Response({
             'message': 'Cart item updated',
             'cart_id': cart.id,
@@ -672,12 +722,17 @@ class CartViewSet(viewsets.ViewSet):
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Get user's cart
+        # Resolve the cart to convert: explicit cart_id (validated to belong to
+        # the requesting user) or fall back to the user's single active cart.
+        cart_id = serializer.validated_data.get('cart_id')
         try:
-            cart = Cart.objects.get(user=request.user)
+            if cart_id:
+                cart = Cart.objects.get(id=cart_id, user=request.user)
+            else:
+                cart = Cart.objects.get(user=request.user)
         except Cart.DoesNotExist:
             return Response(
-                {'error': 'Cart is empty'},
+                {'error': 'Cart not found for this user' if cart_id else 'Cart is empty'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -751,8 +806,8 @@ class CartViewSet(viewsets.ViewSet):
         
         # Create order items from cart items and build cart details
         total_amount = 0
-        database = serializer.validated_data.get('database', get_default_company_key())
-        
+        database = resolve_database(request, serializer.validated_data.get('database'))
+
         for cart_item in cart_items:
             subtotal = cart_item.get_subtotal()
             
@@ -922,12 +977,17 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = CreateOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Get user's cart
+        # Resolve the cart to convert: explicit cart_id (validated to belong to
+        # the requesting user) or fall back to the user's single active cart.
+        cart_id = serializer.validated_data.get('cart_id')
         try:
-            cart = Cart.objects.get(user=request.user)
+            if cart_id:
+                cart = Cart.objects.get(id=cart_id, user=request.user)
+            else:
+                cart = Cart.objects.get(user=request.user)
         except Cart.DoesNotExist:
             return Response(
-                {'error': 'Cart is empty'},
+                {'error': 'Cart not found for this user' if cart_id else 'Cart is empty'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -994,6 +1054,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 'message': 'Order created successfully',
+                'cart_id': cart.id,
                 'order': order_serializer.data
             },
             status=status.HTTP_201_CREATED
@@ -1097,16 +1158,19 @@ class OrderViewSet(viewsets.ModelViewSet):
         """Get user's order statistics"""
         user_orders = Order.objects.filter(user=request.user)
         
+        agg = user_orders.aggregate(
+            total_spent=Sum('paid_amount'),
+            total_amount_sum=Sum('total_amount'),
+        )
+        total_spent = float(agg['total_spent'] or 0)
+        total_amount_sum = float(agg['total_amount_sum'] or 0)
+
         stats = {
             'total_orders': user_orders.count(),
             'pending_orders': user_orders.filter(status__in=['pending', 'processing']).count(),
             'completed_orders': user_orders.filter(status='delivered').count(),
-            'total_spent': sum(order.paid_amount for order in user_orders),
-            'unpaid_amount': sum(
-                order.total_amount - order.paid_amount 
-                for order in user_orders 
-                if order.total_amount > order.paid_amount
-            ),
+            'total_spent': total_spent,
+            'unpaid_amount': max(total_amount_sum - total_spent, 0),
         }
         
         return Response(stats)

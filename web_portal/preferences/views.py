@@ -10,6 +10,9 @@ from .serializers import SettingSerializer
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.response import Response
+import logging
+
+logger = logging.getLogger(__name__)
 from rest_framework import status
 from FieldAdvisoryService.models import Zone, Territory
 from FieldAdvisoryService.serializers import ZoneNestedSerializer, TerritoryNestedSerializer
@@ -358,16 +361,19 @@ class WeatherTestView(APIView):
                 "current_weather": current_weather,
                 "forecast": forecast
             }
-            
+
+            logger.info("Weather lookup ok location='%s' q='%s'", location_name, location_for_weather)
             return Response(weather_data)
-            
+
         except requests.exceptions.RequestException as e:
+            logger.warning("Weather API request failed q='%s': %s", location_for_weather, e)
             return Response({
                 "error": "Failed to fetch weather data",
                 "details": str(e),
                 "location": location_name
             }, status=503)
         except Exception as e:
+            logger.exception("Unexpected error building weather response q='%s'", location_for_weather)
             return Response({
                 "error": "An unexpected error occurred",
                 "details": str(e),

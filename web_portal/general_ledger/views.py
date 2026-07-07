@@ -18,13 +18,7 @@ from io import BytesIO
 try:
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment, PatternFill
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
-from io import BytesIO
-try:
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment, PatternFill
+    from openpyxl.cell.cell import WriteOnlyCell
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
@@ -776,7 +770,15 @@ def export_ledger_excel_api(request):
             except Exception as e:
                 return Response({'success': False, 'error': f'Error processing user filter: {str(e)}'}, status=500)
         
-        # Fetch all data
+        # Require date range to prevent full-table HANA scans
+        if not from_date or not to_date:
+            return Response({
+                'success': False,
+                'error': 'from_date and to_date are required for export.'
+            }, status=400)
+
+        # Fetch data with hard row cap to prevent OOM
+        ROW_LIMIT = 50000
         conn = get_hana_connection(company)
         transactions = hana_queries.general_ledger_report(
             conn,
@@ -786,72 +788,62 @@ def export_ledger_excel_api(request):
             to_date=to_date or None,
             bp_code=bp_code if bp_code else None,
             project_code=project_code or None,
-            trans_type=trans_type or None
+            trans_type=trans_type or None,
+            limit=ROW_LIMIT,
         )
         conn.close()
-        
-        # Create Excel workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "General Ledger"
-        
-        # Define header style
+        truncated = len(transactions) >= ROW_LIMIT
+
+        # Build Excel using write-only (streaming) mode — keeps only one row in RAM at a time
+        wb = Workbook(write_only=True)
+        ws = wb.create_sheet(title="General Ledger")
+
+        # Header row with styling via WriteOnlyCell
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         header_alignment = Alignment(horizontal="center", vertical="center")
-        
-        # Write headers
         headers = [
-            'VNo.', 'VDate', 'Product Name', 'Qty', 'Price', 'Policy', 
+            'VNo.', 'VDate', 'Product Name', 'Qty', 'Price', 'Policy',
             'Discount', 'Sale Value', 'Type', 'Debit', 'Credit', 'Balance'
         ]
-        for col_num, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_num, value=header)
+        header_cells = []
+        for header in headers:
+            cell = WriteOnlyCell(ws, value=header)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = header_alignment
-        
-        # Write data rows with sanitization
+            header_cells.append(cell)
+        ws.append(header_cells)
+
+        # Data rows — written one at a time, never all in RAM together
         running_balance = 0
-        for row_num, txn in enumerate(transactions, 2):
+        for txn in transactions:
             debit = float(txn.get('Debit', 0))
             credit = float(txn.get('Credit', 0))
             running_balance += (debit - credit)
-            
-            # Format date
+
             posting_date = txn.get('PostingDate', '')
             try:
                 date_obj = datetime.strptime(str(posting_date)[:10], '%Y-%m-%d')
                 posting_date = date_obj.strftime('%-m/%-d/%Y').lstrip('0').replace('/-', '/').replace('/0', '/')
-            except:
+            except Exception:
                 posting_date = str(posting_date)[:10]
-            
-            ws.cell(row=row_num, column=1, value=sanitize_for_excel(txn.get('TransId', '')))  # VNo
-            ws.cell(row=row_num, column=2, value=posting_date)  # VDate
-            ws.cell(row=row_num, column=3, value=sanitize_for_excel(txn.get('Description', '')))  # Product Name
-            ws.cell(row=row_num, column=4, value=txn.get('Qty', 0))  # Qty
-            ws.cell(row=row_num, column=5, value=txn.get('UnitPrice', 0))  # Price
-            ws.cell(row=row_num, column=6, value=sanitize_for_excel(txn.get('ExtractedProject') or txn.get('ProjectCode', '')))  # Policy/Project
-            ws.cell(row=row_num, column=7, value=txn.get('Discount', 0))  # Discount
-            ws.cell(row=row_num, column=8, value=txn.get('Amount', 0))  # Sale Value
-            ws.cell(row=row_num, column=9, value=sanitize_for_excel(txn.get('TransTypeName') or txn.get('TransType', '')))  # Type Name
-            ws.cell(row=row_num, column=10, value=debit if debit > 0 else 0)  # Debit
-            ws.cell(row=row_num, column=11, value=credit if credit > 0 else 0)  # Credit
-            ws.cell(row=row_num, column=12, value=running_balance)  # Balance
-        
-        # Auto-adjust column widths
-        for col in ws.columns:
-            max_length = 0
-            col_letter = col[0].column_letter
-            for cell in col:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            adjusted_width = min(max_length + 2, 50)
-            ws.column_dimensions[col_letter].width = adjusted_width
-        
+
+            ws.append([
+                sanitize_for_excel(txn.get('TransId', '')),
+                posting_date,
+                sanitize_for_excel(txn.get('Description', '')),
+                txn.get('Qty', 0),
+                txn.get('UnitPrice', 0),
+                sanitize_for_excel(txn.get('ExtractedProject') or txn.get('ProjectCode', '')),
+                txn.get('Discount', 0),
+                txn.get('Amount', 0),
+                sanitize_for_excel(txn.get('TransTypeName') or txn.get('TransType', '')),
+                debit if debit > 0 else 0,
+                credit if credit > 0 else 0,
+                running_balance,
+            ])
+
         # Save to BytesIO
         output = BytesIO()
         wb.save(output)
@@ -864,9 +856,12 @@ def export_ledger_excel_api(request):
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         response['Content-Disposition'] = f'attachment; filename="general_ledger_{company}_{timestamp}.xlsx"'
-        
+        if truncated:
+            response['X-Truncated'] = 'true'
+            response['X-Row-Limit'] = str(ROW_LIMIT)
+
         return response
-        
+
     except Exception as e:
         logger.exception("Error exporting Excel")
         return Response({
@@ -942,7 +937,7 @@ def general_ledger_admin(request):
         try:
             conn = get_hana_connection(selected_db_key)
             
-            # Get all transactions (we'll paginate after grouping)
+            # Get transactions with a cap to prevent OOM on admin view
             result_rows = hana_queries.general_ledger_report(
                 conn,
                 account_from=account_from or None,
@@ -951,7 +946,8 @@ def general_ledger_admin(request):
                 to_date=to_date or None,
                 bp_code=bp_code or None,
                 project_code=project_code or None,
-                trans_type=trans_type or None
+                trans_type=trans_type or None,
+                limit=5000,
             )
             
             # Group by account
@@ -1055,8 +1051,10 @@ def export_ledger_csv(request):
         bp_code = (request.GET.get('bp_code') or '').strip()
         project_code = (request.GET.get('project_code') or '').strip()
         trans_type = (request.GET.get('trans_type') or '').strip()
-        
-        # Fetch all data
+
+        if not from_date or not to_date:
+            return HttpResponse('from_date and to_date are required for export.', status=400)
+
         conn = get_hana_connection(company)
         transactions = hana_queries.general_ledger_report(
             conn,
@@ -1066,10 +1064,11 @@ def export_ledger_csv(request):
             to_date=to_date or None,
             bp_code=bp_code or None,
             project_code=project_code or None,
-            trans_type=trans_type or None
+            trans_type=trans_type or None,
+            limit=50000,
         )
         conn.close()
-        
+
         # Create CSV response
         response = HttpResponse(content_type='text/csv')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -1192,6 +1191,12 @@ def export_ledger_pdf_api(request):
                 return Response({'success': False, 'error': f'Error processing user filter: {str(e)}'}, status=500)
 
         # ── Fetch & group data ────────────────────────────────────────────────
+        if not from_date or not to_date:
+            return Response({
+                'success': False,
+                'error': 'from_date and to_date are required for export.'
+            }, status=400)
+
         conn = get_hana_connection(company)
         transactions = hana_queries.general_ledger_report(
             conn,
@@ -1202,6 +1207,7 @@ def export_ledger_pdf_api(request):
             bp_code=bp_code if bp_code else None,
             project_code=project_code or None,
             trans_type=trans_type or None,
+            limit=50000,
         )
 
         grouped_raw = group_by_account(transactions)
@@ -1892,6 +1898,9 @@ def export_ledger_pdf(request):
         trans_type   = (request.GET.get('trans_type')   or '').strip()
 
         # ── Fetch data ────────────────────────────────────────────────────────
+        if not from_date or not to_date:
+            return HttpResponse('from_date and to_date are required for export.', status=400)
+
         conn = get_hana_connection(company)
         transactions = hana_queries.general_ledger_report(
             conn,
@@ -1902,6 +1911,7 @@ def export_ledger_pdf(request):
             bp_code=bp_code or None,
             project_code=project_code or None,
             trans_type=trans_type or None,
+            limit=50000,
         )
 
         # Group & calculate balances (same logic as the admin view)

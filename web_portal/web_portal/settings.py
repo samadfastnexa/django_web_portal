@@ -114,6 +114,7 @@ INSTALLED_APPS = [
     'general_ledger',  # app for SAP General Ledger reports
     'cart',  # app for shopping cart and order management
     'document_management',  # app for document/attachment management
+    'monitoring',  # request/usage activity logging + audit
 ]
 
 MIDDLEWARE = [
@@ -126,7 +127,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
- 
+    'monitoring.middleware.RequestActivityMiddleware',  # request/usage logging (innermost)
 ]
 # CORS_ALLOW_ALL_ORIGINS = True 
 CORS_ALLOW_CREDENTIALS = True
@@ -263,15 +264,43 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
         'rest_framework.parsers.FormParser',
     ),
+    # Logs DRF exceptions to errors.log with module/user/path (see monitoring app).
+    'EXCEPTION_HANDLER': 'monitoring.exceptions.logging_exception_handler',
 }
 
-# Logging Configuration for HANA Reports and Debugging
+# Ensure logs directory exists (must be defined before LOGGING references it)
+LOG_DIR = BASE_DIR / 'logs'
+if not LOG_DIR.exists():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Logging Configuration
+# - app.log     : root logger, all app INFO+ (module name in every line)
+# - errors.log  : ERROR+ only, with file:line + traceback (which module broke)
+# - access.log  : one line per request (who/what/status/ms) -> usage monitoring
+# - hana.log    : existing HANA report logger, kept isolated
+# All file handlers rotate (10 MB x 10) and are UTF-8 (fixes Windows UnicodeEncodeError).
+_ROTATING_FILE = {
+    'class': 'logging.handlers.RotatingFileHandler',
+    'maxBytes': 10 * 1024 * 1024,
+    'backupCount': 10,
+    'encoding': 'utf-8',
+}
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '[{levelname}] {asctime} - {name} - {message}',
+            'format': '[{levelname}] {asctime} {name} {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'detailed': {
+            'format': '[{levelname}] {asctime} {name} {pathname}:{lineno} {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'access': {
+            'format': '{asctime} {message}',
             'style': '{',
             'datefmt': '%Y-%m-%d %H:%M:%S',
         },
@@ -285,30 +314,62 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'django.log',
+        'app_file': {
+            **_ROTATING_FILE,
+            'filename': LOG_DIR / 'app.log',
             'formatter': 'verbose',
+            'level': 'INFO',
+        },
+        'error_file': {
+            **_ROTATING_FILE,
+            'filename': LOG_DIR / 'errors.log',
+            'formatter': 'detailed',
+            'level': 'ERROR',
+        },
+        'access_file': {
+            **_ROTATING_FILE,
+            'filename': LOG_DIR / 'access.log',
+            'formatter': 'access',
+            'level': 'INFO',
+        },
+        'hana_file': {
+            **_ROTATING_FILE,
+            'filename': LOG_DIR / 'hana.log',
+            'formatter': 'verbose',
+            'level': 'WARNING',
         },
     },
+    # Root logger: every app module's logs land in app.log (and errors in errors.log).
+    'root': {
+        'handlers': ['console', 'app_file', 'error_file'],
+        'level': 'INFO',
+    },
     'loggers': {
-        'hana': {
-            'handlers': ['console', 'file'],
-            'level': 'WARNING',  # Changed from INFO to WARNING - only show warnings/errors
+        'django': {
+            'handlers': ['console', 'app_file'],
+            'level': 'WARNING',
             'propagate': False,
         },
-        'django': {
-            'handlers': ['console'],
-            'level': 'WARNING',  # Changed from INFO to WARNING - only show warnings/errors
+        # Unhandled 500s from non-DRF views land here with a full traceback.
+        'django.request': {
+            'handlers': ['error_file', 'console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # HANA report dumps stay in their own file, out of app.log.
+        'hana': {
+            'handlers': ['console', 'hana_file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # Per-request access log; kept separate so request noise stays out of app.log.
+        'access': {
+            'handlers': ['access_file'],
+            'level': 'INFO',
             'propagate': False,
         },
     },
 }
-
-# Ensure logs directory exists
-LOG_DIR = BASE_DIR / 'logs'
-if not LOG_DIR.exists():
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # change as needed
@@ -407,5 +468,15 @@ TWILIO_AUTH_TOKEN  = config('TWILIO_AUTH_TOKEN', default='')
 TWILIO_FROM_NUMBER = config('TWILIO_FROM_NUMBER', default='')
 
 # Password Reset Token Settings
-PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in seconds
+PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in sec
+
+# Production-only security settings (behind nginx TLS). Guarded by DEBUG so
+# local development over plain HTTP is not forced onto secure cookies/redirects.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    USE_X_FORWARDED_HOST = True
+    SECURE_SSL_REDIRECT = False  # nginx handles the redirect
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    CSRF_TRUSTED_ORIGINS = ["https://4b.vdc.services"]
 
