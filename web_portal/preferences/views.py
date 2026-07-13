@@ -18,7 +18,7 @@ from FieldAdvisoryService.models import Zone, Territory
 from FieldAdvisoryService.serializers import ZoneNestedSerializer, TerritoryNestedSerializer
 from django.db.models import Q
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
 from FieldAdvisoryService.models import MeetingSchedule, SalesOrder
 from farmers.models import Farmer
 from farmerMeetingDataEntry.models import Meeting, FieldDay
@@ -347,8 +347,13 @@ class WeatherTestView(APIView):
             for i, day_data in enumerate(forecast_data[:3]):
                 day_info = day_data.get("day", {})
                 condition_info = day_info.get("condition", {})
+                # Weekday name (e.g. "Monday") from the forecast's own date; fall back to "Day N"
+                try:
+                    day_label = datetime.strptime(day_data.get("date"), "%Y-%m-%d").strftime("%A")
+                except (ValueError, TypeError):
+                    day_label = f"Day {i + 1}"
                 forecast.append({
-                    "day": f"Day {i + 1}",
+                    "day": day_label,
                     "temperature": f"{day_info.get('maxtemp_c', 'N/A')}°C",
                     "condition": condition_info.get("text", "Unknown"),
                     "icon": condition_info.get("icon", ""),
