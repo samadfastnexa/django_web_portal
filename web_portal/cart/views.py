@@ -14,7 +14,7 @@ from drf_yasg import openapi
 import uuid
 import logging
 
-from .models import Cart, CartItem, Order, OrderItem, Payment
+from .models import Cart, CartItem, Order, OrderItem, Payment, OrderStatusHistory
 from FieldAdvisoryService.models import Company
 from .serializers import (
     CartSerializer,
