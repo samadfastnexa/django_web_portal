@@ -10331,15 +10331,35 @@ def recommended_products_api(request):
                 # Query by disease name - can return multiple product codes for same disease
                 # Note: U_ItemCode in @ODID is the PRODUCT code, not disease code
                 # Each row maps: Product (U_ItemCode) -> Disease (U_Disease)
-                # We search U_Disease to find ALL products that treat this disease
+                # We search U_Disease to find ALL products that treat this disease.
+                dn = disease_name.upper()
+                # Tier 1: exact phrase match (precise) on disease / product code / product name
                 cur = conn.cursor()
                 cur.execute(
                     f'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
                     f'FROM {_odid} '
                     'WHERE UPPER("U_Disease") LIKE ? OR UPPER("U_ItemCode") = ? OR UPPER("U_ItemName") LIKE ?',
-                    (f'%{disease_name.upper()}%', disease_name.upper(), f'%{disease_name.upper()}%')
+                    (f'%{dn}%', dn, f'%{dn}%')
                 )
                 rows = cur.fetchall()
+                cur.close()
+
+                # Tier 2: token fallback - if the exact phrase matched nothing, match
+                # any individual word (>= 3 chars) of the query against U_Disease.
+                # e.g. "brown rust" -> matches "Wheat rusts"/"Rusts (partial)" via "rust".
+                if not rows:
+                    tokens = [t for t in _re.split(r'[^A-Za-z0-9]+', dn) if len(t) >= 3]
+                    if tokens:
+                        clause = ' OR '.join('UPPER("U_Disease") LIKE ?' for _ in tokens)
+                        cur = conn.cursor()
+                        cur.execute(
+                            f'SELECT "DocEntry", "U_ItemCode", "U_ItemName", "U_Disease" '
+                            f'FROM {_odid} WHERE {clause}',
+                            tuple(f'%{t}%' for t in tokens)
+                        )
+                        rows = cur.fetchall()
+                        cur.close()
+
                 if rows:
                     # Use first row for disease info (primary disease match)
                     disease_info = {
@@ -10356,7 +10376,6 @@ def recommended_products_api(request):
                         if row[1] and row[1] not in seen:
                             seen.add(row[1])
                             product_item_codes.append(row[1])
-                cur.close()
             else:
                 conn.close()
                 return Response({
