@@ -89,8 +89,12 @@ class ComplaintPagination(PageNumberPagination):
 
 class ComplaintListCreateView(generics.ListCreateAPIView):
     serializer_class = ComplaintSerializer
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status']
+    search_fields = [
+        'complaint_id', 'message', 'status',
+        'user__username', 'user__email', 'user__first_name', 'user__last_name',
+    ]
     ordering_fields = ['created_at']
     parser_classes = [MultiPartParser, FormParser]
     pagination_class = ComplaintPagination
@@ -145,6 +149,7 @@ class ComplaintListCreateView(generics.ListCreateAPIView):
     @swagger_auto_schema(
         operation_description="Retrieve a paginated list of complaints with filtering and sorting options. Admins can view all complaints, while regular users can only see their own complaints.",
         manual_parameters=[
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Search by complaint ID, message, status, or the complainant's username/email/name", example="FB12345678"),
             openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Filter by complaint status (pending, in_progress, resolved, closed)", example="pending"),
             openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Filter by specific user ID (admin only for viewing other users' complaints)", example=1),
             openapi.Parameter('start_date', openapi.IN_QUERY, type=openapi.TYPE_STRING, format='date', description="Filter complaints created on or after this date (YYYY-MM-DD)", example="2024-01-01"),

@@ -2497,7 +2497,7 @@ def customer_lov(db, search: str | None = None, limit: int = 1000, status: str |
         sql += ' AND T0."Territory" = ? '
         params.append(str(territory).strip())
     if search and search.strip():
-        sql += ' AND (T0."CardCode" LIKE ? OR T0."CardName" LIKE ?) '
+        sql += ' AND (UPPER(T0."CardCode") LIKE UPPER(?) OR UPPER(T0."CardName") LIKE UPPER(?)) '
         search_param = f'%{search.strip()}%'
         params.extend([search_param, search_param])
     
@@ -2614,7 +2614,7 @@ def item_lov(db, search: str | None = None) -> list:
     
     params = []
     if search and search.strip():
-        sql += ' AND (T0."ItemCode" LIKE ? OR T0."ItemName" LIKE ?) '
+        sql += ' AND (UPPER(T0."ItemCode") LIKE UPPER(?) OR UPPER(T0."ItemName") LIKE UPPER(?)) '
         search_param = f'%{search.strip()}%'
         params.extend([search_param, search_param])
     
@@ -2634,7 +2634,7 @@ def warehouse_for_item(db, item_code: str, search: str | None = None) -> list:
     )
     params = [item_code]
     if search:
-        sql += ' AND (T0."WhsCode" LIKE ? OR T1."WhsName" LIKE ?)'
+        sql += ' AND (UPPER(T0."WhsCode") LIKE UPPER(?) OR UPPER(T1."WhsName") LIKE UPPER(?))'
         search_param = f'%{search}%'
         params.extend([search_param, search_param])
     return _fetch_all(db, sql, tuple(params))
@@ -2648,7 +2648,7 @@ def warehouses_all(db, limit: int = 500, search: str | None = None) -> list:
     )
     params = []
     if search:
-        sql += ' WHERE T0."WhsCode" LIKE ? OR T0."WhsName" LIKE ? '
+        sql += ' WHERE UPPER(T0."WhsCode") LIKE UPPER(?) OR UPPER(T0."WhsName") LIKE UPPER(?) '
         search_param = f'%{search}%'
         params.extend([search_param, search_param])
     sql += ' ORDER BY T0."WhsCode" LIMIT ' + str(int(limit or 500))
@@ -2679,7 +2679,7 @@ def projects_lov(db, search: str | None = None) -> list:
     
     params = []
     if search and search.strip():
-        sql += ' AND (T0."PrjCode" LIKE ? OR T0."PrjName" LIKE ?) '
+        sql += ' AND (UPPER(T0."PrjCode") LIKE UPPER(?) OR UPPER(T0."PrjName") LIKE UPPER(?)) '
         search_param = f'%{search.strip()}%'
         params.extend([search_param, search_param])
     
@@ -2929,7 +2929,7 @@ def crop_lov(db, search: str | None = None) -> list:
     sql = 'SELECT T1."Code", T1."Name" FROM "@CROP1" T1'
     
     if search:
-        sql += ' WHERE T1."Code" LIKE ? OR T1."Name" LIKE ?'
+        sql += ' WHERE UPPER(T1."Code") LIKE UPPER(?) OR UPPER(T1."Name") LIKE UPPER(?)'
         search_param = f'%{search}%'
         return _fetch_all(db, sql, (search_param, search_param))
     

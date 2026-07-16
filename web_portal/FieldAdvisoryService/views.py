@@ -465,6 +465,14 @@ class SalesOrderViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     serializer_class = SalesOrderSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [IsAuthenticated, HasRolePermission]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = [
+        'portal_order_id', 'card_code', 'card_name',
+        'u_s_card_code', 'u_s_card_name', 'federal_tax_id', 'status',
+        'dealer__name', 'dealer__business_name',
+        'staff__username', 'staff__first_name', 'staff__last_name',
+    ]
+    ordering_fields = ['created_at', 'id', 'status', 'card_name', 'card_code']
     ordering = ['-id']
     hierarchy_field = 'staff'  # Filter by staff who created the order
     
@@ -475,6 +483,9 @@ class SalesOrderViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_description="Retrieve a list of all sales orders with their status, dealer, and meeting schedule information.",
+        manual_parameters=[
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Search by portal order ID, card code/name, child card code/name, tax ID, status, dealer or staff name'),
+        ],
         responses={
             200: openapi.Response(
                 description='List of sales orders',

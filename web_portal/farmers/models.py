@@ -44,7 +44,7 @@ class Farmer(models.Model):
     
     # Contact Information
     phone_regex = RegexValidator(regex=r'^\+?1?\d{9,15}$', message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed.")
-    primary_phone = models.CharField(validators=[phone_regex], max_length=17, verbose_name=_('Primary Phone'))
+    primary_phone = models.CharField(validators=[phone_regex], max_length=17, blank=True, verbose_name=_('Primary Phone'))
     secondary_phone = models.CharField(validators=[phone_regex], max_length=17, blank=True, verbose_name=_('Secondary Phone'))
     email = models.EmailField(blank=True, verbose_name=_('Email Address'))
     

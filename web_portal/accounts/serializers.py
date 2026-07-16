@@ -106,7 +106,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         if data.get('is_sales_staff'):
-            required_fields = ['employee_code', 'phone_number', 'address', 'designation', 'region', 'zone', 'territory','company']
+            required_fields = ['employee_code', 'address', 'designation', 'region', 'zone', 'territory','company']
             missing = []
             blank = []
             for field in required_fields:

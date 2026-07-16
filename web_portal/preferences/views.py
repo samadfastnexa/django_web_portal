@@ -342,18 +342,23 @@ class WeatherTestView(APIView):
                 "icon_url": f"https:{current.get('condition', {}).get('icon', '')}" if current.get('condition', {}).get('icon') else ""
             }
             
-            # Format 3-day forecast with icons
+            # Format upcoming forecast with icons.
+            # forecastday[0] is TODAY, so skip it and start from tomorrow.
             forecast = []
-            for i, day_data in enumerate(forecast_data[:3]):
+            for i, day_data in enumerate(forecast_data[1:4]):
                 day_info = day_data.get("day", {})
                 condition_info = day_info.get("condition", {})
-                # Weekday name (e.g. "Monday") from the forecast's own date; fall back to "Day N"
+                # Human label like "Wed 15 June" (short weekday) from the forecast's
+                # own date. Built manually (no %-d) so it works on Windows and Linux.
+                raw_date = day_data.get("date")
                 try:
-                    day_label = datetime.strptime(day_data.get("date"), "%Y-%m-%d").strftime("%A")
+                    dt = datetime.strptime(raw_date, "%Y-%m-%d")
+                    day_label = f"{dt.strftime('%a')} {dt.day} {dt.strftime('%B')}"
                 except (ValueError, TypeError):
                     day_label = f"Day {i + 1}"
                 forecast.append({
                     "day": day_label,
+                    "date": raw_date,
                     "temperature": f"{day_info.get('maxtemp_c', 'N/A')}°C",
                     "condition": condition_info.get("text", "Unknown"),
                     "icon": condition_info.get("icon", ""),
