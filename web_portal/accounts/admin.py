@@ -155,7 +155,7 @@ class CustomUserAdmin(BaseUserAdmin):
         'phone_number',
         'sales_profile__employee_code',
     ]
-    ordering = ['id']
+    ordering = ['-id']
     list_per_page = 25  # Updated to 25 records per page for better admin experience
 
     # ✅ Allow quick edits for role, is_active, is_dealer, phone_number, and company
