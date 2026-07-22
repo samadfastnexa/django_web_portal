@@ -226,13 +226,65 @@ class AnalyticsAdminSite(AdminSite):
         """Add custom organogram URL"""
         from django.urls import path
         from accounts.admin import OrganogramAdminView
-        
+
         urls = super().get_urls()
         custom_urls = [
             path('organogram/', OrganogramAdminView.organogram_view, name='organogram'),
         ]
         return custom_urls + urls
-    
+
+    # ------------------------------------------------------------------
+    # Sidebar grouping: collect the field-activity models from their
+    # separate apps under a single "Field Activities" heading.
+    # Keys are (app_label.lower(), model object_name) -> label to display.
+    # ------------------------------------------------------------------
+    FIELD_ACTIVITIES_GROUP = 'Field Activities'
+    FIELD_ACTIVITY_MODELS = {
+        ('farmermeetingdataentry', 'Meeting'): 'Farmer Meeting',
+        ('farmermeetingdataentry', 'FieldDay'): 'Field Day',
+        ('fieldadvisoryservice', 'MeetingSchedule'): 'Field Advisory',
+    }
+    # Order the entries appear in under the group
+    FIELD_ACTIVITY_ORDER = ['Farmer Meeting', 'Field Day', 'Field Advisory']
+
+    def get_app_list(self, request, app_label=None):
+        """Regroup the three field-activity models under one sidebar section."""
+        app_list = super().get_app_list(request, app_label)
+
+        # Only regroup the full index/sidebar listing, not a single-app page.
+        if app_label:
+            return app_list
+
+        grouped = []
+        for app in app_list:
+            remaining = []
+            for model in app['models']:
+                key = (app['app_label'].lower(), model.get('object_name'))
+                display_name = self.FIELD_ACTIVITY_MODELS.get(key)
+                if display_name:
+                    grouped.append({**model, 'name': display_name})
+                else:
+                    remaining.append(model)
+            app['models'] = remaining
+
+        if not grouped:
+            return app_list
+
+        order = {name: i for i, name in enumerate(self.FIELD_ACTIVITY_ORDER)}
+        grouped.sort(key=lambda m: order.get(m['name'], len(order)))
+
+        # Drop apps that are now empty, then put the combined group on top.
+        app_list = [app for app in app_list if app['models']]
+        app_list.insert(0, {
+            'name': self.FIELD_ACTIVITIES_GROUP,
+            'app_label': 'field_activities',
+            'app_url': grouped[0].get('admin_url') or '',
+            'has_module_perms': True,
+            'models': grouped,
+        })
+        return app_list
+
+
     def _calculate_percentage_change(self, current, previous):
         """Calculate percentage change between two values"""
         if previous == 0:
