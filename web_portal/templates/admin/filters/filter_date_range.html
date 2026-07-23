@@ -1,0 +1,43 @@
+{% load i18n %}
+<h3>{{ title }}</h3>
+<div class="date-range-filter" style="padding:6px 12px 12px;">
+  {# One-click ranges. Plain links, so no JS is required. #}
+  <div class="date-range-presets" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+    {% for preset in spec.presets %}
+      <a href="{{ preset.url }}"
+         style="font-size:12px;padding:4px 10px;border-radius:12px;text-decoration:none;
+                border:1px solid {% if preset.active %}#E26830{% else %}#d1d5db{% endif %};
+                background:{% if preset.active %}#E26830{% else %}transparent{% endif %};
+                color:{% if preset.active %}#fff{% else %}inherit{% endif %};">{{ preset.label }}</a>
+    {% endfor %}
+  </div>
+
+  <form method="get" style="margin:0;">
+    {# Preserve every other GET param so applying this filter doesn't drop existing ones. #}
+    {% for k, vlist in spec.other_get_items %}
+      {% for item in vlist %}<input type="hidden" name="{{ k }}" value="{{ item }}">{% endfor %}
+    {% endfor %}
+
+    <label style="display:block;font-size:12px;margin:4px 0 2px;">{% trans 'From' %}</label>
+    <input type="date"
+           name="{{ spec.from_param }}"
+           value="{{ spec.from_value|default_if_none:'' }}"
+           max="{{ spec.today }}"
+           style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;box-sizing:border-box;">
+
+    <label style="display:block;font-size:12px;margin:8px 0 2px;">{% trans 'To' %}</label>
+    <input type="date"
+           name="{{ spec.to_param }}"
+           value="{{ spec.to_value|default_if_none:'' }}"
+           max="{{ spec.today }}"
+           style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;box-sizing:border-box;">
+
+    <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+      <button type="submit" class="button" style="padding:4px 10px;font-size:12px;">{% trans 'Apply' %}</button>
+      {% if spec.from_value or spec.to_value %}
+        <a href="?{% for k, vlist in spec.other_get_items %}{% for item in vlist %}{{ k }}={{ item }}&amp;{% endfor %}{% endfor %}"
+           style="font-size:12px;">{% trans 'Clear' %}</a>
+      {% endif %}
+    </div>
+  </form>
+</div>

@@ -41,8 +41,58 @@
   {{ block.super }}
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%23E26830'/><text x='16' y='22' text-anchor='middle' font-size='18' font-family='Arial,sans-serif' font-weight='bold' fill='white'>4</text></svg>">
-  <link rel="stylesheet" href="{% static 'sap_integration/admin.css' %}">
+  {# ?v= busts the browser cache when these files change - bump on each edit. #}
+  <link rel="stylesheet" href="{% static 'sap_integration/admin.css' %}?v=10">
+  {# Sidebar v2 - must load after admin.css so its width rules win. #}
+  <link rel="stylesheet" href="{% static 'sap_integration/admin_sidebar.css' %}?v=10">
+  {# Type-ahead suggestions on the changelist search box. #}
+  <script defer src="{% static 'sap_integration/admin_search_suggest.js' %}?v=10"></script>
   <style>
+    /* ----------------------------------------------------------------
+       Changelist row colours.
+       Kept INLINE on purpose: this block is part of the HTML, so it is
+       never served from a stale CSS cache and it is the last stylesheet
+       the browser parses - which makes it the final word on row colour.
+       Uniform rows (no odd/even striping) + a hover state on every row.
+       ---------------------------------------------------------------- */
+    #changelist .results tbody tr,
+    #changelist .results tbody tr > td,
+    #changelist .results tbody tr > th,
+    #changelist .results tbody tr:nth-child(odd),
+    #changelist .results tbody tr:nth-child(odd) > td,
+    #changelist .results tbody tr:nth-child(odd) > th,
+    #changelist .results tbody tr:nth-child(even),
+    #changelist .results tbody tr:nth-child(even) > td,
+    #changelist .results tbody tr:nth-child(even) > th,
+    #result_list tbody tr,
+    #result_list tbody tr > td,
+    #result_list tbody tr > th,
+    #result_list tbody tr:nth-child(odd),
+    #result_list tbody tr:nth-child(odd) > td,
+    #result_list tbody tr:nth-child(odd) > th,
+    #result_list tbody tr:nth-child(even),
+    #result_list tbody tr:nth-child(even) > td,
+    #result_list tbody tr:nth-child(even) > th {
+      background: #ffffff !important;
+      background-image: none !important;
+      transition: background-color 120ms ease;
+    }
+    #changelist .results tbody tr:hover,
+    #changelist .results tbody tr:hover > td,
+    #changelist .results tbody tr:hover > th,
+    #result_list tbody tr:hover,
+    #result_list tbody tr:hover > td,
+    #result_list tbody tr:hover > th { background: #fff2ee !important; background-image: none !important; }
+
+    #result_list tbody tr.selected,
+    #result_list tbody tr.selected > td,
+    #result_list tbody tr.selected > th,
+    #result_list tbody tr:has(.action-select:checked),
+    #result_list tbody tr:has(.action-select:checked) > td,
+    #result_list tbody tr:has(.action-select:checked) > th {
+      background-color: #ffe7db !important;
+    }
+
     *, *::before, *::after { box-sizing: border-box; }
     :root {
       --font-base: 16px;

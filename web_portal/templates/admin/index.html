@@ -98,10 +98,11 @@
         <h2>Recent actions</h2>
         <h3>My actions</h3>
         {% load log %}
-        {% get_admin_log 10 as admin_log for_user user %}
+        {% get_admin_log 100 as admin_log for_user user %}
         {% if not admin_log %}
           <p>None available</p>
         {% else %}
+          <div class="actionlist-scroll">
           <ul class="actionlist">
           {% for entry in admin_log %}
             <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
@@ -120,9 +121,14 @@
             </li>
           {% endfor %}
           </ul>
+          </div>
+          <p class="mini quiet" style="margin-top:10px;">
+            Showing your latest {{ admin_log|length }} action{{ admin_log|length|pluralize }}.
+            <a href="{% url 'admin:admin_logentry_changelist' %}">View all admin actions &rsaquo;</a>
+          </p>
         {% endif %}
       </div>
-      
+
       <!-- Quick Links Section -->
       {% if user.is_superuser or perms.accounts.view_organogram %}
       <div class="module" style="margin-top: 20px;">

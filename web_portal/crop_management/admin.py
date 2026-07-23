@@ -44,7 +44,7 @@ class CropAdmin(admin.ModelAdmin):
         })
     )
     ordering = ['name']
-    date_hierarchy = 'created_at'
+    # date_hierarchy = 'created_at'  # needs MySQL tz tables (CONVERT_TZ); re-enable once loaded
     
     def varieties_count(self, obj):
         """Display count of varieties for this crop"""
@@ -104,7 +104,7 @@ class CropVarietyAdmin(admin.ModelAdmin):
         })
     )
     ordering = ['crop__name', 'name']
-    date_hierarchy = 'created_at'
+    # date_hierarchy = 'created_at'  # needs MySQL tz tables (CONVERT_TZ); re-enable once loaded
     
     def get_queryset(self, request):
         """Optimize queryset with select_related"""
@@ -162,7 +162,7 @@ class YieldDataAdmin(admin.ModelAdmin):
         })
     )
     ordering = ['-harvest_year', 'crop__name']
-    date_hierarchy = 'created_at'
+    # date_hierarchy = 'created_at'  # needs MySQL tz tables (CONVERT_TZ); re-enable once loaded
     
     def profit_margin(self, obj):
         """Calculate and display profit margin"""
@@ -235,7 +235,7 @@ class FarmingPracticeAdmin(admin.ModelAdmin):
         })
     )
     ordering = ['crop__name', 'practice_type', 'title']
-    date_hierarchy = 'created_at'
+    # date_hierarchy = 'created_at'  # needs MySQL tz tables (CONVERT_TZ); re-enable once loaded
     
     def get_queryset(self, request):
         """Optimize queryset with select_related"""

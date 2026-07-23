@@ -2,7 +2,7 @@ from rest_framework import generics, permissions, filters
 from .models import Complaint
 from .serializers import ComplaintSerializer
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.pagination import PageNumberPagination
+from web_portal.api_export import ExportPageNumberPagination
 import uuid
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -15,7 +15,8 @@ from accounts.permissions import HasRolePermission
 from rest_framework.permissions import IsAuthenticated
 
 # ✅ List + Create View
-class ComplaintPagination(PageNumberPagination):
+# Inherit the export-aware base so ?format=csv|xlsx bypasses paging here too.
+class ComplaintPagination(ExportPageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100

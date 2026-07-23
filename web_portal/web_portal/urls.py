@@ -24,6 +24,9 @@ from general_ledger.views import (
 from cart.admin_views import cart_dashboard_admin
 from django.urls import path, include, re_path
 from rest_framework import permissions
+from django.contrib.admin.views.decorators import staff_member_required
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from django.shortcuts import redirect
@@ -75,8 +78,14 @@ schema_view = get_schema_view(
       contact=openapi.Contact(email="contact@snippets.local"),
       license=openapi.License(name="BSD License"),
    ),
+   # public=True keeps the documented surface complete for staff; access is
+   # restricted below (IsAdminUser + staff_member_required on the URL) rather
+   # than by silently trimming endpoints out of the schema.
    public=True,
-   permission_classes=(permissions.AllowAny,),
+   permission_classes=(permissions.IsAdminUser,),
+   # DEFAULT_AUTHENTICATION_CLASSES only has JWT, so without SessionAuthentication
+   # a logged-in admin's session cookie would not satisfy IsAdminUser here.
+   authentication_classes=(SessionAuthentication, JWTAuthentication),
 )
 urlpatterns = [
     path('', lambda request: redirect('/admin/', permanent=False)), # Redirect root(http://127.0.0.1:8000) URL to admin
@@ -103,8 +112,17 @@ urlpatterns = [
     # Product description endpoints moved to sap_integration/urls.py
     path('admin/', admin_site.urls),  # Use custom admin site
     
-    # Swagger
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    # Swagger - staff only. staff_member_required redirects anonymous/non-staff
+    # visitors to the admin login (and back here afterwards) instead of leaving
+    # the whole API surface publicly browsable.
+    path(
+        'swagger/',
+        staff_member_required(
+            schema_view.with_ui('swagger', cache_timeout=0),
+            login_url='admin:login',
+        ),
+        name='schema-swagger-ui',
+    ),
 
     # App APIs
     path('api/', include('accounts.urls')),  # ✅ all accounts related routes
