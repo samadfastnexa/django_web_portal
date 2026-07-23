@@ -1,5 +1,6 @@
 from django.contrib import admin
 from web_portal.admin import admin_site
+from web_portal.admin_filters import date_range_filter, related_values_filter
 from .models import Meeting, FarmerAttendance, MeetingAttachment, FieldDay, FieldDayAttendance, FieldDayAttachment, FieldDayAttendanceCrop
 from django.http import HttpResponse
 from openpyxl import Workbook
@@ -199,11 +200,14 @@ class MeetingAdmin(admin.ModelAdmin):
         'location',
     ]
 
+    # Text boxes instead of full FK lists: regions/zones/territories span
+    # several companies, so the plain list filters filled the sidebar with
+    # hundreds of links.
     list_filter = [
-        'region_fk',
-        'zone_fk',
-        'territory_fk',
-        ('date', admin.DateFieldListFilter),
+        date_range_filter('date', 'meeting date'),
+        related_values_filter('region_fk__name', 'region'),
+        related_values_filter('zone_fk__name', 'zone'),
+        related_values_filter('territory_fk__name', 'territory'),
     ]
     ordering = ['-id']
     actions = [export_farmer_meeting_to_excel]
@@ -397,9 +401,15 @@ class FieldDayAdmin(admin.ModelAdmin):
         'id', 'title', 'company_fk', 'territory_fk', 'zone_fk', 'region_fk', 
         'formatted_date', 'total_participants', 'demonstrations_conducted', 'user', 'is_active'
     )
+    # Text boxes instead of full FK lists - see MeetingAdmin for rationale.
     list_filter = (
-        'company_fk', 'region_fk', 'zone_fk', 'territory_fk', 
-        ('date', admin.DateFieldListFilter), 'total_participants', 'demonstrations_conducted', 'is_active'
+        date_range_filter('date', 'field day date'),
+        'is_active',
+        'company_fk',
+        related_values_filter('region_fk__name', 'region'),
+        related_values_filter('zone_fk__name', 'zone'),
+        related_values_filter('territory_fk__name', 'territory'),
+        'demonstrations_conducted',
     )
     search_fields = (
         'id', 'title', 'company_fk__Company_name', 'territory_fk__name', 

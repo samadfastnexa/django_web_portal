@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 import time
 
@@ -11,10 +12,41 @@ DB_RECORD_PREFIXES = ('/api/', '/admin/')
 
 
 def _client_ip(request):
+    """
+    Best-effort real client IP.
+
+    Behind a reverse proxy (nginx/load balancer) REMOTE_ADDR is the proxy
+    itself -- typically 127.0.0.1 -- and the real caller sits in
+    X-Forwarded-For (left-most entry) or X-Real-IP. We walk every candidate
+    and return the first public address; if they are all private/loopback
+    (normal for local development) we keep the first valid one so the column
+    is never blank.
+    """
+    candidates = []
     xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    if xff:
-        return xff.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR')
+    candidates.extend(part.strip() for part in xff.split(',') if part.strip())
+
+    real_ip = (request.META.get('HTTP_X_REAL_IP') or '').strip()
+    if real_ip:
+        candidates.append(real_ip)
+
+    remote = (request.META.get('REMOTE_ADDR') or '').strip()
+    if remote:
+        candidates.append(remote)
+
+    first_valid = None
+    for candidate in candidates:
+        # Strip an IPv6 zone id / surrounding brackets some proxies emit.
+        cleaned = candidate.strip('[]').split('%')[0]
+        try:
+            parsed = ipaddress.ip_address(cleaned)
+        except ValueError:
+            continue
+        if first_valid is None:
+            first_valid = cleaned
+        if not (parsed.is_private or parsed.is_loopback or parsed.is_link_local):
+            return cleaned
+    return first_valid
 
 
 def _resolve_user(request):

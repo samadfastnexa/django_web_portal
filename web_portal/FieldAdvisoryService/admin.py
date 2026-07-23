@@ -1,5 +1,6 @@
 from django.contrib import admin
 from web_portal.admin import admin_site
+from web_portal.admin_filters import date_range_filter, related_values_filter
 from django.contrib import messages
 import json
 import logging
@@ -202,11 +203,14 @@ class MeetingScheduleAdmin(admin.ModelAdmin):
         'location',
         'key_topics_discussed'
     ]
+    # Text boxes instead of full FK lists: regions/zones/territories span
+    # several companies, so the plain list filters filled the sidebar with
+    # hundreds of links.
     list_filter = [
-        'region',
-        'zone',
-        'territory',
-        ('date', admin.DateFieldListFilter),
+        date_range_filter('date', 'meeting date'),
+        related_values_filter('region__name', 'region'),
+        related_values_filter('zone__name', 'zone'),
+        related_values_filter('territory__name', 'territory'),
         'presence_of_zm',
         'presence_of_rsm'
     ]

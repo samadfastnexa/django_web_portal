@@ -80,7 +80,7 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     list_filter = ['status', 'payment_status', 'is_synced_to_sap', 'payment_method', 'created_date']
     list_per_page = 25
-    date_hierarchy = 'created_date'
+    # date_hierarchy = 'created_date'  # needs MySQL tz tables (CONVERT_TZ); re-enable once loaded
     search_fields = [
         'order_number',
         'user__email',

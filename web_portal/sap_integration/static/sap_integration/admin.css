@@ -450,12 +450,16 @@
   display: inline-block;
   vertical-align: middle;
 }
-/* Slim column widths for common fields */
-#changelist .results th:first-child, #changelist .results td:first-child { 
-  width: 35px; 
+/* Slim column widths for common fields.
+   NOTE: scoped to the action-checkbox column on purpose. A bare :first-child
+   rule also crushed the first real column to 35px on read-only changelists
+   (no checkbox column), e.g. Activity Logs' TIMESTAMP. */
+#changelist .results th.action-checkbox-column:first-child,
+#changelist .results td.action-checkbox-column:first-child {
+  width: 35px;
   max-width: 35px;
   min-width: 35px;
-  padding: 4px !important; 
+  padding: 4px !important;
 }
 #changelist .results th.action-checkbox-column, #changelist .results td.action-checkbox-column { 
   width: 35px;
@@ -1002,25 +1006,62 @@
   color: #fff;
 }
 
-/* Row hover */
-#changelist .results tbody tr:hover {
-  background-color: rgba(226, 104, 48, 0.12);
-}
+/* ------------------------------------------------------------------
+   Row striping + hover.
+   ORDER MATTERS: striping is declared FIRST so hover/selection can win.
+   Previously :nth-child(odd) came after :hover at identical specificity,
+   which cancelled the hover state on every odd row. The cells are painted
+   too (> td/th), because a cell background would otherwise sit on top of
+   the row background and defeat the hover.
+   ------------------------------------------------------------------ */
+#changelist .results tbody tr,
+#changelist .results tbody tr > td,
+#changelist .results tbody tr > th { transition: background-color 120ms ease; }
 
-/* Row selection */
+/* No zebra striping - every row uses the same background. The :nth-child
+   selectors are listed explicitly to cancel Django's own odd/even striping,
+   which would otherwise tint alternate rows. */
+/* !important because the previous rule used rgba(255,255,255,0.03) - i.e.
+   effectively transparent - so rows inherited whatever tint sat behind them.
+   Painting td/th opaquely (and winning outright) is what makes rows uniform. */
+#changelist .results tbody tr,
+#changelist .results tbody tr > td,
+#changelist .results tbody tr > th,
+#changelist .results tbody tr:nth-child(odd),
+#changelist .results tbody tr:nth-child(odd) > td,
+#changelist .results tbody tr:nth-child(odd) > th,
+#changelist .results tbody tr:nth-child(even),
+#changelist .results tbody tr:nth-child(even) > td,
+#changelist .results tbody tr:nth-child(even) > th { background-color: #ffffff !important; }
+
+/* Hover - declared after striping so it always applies. */
+#changelist .results tbody tr:hover,
+#changelist .results tbody tr:hover > td,
+#changelist .results tbody tr:hover > th { background-color: #fff2ee !important; }
+
+/* Selection beats hover. */
 #changelist .results tbody tr.selected,
-#changelist .results tbody tr:has(input[type="checkbox"]:checked) {
-  background-color: rgba(226, 104, 48, 0.18);
-  outline: 1px solid var(--orange-soft-border);
+#changelist .results tbody tr.selected > td,
+#changelist .results tbody tr.selected > th,
+#changelist .results tbody tr:has(.action-select:checked),
+#changelist .results tbody tr:has(.action-select:checked) > td,
+#changelist .results tbody tr:has(.action-select:checked) > th {
+  background-color: #ffe7db !important;
 }
+#changelist .results tbody tr.selected { outline: 1px solid var(--orange-soft-border); }
 
-/* Zebra striping */
-#changelist .results tbody tr:nth-child(odd) {
-  background-color: rgba(255, 255, 255, 0.03);
-}
-[data-theme="dark"] #changelist .results tbody tr:nth-child(odd) {
-  background-color: rgba(255, 255, 255, 0.02);
-}
+[data-theme="dark"] #changelist .results tbody tr,
+[data-theme="dark"] #changelist .results tbody tr > td,
+[data-theme="dark"] #changelist .results tbody tr > th,
+[data-theme="dark"] #changelist .results tbody tr:nth-child(odd),
+[data-theme="dark"] #changelist .results tbody tr:nth-child(odd) > td,
+[data-theme="dark"] #changelist .results tbody tr:nth-child(odd) > th,
+[data-theme="dark"] #changelist .results tbody tr:nth-child(even),
+[data-theme="dark"] #changelist .results tbody tr:nth-child(even) > td,
+[data-theme="dark"] #changelist .results tbody tr:nth-child(even) > th { background-color: #0f172a; }
+[data-theme="dark"] #changelist .results tbody tr:hover,
+[data-theme="dark"] #changelist .results tbody tr:hover > td,
+[data-theme="dark"] #changelist .results tbody tr:hover > th { background-color: rgba(255, 255, 255, 0.07); }
 
 /* Role badge / tags */
 #changelist .results td .badge,
@@ -1235,6 +1276,14 @@
 [data-theme="dark"] #recent-actions-module { background-color: #0f172a; border-color: #1f2937; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 #recent-actions-module h2 { font-size: 18px; font-weight: 700; color: var(--text-default); margin: 0 0 12px 0; }
 #recent-actions-module h3 { font-size: 14px; font-weight: 700; color: var(--text-default); margin: 0 0 8px 0; opacity: 0.8; }
+/* Scrollable container so the full recent-action history is reachable
+   without stretching the dashboard. */
+#recent-actions-module .actionlist-scroll { max-height: 420px; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; }
+#recent-actions-module .actionlist-scroll::-webkit-scrollbar { width: 8px; }
+#recent-actions-module .actionlist-scroll::-webkit-scrollbar-track { background: transparent; }
+#recent-actions-module .actionlist-scroll::-webkit-scrollbar-thumb { background: var(--hairline-color); border-radius: 4px; }
+#recent-actions-module .actionlist-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+[data-theme="dark"] #recent-actions-module .actionlist-scroll::-webkit-scrollbar-thumb { background: #334155; }
 #recent-actions-module .actionlist { list-style: none; padding: 0; margin: 0; }
 #recent-actions-module .actionlist li { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; transition: background-color var(--transition-fast) ease; }
 #recent-actions-module .actionlist li:hover { background-color: var(--orange-soft); }
@@ -1389,3 +1438,88 @@ tbody tr td p.original {
 [data-theme="dark"] .inline-group .tabular tbody tr:nth-child(odd) {
     background-color: #1a1a1a;
 }
+
+/* ------------------------------------------------------------------
+   Changelist column sizing (log/monitoring tables)
+   Fixes headers rendering one letter per line and squeezed cells.
+   ------------------------------------------------------------------ */
+
+/* Column headers must never break mid-word. The global `overflow-wrap:anywhere`
+   used for cell content was stacking "TIMESTAMP" vertically. */
+#changelist .results th {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  max-width: none;
+}
+#changelist .results th .text,
+#changelist .results th .text a,
+#changelist .results th a { white-space: nowrap; }
+
+/* Very wide tables scroll horizontally instead of crushing every column. */
+#changelist .results { overflow-x: auto; }
+
+/* Per-column sizing for ActivityLog / LogEntry changelists. */
+#changelist .results th.column-timestamp,   #changelist .results td.field-timestamp,
+#changelist .results th.column-action_time, #changelist .results td.field-action_time {
+  min-width: 170px; white-space: nowrap;
+}
+#changelist .results td.field-username,
+#changelist .results td.field-user           { min-width: 170px; }
+#changelist .results th.column-method,
+#changelist .results td.field-method         { width: 80px;  white-space: nowrap; }
+#changelist .results th.column-status_badge, #changelist .results td.field-status_badge,
+#changelist .results th.column-action_badge, #changelist .results td.field-action_badge {
+  width: 96px; white-space: nowrap; text-align: center;
+}
+#changelist .results td.field-duration_ms    { width: 96px;  white-space: nowrap; text-align: right; }
+#changelist .results td.field-path           { min-width: 280px; max-width: 460px; }
+#changelist .results td.field-view_module    { min-width: 160px; }
+#changelist .results td.field-ip_address     { min-width: 120px; white-space: nowrap; }
+#changelist .results td.field-object_repr    { min-width: 200px; }
+#changelist .results td.field-content_type   { min-width: 140px; white-space: nowrap; }
+#changelist .results td.field-change_message { min-width: 220px; max-width: 400px; }
+
+/* Status/action badges must not be clipped by the generic cell-child rule. */
+#changelist .results td.field-status_badge *,
+#changelist .results td.field-action_badge * { overflow: visible; max-width: none; }
+
+/* Module column on the monitoring log */
+#changelist .results th.column-module_label,
+#changelist .results td.field-module_label { min-width: 165px; white-space: nowrap; }
+
+/* ------------------------------------------------------------------
+   Search-box type-ahead suggestions (admin_search_suggest.js)
+   ------------------------------------------------------------------ */
+.admin-suggest-box {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1200;
+  margin-top: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  min-width: 240px;
+  background: #fff;
+  border: 1px solid var(--hairline-color, #d1d5db);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+}
+.admin-suggest-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.35;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.admin-suggest-item:last-child { border-bottom: none; }
+.admin-suggest-item.is-active,
+.admin-suggest-item:hover { background: var(--orange-soft, #FFE4D6); }
+.admin-suggest-item strong { color: var(--orange, #E26830); font-weight: 700; }
+
+[data-theme="dark"] .admin-suggest-box { background: #0f172a; border-color: #1f2937; box-shadow: 0 8px 20px rgba(0,0,0,0.45); }
+[data-theme="dark"] .admin-suggest-item { border-bottom-color: rgba(255,255,255,0.06); color: #e2e8f0; }
+[data-theme="dark"] .admin-suggest-item.is-active,
+[data-theme="dark"] .admin-suggest-item:hover { background: rgba(255,255,255,0.08); }

@@ -113,7 +113,7 @@ class AttachmentAdmin(admin.ModelAdmin):
     
     inlines = [AttachmentAssignmentInline]
     
-    date_hierarchy = 'created_at'
+    # date_hierarchy = 'created_at'  # needs MySQL tz tables (CONVERT_TZ); re-enable once loaded
     
     actions = [
         'mark_as_active',
@@ -304,7 +304,7 @@ class AttachmentAssignmentAdmin(admin.ModelAdmin):
     
     inlines = [AttachmentDownloadLogInline]
     
-    date_hierarchy = 'assigned_at'
+    # date_hierarchy = 'assigned_at'  # needs MySQL tz tables (CONVERT_TZ); re-enable once loaded
     
     def attachment_link(self, obj):
         """Link to attachment."""
@@ -383,7 +383,7 @@ class AttachmentDownloadLogAdmin(admin.ModelAdmin):
         'user_agent',
     ]
     
-    date_hierarchy = 'downloaded_at'
+    # date_hierarchy = 'downloaded_at'  # needs MySQL tz tables (CONVERT_TZ); re-enable once loaded
     
     def has_add_permission(self, request):
         """Prevent manual creation."""
