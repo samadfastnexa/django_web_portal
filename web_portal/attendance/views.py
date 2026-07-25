@@ -129,7 +129,13 @@ class AttendanceCheckInView(generics.CreateAPIView):
     
     def perform_create(self, serializer):
         user = self.request.user
-        attendee = serializer.validated_data.get('attendee', user)
+        requested = serializer.validated_data.get('attendee')
+        # Only staff/admin may mark attendance for someone else; every other
+        # user can only mark their own, whatever attendee the client sent.
+        if requested and (user.is_staff or user.is_superuser):
+            attendee = requested
+        else:
+            attendee = user
         
         serializer.save(user=user, attendee=attendee)
 

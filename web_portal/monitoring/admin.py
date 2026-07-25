@@ -139,19 +139,21 @@ class ActivityLogAdmin(admin.ModelAdmin):
     """Read-only view of the request/usage audit trail."""
 
     list_display = (
-        'timestamp', 'username', 'module_label', 'method', 'path',
-        'status_badge', 'duration_ms', 'ip_address', 'view_module',
+        'timestamp', 'username', 'attempted_identifier', 'module_label', 'method', 'path',
+        'status_badge', 'suspicious_badge', 'auth_note', 'duration_ms', 'ip_address', 'view_module',
     )
     list_filter = (
         'is_error',
+        'is_suspicious',
         ModuleFilter,
         date_range_filter('timestamp', 'date range'),
         UserSearchFilter,
         IPAddressFilter,
         'method',
         'status_code',
+        'auth_outcome',
     )
-    search_fields = ('path', 'username', 'view_module', 'ip_address')
+    search_fields = ('path', 'username', 'view_module', 'ip_address', 'attempted_identifier')
     # No date_hierarchy - see DateRangeFilter's docstring (MySQL CONVERT_TZ).
     list_per_page = 25
     ordering = ('-timestamp',)
@@ -178,6 +180,30 @@ class ActivityLogAdmin(admin.ModelAdmin):
             '<span style="background:{};color:{};padding:2px 8px;'
             'border-radius:10px;font-weight:600;font-size:12px;">{}</span>',
             bg, fg, code,
+        )
+
+    @admin.display(description='Auth', ordering='auth_outcome')
+    def auth_note(self, obj):
+        """Why a 401/403 happened -- distinguishes an expired session from no login."""
+        labels = {
+            'no_credentials': 'no token',
+            'token_expired': 'expired token',
+            'token_invalid': 'invalid token',
+        }
+        label = labels.get(obj.auth_outcome)
+        if not label:
+            return ''
+        colour = '#9a3412' if obj.auth_outcome == 'token_expired' else '#6b7280'
+        return format_html('<span style="color:{};font-weight:600;">{}</span>', colour, label)
+
+    @admin.display(description='Flag', ordering='is_suspicious')
+    def suspicious_badge(self, obj):
+        """Red badge for blocked scanner probes."""
+        if not obj.is_suspicious:
+            return ''
+        return format_html(
+            '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;'
+            'border-radius:10px;font-weight:700;font-size:12px;">&#9888; probe</span>'
         )
 
     def has_add_permission(self, request):
