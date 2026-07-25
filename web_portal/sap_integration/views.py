@@ -2,7 +2,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 
 from .sap_client import SAPClient
 from .models import Policy, DiseaseIdentification, RecommendedProduct
@@ -8874,7 +8875,7 @@ def customer_lov_api(request):
             print(f"[DEBUG] User ID: '{user_id_param}', Territories: {user_territories}", file=sys.stderr)
         return Response({'success': False, 'error': error_msg, 'debug': {'schema': cfg['schema'], 'company_param': company_param, 'user_id': user_id_param if user_id_param else None}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@swagger_auto_schema(tags=['SAP'], 
+@swagger_auto_schema(tags=['SAP'],
     method='get',
     operation_summary="Item LOV",
     operation_description="List items with optional search and pagination.",

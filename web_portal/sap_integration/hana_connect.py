@@ -2502,8 +2502,173 @@ def customer_lov(db, search: str | None = None, limit: int = 1000, status: str |
         params.extend([search_param, search_param])
     
     sql += ' ORDER BY T0."CardCode" LIMIT ' + str(int(limit or 1000))
-    
+
     return _fetch_all(db, sql, tuple(params))
+
+
+def dealers_for_employee(db, employee_code, search: str | None = None,
+                         status: str | None = 'active', limit: int = 1000) -> list:
+    """Dealers (OCRD customers) in the SAP territories assigned to a sales employee.
+
+    The employee's territories come straight from SAP B4_EMP (CODE -> U_TID), so
+    a field officer sees dealers in their one territory while a zone/region
+    manager (many B4_EMP rows) sees dealers across every territory they cover.
+    B4_EMP.U_TID (text) is compared to OCRD."Territory" (numeric) via HANA's
+    implicit cast, matching how the collection/sales reports already join them.
+    """
+    sql = (
+        'SELECT '
+        ' T0."CardCode", '
+        ' T0."CardName", '
+        ' T0."CntctPrsn", '
+        ' T0."Phone1", '
+        ' T0."LicTradNum", '
+        ' T0."Territory" AS "TerritoryId", '
+        ' O."descript" AS "TerritoryName" '
+        'FROM OCRD T0 '
+        'LEFT JOIN OTER O ON O."territryID" = T0."Territory" '
+        'WHERE T0."CardType" = \'C\' '
+        # Dealers are tagged at Pocket level (a child of the employee's
+        # Territory node), so match the employee's territories OR their
+        # direct child territories (pockets).
+        '  AND ( '
+        '        T0."Territory" IN (SELECT "U_TID" FROM "B4_EMP" WHERE "CODE" = ?) '
+        '     OR T0."Territory" IN (SELECT C."territryID" FROM OTER C '
+        '                           WHERE C."parent" IN (SELECT "U_TID" FROM "B4_EMP" WHERE "CODE" = ?)) '
+        '      ) '
+    )
+    emp = str(employee_code).strip()
+    params = [emp, emp]
+
+    if status:
+        status_val = str(status).strip().lower()
+        if status_val in ('active', 'inactive'):
+            sql += ' AND T0."validFor" = ? '
+            params.append('Y' if status_val == 'active' else 'N')
+
+    if search and search.strip():
+        sql += ' AND (UPPER(T0."CardCode") LIKE UPPER(?) OR UPPER(T0."CardName") LIKE UPPER(?)) '
+        pattern = f'%{search.strip()}%'
+        params.extend([pattern, pattern])
+
+    sql += ' ORDER BY T0."CardName" LIMIT ' + str(int(limit or 1000))
+    return _fetch_all(db, sql, tuple(params))
+
+
+def sales_collection_totals_scoped(schema, start_date, end_date, emp_id=None):
+    """
+    Aggregate sales & collection target/achievement for a schema over a date
+    range (optionally one employee). Returns a dict of four floats, or None on
+    any failure so the dashboard can degrade to a report link.
+    """
+    if not schema:
+        return None
+    _here = os.path.dirname(__file__)
+    for _p in (
+        os.path.join(_here, '.env'),
+        os.path.join(_here, '..', '.env'),
+        os.path.join(_here, '..', '..', '.env'),
+        os.path.join(os.getcwd(), '.env'),
+    ):
+        _load_env_file(_p)
+    host = os.environ.get('HANA_HOST')
+    if not host:
+        return None
+
+    def _sum(rows, key):
+        total = 0.0
+        for r in (rows or []):
+            try:
+                total += float(r.get(key) or 0)
+            except (TypeError, ValueError):
+                pass
+        return total
+
+    conn = None
+    try:
+        conn = _connect_hdbcli(
+            host,
+            os.environ.get('HANA_PORT') or '30015',
+            os.environ.get('HANA_USER') or '',
+            os.environ.get('HANA_PASSWORD') or '',
+            schema,
+            os.environ.get('HANA_ENCRYPT'),
+            os.environ.get('HANA_SSL_VALIDATE'),
+        )
+        cur = conn.cursor()
+        cur.execute(f'SET SCHEMA "{str(schema).strip()}"')
+        cur.close()
+        result = {'sales_target': 0.0, 'sales_ach': 0.0, 'coll_target': 0.0, 'coll_ach': 0.0}
+        try:
+            s_rows = sales_vs_achievement(conn, emp_id, None, None, None, start_date, end_date)
+            result['sales_target'] = _sum(s_rows, 'SALES_TARGET')
+            result['sales_ach'] = _sum(s_rows, 'ACCHIVEMENT')
+        except Exception:
+            logger.exception('sales_vs_achievement aggregate failed (schema=%s)', schema)
+        try:
+            c_rows = collection_vs_achievement(conn, emp_id, None, None, None, start_date, end_date)
+            result['coll_target'] = _sum(c_rows, 'Collection_Target')
+            result['coll_ach'] = _sum(c_rows, 'Collection_Achievement')
+        except Exception:
+            logger.exception('collection_vs_achievement aggregate failed (schema=%s)', schema)
+        return result
+    except Exception as e:
+        # Expected for placeholder companies whose schema is not a real HANA
+        # schema (e.g. invalid schema name) - warn without a full traceback.
+        logger.warning('sales_collection_totals_scoped skipped schema=%s: %s', schema, e)
+        return None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def dealers_for_employee_scoped(schema, employee_code, search=None, status='active', limit: int = 1000):
+    """
+    Open a HANA connection for `schema`, return the full dealer rows for the
+    employee's territories (via dealers_for_employee), and close it. Returns
+    None on any failure so the caller can decide how to handle it.
+    """
+    if not (schema and str(employee_code).strip()):
+        return None
+    _here = os.path.dirname(__file__)
+    for _p in (
+        os.path.join(_here, '.env'),
+        os.path.join(_here, '..', '.env'),
+        os.path.join(_here, '..', '..', '.env'),
+        os.path.join(os.getcwd(), '.env'),
+    ):
+        _load_env_file(_p)
+    host = os.environ.get('HANA_HOST')
+    if not host:
+        return None
+    conn = None
+    try:
+        conn = _connect_hdbcli(
+            host,
+            os.environ.get('HANA_PORT') or '30015',
+            os.environ.get('HANA_USER') or '',
+            os.environ.get('HANA_PASSWORD') or '',
+            schema,
+            os.environ.get('HANA_ENCRYPT'),
+            os.environ.get('HANA_SSL_VALIDATE'),
+        )
+        cur = conn.cursor()
+        cur.execute(f'SET SCHEMA "{str(schema).strip()}"')
+        cur.close()
+        return dealers_for_employee(conn, employee_code, search=search, status=status, limit=limit)
+    except Exception:
+        logger.exception('dealers_for_employee_scoped failed (schema=%s, emp=%s)', schema, employee_code)
+        return None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 
 def customer_codes_all(db, limit: int = 1000) -> list:
     sql = (

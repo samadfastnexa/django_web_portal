@@ -197,7 +197,7 @@ class LogEntryAdmin(admin.ModelAdmin):
     "Recent actions" panel shows, but for every user and without the cut-off.
     """
 
-    list_display = ('action_time', 'user', 'action_badge', 'content_type', 'object_repr', 'change_message')
+    list_display = ('action_time', 'user', 'action_badge', 'content_type', 'object_repr', 'readable_change')
     list_filter = (
         'action_flag',
         date_range_filter('action_time', 'date range'),
@@ -209,6 +209,19 @@ class LogEntryAdmin(admin.ModelAdmin):
     ordering = ('-action_time',)
     list_per_page = 25
     list_select_related = ('user', 'content_type')
+
+    @admin.display(description='Change')
+    def readable_change(self, obj):
+        """
+        Human-readable summary instead of the raw change_message JSON.
+        get_change_message() turns [{"changed": {"fields": ["Company"]}}] into
+        "Changed Company." and localises field names.
+        """
+        try:
+            message = obj.get_change_message()
+        except Exception:
+            message = obj.change_message
+        return message or '—'
 
     @admin.display(description='Action', ordering='action_flag')
     def action_badge(self, obj):
