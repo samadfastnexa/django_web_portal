@@ -6,6 +6,11 @@ from django.http import HttpResponseNotFound
 
 logger = logging.getLogger('access')
 security_logger = logging.getLogger('security')
+errors_logger = logging.getLogger('errors')
+
+# Query-string keys whose values must never be written to a log.
+_SENSITIVE_QS_KEYS = {'password', 'pwd', 'token', 'access', 'refresh', 'otp',
+                      'secret', 'key', 'api_key', 'apikey', 'authorization'}
 
 # Requests whose path starts with one of these are never recorded (static assets, etc.).
 SKIP_PREFIXES = ('/static/', '/media/', '/favicon.ico', '/swagger')
@@ -151,6 +156,59 @@ def _view_module(request):
     return getattr(func, '__module__', '') or ''
 
 
+def _safe_query(request):
+    """Return the request query string with sensitive values redacted."""
+    qs = request.META.get('QUERY_STRING', '')
+    if not qs:
+        return ''
+    try:
+        from urllib.parse import parse_qsl, urlencode
+        pairs = [(k, 'REDACTED' if k.lower() in _SENSITIVE_QS_KEYS else v)
+                 for k, v in parse_qsl(qs, keep_blank_values=True)]
+        return urlencode(pairs)
+    except Exception:
+        return ''
+
+
+def _error_detail(response):
+    """
+    Best-effort error message from a JSON error body.
+
+    Many views catch their own exception and return {'error': str(e)} / {'detail': ...}
+    with a 4xx/5xx status, so the reason lives in the body, never in an exception.
+    This lets the central logger surface it. Safe on unrendered/streaming/non-JSON.
+    """
+    try:
+        if getattr(response, 'streaming', False):
+            return ''
+        if hasattr(response, 'is_rendered') and not response.is_rendered:
+            return ''
+        if 'json' not in (response.get('Content-Type', '') or '').lower():
+            return ''
+        raw = response.content
+        if not raw or len(raw) > 20000:
+            return ''
+        import json
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            # SimpleJWT auth errors hide the specific reason (e.g. "Token is
+            # blacklisted" vs "Token is expired") in messages[].message.
+            msgs = data.get('messages')
+            if isinstance(msgs, list) and msgs:
+                parts = [str(m.get('message')) for m in msgs
+                         if isinstance(m, dict) and m.get('message')]
+                if parts:
+                    base = str(data.get('detail') or '').strip()
+                    joined = '; '.join(parts)
+                    return ((base + ' — ' + joined) if base else joined)[:400]
+            for k in ('error', 'detail', 'message', 'non_field_errors'):
+                if data.get(k):
+                    return str(data[k])[:400]
+        return ''
+    except Exception:
+        return ''
+
+
 class RequestActivityMiddleware:
     """
     Logs one line per request to logs/access.log and, for API/admin actions and
@@ -202,6 +260,24 @@ class RequestActivityMiddleware:
         )
 
         is_error = status_code >= 400
+        query_string = _safe_query(request)
+        error_detail = _error_detail(response) if is_error else ''
+
+        # Central error logging: capture EVERY 4xx/5xx (except auth/not-found noise)
+        # with the query string (redacted) + the error message from the body. This
+        # surfaces errors from views that catch their own exception and return
+        # {'error': str(e)} -- which otherwise never reach any log file. 5xx -> ERROR
+        # (errors.log), other 4xx -> WARNING (app.log).
+        if status_code >= 500 or (status_code >= 400 and status_code not in (401, 404)):
+            location = path + ('?' + query_string if query_string else '')
+            emsg = 'HTTP %s %s %s user=%s [%s]%s' % (
+                status_code, request.method, location, who, view_module,
+                ' :: ' + error_detail if error_detail else '',
+            )
+            if status_code >= 500:
+                errors_logger.error(emsg)
+            else:
+                errors_logger.warning(emsg)
         if not (path.startswith(DB_RECORD_PREFIXES) or is_error):
             return
 
@@ -219,6 +295,8 @@ class RequestActivityMiddleware:
                 is_error=is_error,
                 auth_outcome=outcome,
                 attempted_identifier=attempted,
+                query_string=query_string[:512],
+                error_detail=error_detail[:500],
             )
         except Exception:
             # A decoded JWT user_id may not exist as a row, or the DB may be
@@ -236,6 +314,8 @@ class RequestActivityMiddleware:
                     is_error=is_error,
                     auth_outcome=outcome,
                     attempted_identifier=attempted,
+                    query_string=query_string[:512],
+                    error_detail=error_detail[:500],
                 )
             except Exception:
                 pass

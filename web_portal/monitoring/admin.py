@@ -140,7 +140,7 @@ class ActivityLogAdmin(admin.ModelAdmin):
 
     list_display = (
         'timestamp', 'username', 'attempted_identifier', 'module_label', 'method', 'path',
-        'status_badge', 'suspicious_badge', 'auth_note', 'duration_ms', 'ip_address', 'view_module',
+        'status_badge', 'error_summary', 'suspicious_badge', 'auth_note', 'duration_ms', 'ip_address', 'view_module',
     )
     list_filter = (
         'is_error',
@@ -153,7 +153,14 @@ class ActivityLogAdmin(admin.ModelAdmin):
         'status_code',
         'auth_outcome',
     )
-    search_fields = ('path', 'username', 'view_module', 'ip_address', 'attempted_identifier')
+    search_fields = ('path', 'username', 'view_module', 'ip_address', 'attempted_identifier',
+                     'error_detail', 'query_string')
+    # Clicking a row opens a read-only detail page showing the full error + query.
+    readonly_fields = (
+        'timestamp', 'user', 'username', 'method', 'path', 'query_string', 'view_module',
+        'status_code', 'duration_ms', 'ip_address', 'is_error', 'is_suspicious',
+        'auth_outcome', 'attempted_identifier', 'error_detail',
+    )
     # No date_hierarchy - see DateRangeFilter's docstring (MySQL CONVERT_TZ).
     list_per_page = 25
     ordering = ('-timestamp',)
@@ -180,6 +187,17 @@ class ActivityLogAdmin(admin.ModelAdmin):
             '<span style="background:{};color:{};padding:2px 8px;'
             'border-radius:10px;font-weight:600;font-size:12px;">{}</span>',
             bg, fg, code,
+        )
+
+    @admin.display(description='Error', ordering='error_detail')
+    def error_summary(self, obj):
+        """Truncated error message (full text on hover); empty for non-error rows."""
+        if not obj.error_detail:
+            return ''
+        full = obj.error_detail
+        short = (full[:70] + '…') if len(full) > 70 else full
+        return format_html(
+            '<span title="{}" style="color:#991b1b;font-size:12px;">{}</span>', full, short
         )
 
     @admin.display(description='Auth', ordering='auth_outcome')

@@ -34,6 +34,10 @@ class ActivityLog(models.Model):
     attempted_identifier = models.CharField(max_length=254, blank=True, default='')
     # True for blocked scanner probes (.env, wp-admin, *.php, ...).
     is_suspicious = models.BooleanField(default=False, db_index=True)
+    # Redacted request query string (e.g. ?database=4B-BIO_APP) -- sensitive keys masked.
+    query_string = models.CharField(max_length=512, blank=True, default='')
+    # For 4xx/5xx: the error message pulled from the response body (so it's visible in admin).
+    error_detail = models.CharField(max_length=500, blank=True, default='')
 
     class Meta:
         verbose_name = 'Activity Log'
