@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.admin import AdminSite
 from django.utils import timezone
 from django.db.models import Sum, Count, F, ExpressionWrapper, DecimalField
-from datetime import timedelta
+from datetime import timedelta, datetime, time as dtime
 from django.conf import settings
 import json
 
@@ -25,153 +25,165 @@ class AnalyticsAdminSite(AdminSite):
             from FieldAdvisoryService.models import MeetingSchedule, SalesOrder, SalesOrderLine
             from farmerMeetingDataEntry.models import Meeting, FieldDay
             
-            # Calculate date ranges
+            # Period selector: tabs (today / this week / this month) + optional
+            # custom date range. Boundaries are aware datetimes compared with
+            # >=/< (no __date lookup, which would hit MySQL CONVERT_TZ).
             today = timezone.localdate()
-            last_month_day = today - timedelta(days=30)
-            week_start = today - timedelta(days=6)
+            aging_ref = timezone.make_aware(datetime.combine(today, dtime.min))
+            period = (request.GET.get('period') or 'today').strip().lower()
+            p_start, p_end, p_label, p_active = self._period_bounds(
+                period,
+                (request.GET.get('from') or '').strip(),
+                (request.GET.get('to') or '').strip(),
+                today,
+            )
+            p_len = p_end - p_start
+            prev_start, prev_end = p_start - p_len, p_start
 
-            # Resolve user role context
+            # Resolve who is looking and what data they may see.
+            #   - Superusers, Admin-role users and CEOs (designation) see
+            #     ORG-WIDE data; a plain back-office viewer does too.
+            #   - Field sales staff see only their own; dealers see only theirs.
             role_label = getattr(getattr(request.user, 'role', None), 'name', None) or 'User'
-            is_admin = bool(getattr(request.user, 'is_superuser', False)) or role_label.lower() == 'admin'
             is_sales = bool(getattr(request.user, 'is_sales_staff', False))
             is_dealer = bool(hasattr(request.user, 'dealer') and getattr(request.user, 'dealer'))
-            
-            # KPI 1: Today's Visits (global)
-            visits_today = (
-                MeetingSchedule.objects.filter(date=today).count() +
-                Meeting.objects.filter(date__date=today).count() +
-                FieldDay.objects.filter(date__date=today).count()
+            profile = getattr(request.user, 'sales_profile', None)
+            designation_code = ''
+            if profile is not None and getattr(profile, 'designation', None):
+                designation_code = (getattr(profile.designation, 'code', '') or '').strip().upper()
+            sees_all = (
+                bool(getattr(request.user, 'is_superuser', False))
+                or role_label.lower() == 'admin'
+                or designation_code == 'CEO'
             )
-            visits_scheduled_today = MeetingSchedule.objects.filter(date=today).count()
-            meetings_held_today = Meeting.objects.filter(date__date=today).count()
-            fielddays_held_today = FieldDay.objects.filter(date__date=today).count()
-            attendees_today = (
-                (MeetingSchedule.objects.filter(date=today).aggregate(s=Sum('confirmed_attendees'))['s'] or 0) +
-                (Meeting.objects.filter(date__date=today).aggregate(s=Sum('total_attendees'))['s'] or 0) +
-                (FieldDay.objects.filter(date__date=today).aggregate(s=Sum('total_participants'))['s'] or 0)
-            )
-            visits_last_month = (
-                MeetingSchedule.objects.filter(date=last_month_day).count() +
-                Meeting.objects.filter(date__date=last_month_day).count() +
-                FieldDay.objects.filter(date__date=last_month_day).count()
-            )
-            visits_change = self._calculate_percentage_change(visits_today, visits_last_month)
 
-            # Weekly and forward-looking signals (global)
-            visits_week = (
-                MeetingSchedule.objects.filter(date__gte=week_start, date__lte=today).count() +
-                Meeting.objects.filter(date__date__gte=week_start, date__date__lte=today).count() +
-                FieldDay.objects.filter(date__date__gte=week_start, date__date__lte=today).count()
-            )
-            upcoming_meetings = MeetingSchedule.objects.filter(date__gte=today, date__lte=today + timedelta(days=7)).count()
-            
-            # KPI 2: Total Farmers
-            total_farmers_current = Farmer.objects.count()
-            total_farmers_last_month = Farmer.objects.filter(
-                registration_date__date__lte=last_month_day
+            if sees_all or (not is_sales and not is_dealer):
+                scope_user, scope_label = None, 'Overall'
+            elif is_dealer:
+                scope_user, scope_label = request.user, 'Dealer'
+            else:
+                scope_user, scope_label = request.user, 'You'
+
+            # Base querysets, scoped to what this user may see.
+            if scope_user is None:
+                order_qs = SalesOrder.objects.all()
+                farmer_qs = Farmer.objects.all()
+            elif is_dealer:
+                order_qs = SalesOrder.objects.filter(dealer__user=scope_user)
+                farmer_qs = Farmer.objects.none()
+            else:
+                order_qs = SalesOrder.objects.filter(staff=scope_user)
+                farmer_qs = Farmer.objects.filter(registered_by=scope_user)
+            # None -> all visits; a user filters to their own (dealers -> 0).
+            visit_user = scope_user
+
+            # KPI 1: Visits in the period = Farmer Meetings + Field Days + Field
+            # Advisory (MeetingSchedule), per-type breakdown and attendees.
+            v = self._visits_breakdown(p_start, p_end, user=visit_user)
+            visits_period = v['total']
+            visits_prev = self._visits_breakdown(prev_start, prev_end, user=visit_user)['total']
+            visits_change = self._calculate_percentage_change(visits_period, visits_prev)
+
+            # KPI 2: Farmers - new in the period (cumulative total kept as context).
+            total_farmers_current = farmer_qs.count()
+            farmers_new_period = farmer_qs.filter(
+                registration_date__gte=p_start, registration_date__lt=p_end
             ).count()
-            farmers_change = self._calculate_percentage_change(total_farmers_current, total_farmers_last_month)
-            
-            # KPI 3: Pending Sales Orders (global)
-            pending_current = SalesOrder.objects.filter(status='pending').count()
-            pending_last_month = SalesOrder.objects.filter(
-                status='pending', created_at__date=last_month_day
+            farmers_new_prev = farmer_qs.filter(
+                registration_date__gte=prev_start, registration_date__lt=prev_end
             ).count()
-            pending_change = self._calculate_percentage_change(pending_current, pending_last_month)
-
-            # Order health (global)
-            orders_posted = SalesOrder.objects.filter(is_posted_to_sap=True).count()
-            orders_with_errors = SalesOrder.objects.filter(sap_error__isnull=False).count()
-
-            # Farmer freshness (global)
-            farmers_new_7d = Farmer.objects.filter(registration_date__date__gte=week_start).count()
-            farmers_active_30d = Farmer.objects.filter(last_updated__date__gte=today - timedelta(days=30)).count()
-            top_district_row = Farmer.objects.values('district').annotate(c=Count('id')).order_by('-c').first()
+            farmers_change = self._calculate_percentage_change(farmers_new_period, farmers_new_prev)
+            farmers_active_30d = farmer_qs.filter(
+                last_updated__gte=aging_ref - timedelta(days=30)
+            ).count()
+            top_district_row = farmer_qs.values('district').annotate(c=Count('id')).order_by('-c').first()
             top_district = {
                 'name': (top_district_row or {}).get('district') or '—',
                 'count': (top_district_row or {}).get('c') or 0
             }
 
-            # Role-scoped metrics
-            my_visits_today = (
-                MeetingSchedule.objects.filter(staff=request.user, date=today).count() +
-                Meeting.objects.filter(user_id=request.user, date__date=today).count() +
-                FieldDay.objects.filter(user=request.user, date__date=today).count()
-            ) if is_sales else None
-            my_visits_week = (
-                MeetingSchedule.objects.filter(staff=request.user, date__gte=week_start, date__lte=today).count() +
-                Meeting.objects.filter(user_id=request.user, date__date__gte=week_start, date__date__lte=today).count() +
-                FieldDay.objects.filter(user=request.user, date__date__gte=week_start, date__date__lte=today).count()
-            ) if is_sales else None
-            my_orders_pending = SalesOrder.objects.filter(staff=request.user, status='pending').count() if is_sales else None
-            my_orders_posted = SalesOrder.objects.filter(staff=request.user, is_posted_to_sap=True).count() if is_sales else None
+            # KPI 3: Sales orders created in the period + current status health.
+            orders_period = order_qs.filter(created_at__gte=p_start, created_at__lt=p_end).count()
+            orders_prev = order_qs.filter(created_at__gte=prev_start, created_at__lt=prev_end).count()
+            orders_change = self._calculate_percentage_change(orders_period, orders_prev)
+            pending_current = order_qs.filter(status='pending').count()
+            orders_posted = order_qs.filter(is_posted_to_sap=True).count()
+            orders_with_errors = order_qs.filter(sap_error__isnull=False).count()
 
-            dealer_orders_pending = SalesOrder.objects.filter(dealer__user=request.user, status='pending').count() if is_dealer else None
-            dealer_orders_total = SalesOrder.objects.filter(dealer__user=request.user).count() if is_dealer else None
-
-            # Pending order value and aging buckets (global)
+            # Pending order value and aging buckets (scoped).
             line_total = ExpressionWrapper(
                 F('quantity') * F('unit_price') * (1 - F('discount_percent')/100.0),
                 output_field=DecimalField(max_digits=18, decimal_places=2)
             )
             pending_value_total = (SalesOrderLine.objects
-                                   .filter(sales_order__status='pending')
+                                   .filter(sales_order__in=order_qs.filter(status='pending'))
                                    .aggregate(s=Sum(line_total))['s'] or 0)
-            aging_0_7 = SalesOrder.objects.filter(status='pending', created_at__date__gte=today - timedelta(days=7)).count()
-            aging_8_30 = SalesOrder.objects.filter(status='pending', created_at__date__lt=today - timedelta(days=7), created_at__date__gte=today - timedelta(days=30)).count()
-            aging_30_plus = SalesOrder.objects.filter(status='pending', created_at__date__lt=today - timedelta(days=30)).count()
+            aging_0_7 = order_qs.filter(status='pending', created_at__gte=aging_ref - timedelta(days=7)).count()
+            aging_8_30 = order_qs.filter(status='pending', created_at__lt=aging_ref - timedelta(days=7), created_at__gte=aging_ref - timedelta(days=30)).count()
+            aging_30_plus = order_qs.filter(status='pending', created_at__lt=aging_ref - timedelta(days=30)).count()
+
+            # Sales & Collection achievements (live from SAP). Isolated in its own
+            # try/except - a slow or failing HANA call must never break the rest
+            # of the dashboard; it just degrades to a "view report" link.
+            sales_collection = self._sales_collection_card(p_start, p_end, scope_user, is_dealer, profile)
             
-            # KPI 4: This Month's Activities (for chart)
-            days_in_month = 30
-            activity_data = []
-            activity_labels = []
-            
-            for i in range(0, days_in_month, 7):  # Weekly data points
-                week_start = today - timedelta(days=days_in_month - i)
-                week_end = week_start + timedelta(days=6)
-                
-                week_count = (
-                    MeetingSchedule.objects.filter(date__gte=week_start, date__lte=week_end).count() +
-                    Meeting.objects.filter(date__date__gte=week_start, date__date__lte=week_end).count() +
-                    FieldDay.objects.filter(date__date__gte=week_start, date__date__lte=week_end).count()
-                )
-                
-                activity_data.append(week_count)
-                activity_labels.append(f"W{i//7 + 1}")
-            
+            # Card sparklines: REAL weekly counts for the last 6 weeks, scoped
+            # to the same querysets as the KPI numbers. Uses aware >=/< bounds
+            # (never __date, which compiles to MySQL CONVERT_TZ and breaks here).
+            # All counts are >= 0 - no fabricated/negative trend lines.
+            WEEKS = 6
+            end_excl = aging_ref + timedelta(days=1)  # include all of today
+            chart_labels, chart_activity, chart_farmers, chart_orders = [], [], [], []
+            for k in range(WEEKS):
+                w_end = end_excl - timedelta(days=7 * (WEEKS - 1 - k))
+                w_start = w_end - timedelta(days=7)
+                chart_activity.append(self._visits_breakdown(w_start, w_end, user=visit_user)['total'])
+                chart_farmers.append(farmer_qs.filter(
+                    registration_date__gte=w_start, registration_date__lt=w_end).count())
+                chart_orders.append(order_qs.filter(
+                    created_at__gte=w_start, created_at__lt=w_end).count())
+                chart_labels.append(w_start.strftime('%d %b'))
+
             # Add analytics data to context
             extra_context.update({
                 'user_role': role_label,
+                'scope_label': scope_label,
+                'period': self._period_context(p_active, p_label, p_start, p_end, request),
+                'sales_collection': sales_collection,
                 'kpi_visits': {
-                    'title': 'Today\'s Visits',
-                    'value': visits_today,
+                    'title': 'Field Activities',
+                    'value': visits_period,
                     'change': visits_change,
                     'change_direction': 'up' if visits_change >= 0 else 'down',
+                    'period': p_label,
                 },
                 'kpi_visits_detail': {
-                    'scheduled': visits_scheduled_today,
-                    'meetings': meetings_held_today,
-                    'field_days': fielddays_held_today,
-                    'attendees': attendees_today,
+                    'advisory': v['advisory'],
+                    'meetings': v['meetings'],
+                    'field_days': v['field_days'],
+                    'attendees': v['attendees'],
                 },
                 'kpi_farmers': {
-                    'title': 'Total Farmers',
-                    'value': total_farmers_current,
+                    'title': 'New Farmers',
+                    'value': farmers_new_period,
                     'change': farmers_change,
                     'change_direction': 'up' if farmers_change >= 0 else 'down',
+                    'period': p_label,
                 },
                 'kpi_farmers_detail': {
-                    'new_7d': farmers_new_7d,
+                    'total': total_farmers_current,
                     'active_30d': farmers_active_30d,
                     'top_district': top_district,
                 },
                 'kpi_orders': {
-                    'title': 'Pending Sales Orders',
-                    'value': pending_current,
-                    'change': pending_change,
-                    'change_direction': 'up' if pending_change >= 0 else 'down',
+                    'title': 'Sales Orders',
+                    'value': orders_period,
+                    'change': orders_change,
+                    'change_direction': 'up' if orders_change >= 0 else 'down',
+                    'period': p_label,
                 },
                 'kpi_orders_detail': {
+                    'pending': pending_current,
                     'pending_value': pending_value_total,
                     'aging': {
                         'd0_7': aging_0_7,
@@ -181,46 +193,174 @@ class AnalyticsAdminSite(AdminSite):
                     'posted': orders_posted,
                     'errors': orders_with_errors,
                 },
-                'activity_labels': json.dumps(activity_labels),
-                'activity_data': json.dumps(activity_data),
-                'date_range': f"{(today - timedelta(days=30)).strftime('%B %d')} — {today.strftime('%B %d, %Y')}",
-                'ops_cards': [
-                    {'title': "Visits this week", 'value': visits_week, 'chip': 'last 7 days'},
-                    {'title': "Upcoming meetings", 'value': upcoming_meetings, 'chip': 'next 7 days'},
-                    {'title': "Orders posted to SAP", 'value': orders_posted, 'chip': 'lifetime'},
-                    {'title': "Orders with SAP errors", 'value': orders_with_errors, 'chip': 'needs attention', 'variant': 'alert'},
-                    {'title': "New farmers", 'value': farmers_new_7d, 'chip': 'last 7 days'},
-                ] + ([
-                    {'title': "My visits today", 'value': my_visits_today, 'chip': 'you'}
-                ] if is_sales else []) + ([
-                    {'title': "My visits (7d)", 'value': my_visits_week, 'chip': 'you'},
-                    {'title': "My pending orders", 'value': my_orders_pending, 'chip': 'you'},
-                    {'title': "My orders posted", 'value': my_orders_posted, 'chip': 'you'},
-                ] if is_sales else []) + ([
-                    {'title': "Dealer pending orders", 'value': dealer_orders_pending, 'chip': 'dealer'},
-                    {'title': "Dealer total orders", 'value': dealer_orders_total, 'chip': 'dealer'},
-                ] if is_dealer else [])
+                'chart_labels': json.dumps(chart_labels),
+                'chart_activity': json.dumps(chart_activity),
+                'chart_farmers': json.dumps(chart_farmers),
+                'chart_orders': json.dumps(chart_orders),
+                'date_range': p_label,
+                # Consolidated into the KPI cards below; no separate stat row.
+                'ops_cards': [],
             })
         except Exception as e:
             # Fallback to default values if analytics fail
             extra_context.update({
-                'kpi_visits': {'title': 'Today\'s Visits', 'value': 0, 'change': 0, 'change_direction': 'up'},
-                'kpi_farmers': {'title': 'Total Farmers', 'value': 0, 'change': 0, 'change_direction': 'up'},
-                'kpi_orders': {'title': 'Pending Sales Orders', 'value': 0, 'change': 0, 'change_direction': 'up'},
-                'activity_labels': json.dumps(['W1', 'W2', 'W3', 'W4']),
-                'activity_data': json.dumps([0, 0, 0, 0]),
+                'scope_label': 'Overall',
+                'sales_collection': None,
+                'period': self._period_context('today', 'Today', None, None, request),
+                'kpi_visits': {'title': 'Visits', 'value': 0, 'change': 0, 'change_direction': 'up', 'period': 'Today'},
+                'kpi_farmers': {'title': 'New Farmers', 'value': 0, 'change': 0, 'change_direction': 'up', 'period': 'Today'},
+                'kpi_orders': {'title': 'Sales Orders', 'value': 0, 'change': 0, 'change_direction': 'up', 'period': 'Today'},
+                'chart_labels': json.dumps(['', '', '', '', '', '']),
+                'chart_activity': json.dumps([0, 0, 0, 0, 0, 0]),
+                'chart_farmers': json.dumps([0, 0, 0, 0, 0, 0]),
+                'chart_orders': json.dumps([0, 0, 0, 0, 0, 0]),
                 'date_range': 'Dashboard',
                 'analytics_error': str(e),
-                'ops_cards': [
-                    {'title': "Visits this week", 'value': 0, 'chip': 'last 7 days'},
-                    {'title': "Upcoming meetings", 'value': 0, 'chip': 'next 7 days'},
-                    {'title': "Orders posted to SAP", 'value': 0, 'chip': 'lifetime'},
-                    {'title': "Orders with SAP errors", 'value': 0, 'chip': 'needs attention', 'variant': 'alert'},
-                    {'title': "New farmers", 'value': 0, 'chip': 'last 7 days'},
-                ],
+                'ops_cards': [],
             })
-        
+
         return super().index(request, extra_context)
+
+    # ------------------------------------------------------------------
+    # Dashboard period helpers
+    # ------------------------------------------------------------------
+    def _period_bounds(self, period, from_str, to_str, today):
+        """Return (start, end, label, active_key) as aware datetime boundaries.
+
+        A custom from/to range wins; otherwise the tab (today/week/month).
+        """
+        from django.utils.dateparse import parse_date
+
+        def aware(d):
+            stamp = datetime.combine(d, dtime.min)
+            if settings.USE_TZ and timezone.is_naive(stamp):
+                stamp = timezone.make_aware(stamp)
+            return stamp
+
+        if from_str and to_str:
+            f, t = parse_date(from_str), parse_date(to_str)
+            if f and t and t >= f:
+                return aware(f), aware(t + timedelta(days=1)), f'{f} – {t}', 'custom'
+        if period == 'week':
+            monday = today - timedelta(days=today.weekday())
+            return aware(monday), aware(today + timedelta(days=1)), 'This week', 'week'
+        if period == 'month':
+            return aware(today.replace(day=1)), aware(today + timedelta(days=1)), 'This month', 'month'
+        return aware(today), aware(today + timedelta(days=1)), 'Today', 'today'
+
+    def _period_context(self, active, label, start, end, request):
+        """Tabs + current range for the dashboard toolbar."""
+        base = request.path
+        tabs = [
+            {'key': 'today', 'label': 'Today', 'active': active == 'today', 'url': f'{base}?period=today'},
+            {'key': 'week', 'label': 'This week', 'active': active == 'week', 'url': f'{base}?period=week'},
+            {'key': 'month', 'label': 'This month', 'active': active == 'month', 'url': f'{base}?period=month'},
+        ]
+        return {
+            'active': active,
+            'label': label,
+            'tabs': tabs,
+            'from': (request.GET.get('from') or '').strip(),
+            'to': (request.GET.get('to') or '').strip(),
+            'today': timezone.localdate().isoformat(),
+        }
+
+    def _visits_breakdown(self, start, end, user=None):
+        """Field Advisory + Farmer Meeting + Field Day counts (and attendees) in
+        [start, end). Uses aware >=/< bounds - never the __date lookup, which
+        compiles to MySQL CONVERT_TZ() and fails on this server."""
+        from FieldAdvisoryService.models import MeetingSchedule
+        from farmerMeetingDataEntry.models import Meeting, FieldDay
+
+        ms = MeetingSchedule.objects.filter(date__gte=start, date__lt=end)
+        mt = Meeting.objects.filter(date__gte=start, date__lt=end)
+        fd = FieldDay.objects.filter(date__gte=start, date__lt=end)
+        if user is not None:
+            ms = ms.filter(staff=user)
+            mt = mt.filter(user_id=user)
+            fd = fd.filter(user=user)
+        advisory, meetings, field_days = ms.count(), mt.count(), fd.count()
+        attendees = (
+            (ms.aggregate(s=Sum('confirmed_attendees'))['s'] or 0)
+            + (mt.aggregate(s=Sum('total_attendees'))['s'] or 0)
+            + (fd.aggregate(s=Sum('total_participants'))['s'] or 0)
+        )
+        return {
+            'advisory': advisory, 'meetings': meetings, 'field_days': field_days,
+            'total': advisory + meetings + field_days, 'attendees': attendees,
+        }
+
+    def _sales_collection_card(self, p_start, p_end, scope_user, is_dealer, profile):
+        """Live sales & collection achievement per company for the period.
+
+        Each active company maps to its own SAP HANA schema. We aggregate every
+        company that has a valid schema (invalid/placeholder schemas simply
+        return None and are skipped), scoped to the user's per-company employee
+        id for sales staff. Returns {'rows': [...]} or None. Fully isolated -
+        exceptions here never affect the rest of the dashboard.
+        """
+        try:
+            from FieldAdvisoryService.models import Company
+            from sap_integration.hana_connect import sales_collection_totals_scoped
+
+            companies = list(Company.objects.filter(is_active=True))
+            if not companies:
+                return None
+
+            start_s = p_start.strftime('%Y-%m-%d')
+            end_s = (p_end - timedelta(days=1)).strftime('%Y-%m-%d')
+
+            def emp_for(company):
+                # Overall (superuser/CEO) and dealers see the whole company.
+                if scope_user is None or is_dealer or profile is None:
+                    return None
+                code = ''
+                try:
+                    from accounts.models import SalesStaffCompany
+                    m = SalesStaffCompany.objects.filter(
+                        sales_profile=profile, company=company, is_active=True
+                    ).first()
+                    if m and m.employee_code:
+                        code = m.employee_code
+                except Exception:
+                    code = ''
+                if not code:
+                    code = getattr(profile, 'employee_code', '') or ''
+                code = str(code).strip()
+                return int(code) if code.isdigit() else None
+
+            def pct(ach, target):
+                return round(ach / target * 100, 1) if target else 0
+
+            def mn(v):
+                return round((v or 0) / 1_000_000.0, 1)
+
+            rows = []
+            for company in companies:
+                schema = (getattr(company, 'name', '') or '').strip()
+                if not schema:
+                    continue
+                t = sales_collection_totals_scoped(schema, start_s, end_s, emp_id=emp_for(company))
+                if not t:
+                    continue  # invalid schema or connection failure -> skip
+                # Skip companies with nothing (no target and no achievement) this period.
+                if not any(t.get(k) for k in ('sales_target', 'sales_ach', 'coll_target', 'coll_ach')):
+                    continue
+                rows.append({
+                    'name': getattr(company, 'Company_name', schema) or schema,
+                    'sales_pct': pct(t['sales_ach'], t['sales_target']),
+                    'sales_ach_m': mn(t['sales_ach']),
+                    'sales_target_m': mn(t['sales_target']),
+                    'coll_pct': pct(t['coll_ach'], t['coll_target']),
+                    'coll_ach_m': mn(t['coll_ach']),
+                    'coll_target_m': mn(t['coll_target']),
+                })
+
+            if not rows:
+                return None
+            return {'rows': rows}
+        except Exception:
+            return None
     
     def get_urls(self):
         """Add custom organogram + search-suggestion URLs"""

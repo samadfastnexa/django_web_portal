@@ -21,6 +21,15 @@ web_portal/logs/*.log.*
 .env
 *.env
 
+# Secrets / keys / local settings (never commit)
+*.pem
+*.key
+*.sqlite3
+settings_local.py
+local_settings.py
+secrets.json
+credentials.json
+
 # Ignore editor/IDE settings
 .vscode/
 .idea/

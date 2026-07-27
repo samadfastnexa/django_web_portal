@@ -121,6 +121,7 @@ MIDDLEWARE = [
 
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'monitoring.middleware.SecurityProbeMiddleware',  # block scanner probes (.env, wp-admin, *.php) early
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -341,6 +342,12 @@ LOGGING = {
             'formatter': 'verbose',
             'level': 'WARNING',
         },
+        'security_file': {
+            **_ROTATING_FILE,
+            'filename': LOG_DIR / 'security.log',
+            'formatter': 'verbose',
+            'level': 'INFO',
+        },
     },
     # Root logger: every app module's logs land in app.log (and errors in errors.log).
     'root': {
@@ -371,6 +378,12 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        # Blocked scanner probes (.env, wp-admin, *.php, ...) -> logs/security.log
+        'security': {
+            'handlers': ['console', 'security_file', 'app_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
@@ -378,7 +391,11 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # change as needed
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    # Keep rotation (new tokens are issued), but do NOT blacklist the old refresh
+    # token on rotation. This tolerates a client that reuses its previous refresh
+    # token or fires concurrent refreshes, which was causing 401 logouts. The old
+    # token stays valid only until its own REFRESH_TOKEN_LIFETIME expiry.
+    'BLACKLIST_AFTER_ROTATION': False,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),

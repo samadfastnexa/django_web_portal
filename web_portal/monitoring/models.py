@@ -28,6 +28,16 @@ class ActivityLog(models.Model):
     duration_ms = models.PositiveIntegerField(default=0)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     is_error = models.BooleanField(default=False, db_index=True)
+    # Why a 401/403 happened: '' (n/a), no_credentials, token_expired, token_invalid.
+    auth_outcome = models.CharField(max_length=32, blank=True, default='', db_index=True)
+    # On a failed login: the email/phone/username that was tried (never the password).
+    attempted_identifier = models.CharField(max_length=254, blank=True, default='')
+    # True for blocked scanner probes (.env, wp-admin, *.php, ...).
+    is_suspicious = models.BooleanField(default=False, db_index=True)
+    # Redacted request query string (e.g. ?database=4B-BIO_APP) -- sensitive keys masked.
+    query_string = models.CharField(max_length=512, blank=True, default='')
+    # For 4xx/5xx: the error message pulled from the response body (so it's visible in admin).
+    error_detail = models.CharField(max_length=500, blank=True, default='')
 
     class Meta:
         verbose_name = 'Activity Log'

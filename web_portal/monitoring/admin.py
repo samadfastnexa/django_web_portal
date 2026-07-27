@@ -139,19 +139,28 @@ class ActivityLogAdmin(admin.ModelAdmin):
     """Read-only view of the request/usage audit trail."""
 
     list_display = (
-        'timestamp', 'username', 'module_label', 'method', 'path',
-        'status_badge', 'duration_ms', 'ip_address', 'view_module',
+        'timestamp', 'username', 'attempted_identifier', 'module_label', 'method', 'path',
+        'status_badge', 'error_summary', 'suspicious_badge', 'auth_note', 'duration_ms', 'ip_address', 'view_module',
     )
     list_filter = (
         'is_error',
+        'is_suspicious',
         ModuleFilter,
         date_range_filter('timestamp', 'date range'),
         UserSearchFilter,
         IPAddressFilter,
         'method',
         'status_code',
+        'auth_outcome',
     )
-    search_fields = ('path', 'username', 'view_module', 'ip_address')
+    search_fields = ('path', 'username', 'view_module', 'ip_address', 'attempted_identifier',
+                     'error_detail', 'query_string')
+    # Clicking a row opens a read-only detail page showing the full error + query.
+    readonly_fields = (
+        'timestamp', 'user', 'username', 'method', 'path', 'query_string', 'view_module',
+        'status_code', 'duration_ms', 'ip_address', 'is_error', 'is_suspicious',
+        'auth_outcome', 'attempted_identifier', 'error_detail',
+    )
     # No date_hierarchy - see DateRangeFilter's docstring (MySQL CONVERT_TZ).
     list_per_page = 25
     ordering = ('-timestamp',)
@@ -180,6 +189,41 @@ class ActivityLogAdmin(admin.ModelAdmin):
             bg, fg, code,
         )
 
+    @admin.display(description='Error', ordering='error_detail')
+    def error_summary(self, obj):
+        """Truncated error message (full text on hover); empty for non-error rows."""
+        if not obj.error_detail:
+            return ''
+        full = obj.error_detail
+        short = (full[:70] + '…') if len(full) > 70 else full
+        return format_html(
+            '<span title="{}" style="color:#991b1b;font-size:12px;">{}</span>', full, short
+        )
+
+    @admin.display(description='Auth', ordering='auth_outcome')
+    def auth_note(self, obj):
+        """Why a 401/403 happened -- distinguishes an expired session from no login."""
+        labels = {
+            'no_credentials': 'no token',
+            'token_expired': 'expired token',
+            'token_invalid': 'invalid token',
+        }
+        label = labels.get(obj.auth_outcome)
+        if not label:
+            return ''
+        colour = '#9a3412' if obj.auth_outcome == 'token_expired' else '#6b7280'
+        return format_html('<span style="color:{};font-weight:600;">{}</span>', colour, label)
+
+    @admin.display(description='Flag', ordering='is_suspicious')
+    def suspicious_badge(self, obj):
+        """Red badge for blocked scanner probes."""
+        if not obj.is_suspicious:
+            return ''
+        return format_html(
+            '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;'
+            'border-radius:10px;font-weight:700;font-size:12px;">&#9888; probe</span>'
+        )
+
     def has_add_permission(self, request):
         return False
 
@@ -197,7 +241,7 @@ class LogEntryAdmin(admin.ModelAdmin):
     "Recent actions" panel shows, but for every user and without the cut-off.
     """
 
-    list_display = ('action_time', 'user', 'action_badge', 'content_type', 'object_repr', 'change_message')
+    list_display = ('action_time', 'user', 'action_badge', 'content_type', 'object_repr', 'readable_change')
     list_filter = (
         'action_flag',
         date_range_filter('action_time', 'date range'),
@@ -209,6 +253,19 @@ class LogEntryAdmin(admin.ModelAdmin):
     ordering = ('-action_time',)
     list_per_page = 25
     list_select_related = ('user', 'content_type')
+
+    @admin.display(description='Change')
+    def readable_change(self, obj):
+        """
+        Human-readable summary instead of the raw change_message JSON.
+        get_change_message() turns [{"changed": {"fields": ["Company"]}}] into
+        "Changed Company." and localises field names.
+        """
+        try:
+            message = obj.get_change_message()
+        except Exception:
+            message = obj.change_message
+        return message or '—'
 
     @admin.display(description='Action', ordering='action_flag')
     def action_badge(self, obj):

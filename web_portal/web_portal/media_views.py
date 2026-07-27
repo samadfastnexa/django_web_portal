@@ -14,8 +14,16 @@ def serve_media_file(request, path):
     Serve media files with graceful handling of missing files.
     Returns a friendly JSON error message instead of 404 page when file doesn't exist.
     """
-    # Construct the full file path
-    file_path = os.path.join(settings.MEDIA_ROOT, path)
+    # Construct the full file path, then confirm it stays inside MEDIA_ROOT.
+    # realpath collapses any '../' so a traversal like /media/../../.env or
+    # /media/../web_portal/settings.py cannot escape the media directory.
+    media_root = os.path.realpath(settings.MEDIA_ROOT)
+    file_path = os.path.realpath(os.path.join(media_root, path))
+    if file_path != media_root and not file_path.startswith(media_root + os.sep):
+        return JsonResponse({
+            'error': 'Invalid path',
+            'message': 'The requested path is not allowed.',
+        }, status=403)
 
     # Check if file exists
     if not os.path.exists(file_path):

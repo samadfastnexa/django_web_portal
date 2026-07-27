@@ -1247,7 +1247,12 @@
 .dashboard .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px; font-weight: 600; font-size: 12px; }
 .dashboard .badge.up { background: #eafff2; color: #16a34a; }
 .dashboard .badge.down { background: #fff0f0; color: #dc2626; }
-.dashboard .kpi-chart canvas { height: 120px !important; }
+/* Chart.js with maintainAspectRatio:false needs a fixed-height POSITIONED
+   parent. Without it the canvas height and the container height feed each
+   other and the card (and the whole page) keeps growing on every resize -
+   the cause of the runaway white space below the dashboard. Pin the wrapper;
+   the canvas fills it absolutely. */
+.dashboard .kpi-chart { position: relative; height: 170px; margin-top: 4px; }
 
 .dashboard #header {}
 .dashboard #header a, .dashboard #user-tools a, .dashboard #logout-form button {}
@@ -1262,9 +1267,13 @@
 .dashboard .button-export { gap: 6px; border-radius: 18px; }
 .dashboard .button-export::before { content: "⤓"; }
 .dashboard .chart-grid { gap: 20px; }
+.dashboard .kpi-chart canvas,
 .dashboard .chart-card canvas {
+  position: absolute;
+  inset: 0;
   width: 100% !important;
-  height: 180px !important;
+  height: 100% !important;
+  display: block;
 }
 
 #content-main .table-responsive { width: 100%; overflow-x: visible; -webkit-overflow-scrolling: touch; }
@@ -1272,7 +1281,12 @@
 @media (max-width: 768px) {
   #content-main .result-table thead th, #content-main .result-table tbody td { padding: 8px 10px; }
 }
-#recent-actions-module { background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); padding: 16px; border: 1px solid var(--hairline-color); }
+/* contain:layout is load-bearing: the recent-actions list has 100 rows in a
+   420px overflow-y:auto box. Inside the dashboard's floated content column that
+   scroll box fails to contain its own height and the full 5300px UL leaks into
+   the page's scrollHeight - producing ~4600px of empty white space below the
+   dashboard. Layout containment stops the leak; the inner scroll still works. */
+#recent-actions-module { background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); padding: 16px; border: 1px solid var(--hairline-color); contain: layout; }
 [data-theme="dark"] #recent-actions-module { background-color: #0f172a; border-color: #1f2937; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 #recent-actions-module h2 { font-size: 18px; font-weight: 700; color: var(--text-default); margin: 0 0 12px 0; }
 #recent-actions-module h3 { font-size: 14px; font-weight: 700; color: var(--text-default); margin: 0 0 8px 0; opacity: 0.8; }

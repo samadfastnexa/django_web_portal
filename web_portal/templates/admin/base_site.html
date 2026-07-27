@@ -42,11 +42,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%23E26830'/><text x='16' y='22' text-anchor='middle' font-size='18' font-family='Arial,sans-serif' font-weight='bold' fill='white'>4</text></svg>">
   {# ?v= busts the browser cache when these files change - bump on each edit. #}
-  <link rel="stylesheet" href="{% static 'sap_integration/admin.css' %}?v=10">
+  <link rel="stylesheet" href="{% static 'sap_integration/admin.css' %}?v=12">
   {# Sidebar v2 - must load after admin.css so its width rules win. #}
-  <link rel="stylesheet" href="{% static 'sap_integration/admin_sidebar.css' %}?v=10">
+  <link rel="stylesheet" href="{% static 'sap_integration/admin_sidebar.css' %}?v=12">
   {# Type-ahead suggestions on the changelist search box. #}
-  <script defer src="{% static 'sap_integration/admin_search_suggest.js' %}?v=10"></script>
+  <script defer src="{% static 'sap_integration/admin_search_suggest.js' %}?v=12"></script>
   <style>
     /* ----------------------------------------------------------------
        Changelist row colours.
@@ -304,6 +304,63 @@
       height: 20px !important;
       display: block !important;
     }
+
+    /* ===================== UI polish =====================
+       Replace flat orange bars/buttons with brand gradients + depth,
+       and give the breadcrumb a refined tinted look. */
+    :root { --brand: #E26830; --brand-grad: linear-gradient(135deg,#ef7c43 0%,#E26830 52%,#c2512d 100%); }
+
+    /* Header bar */
+    #header {
+      background: var(--brand-grad) !important;
+      box-shadow: 0 2px 12px rgba(146,64,29,.28) !important;
+    }
+
+    /* Breadcrumb bar */
+    .breadcrumbs {
+      background: linear-gradient(90deg,#fff7f2,#ffefe6) !important;
+      border-bottom: 1px solid #f3d8c8 !important;
+      color: #9a5334 !important;
+      font-weight: 600 !important;
+      padding: 11px 16px !important;
+    }
+    .breadcrumbs a { color: #c2512d !important; text-decoration: none !important; }
+    .breadcrumbs a:hover { color: #E26830 !important; text-decoration: underline !important; }
+
+    /* Section header bars (e.g. "Dashboard Overview", changelist filters) */
+    .module h2, .module caption, .inline-group h2 {
+      background: var(--brand-grad) !important;
+      color: #fff !important;
+      border: none !important;
+      box-shadow: 0 3px 10px rgba(226,104,48,.22);
+    }
+
+    /* Primary buttons: gradient + depth + hover lift (delete stays red) */
+    .object-tools a,
+    .button-export,
+    .submit-row input[type="submit"],
+    .submit-row .default {
+      background: var(--brand-grad) !important;
+      border: none !important;
+      border-radius: 9px !important;
+      color: #fff !important;
+      box-shadow: 0 4px 12px rgba(226,104,48,.30) !important;
+      transition: transform .12s ease, box-shadow .12s ease, filter .12s ease !important;
+    }
+    .object-tools a:hover,
+    .button-export:hover,
+    .submit-row input[type="submit"]:hover,
+    .submit-row .default:hover {
+      filter: brightness(1.06) !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 8px 18px rgba(226,104,48,.40) !important;
+    }
+    /* Keep destructive actions clearly red */
+    .submit-row a.deletelink, .deletelink {
+      background: linear-gradient(135deg,#ef4444,#b91c1c) !important;
+      color: #fff !important; border: none !important; border-radius: 9px !important;
+    }
+    /* ===================== /UI polish ===================== */
   </style>
   <script>
     (function(){
@@ -478,7 +535,7 @@
       dbSelector.className = 'db-selector-inline';
       dbSelector.style.marginLeft = 'auto';
       dbSelector.innerHTML = `
-        <span style="display: inline-flex; align-items: center; gap: 5px; color: #ffffff; font-size: 12px; font-weight: 700; letter-spacing: 0.3px;">
+        <span style="display: inline-flex; align-items: center; gap: 5px; color: #9a5334; font-size: 12px; font-weight: 700; letter-spacing: 0.3px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
             <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
@@ -489,7 +546,7 @@
         <form method="post" action="{% url 'set_database' %}" style="display: inline-flex; margin: 0;">
           {% csrf_token %}
           <input type="hidden" name="next" value="{{ request.path }}">
-          <select name="database" id="db-selector" onchange="this.form.submit()" style="padding: 6px 32px 6px 12px; border: 2px solid rgba(255, 255, 255, 0.9); border-radius: 6px; background: #ffffff; color: #047857; font-size: 13px; font-weight: 700; cursor: pointer; appearance: none; background-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22%3E%3Cpath fill=%22%23047857%22 d=%22M6 9L1 4h10z%22/%3E%3C/svg%3E'); background-repeat: no-repeat; background-position: right 10px center; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12); transition: all 0.2s ease;">
+          <select name="database" id="db-selector" onchange="this.form.submit()" style="padding: 6px 32px 6px 12px; border: 1.5px solid #f0c9b5; border-radius: 6px; background: #ffffff; color: #047857; font-size: 13px; font-weight: 700; cursor: pointer; appearance: none; background-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22%3E%3Cpath fill=%22%23047857%22 d=%22M6 9L1 4h10z%22/%3E%3C/svg%3E'); background-repeat: no-repeat; background-position: right 10px center; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12); transition: all 0.2s ease;">
             {% for key, value in db_selector_options.items %}
               <option value="{{ key }}" {% if key == selected_db %}selected{% endif %}>{{ value }}</option>
             {% endfor %}
@@ -515,14 +572,14 @@
     gap: 8px !important;
   }
   #db-selector:hover {
-    border-color: #ffffff !important;
+    border-color: #E26830 !important;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
     transform: translateY(-1px);
   }
   #db-selector:focus {
     outline: none !important;
-    border-color: #ffffff !important;
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4) !important;
+    border-color: #E26830 !important;
+    box-shadow: 0 0 0 3px rgba(226, 104, 48, 0.35) !important;
   }
   @media (max-width: 768px) {
     .breadcrumbs {
@@ -537,14 +594,14 @@
 </style>
 <style>
   #db-selector:hover {
-    border-color: #ffffff !important;
+    border-color: #E26830 !important;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
     transform: translateY(-1px);
   }
   #db-selector:focus {
     outline: none !important;
-    border-color: #ffffff !important;
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4) !important;
+    border-color: #E26830 !important;
+    box-shadow: 0 0 0 3px rgba(226, 104, 48, 0.35) !important;
   }
   @media (max-width: 1200px) {
     .breadcrumbs > div:first-child {

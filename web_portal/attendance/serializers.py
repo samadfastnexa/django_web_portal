@@ -179,6 +179,11 @@ class AttendanceCheckInSerializer(serializers.ModelSerializer):
             'check_in_latitude', 'check_in_longitude', 'check_in_image', 'created_at', 'user'
         ]
         read_only_fields = ['user', 'created_at']
+        # attendee is optional: the view defaults it to the logged-in user and
+        # only lets staff/admin mark attendance on someone else's behalf.
+        extra_kwargs = {
+            'attendee': {'required': False},
+        }
 
     def validate_check_in_latitude(self, value):
         if value is not None and (value < -90 or value > 90):

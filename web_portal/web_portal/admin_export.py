@@ -74,6 +74,27 @@ def _filename(model_admin, ext):
     return f'{model_admin.model._meta.model_name}_export_{stamp}.{ext}'
 
 
+def _get_summary(model_admin, request):
+    """
+    Optional summary block prepended to the export.
+
+    A ModelAdmin may define `get_export_summary(request)` returning:
+        {'title': 'Attendance summary — 2026-07-24',
+         'rows': [('Present today', 0), ('Off today', 11), ...]}
+    Returns None when the admin provides nothing.
+    """
+    fn = getattr(model_admin, 'get_export_summary', None)
+    if not fn:
+        return None
+    try:
+        data = fn(request)
+    except Exception:
+        return None
+    if not data or not (data.get('title') or data.get('rows')):
+        return None
+    return data
+
+
 @admin.action(description='Export selected → CSV')
 def export_as_csv(model_admin, request, queryset):
     columns = _export_columns(model_admin)
@@ -83,6 +104,15 @@ def export_as_csv(model_admin, request, queryset):
     )
     response.write('﻿')                 # UTF-8 BOM so Excel reads it correctly
     writer = csv.writer(response)
+
+    summary = _get_summary(model_admin, request)
+    if summary:
+        if summary.get('title'):
+            writer.writerow([summary['title']])
+        for label, value in summary.get('rows', []):
+            writer.writerow([label, value])
+        writer.writerow([])            # blank spacer before the data table
+
     for row in _rows(model_admin, queryset, columns):
         writer.writerow(row)
     return response
@@ -102,19 +132,38 @@ def export_as_xlsx(model_admin, request, queryset):
 
     header_fill = PatternFill('solid', fgColor='E26830')
     header_font = Font(bold=True, color='FFFFFF')
+
+    # Optional summary block at the top.
+    r_idx = 1
+    summary = _get_summary(model_admin, request)
+    if summary:
+        if summary.get('title'):
+            cell = ws.cell(r_idx, 1, summary['title'])
+            cell.font = Font(bold=True, size=13, color='1F4E78')
+            r_idx += 1
+        for label, value in summary.get('rows', []):
+            ws.cell(r_idx, 1, label).font = Font(bold=True)
+            ws.cell(r_idx, 2, value)
+            r_idx += 1
+        r_idx += 1                     # blank spacer row
+
+    header_row = r_idx
     widths = {}
-    for r_idx, row in enumerate(_rows(model_admin, queryset, columns), 1):
+    for row in _rows(model_admin, queryset, columns):
         for c_idx, value in enumerate(row, 1):
             cell = ws.cell(r_idx, c_idx, value)
-            if r_idx == 1:
+            if r_idx == header_row:
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            widths[c_idx] = min(max(widths.get(c_idx, 10), len(value) + 2), 60)
+            widths[c_idx] = min(max(widths.get(c_idx, 10), len(str(value)) + 2), 60)
+        r_idx += 1
+
     for c_idx, width in widths.items():
         ws.column_dimensions[get_column_letter(c_idx)].width = width
-    ws.freeze_panes = 'A2'
-    ws.auto_filter.ref = ws.dimensions
+    ws.freeze_panes = ws.cell(header_row + 1, 1)
+    if columns and r_idx - 1 >= header_row:
+        ws.auto_filter.ref = f'A{header_row}:{get_column_letter(len(columns))}{r_idx - 1}'
 
     buf = BytesIO()
     wb.save(buf)

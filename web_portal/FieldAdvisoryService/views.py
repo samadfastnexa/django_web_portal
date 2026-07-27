@@ -852,12 +852,78 @@ class DealerViewSet(viewsets.ModelViewSet):
     serializer_class = DealerSerializer
     ordering = ['-id']
 
+    def get_queryset(self):
+        return Dealer.objects.all().order_by('-id')
+
+    @staticmethod
+    def _normalize_sap_dealer(row):
+        """SAP OCRD row -> dealer dict aligned with the local dealer fields."""
+        return {
+            'card_code': row.get('CardCode'),
+            'business_name': row.get('CardName'),
+            'name': row.get('CntctPrsn'),
+            'contact_number': row.get('Phone1'),
+            'cnic_number': row.get('LicTradNum'),
+            'territory_id': row.get('TerritoryId'),
+            'territory': row.get('TerritoryName'),
+            'source': 'sap',
+        }
+
+    def _sap_dealers_for_user(self, request, user_id):
+        """Paginated SAP dealers for a sales staff resolved from a local user_id."""
+        if not str(user_id).isdigit():
+            return Response({'detail': 'Invalid user_id.'}, status=400)
+
+        from django.contrib.auth import get_user_model
+        target = get_user_model().objects.filter(pk=int(user_id)).first()
+        profile = getattr(target, 'sales_profile', None) if target else None
+        employee_code = (getattr(profile, 'employee_code', '') or '').strip() if profile else ''
+
+        rows = []
+        if employee_code:
+            company = profile.companies.first()
+            schema = getattr(company, 'name', None)
+            if schema:
+                from sap_integration.hana_connect import dealers_for_employee_scoped
+                sap_rows = dealers_for_employee_scoped(
+                    schema, employee_code,
+                    search=(request.query_params.get('search') or '').strip() or None,
+                    status=(request.query_params.get('status') or 'active').strip().lower(),
+                    limit=int(request.query_params.get('limit') or 1000),
+                )
+                # None = SAP error -> fail closed (empty), never leak all dealers.
+                rows = [self._normalize_sap_dealer(r) for r in (sap_rows or [])]
+
+        page = self.paginate_queryset(rows)
+        if page is not None:
+            resp = self.get_paginated_response(page)
+            resp.data['employee_code'] = employee_code or None
+            return resp
+        return Response(rows)
+
     @swagger_auto_schema(
-        operation_description="List all dealers with their user credentials",
+        operation_description=(
+            "List dealers. Omit user_id to get all local dealers. Pass a local "
+            "user_id (sales staff) to instead fetch that staff's dealers from SAP "
+            "— resolved via their employee code -> SAP territories (and child "
+            "pockets) -> OCRD dealers. A zone/region manager gets all their dealers."
+        ),
+        manual_parameters=[
+            openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                              description="Local user ID of a sales staff. Returns that staff's SAP "
+                                          "territory dealers. Omit to return all local dealers."),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
+                              description="With user_id: search SAP dealers by CardCode or CardName."),
+            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
+                              description="With user_id: active | inactive | all (default active)."),
+        ],
         responses={200: DealerSerializer(many=True)},
         tags=["16. Dealers"]
     )
     def list(self, request, *args, **kwargs):
+        user_id = (request.query_params.get('user_id') or '').strip()
+        if user_id:
+            return self._sap_dealers_for_user(request, user_id)
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(

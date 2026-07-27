@@ -1,0 +1,45 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block search %}
+  {% if attendance_summary %}
+  <div class="att-summary">
+    <div class="att-summary-head">{% trans "Attendance" %} · {{ attendance_summary.date }}</div>
+    <div class="att-summary-grid">
+      <div class="att-tile att-present">
+        <div class="att-num">{{ attendance_summary.present }}</div>
+        <div class="att-label">{% trans "Present today" %}</div>
+      </div>
+      <div class="att-tile att-off">
+        <div class="att-num">{{ attendance_summary.off }}</div>
+        <div class="att-label">{% trans "Off today" %}</div>
+      </div>
+      <div class="att-tile att-total">
+        <div class="att-num">{{ attendance_summary.total }}</div>
+        <div class="att-label">{% trans "Sales staff" %}</div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .att-summary { margin: 0 0 16px; }
+    .att-summary-head { font-size: 12px; font-weight: 700; color: #64748b; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .5px; }
+    .att-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(120px, 200px)); gap: 12px; }
+    .att-tile { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 18px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); border-left: 4px solid #cbd5e1; }
+    .att-tile .att-num { font-size: 30px; font-weight: 800; line-height: 1; color: #0f172a; }
+    .att-tile .att-label { font-size: 13px; font-weight: 600; color: #475569; margin-top: 6px; }
+    .att-present { border-left-color: #16a34a; }
+    .att-present .att-num { color: #16a34a; }
+    .att-off { border-left-color: #dc2626; }
+    .att-off .att-num { color: #dc2626; }
+    .att-total { border-left-color: #64748b; }
+    [data-theme="dark"] .att-tile { background: #0f172a; border-color: #1f2937; }
+    [data-theme="dark"] .att-tile .att-num { color: #e2e8f0; }
+    [data-theme="dark"] .att-tile .att-label { color: #cbd5e1; }
+    [data-theme="dark"] .att-present .att-num { color: #4ade80; }
+    [data-theme="dark"] .att-off .att-num { color: #f87171; }
+    @media (max-width: 640px) { .att-summary-grid { grid-template-columns: repeat(3, 1fr); } }
+  </style>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

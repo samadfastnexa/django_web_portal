@@ -6,10 +6,43 @@
   <div class="dashboard-main-content">
     <div id="content-main" class="charts-section">
       <div class="module">
-        <h2>Dashboard Overview</h2>
-        <div class="dashboard-toolbar">
-          <a href="{% url 'admin:index' %}" class="button-export">Refresh</a>
+        <h2>Dashboard Overview
+          {% if scope_label %}<span class="scope-badge scope-{{ scope_label|lower }}">{% if scope_label == 'Overall' %}All data{% elif scope_label == 'You' %}My data{% else %}{{ scope_label }} data{% endif %}</span>{% endif %}
+        </h2>
+        <div class="dashboard-toolbar dash-period">
+          <div class="period-tabs">
+            {% for tab in period.tabs %}
+              <a href="{{ tab.url }}" class="period-tab{% if tab.active %} is-active{% endif %}">{{ tab.label }}</a>
+            {% endfor %}
+          </div>
+          <form method="get" class="period-range" action="{% url 'admin:index' %}">
+            <input type="date" name="from" value="{{ period.from }}" max="{{ period.today }}" aria-label="From" class="period-date">
+            <span class="period-sep">–</span>
+            <input type="date" name="to" value="{{ period.to }}" max="{{ period.today }}" aria-label="To" class="period-date">
+            <button type="submit" class="button-export">Apply</button>
+          </form>
+          <a href="{% url 'admin:index' %}?period={{ period.active }}" class="button-export" title="Reload {{ period.label }}">Refresh</a>
         </div>
+        <style>
+          .dash-period { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+          .period-tabs { display: inline-flex; background: #f1f5f9; border-radius: 10px; padding: 3px; gap: 2px; }
+          .period-tab { padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; color: #475569; text-decoration: none; transition: all .15s ease; }
+          .period-tab:hover { color: #E26830; }
+          .period-tab.is-active { background: linear-gradient(135deg,#ef7c43,#c2512d); color: #fff; box-shadow: 0 2px 6px rgba(226,104,48,.40); }
+          .period-range { display: inline-flex; align-items: center; gap: 6px; }
+          .period-date { padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; }
+          .period-sep { color: #94a3b8; }
+          .kpi-period { font-size: 11px; font-weight: 700; color: #E26830; background: #ffe7db; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .3px; }
+          .scope-badge { font-size: 12px; font-weight: 700; padding: 3px 12px; border-radius: 999px; margin-left: 10px; vertical-align: middle; }
+          .scope-overall { background: #dcfce7; color: #166534; }
+          .scope-you { background: #e0e7ff; color: #3730a3; }
+          .scope-dealer { background: #ffedd5; color: #9a3412; }
+          [data-theme="dark"] .period-tabs { background: #1f2937; }
+          [data-theme="dark"] .period-tab { color: #cbd5e1; }
+          [data-theme="dark"] .period-date { background: #0f172a; border-color: #1f2937; color: #e2e8f0; }
+          [data-theme="dark"] .kpi-period { background: rgba(226,104,48,.2); color: #fdba74; }
+        </style>
+        {% if ops_cards %}
         <div class="insight-grid">
           {% for card in ops_cards %}
             <div class="insight-card{% if card.variant %} is-{{ card.variant }}{% endif %}{% if card.variant == 'alert' and card.value %} is-critical{% endif %}">
@@ -21,23 +54,24 @@
             </div>
           {% endfor %}
         </div>
+        {% endif %}
         <div class="chart-grid">
-          <!-- KPI 1: Today's Visits -->
+          <!-- KPI 1: Visits (Field Advisory + Farmer Meeting + Field Day) -->
           <div class="chart-card">
             <div class="kpi-header">
               <span class="kpi-title">{{ kpi_visits.title }}</span>
-              <button class="kpi-info" title="Total visits scheduled and completed today">i</button>
+              <span class="kpi-period">{{ kpi_visits.period }}</span>
             </div>
             <div class="kpi-body">
               <div class="kpi-value">{{ kpi_visits.value }}</div>
-              <div class="kpi-sub">vs last month 
+              <div class="kpi-sub">vs previous period
                 <span class="badge {{ kpi_visits.change_direction }}">
                   {% if kpi_visits.change >= 0 %}+{% endif %}{{ kpi_visits.change }}%
                 </span>
               </div>
               <ul class="kpi-detail">
-                <li>Scheduled: <b>{{ kpi_visits_detail.scheduled }}</b></li>
-                <li>Meetings: <b>{{ kpi_visits_detail.meetings }}</b></li>
+                <li>Field Advisory: <b>{{ kpi_visits_detail.advisory }}</b></li>
+                <li>Farmer Meetings: <b>{{ kpi_visits_detail.meetings }}</b></li>
                 <li>Field Days: <b>{{ kpi_visits_detail.field_days }}</b></li>
                 <li>Attendees: <b>{{ kpi_visits_detail.attendees }}</b></li>
               </ul>
@@ -45,21 +79,21 @@
             <div class="kpi-chart"><canvas id="adminChart1"></canvas></div>
           </div>
           
-          <!-- KPI 2: Total Farmers -->
+          <!-- KPI 2: New Farmers (registered in the period) -->
           <div class="chart-card">
             <div class="kpi-header">
               <span class="kpi-title">{{ kpi_farmers.title }}</span>
-              <button class="kpi-info" title="Total number of registered farmers">i</button>
+              <span class="kpi-period">{{ kpi_farmers.period }}</span>
             </div>
             <div class="kpi-body">
               <div class="kpi-value">{{ kpi_farmers.value }}</div>
-              <div class="kpi-sub">vs last month 
+              <div class="kpi-sub">vs previous period
                 <span class="badge {{ kpi_farmers.change_direction }}">
                   {% if kpi_farmers.change >= 0 %}+{% endif %}{{ kpi_farmers.change }}%
                 </span>
               </div>
               <ul class="kpi-detail">
-                <li>New (7d): <b>{{ kpi_farmers_detail.new_7d }}</b></li>
+                <li>Total farmers: <b>{{ kpi_farmers_detail.total }}</b></li>
                 <li>Active (30d): <b>{{ kpi_farmers_detail.active_30d }}</b></li>
                 <li>Top District: <b>{{ kpi_farmers_detail.top_district.name }}</b> ({{ kpi_farmers_detail.top_district.count }})</li>
               </ul>
@@ -67,26 +101,63 @@
             <div class="kpi-chart"><canvas id="adminChart2"></canvas></div>
           </div>
           
-          <!-- KPI 3: Pending Sales Orders -->
+          <!-- KPI 3: Sales Orders (created in the period) -->
           <div class="chart-card">
             <div class="kpi-header">
               <span class="kpi-title">{{ kpi_orders.title }}</span>
-              <button class="kpi-info" title="Sales orders awaiting processing">i</button>
+              <span class="kpi-period">{{ kpi_orders.period }}</span>
             </div>
             <div class="kpi-body">
               <div class="kpi-value">{{ kpi_orders.value }}</div>
-              <div class="kpi-sub">vs last month 
+              <div class="kpi-sub">vs previous period
                 <span class="badge {{ kpi_orders.change_direction }}">
                   {% if kpi_orders.change >= 0 %}+{% endif %}{{ kpi_orders.change }}%
                 </span>
               </div>
               <ul class="kpi-detail">
+                <li>Pending now: <b>{{ kpi_orders_detail.pending }}</b> · Posted: <b>{{ kpi_orders_detail.posted }}</b> · Errors: <b class="alert-text">{{ kpi_orders_detail.errors }}</b></li>
                 <li>Pending value: <b>{{ kpi_orders_detail.pending_value }}</b></li>
                 <li>Aging: <b>0–7d {{ kpi_orders_detail.aging.d0_7 }}</b>, <b>8–30d {{ kpi_orders_detail.aging.d8_30 }}</b>, <b>30+d {{ kpi_orders_detail.aging.d30_plus }}</b></li>
-                <li>Posted: <b>{{ kpi_orders_detail.posted }}</b> · Errors: <b class="alert-text">{{ kpi_orders_detail.errors }}</b></li>
               </ul>
             </div>
             <div class="kpi-chart"><canvas id="adminChart3"></canvas></div>
+          </div>
+
+          <!-- KPI 4: Sales & Collection (live from SAP) -->
+          <div class="chart-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Sales &amp; Collection</span>
+              <span class="kpi-period">{{ period.label }}</span>
+            </div>
+            <div class="kpi-body sc-body">
+              {% if sales_collection %}
+                <div class="sc-list">
+                  {% for co in sales_collection.rows %}
+                    <div class="sc-co">
+                      <div class="sc-co-name">{{ co.name }}</div>
+                      <div class="sc-grid">
+                        <div class="sc-metric">
+                          <div class="sc-pct">{{ co.sales_pct }}<small>%</small></div>
+                          <div class="sc-label">Sales</div>
+                          <div class="sc-sub">{{ co.sales_ach_m }}M / {{ co.sales_target_m }}M</div>
+                        </div>
+                        <div class="sc-metric">
+                          <div class="sc-pct">{{ co.coll_pct }}<small>%</small></div>
+                          <div class="sc-label">Collection</div>
+                          <div class="sc-sub">{{ co.coll_ach_m }}M / {{ co.coll_target_m }}M</div>
+                        </div>
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+                <p class="sc-foot">Achievement vs target · amounts in PKR millions</p>
+              {% else %}
+                <div class="kpi-sub">No sales &amp; collection figures for this view. Open the reports for full details.</div>
+              {% endif %}
+              <ul class="kpi-detail">
+                <li><a href="/admin/hana-connect/">Open Sales &amp; Collection reports ›</a></li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -166,6 +237,21 @@
     .kpi-detail { list-style:none; margin:10px 0 0; padding:0; font-size:12px; color:#475467; }
     .kpi-detail li { margin:2px 0; }
     .alert-text { color:#b42318; }
+    /* Sales & Collection card - own column layout (base .kpi-body is flex-row) */
+    .dashboard .chart-card .sc-body { display:flex; flex-direction:column; align-items:stretch; gap:10px; }
+    .sc-list { display:flex; flex-direction:column; gap:12px; }
+    .sc-co { display:flex; flex-direction:column; gap:6px; }
+    .sc-co-name { font-size:12px; font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:.3px; }
+    .sc-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .sc-metric { text-align:center; padding:10px 6px; border-radius:10px; background:#f8fafc; border:1px solid #eef2f7; }
+    .sc-pct { font-size:22px; font-weight:800; color:#16a34a; line-height:1; }
+    .sc-pct small { font-size:12px; color:#64748b; font-weight:700; }
+    .sc-label { font-size:11px; font-weight:700; color:#334155; margin-top:3px; }
+    .sc-sub { font-size:10px; color:#94a3b8; margin-top:2px; }
+    .sc-foot { font-size:11px; color:#94a3b8; margin:0; }
+    [data-theme="dark"] .sc-co-name { color:#e2e8f0; }
+    [data-theme="dark"] .sc-metric { background:#0f172a; border-color:#1f2937; }
+    [data-theme="dark"] .sc-label { color:#cbd5e1; }
   </style>
   <script>
     (function(){
@@ -177,92 +263,56 @@
         var styles = getComputedStyle(document.documentElement);
         var orange = styles.getPropertyValue('--orange').trim() || '#E26830';
         var green = styles.getPropertyValue('--green').trim() || '#16a34a';
-        
-        // Real data from backend
-        var activityLabels = {{ activity_labels|safe }};
-        var activityData = {{ activity_data|safe }};
-        
-        // Chart 1: Activity Trend (Visits)
+
+        // Real weekly counts from the backend (last 6 weeks, scoped). Every
+        // value is a real count >= 0 - no fabricated or negative trends.
+        var chartLabels   = {{ chart_labels|safe }};
+        var chartActivity = {{ chart_activity|safe }};
+        var chartFarmers  = {{ chart_farmers|safe }};
+        var chartOrders   = {{ chart_orders|safe }};
+
+        var baseOpts = {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { intersect: false, mode: 'index' } },
+          scales: {
+            y: { beginAtZero: true, ticks: { precision: 0 }, grid: { display: false } },
+            x: { grid: { display: false } }
+          }
+        };
+
+        // Chart 1: Field Activities per week
         if (c1) {
           new Chart(c1.getContext('2d'), {
             type: 'line',
-            data: {
-              labels: activityLabels,
-              datasets: [{
-                label: 'Visits',
-                data: activityData,
-                borderColor: orange,
-                backgroundColor: orange + '33',
-                fill: true,
-                tension: 0.4
-              }]
-            },
-            options: { 
-              responsive: true, 
-              maintainAspectRatio: false, 
-              plugins: { legend: { display: false } }, 
-              scales: { 
-                y: { beginAtZero: true, grid: { display: false } }, 
-                x: { grid: { display: false } } 
-              } 
-            }
+            data: { labels: chartLabels, datasets: [{
+              label: 'Field activities', data: chartActivity,
+              borderColor: orange, backgroundColor: orange + '33', fill: true, tension: 0.4
+            }]},
+            options: baseOpts
           });
         }
-        
-        // Chart 2: Farmer Growth Trend
+
+        // Chart 2: New farmers per week
         if (c2) {
-          var farmerGrowth = activityData.map(function(v, i) { 
-            return {{ kpi_farmers.value }} - (activityLabels.length - i - 1) * 5; 
-          });
           new Chart(c2.getContext('2d'), {
             type: 'bar',
-            data: {
-              labels: activityLabels,
-              datasets: [{
-                label: 'Farmers',
-                data: farmerGrowth,
-                backgroundColor: green
-              }]
-            },
-            options: { 
-              responsive: true, 
-              maintainAspectRatio: false, 
-              plugins: { legend: { display: false } }, 
-              scales: { 
-                y: { beginAtZero: false, grid: { display: false } }, 
-                x: { grid: { display: false } } 
-              } 
-            }
+            data: { labels: chartLabels, datasets: [{
+              label: 'New farmers', data: chartFarmers, backgroundColor: green
+            }]},
+            options: baseOpts
           });
         }
-        
-        // Chart 3: Pending Orders Trend
+
+        // Chart 3: Sales orders per week
         if (c3) {
-          var pendingTrend = activityData.map(function(v) { 
-            return Math.max(5, Math.floor({{ kpi_orders.value }} * (0.8 + Math.random() * 0.4))); 
-          });
           new Chart(c3.getContext('2d'), {
             type: 'line',
-            data: {
-              labels: activityLabels,
-              datasets: [{
-                label: 'Pending Orders',
-                data: pendingTrend,
-                borderColor: orange,
-                backgroundColor: orange + '33',
-                fill: true,
-                tension: 0.4
-              }]
-            },
-            options: { 
-              responsive: true, 
-              maintainAspectRatio: false, 
-              plugins: { legend: { display: false } }, 
-              scales: { 
-                y: { beginAtZero: true, grid: { display: false } }, 
-                x: { grid: { display: false } } 
-              } 
-            }
+            data: { labels: chartLabels, datasets: [{
+              label: 'Sales orders', data: chartOrders,
+              borderColor: orange, backgroundColor: orange + '33', fill: true, tension: 0.4
+            }]},
+            options: baseOpts
           });
         }
       });
