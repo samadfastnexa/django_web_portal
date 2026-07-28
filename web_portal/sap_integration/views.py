@@ -8678,19 +8678,34 @@ def cwl_full_api(request):
 @swagger_auto_schema(tags=['SAP'], 
     method='get',
     operation_summary="Customer LOV",
-    operation_description="List customers with optional search, territory, status and pagination. Can filter by user_id to get the user's territory automatically.",
+    operation_description=(
+        "List customers with optional search, territory, status and pagination.\n\n"
+        "Scoping to a salesman (either parameter works):\n"
+        "- `employee_code` - the SAP employee code (B4_EMP.CODE / OHEM.empID), e.g. 2260. "
+        "Use this to test a salesman directly without a portal account.\n"
+        "- `user_id` - a portal User ID; the endpoint looks up that user's "
+        "sales profile employee_code and then uses the same SAP path.\n\n"
+        "Either way the territory scope comes entirely from SAP: "
+        "B4_EMP.CODE -> U_TID territory nodes -> the full OTER subtree "
+        "(region / zone / sub zone / territory / pocket) -> OCRD dealers. "
+        "Local Django territory data is never used. If both are supplied, "
+        "employee_code wins. A user_id that cannot be resolved to an employee "
+        "code returns 400 rather than every customer; the response always "
+        "reports the SAP nodes actually used in `sap_territories`."
+    ),
     manual_parameters=[
         openapi.Parameter('company', openapi.IN_QUERY, description="Optional: Company database key", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('user_id', openapi.IN_QUERY, description="Optional: Portal User ID - Gets territory assigned to the user. If provided, shows only customers from that user's territory", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('employee_code', openapi.IN_QUERY, description="Optional: SAP employee code (B4_EMP.CODE / OHEM.empID), e.g. 2260. Returns only dealers in that employee's SAP territories and their sub-nodes. Takes precedence over user_id.", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('user_id', openapi.IN_QUERY, description="Optional: Portal User ID. Resolved to the sales profile's employee_code, then scoped in SAP exactly like employee_code. Returns 400 if the user has no employee_code.", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('status', openapi.IN_QUERY, description="Filter by status: active, inactive, or all", type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('territory', openapi.IN_QUERY, description="Filter by territory ID (overridden by user_id if both provided)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('territory', openapi.IN_QUERY, description="Filter by territory ID (ignored when employee_code or user_id is provided)", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('search', openapi.IN_QUERY, description="Search CardCode or CardName", type=openapi.TYPE_STRING, required=False),
         openapi.Parameter('page', openapi.IN_QUERY, description="Page number", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('page_size', openapi.IN_QUERY, description="Items per page", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('limit', openapi.IN_QUERY, description="Max records to fetch (alias: top)", type=openapi.TYPE_INTEGER, required=False),
         openapi.Parameter('top', openapi.IN_QUERY, description="Max records to fetch (alias: limit)", type=openapi.TYPE_INTEGER, required=False),
     ],
-    responses={200: openapi.Response(description="OK"), 500: openapi.Response(description="Server Error")}
+    responses={200: openapi.Response(description="OK"), 400: openapi.Response(description="No employee code could be resolved for the given user_id"), 500: openapi.Response(description="Server Error")}
 )
 @api_view(['GET'])
 def customer_lov_api(request):
@@ -8726,47 +8741,56 @@ def customer_lov_api(request):
     status_param = (request.GET.get('status') or 'active').strip().lower()
     territory_param = (request.GET.get('territory') or '').strip()
     user_id_param = (request.GET.get('user_id') or '').strip()
+    employee_code_query = (request.GET.get('employee_code') or '').strip()
     page_param = (request.GET.get('page') or '1').strip()
     page_size_param = (request.GET.get('page_size') or '').strip()
     limit_param = (request.GET.get('top') or request.GET.get('limit') or '').strip()
     
-    # If user_id is provided, get the user's territory/territories
-    user_territories = []
-    hana_territory_id_param = None
-    if user_id_param:
+    # Resolve the SAP employee code to scope by. It can be passed straight in
+    # (handy from Swagger) or looked up from a portal user_id. Either way the
+    # territory / zone / region / pocket scope itself comes entirely from SAP
+    # (B4_EMP -> OTER subtree); local Django Territory rows are never consulted.
+    import sys
+    employee_code_param = None
+    employee_code_source = None
+    user_scope_error = None
+    if employee_code_query:
+        employee_code_param = employee_code_query
+        employee_code_source = 'employee_code'
+        print(f"[DEBUG] customer_lov_api: scoping by employee_code '{employee_code_param}' (passed directly)", file=sys.stderr)
+    elif user_id_param:
+        from accounts.models import User
         try:
             user_id_val = int(user_id_param)
-            # Import the custom User model from accounts app
-            from accounts.models import User
             target_user = User.objects.get(id=user_id_val)
-            # Get the user's sales profile and territories
-            if hasattr(target_user, 'sales_profile') and target_user.sales_profile:
-                territories = target_user.sales_profile.territories.all()
-                if territories.exists():
-                    # Get first territory with hana_territory_id mapping
-                    first_territory = territories.first()
-                    if first_territory and first_territory.hana_territory_id:
-                        hana_territory_id_param = first_territory.hana_territory_id
-                        user_territories = [{'id': first_territory.id, 'name': first_territory.name, 'hana_id': first_territory.hana_territory_id}]
-                        import sys
-                        print(f"[DEBUG] customer_lov_api: User {user_id_val} - Using territory '{first_territory.name}' (HANA ID: {hana_territory_id_param})", file=sys.stderr)
-                    else:
-                        # Territory doesn't have HANA mapping
-                        import sys
-                        print(f"[DEBUG] customer_lov_api: User {user_id_val} - First territory '{first_territory.name}' has NO hana_territory_id mapping", file=sys.stderr)
-                        # Return all territories assigned but indicate mapping is missing
-                        user_territories = [{'id': t.id, 'name': t.name, 'hana_id': t.hana_territory_id} for t in territories]
-                else:
-                    import sys
-                    print(f"[DEBUG] customer_lov_api: User {user_id_val} has no territories assigned", file=sys.stderr)
+            profile = getattr(target_user, 'sales_profile', None)
+            if profile is None:
+                user_scope_error = f"Portal user {user_id_val} has no sales staff profile, so no employee code could be resolved. Pass employee_code directly to scope by SAP employee instead."
             else:
-                import sys
-                print(f"[DEBUG] customer_lov_api: User {user_id_val} has no sales profile", file=sys.stderr)
-        except (ValueError, User.DoesNotExist) as e:
-            import sys
-            print(f"[DEBUG] customer_lov_api: Error fetching user territory: {str(e)}", file=sys.stderr)
-            pass
-    
+                employee_code_param = (profile.employee_code or '').strip() or None
+                if not employee_code_param:
+                    user_scope_error = f"Sales profile for portal user {user_id_val} has no employee_code set; cannot look the user up in SAP B4_EMP. Set it in admin, or pass employee_code directly."
+                else:
+                    employee_code_source = 'user_id'
+                    print(f"[DEBUG] customer_lov_api: portal user {user_id_val} -> employee_code '{employee_code_param}' (scope from SAP B4_EMP + OTER subtree)", file=sys.stderr)
+        except ValueError:
+            user_scope_error = f"Invalid user_id '{user_id_param}'."
+        except User.DoesNotExist:
+            user_scope_error = f"Portal user {user_id_param} does not exist."
+        if user_scope_error:
+            print(f"[DEBUG] customer_lov_api: {user_scope_error}", file=sys.stderr)
+
+    # Fail closed: a user_id we cannot resolve to an employee code must never
+    # fall through to the unfiltered customer list (that leaked other regions).
+    if user_id_param and not employee_code_param:
+        return Response({
+            'success': False,
+            'error': user_scope_error or f"Could not resolve an employee code for user {user_id_param}.",
+            'user_id': user_id_param,
+            'count': 0,
+            'data': [],
+        }, status=status.HTTP_400_BAD_REQUEST)
+
     # Validate schema resolution
     if not cfg['schema']:
         # Try to get list of available companies for the error message
@@ -8825,20 +8849,21 @@ def customer_lov_api(request):
                 cur = conn.cursor()
                 cur.execute(f'SET SCHEMA "{sch}"')
                 cur.close()
-            from .hana_connect import customer_lov
-            # Use hana_territory_id if from user_id, otherwise use territory or territory_name
+            from .hana_connect import customer_lov, employee_territory_ids, territory_descendants, _fetch_all
+            # employee_code drives the whole scope when user_id was given;
+            # otherwise honour a territory code passed on the query string.
             data = customer_lov(
-                conn, 
-                search or None, 
-                limit=limit_val, 
-                status=status_param or 'active', 
-                territory=territory_param or None if not hana_territory_id_param else None,
+                conn,
+                search or None,
+                limit=limit_val,
+                status=status_param or 'active',
+                territory=None if employee_code_param else (territory_param or None),
                 territory_name=None,  # Don't use territory_name anymore
-                hana_territory_id=hana_territory_id_param
+                employee_code=employee_code_param,
             )
             paginator = Paginator(data or [], page_size)
             page_obj = paginator.get_page(page_num)
-            
+
             # Build response
             response_data = {
                 'success': True,
@@ -8848,14 +8873,39 @@ def customer_lov_api(request):
                 'count': paginator.count,
                 'data': list(page_obj.object_list)
             }
-            
-            # Include user territory info if user_id was provided
-            if user_id_param and user_territories:
-                response_data['user_id'] = int(user_id_param)
-                response_data['assigned_territories'] = user_territories  # Already in dict format with hana_id
-                if hana_territory_id_param:
-                    response_data['filtered_by_hana_territory_id'] = hana_territory_id_param
-                    response_data['warning'] = 'Make sure all territories have hana_territory_id mapping set' if not all(t.get('hana_id') for t in user_territories) else None
+
+            # Report the SAP scope that was actually applied, so an empty list
+            # is distinguishable from a broken mapping.
+            if employee_code_param:
+                if user_id_param:
+                    response_data['user_id'] = int(user_id_param)
+                response_data['filtered_by_employee_code'] = employee_code_param
+                response_data['employee_code_source'] = employee_code_source
+                response_data['scope'] = 'sap_b4_emp_territory_subtree'
+                roots = employee_territory_ids(conn, employee_code_param)
+                node_rows = []
+                if roots:
+                    scope_ids = territory_descendants(conn, roots)
+                    placeholders = ','.join(['?'] * len(scope_ids))
+                    node_rows = _fetch_all(
+                        conn,
+                        f'SELECT "territryID","descript" FROM OTER WHERE "territryID" IN ({placeholders})',
+                        tuple(str(t) for t in scope_ids),
+                    ) or []
+                response_data['sap_territories'] = [
+                    {'id': r.get('territryID'), 'name': r.get('descript')} for r in node_rows
+                ]
+                if not roots:
+                    response_data['warning'] = (
+                        f"Employee code '{employee_code_param}' has no rows in B4_EMP for "
+                        f"schema '{cfg['schema']}'. Assign this employee a territory in SAP."
+                    )
+                elif not data:
+                    response_data['warning'] = (
+                        f"Employee code '{employee_code_param}' is mapped in SAP to "
+                        f"{len(node_rows)} territory node(s), but none of them has a dealer "
+                        f"attached. Check the SAP territory assignment for this employee."
+                    )
             elif territory_param:
                 response_data['filtered_by_territory_code'] = territory_param
             
