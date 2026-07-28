@@ -2454,13 +2454,81 @@ def territories_lov(db) -> list:
     )
     return _fetch_all(db, sql)
 
-def customer_lov(db, search: str | None = None, limit: int = 1000, status: str | None = 'active', territory: str | None = None, territory_name: str | None = None, hana_territory_id: int | None = None) -> list:
+def employee_territory_ids(db, employee_code) -> list:
+    """The SAP territory node ids assigned to a sales employee, from B4_EMP.
+
+    One B4_EMP row per employee-territory pair, so a field officer yields one
+    id and a national manager yields ~150. Returns [] for an unknown code.
+    """
+    code = str(employee_code or '').strip()
+    if not code:
+        return []
+    rows = _fetch_all(db, 'SELECT DISTINCT "U_TID" FROM "B4_EMP" WHERE "CODE" = ?', (code,))
+    ids = []
+    for r in (rows or []):
+        try:
+            ids.append(int(str(r.get('U_TID')).strip()))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(ids))
+
+
+def territory_descendants(db, root_ids, max_depth: int = 12) -> list:
+    """Every node in the OTER subtree(s) rooted at `root_ids`, roots included.
+
+    The OTER tree runs Region -> Sub Region -> Zone -> Sub Zone -> Territory ->
+    Pocket (7 levels deep in practice) and dealers hang off whichever node SAP
+    tagged them with, so scoping by an employee's node has to walk all the way
+    down. This HANA build rejects WITH RECURSIVE, so descend a level at a time
+    - the loop runs at most `max_depth` cheap indexed queries.
+    """
+    seen: set[int] = set()
+    frontier: set[int] = set()
+    for r in (root_ids or []):
+        try:
+            frontier.add(int(str(r).strip()))
+        except (TypeError, ValueError):
+            continue
+
+    depth = 0
+    while frontier and depth < max_depth:
+        seen |= frontier
+        pending = sorted(frontier)
+        children: set[int] = set()
+        # Chunk the IN list so a manager with ~150 roots stays inside HANA's
+        # parameter limits.
+        for i in range(0, len(pending), 500):
+            chunk = pending[i:i + 500]
+            placeholders = ','.join(['?'] * len(chunk))
+            rows = _fetch_all(
+                db,
+                f'SELECT "territryID" FROM OTER WHERE "parent" IN ({placeholders})',
+                tuple(str(c) for c in chunk),
+            )
+            for row in (rows or []):
+                try:
+                    children.add(int(str(row.get('territryID')).strip()))
+                except (TypeError, ValueError):
+                    continue
+        frontier = children - seen
+        depth += 1
+
+    return sorted(seen)
+
+
+def customer_lov(db, search: str | None = None, limit: int = 1000, status: str | None = 'active', territory: str | None = None, territory_name: str | None = None, hana_territory_id: int | None = None, employee_code: str | None = None) -> list:
     """Customer List of Values
-    
+
     Args:
+        employee_code: Scope to a sales employee's SAP territories, read from
+            B4_EMP (CODE -> U_TID) and expanded down the whole OTER subtree, so
+            it works whether SAP tagged the employee at region, zone, sub-zone,
+            territory or pocket level. An unknown code returns no rows rather
+            than every customer.
         territory: Filter by territory code (T0."Territory" = ?)
         territory_name: Filter by territory name/description (O."descript" = ?)
-        hana_territory_id: Filter by HANA territory numeric ID (T0."Territory" = ?)
+        hana_territory_id: Filter by HANA territory numeric ID, including that
+            node's whole subtree.
     """
     sql = (
         'SELECT '
@@ -2483,11 +2551,28 @@ def customer_lov(db, search: str | None = None, limit: int = 1000, status: str |
         if status_val in ('active', 'inactive'):
             sql += ' AND T0."validFor" = ? '
             params.append('Y' if status_val == 'active' else 'N')
-    # Filter by territory ID, name, or code (priority order: hana_territory_id > territory_name > territory)
-    if hana_territory_id:
-        # Filter by HANA territory ID (numeric)
-        sql += ' AND T0."Territory" = ? '
-        params.append(str(hana_territory_id))
+    # Filter by employee, territory ID, name, or code
+    # (priority: employee_code > hana_territory_id > territory_name > territory)
+    if employee_code and str(employee_code).strip():
+        # Resolve the employee's nodes in SAP, then take their whole subtree -
+        # dealers may sit on the node itself or any pocket beneath it.
+        scope = territory_descendants(db, employee_territory_ids(db, employee_code))
+        if not scope:
+            # Unknown employee code, or a code whose SAP territories no longer
+            # exist. Return nothing rather than leaking the full customer list.
+            return []
+        placeholders = ','.join(['?'] * len(scope))
+        sql += f' AND T0."Territory" IN ({placeholders}) '
+        params.extend([str(t) for t in scope])
+    elif hana_territory_id:
+        # Filter by HANA territory ID plus its whole subtree, since customers
+        # usually hang off a Pocket node rather than the Territory node.
+        scope = territory_descendants(db, [hana_territory_id])
+        if not scope:
+            return []
+        placeholders = ','.join(['?'] * len(scope))
+        sql += f' AND T0."Territory" IN ({placeholders}) '
+        params.extend([str(t) for t in scope])
     elif territory_name and str(territory_name).strip():
         # Filter by territory name (for Django-mapped territories)
         sql += ' AND O."descript" = ? '
@@ -2510,12 +2595,17 @@ def dealers_for_employee(db, employee_code, search: str | None = None,
                          status: str | None = 'active', limit: int = 1000) -> list:
     """Dealers (OCRD customers) in the SAP territories assigned to a sales employee.
 
-    The employee's territories come straight from SAP B4_EMP (CODE -> U_TID), so
-    a field officer sees dealers in their one territory while a zone/region
-    manager (many B4_EMP rows) sees dealers across every territory they cover.
-    B4_EMP.U_TID (text) is compared to OCRD."Territory" (numeric) via HANA's
-    implicit cast, matching how the collection/sales reports already join them.
+    The employee's territories come straight from SAP B4_EMP (CODE -> U_TID) and
+    are expanded down the whole OTER subtree, so a field officer sees the dealers
+    in their territory's pockets while a zone/region manager (many B4_EMP rows)
+    sees dealers across every territory they cover. Returns [] for an unknown
+    code rather than falling through to every dealer.
     """
+    scope = territory_descendants(db, employee_territory_ids(db, employee_code))
+    if not scope:
+        return []
+
+    placeholders = ','.join(['?'] * len(scope))
     sql = (
         'SELECT '
         ' T0."CardCode", '
@@ -2528,17 +2618,9 @@ def dealers_for_employee(db, employee_code, search: str | None = None,
         'FROM OCRD T0 '
         'LEFT JOIN OTER O ON O."territryID" = T0."Territory" '
         'WHERE T0."CardType" = \'C\' '
-        # Dealers are tagged at Pocket level (a child of the employee's
-        # Territory node), so match the employee's territories OR their
-        # direct child territories (pockets).
-        '  AND ( '
-        '        T0."Territory" IN (SELECT "U_TID" FROM "B4_EMP" WHERE "CODE" = ?) '
-        '     OR T0."Territory" IN (SELECT C."territryID" FROM OTER C '
-        '                           WHERE C."parent" IN (SELECT "U_TID" FROM "B4_EMP" WHERE "CODE" = ?)) '
-        '      ) '
+        f'  AND T0."Territory" IN ({placeholders}) '
     )
-    emp = str(employee_code).strip()
-    params = [emp, emp]
+    params = [str(t) for t in scope]
 
     if status:
         status_val = str(status).strip().lower()
