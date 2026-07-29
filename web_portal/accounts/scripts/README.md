@@ -21,6 +21,7 @@ PYTHONUTF8=1 python manage.py shell < accounts/scripts/<name>.py
 - `cleanup_test_permissions.py`
 - `create_missing_users.py`
 - `create_phone_user.py`
+- `find_duplicate_employee_codes.py`
 - `fix_designation_data.py`
 - `generate_and_import_agri_sales_staff.py`
 - `grant_organogram_permission.py`

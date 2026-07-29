@@ -4,20 +4,25 @@
 {% block search %}
   {% if attendance_summary %}
   <div class="att-summary">
-    <div class="att-summary-head">{% trans "Attendance" %} · {{ attendance_summary.date }}</div>
+    {# Scope mirrors the sidebar's date filter so the two can never disagree. #}
+    <div class="att-summary-head">{% trans "Attendance" %} · {{ attendance_summary.scope }} · {{ attendance_summary.records }} {% trans "record" %}{{ attendance_summary.records|pluralize }}</div>
+    {# Each tile links to the people behind the number. #}
     <div class="att-summary-grid">
-      <div class="att-tile att-present">
+      <a class="att-tile att-present" href="{{ tile_links.present }}"
+         title="{% trans 'Show the staff who marked attendance' %}">
         <div class="att-num">{{ attendance_summary.present }}</div>
-        <div class="att-label">{% trans "Present today" %}</div>
-      </div>
-      <div class="att-tile att-off">
+        <div class="att-label">{% trans "Present" %}</div>
+      </a>
+      <a class="att-tile att-off" href="{{ tile_links.off }}"
+         title="{% trans 'Show the staff who did not mark attendance' %}">
         <div class="att-num">{{ attendance_summary.off }}</div>
-        <div class="att-label">{% trans "Off today" %}</div>
-      </div>
-      <div class="att-tile att-total">
+        <div class="att-label">{% trans "Not marked" %}</div>
+      </a>
+      <a class="att-tile att-total" href="{{ tile_links.total }}"
+         title="{% trans 'Show all active sales staff' %}">
         <div class="att-num">{{ attendance_summary.total }}</div>
         <div class="att-label">{% trans "Sales staff" %}</div>
-      </div>
+      </a>
     </div>
   </div>
 
@@ -25,7 +30,8 @@
     .att-summary { margin: 0 0 16px; }
     .att-summary-head { font-size: 12px; font-weight: 700; color: #64748b; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .5px; }
     .att-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(120px, 200px)); gap: 12px; }
-    .att-tile { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 18px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); border-left: 4px solid #cbd5e1; }
+    .att-tile { display: block; text-decoration: none; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 18px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); border-left: 4px solid #cbd5e1; transition: box-shadow .15s ease, transform .15s ease; }
+    a.att-tile:hover { box-shadow: 0 6px 16px rgba(0,0,0,.12); transform: translateY(-2px); }
     .att-tile .att-num { font-size: 30px; font-weight: 800; line-height: 1; color: #0f172a; }
     .att-tile .att-label { font-size: 13px; font-weight: 600; color: #475569; margin-top: 6px; }
     .att-present { border-left-color: #16a34a; }
@@ -41,5 +47,28 @@
     @media (max-width: 640px) { .att-summary-grid { grid-template-columns: repeat(3, 1fr); } }
   </style>
   {% endif %}
+
+  {# Part of today's "Off" figure is approved leave, so show the leave queue here too. #}
+  {% include "admin/attendance/_leave_summary.html" %}
+
+  {# Report downloads. The querystring is passed straight through so the sheet
+     covers exactly the rows the sidebar filter has selected. #}
+  <div class="att-report-actions">
+    <span class="att-report-label">{% trans "Attendance Report" %}</span>
+    <a class="att-report-btn att-report-pdf"
+       href="{% url 'admin:attendance_attendance_report_pdf' %}?{{ request.GET.urlencode }}">PDF</a>
+    <a class="att-report-btn att-report-csv"
+       href="{% url 'admin:attendance_attendance_report_csv' %}?{{ request.GET.urlencode }}">CSV</a>
+  </div>
+
+  <style>
+    .att-report-actions { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; }
+    .att-report-label { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
+    .att-report-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none; color: #fff !important; border: none; }
+    .att-report-pdf { background: #dc2626; }
+    .att-report-pdf:hover { background: #b91c1c; }
+    .att-report-csv { background: #16a34a; }
+    .att-report-csv:hover { background: #15803d; }
+  </style>
   {{ block.super }}
 {% endblock %}

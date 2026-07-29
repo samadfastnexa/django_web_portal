@@ -2,49 +2,6 @@
 {% load i18n %}
 
 {% block search %}
-  {% if leave_summary %}
-  <div class="lv-summary">
-    <div class="lv-summary-head">{% trans "Leave requests" %} · {{ leave_summary.total }} {% trans "total" %}</div>
-    <div class="lv-summary-grid">
-      <div class="lv-tile lv-pending">
-        <div class="lv-num">{{ leave_summary.pending }}</div>
-        <div class="lv-label">{% trans "Pending" %}</div>
-      </div>
-      <div class="lv-tile lv-approved">
-        <div class="lv-num">{{ leave_summary.approved }}</div>
-        <div class="lv-label">{% trans "Approved" %}</div>
-      </div>
-      <div class="lv-tile lv-rejected">
-        <div class="lv-num">{{ leave_summary.rejected }}</div>
-        <div class="lv-label">{% trans "Rejected" %}</div>
-      </div>
-      <div class="lv-tile lv-today">
-        <div class="lv-num">{{ leave_summary.on_leave_today }}</div>
-        <div class="lv-label">{% trans "On leave today" %}</div>
-      </div>
-    </div>
-  </div>
-
-  <style>
-    .lv-summary { margin: 0 0 16px; }
-    .lv-summary-head { font-size: 12px; font-weight: 700; color: #64748b; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .5px; }
-    .lv-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 180px)); gap: 12px; }
-    .lv-tile { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 18px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); border-left: 4px solid #cbd5e1; }
-    .lv-tile .lv-num { font-size: 30px; font-weight: 800; line-height: 1; color: #0f172a; }
-    .lv-tile .lv-label { font-size: 13px; font-weight: 600; color: #475569; margin-top: 6px; }
-    .lv-pending  { border-left-color: #E26830; } .lv-pending  .lv-num { color: #E26830; }
-    .lv-approved { border-left-color: #16a34a; } .lv-approved .lv-num { color: #16a34a; }
-    .lv-rejected { border-left-color: #dc2626; } .lv-rejected .lv-num { color: #dc2626; }
-    .lv-today    { border-left-color: #2563eb; } .lv-today    .lv-num { color: #2563eb; }
-    [data-theme="dark"] .lv-tile { background: #0f172a; border-color: #1f2937; }
-    [data-theme="dark"] .lv-tile .lv-num { color: #e2e8f0; }
-    [data-theme="dark"] .lv-tile .lv-label { color: #cbd5e1; }
-    [data-theme="dark"] .lv-pending .lv-num { color: #fb923c; }
-    [data-theme="dark"] .lv-approved .lv-num { color: #4ade80; }
-    [data-theme="dark"] .lv-rejected .lv-num { color: #f87171; }
-    [data-theme="dark"] .lv-today .lv-num { color: #60a5fa; }
-    @media (max-width: 640px) { .lv-summary-grid { grid-template-columns: repeat(2, 1fr); } }
-  </style>
-  {% endif %}
+  {% include "admin/attendance/_leave_summary.html" %}
   {{ block.super }}
 {% endblock %}

@@ -12,7 +12,27 @@ class AnalyticsAdminSite(AdminSite):
     site_header = settings.ADMIN_SITE_HEADER
     site_title = settings.ADMIN_SITE_TITLE
     index_title = settings.ADMIN_INDEX_TITLE
-    
+
+    def register(self, model_or_iterable, admin_class=None, **options):
+        """Give every registered ModelAdmin the detailed form-error summary.
+
+        Mixed in here rather than added to each of the ~60 ModelAdmin classes,
+        the same way the export actions are registered site-wide below.
+        """
+        from django.contrib.admin import ModelAdmin
+
+        from web_portal.admin_form_errors import DetailedFormErrorsMixin
+
+        base = admin_class or ModelAdmin
+        if isinstance(base, type) and issubclass(base, ModelAdmin) \
+                and not issubclass(base, DetailedFormErrorsMixin):
+            admin_class = type(base.__name__, (DetailedFormErrorsMixin, base), {
+                '__module__': base.__module__,
+                '__doc__': base.__doc__,
+            })
+        return super().register(model_or_iterable, admin_class, **options)
+
+
     def index(self, request, extra_context=None):
         """
         Custom admin index view with analytics data

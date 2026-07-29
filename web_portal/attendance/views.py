@@ -837,6 +837,9 @@ class AttendanceReportView(APIView):
         })
         
 # ✅ Enum values
+# Leave types are rows in attendance.LeaveType now, not a fixed list, so the
+# API takes the type's numeric id. (This constant was also stale: it advertised
+# "annual", which was never one of the accepted values.)
 LEAVE_TYPE_CHOICES = ["sick", "casual", "annual"]
 STATUS_CHOICES = ["pending", "approved", "rejected"]
 
@@ -845,9 +848,9 @@ leave_request_example = openapi.Schema(
     type=openapi.TYPE_OBJECT,
     properties={
         "leave_type": openapi.Schema(
-            type=openapi.TYPE_STRING,
-            enum=LEAVE_TYPE_CHOICES,
-            example="sick"
+            type=openapi.TYPE_INTEGER,
+            description="ID of a LeaveType (see Attendance > Leave types in admin).",
+            example=1
         ),
         "start_date": openapi.Schema(
             type=openapi.TYPE_STRING,
@@ -876,7 +879,7 @@ leave_request_example = openapi.Schema(
 leave_response_example = {
     "id": 12,
     "user": 3,
-    "leave_type": "sick",
+    "leave_type": 1,
     "start_date": "2025-08-20",
     "end_date": "2025-08-25",
     "reason": "Medical leave due to illness",
@@ -892,8 +895,9 @@ leave_filter_params = [
         type=openapi.TYPE_STRING, enum=STATUS_CHOICES
     ),
     openapi.Parameter(
-        "leave_type", openapi.IN_QUERY, description="Filter by leave type",
-        type=openapi.TYPE_STRING, enum=LEAVE_TYPE_CHOICES
+        "leave_type", openapi.IN_QUERY,
+        description="Filter by leave type (LeaveType id)",
+        type=openapi.TYPE_INTEGER
     ),
     openapi.Parameter(
         "start_date", openapi.IN_QUERY, description="Filter by start_date (YYYY-MM-DD)",

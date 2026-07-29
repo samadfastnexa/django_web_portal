@@ -394,13 +394,11 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             leave_type = data.get('leave_type')
             profile = getattr(user, 'sales_profile', None)
 
-            if profile:
-                quota_map = {
-                    'sick': profile.sick_leave_quota,
-                    'casual': profile.casual_leave_quota,
-                    'other': profile.others_leave_quota
-                }
-                remaining = quota_map.get(leave_type, 0)
+            # leave_type is now a LeaveType instance (FK), and it knows how to
+            # resolve its own quota: explicit LeaveQuota row -> legacy column on
+            # the profile -> the type's default.
+            if profile and leave_type is not None:
+                remaining = leave_type.quota_for(profile)
                 if remaining <= 0:
                     raise serializers.ValidationError(f"No {leave_type} leave quota left.")
 

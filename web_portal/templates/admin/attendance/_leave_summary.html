@@ -1,0 +1,52 @@
+{% load i18n %}
+{% comment %}
+Leave status tiles. Included by both the Leave requests and the Attendance
+changelists, so the markup and styling only exist in one place. Expects
+`leave_summary` in the context (see attendance.admin._leave_stats).
+{% endcomment %}
+{% if leave_summary %}
+<div class="lv-summary">
+  <div class="lv-summary-head">{% trans "Leave requests" %} · {{ leave_summary.total }} {% trans "total" %}</div>
+  {# Each tile links to the matching leave requests. #}
+  <div class="lv-summary-grid">
+    <a class="lv-tile lv-pending" href="{{ tile_links.leave_pending }}">
+      <div class="lv-num">{{ leave_summary.pending }}</div>
+      <div class="lv-label">{% trans "Pending" %}</div>
+    </a>
+    <a class="lv-tile lv-approved" href="{{ tile_links.leave_approved }}">
+      <div class="lv-num">{{ leave_summary.approved }}</div>
+      <div class="lv-label">{% trans "Approved" %}</div>
+    </a>
+    <a class="lv-tile lv-rejected" href="{{ tile_links.leave_rejected }}">
+      <div class="lv-num">{{ leave_summary.rejected }}</div>
+      <div class="lv-label">{% trans "Rejected" %}</div>
+    </a>
+    <a class="lv-tile lv-today" href="{{ tile_links.leave_today }}">
+      <div class="lv-num">{{ leave_summary.on_leave_today }}</div>
+      <div class="lv-label">{% trans "On leave today" %}</div>
+    </a>
+  </div>
+</div>
+
+<style>
+  .lv-summary { margin: 0 0 16px; }
+  .lv-summary-head { font-size: 12px; font-weight: 700; color: #64748b; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .5px; }
+  .lv-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 180px)); gap: 12px; }
+  .lv-tile { display: block; text-decoration: none; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 18px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); border-left: 4px solid #cbd5e1; transition: box-shadow .15s ease, transform .15s ease; }
+  a.lv-tile:hover { box-shadow: 0 6px 16px rgba(0,0,0,.12); transform: translateY(-2px); }
+  .lv-tile .lv-num { font-size: 30px; font-weight: 800; line-height: 1; color: #0f172a; }
+  .lv-tile .lv-label { font-size: 13px; font-weight: 600; color: #475569; margin-top: 6px; }
+  .lv-pending  { border-left-color: #E26830; } .lv-pending  .lv-num { color: #E26830; }
+  .lv-approved { border-left-color: #16a34a; } .lv-approved .lv-num { color: #16a34a; }
+  .lv-rejected { border-left-color: #dc2626; } .lv-rejected .lv-num { color: #dc2626; }
+  .lv-today    { border-left-color: #2563eb; } .lv-today    .lv-num { color: #2563eb; }
+  [data-theme="dark"] .lv-tile { background: #0f172a; border-color: #1f2937; }
+  [data-theme="dark"] .lv-tile .lv-num { color: #e2e8f0; }
+  [data-theme="dark"] .lv-tile .lv-label { color: #cbd5e1; }
+  [data-theme="dark"] .lv-pending .lv-num { color: #fb923c; }
+  [data-theme="dark"] .lv-approved .lv-num { color: #4ade80; }
+  [data-theme="dark"] .lv-rejected .lv-num { color: #f87171; }
+  [data-theme="dark"] .lv-today .lv-num { color: #60a5fa; }
+  @media (max-width: 640px) { .lv-summary-grid { grid-template-columns: repeat(2, 1fr); } }
+</style>
+{% endif %}

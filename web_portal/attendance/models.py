@@ -209,11 +209,87 @@ class AttendanceRequest(models.Model):
 # -------------------
 # Leave Request
 # -------------------
+class LeaveType(models.Model):
+    """An editable kind of leave (Sick, Casual, ...).
+
+    Replaces the hardcoded choices that used to live on LeaveRequest, so new
+    types can be added from the admin instead of requiring a code change.
+    """
+    #: Codes that predate this model and still have a dedicated quota column on
+    #: SalesStaffProfile. Those columns remain part of the public user API, so
+    #: they stay authoritative for these three unless a LeaveQuota row overrides
+    #: them - see quota_for().
+    LEGACY_QUOTA_FIELDS = {
+        'sick': 'sick_leave_quota',
+        'casual': 'casual_leave_quota',
+        'other': 'others_leave_quota',
+    }
+
+    code = models.SlugField(
+        max_length=20, unique=True,
+        help_text="Stable identifier used by the API, e.g. 'sick'. Avoid renaming.",
+    )
+    name = models.CharField(max_length=50, help_text="Label shown to users, e.g. 'Sick'.")
+    description = models.CharField(max_length=200, blank=True)
+    default_quota = models.PositiveIntegerField(
+        default=0,
+        help_text="Days allowed when a staff member has no specific quota for this type.",
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'attendance_leavetype'
+        ordering = ['sort_order', 'name']
+        verbose_name = 'Leave type'
+        verbose_name_plural = 'Leave types'
+
+    def __str__(self):
+        return self.name
+
+    def quota_for(self, profile):
+        """Days of this leave type available to a SalesStaffProfile.
+
+        Order: an explicit LeaveQuota row, then the legacy per-type column on
+        the profile (kept for the three original types so the existing user
+        API keeps working), then this type's default.
+        """
+        if profile is None:
+            return 0
+        row = self.quotas.filter(profile=profile).first()
+        if row is not None:
+            return row.days
+        legacy_field = self.LEGACY_QUOTA_FIELDS.get(self.code)
+        if legacy_field:
+            return getattr(profile, legacy_field, 0) or 0
+        return self.default_quota
+
+
+class LeaveQuota(models.Model):
+    """Days of one leave type granted to one staff member."""
+    profile = models.ForeignKey(
+        'accounts.SalesStaffProfile', on_delete=models.CASCADE, related_name='leave_quotas',
+    )
+    leave_type = models.ForeignKey(LeaveType, on_delete=models.CASCADE, related_name='quotas')
+    days = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'attendance_leavequota'
+        unique_together = ('profile', 'leave_type')
+        verbose_name = 'Leave quota'
+        verbose_name_plural = 'Leave quotas'
+
+    def __str__(self):
+        return f'{self.profile} - {self.leave_type}: {self.days} day(s)'
+
+
 class LeaveRequest(models.Model):
     TYPE_SICK = 'sick'
     TYPE_CASUAL = 'casual'
     TYPE_OTHER = 'other'
 
+    #: Retained for the data migration and for callers that still map codes.
+    #: The live list of types now comes from the LeaveType table.
     LEAVE_CHOICES = [
         (TYPE_SICK, 'Sick'),
         (TYPE_CASUAL, 'Casual'),
@@ -231,9 +307,23 @@ class LeaveRequest(models.Model):
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='leave_requests')
-    leave_type = models.CharField(max_length=20, choices=LEAVE_CHOICES)
+    leave_type = models.ForeignKey(
+        LeaveType, on_delete=models.PROTECT, related_name='requests',
+        help_text="Managed under Attendance > Leave types.",
+    )
     start_date = models.DateField()
+    # Optional clock times, so a half-day or part-day leave can say when it
+    # actually runs. Left blank the request means the whole day, which is how
+    # every existing row behaves.
+    start_time = models.TimeField(
+        null=True, blank=True,
+        help_text="Optional. Leave blank for a full day.",
+    )
     end_date = models.DateField()
+    end_time = models.TimeField(
+        null=True, blank=True,
+        help_text="Optional. Leave blank for a full day.",
+    )
     reason = models.TextField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -247,14 +337,24 @@ class LeaveRequest(models.Model):
         if self.end_date < self.start_date:
             raise ValidationError("End date cannot be before start date.")
 
+        # Within a single day the clock times must also run forwards. Across
+        # multiple days they cannot conflict, so they are not compared.
+        if (
+            self.start_date == self.end_date
+            and self.start_time and self.end_time
+            and self.end_time <= self.start_time
+        ):
+            raise ValidationError("End time must be after start time on a single-day leave.")
+
         # Check leave quota from sales profile
         profile = getattr(self.user, 'sales_profile', None)
-        if profile and not (self.user.is_staff or self.user.is_superuser):
+        if profile and self.leave_type_id and not (self.user.is_staff or self.user.is_superuser):
             leave_days = (self.end_date - self.start_date).days + 1
-            quota_field = f"{self.leave_type}_leave_quota"
-            remaining = getattr(profile, quota_field, 0)
+            remaining = self.leave_type.quota_for(profile)
             if leave_days > remaining:
-                raise ValidationError(f"Insufficient {self.leave_type} leave quota. Remaining: {remaining} days.")
+                raise ValidationError(
+                    f"Insufficient {self.leave_type} leave quota. Remaining: {remaining} days."
+                )
 
     def save(self, *args, **kwargs):
         self.full_clean()
