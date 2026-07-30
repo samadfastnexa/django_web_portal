@@ -164,6 +164,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     profile_image = models.ImageField(
         upload_to='profile_images/',
+        blank=True,      # optional: a user can be created without a photo
+        null=True,
         validators=[
             FileExtensionValidator(['jpg', 'jpeg', 'png']), # ✅ Format check
             validate_image_size,                            # ✅ Size check

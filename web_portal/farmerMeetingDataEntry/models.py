@@ -264,3 +264,127 @@ class FieldDayAttachment(models.Model):
         except Exception:
             pass  # File doesn't exist or can't be deleted, continue anyway
         super().delete(*args, **kwargs)
+
+
+class HPMRequisition(models.Model):
+    """High Profile Meeting requisition - approved BEFORE the meeting is arranged.
+
+    Digitises the paper form "HIGH-PROFILE FARMER MEETING FOR GM/BM - REQUISITION
+    FORM". Unlike Meeting / FieldDay (which record a meeting that already
+    happened) this is a request: a senior manager submits it and an authorised
+    approver (the CEO on the paper form) approves or rejects it with remarks.
+
+    Who may submit and who may approve is NOT tied to a designation code - the
+    right to decide is the grantable `approve_hpmrequisition` permission, so the
+    hierarchy can change without touching this model.
+    """
+
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
+
+    id = models.CharField(max_length=20, primary_key=True, unique=True, editable=False)
+
+    # --- Requisition header -------------------------------------------------
+    requisition_date = models.DateField(
+        help_text="Date the requisition was raised (the form's 'Requisition Date').",
+    )
+    # The form's "GM/BM Name" - taken from whoever submitted, never typed, so the
+    # printed name always matches the signature block.
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='hpm_requisitions',
+        help_text="Manager who raised this requisition (prints as GM/BM Name).",
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    # --- HPM meeting details ----------------------------------------------
+    company_fk = models.ForeignKey(
+        Company, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='hpm_requisitions_company',
+    )
+    region_fk = models.ForeignKey(
+        Region, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='hpm_requisitions_region',
+    )
+    zone_fk = models.ForeignKey(
+        Zone, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='hpm_requisitions_zone',
+    )
+    territory_fk = models.ForeignKey(
+        Territory, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='hpm_requisitions_territory',
+    )
+    responsible_person = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='hpm_responsible_for',
+        help_text="Staff member accountable for arranging the meeting.",
+    )
+    # Date AND time: a high-profile meeting has a start time, and this matches
+    # Meeting.date / FieldDay.date, which are both DateTimeFields.
+    meeting_date = models.DateTimeField(help_text="Date and start time of the meeting.")
+    meeting_location = models.CharField(max_length=200)
+    expected_attendees = models.PositiveIntegerField(
+        default=0, help_text="No. of farmers / attendees expected.",
+    )
+    purpose = models.TextField(
+        help_text="Purpose of meeting (product related campaign & sale commitment).",
+    )
+    remarks = models.TextField(blank=True)
+
+    # --- Approval section --------------------------------------------------
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True,
+    )
+    ceo_remarks = models.TextField(
+        blank=True, help_text="Approver's remarks; carries the reason on rejection.",
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='hpm_requisitions_reviewed',
+        help_text="Who approved or rejected it (prints as CEO signature).",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Lets a signal / caller detect the pending -> decided edge later.
+        self._previous_status = self.status
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            # Random suffix rather than "last + 1": the sequential scheme used by
+            # MeetingSchedule races under concurrent inserts.
+            self.id = f"HPM{uuid.uuid4().hex[:6].upper()}"
+        super().save(*args, **kwargs)
+        self._previous_status = self.status
+
+    @property
+    def is_decided(self):
+        return self.status in (self.STATUS_APPROVED, self.STATUS_REJECTED)
+
+    def __str__(self):
+        who = self.submitted_by.get_username() if self.submitted_by else 'unknown'
+        return f"{self.id} - {who} ({self.get_status_display()})"
+
+    class Meta:
+        db_table = 'farmermeetingdataentry_hpmrequisition'
+        ordering = ['-id']
+        verbose_name = 'HPM Requisition'
+        verbose_name_plural = 'HPM Requisitions'
+        indexes = [
+            models.Index(fields=['status', 'requisition_date']),
+            models.Index(fields=['submitted_by', 'status']),
+        ]
+        permissions = [
+            ('approve_hpmrequisition', 'Can approve or reject HPM requisitions'),
+        ]

@@ -168,6 +168,26 @@ ADMIN_SITE_HEADER = "Agrigenie Tech"
 ADMIN_SITE_TITLE = "Agrigenie Tech"
 ADMIN_INDEX_TITLE = "Welcome to Agrigenie Tech Portal"
 
+# Attendance Report (PDF / CSV) palette.
+# Every colour used by the printed report is resolved from here, so the sheet
+# can be re-themed without touching attendance/reports.py. Values are hex
+# strings; any key may be omitted and the built-in default is used instead.
+# Consumed by attendance.reports.report_colors().
+ATTENDANCE_REPORT_COLORS = {
+    'title_bg':      '#F2F2F2',   # "Attendance Report" banner
+    'title_fg':      '#000000',
+    'date_bg':       '#E2EFDA',   # date cell on the right of the banner
+    'date_fg':       '#000000',
+    'header_bg':     '#FFFF00',   # Region .. Employee Name column headings
+    'header_fg':     '#000000',
+    'header_alt_bg': '#FCE4D6',   # Status / CheckIn Time column headings
+    'header_alt_fg': '#000000',
+    'row_bg':        '#FFFFFF',   # data rows (alternating)
+    'row_alt_bg':    '#F7F7F7',
+    'row_fg':        '#000000',
+    'grid':          '#808080',   # cell borders
+}
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 

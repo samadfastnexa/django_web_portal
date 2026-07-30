@@ -24,12 +24,14 @@ class FarmingHistoryInline(admin.TabularInline):
 @admin.register(Farmer, site=admin_site)
 class FarmerAdmin(admin.ModelAdmin):
     list_display = (
-        'farmer_id', 'full_name', 'primary_phone', 'village', 'district', 
-        'total_land_area', 'education_level', 'registration_date'
+        'farmer_id', 'full_name', 'primary_phone', 'village', 'district',
+        'total_land_area', 'education_level', 'registered_by', 'registration_date'
     )
+    # `registered_by` = the staff member who created the farmer, so the list can
+    # be narrowed to one person's registrations. No selection shows all farmers.
     list_filter = (
         'gender', 'education_level',
-        'district', 'province', 'registration_date'
+        'district', 'province', 'registration_date', 'registered_by'
     )
     search_fields = (
         'farmer_id', 'first_name', 'last_name', 'name', 'father_name', 'cnic',

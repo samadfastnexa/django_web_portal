@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib import messages
@@ -16,11 +17,93 @@ try:
 except ImportError:
     HAS_DEALER = False
 
+class AttendanceMarkedFilter(admin.SimpleListFilter):
+    """The sales-staff pool, split by whether they marked attendance.
+
+    Backs the clickable Present / Not marked / Sales staff tiles, so the value
+    has to carry the tile's scope or the page would show a different number
+    from the card that was clicked. Grammar:
+
+        pool                        the whole pool (matches "Sales staff")
+        marked | not_marked         today
+        marked:all                  any date
+        marked:2026-07-28           that day
+        marked:2026-07-21:2026-07-29    [start, end)  - end exclusive
+
+    All modes are restricted to the same pool the tiles count: active sales
+    staff, superusers excluded, which also keeps the ~1700 farmer/dealer
+    accounts out of "not marked".
+    """
+    title = 'attendance'
+    parameter_name = 'attendance'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('pool', 'Sales staff pool'),
+            ('marked', 'Marked today'),
+            ('not_marked', 'Not marked today'),
+        )
+
+    def queryset(self, request, queryset):
+        import datetime as _dt
+
+        from django.utils import timezone as _tz
+
+        raw = (self.value() or '').strip()
+        if not raw:
+            return queryset
+        parts = raw.split(':')
+        mode = parts[0]
+        if mode not in ('pool', 'marked', 'not_marked'):
+            return queryset
+
+        pool = queryset.filter(is_active=True, is_sales_staff=True, is_superuser=False)
+        if mode == 'pool':
+            return pool
+
+        def as_aware(date, add_days=0):
+            moment = _dt.datetime.combine(date + _dt.timedelta(days=add_days), _dt.time.min)
+            return _tz.make_aware(moment) if settings.USE_TZ else moment
+
+        def parse(token):
+            try:
+                return _dt.date.fromisoformat(token)
+            except (ValueError, TypeError):
+                return None
+
+        span = parts[1:] if len(parts) > 1 else []
+        from attendance.models import Attendance
+        attendance = Attendance.objects.all()
+        if not (span and span[0] == 'all'):
+            start_date = parse(span[0]) if span else _tz.localdate()
+            if start_date is None:
+                start_date = _tz.localdate()
+            end_date = parse(span[1]) if len(span) > 1 else None
+            start = as_aware(start_date)
+            end = as_aware(end_date) if end_date else as_aware(start_date, 1)
+            # A check-in OR check-out inside the window counts as marked, the
+            # same union the summary tiles use for an overnight shift.
+            attendance = attendance.filter(
+                Q(check_in_time__gte=start, check_in_time__lt=end)
+                | Q(check_out_time__gte=start, check_out_time__lt=end)
+            )
+
+        marked_ids = set(attendance.values_list('attendee_id', flat=True))
+        return pool.filter(pk__in=marked_ids) if mode == 'marked' else pool.exclude(pk__in=marked_ids)
+
+
 class SalesStaffCompanyInline(admin.TabularInline):
     """Inline to manage per-company employee codes directly from a SalesStaffProfile."""
     model = SalesStaffCompany
-    extra = 1
     fields = ('company', 'employee_code', 'is_primary', 'is_active')
+
+    def get_extra(self, request, obj=None, **kwargs):
+        # No blank row when editing an existing profile: Django only draws the
+        # delete widget for saved rows, so a server-rendered extra row cannot be
+        # removed, and leaving it half-touched fails validation on save. Use the
+        # "Add another Staff Company Membership" link instead - rows added that
+        # way get a working Remove link.
+        return 0 if obj and obj.pk else 1
 
 
 # Inline for Sales Staff profile
@@ -90,7 +173,22 @@ if HAS_DEALER:
         fk_name = 'user'  # ✅ Specify which ForeignKey to use (user, not created_by)
         verbose_name_plural = 'Dealer Profile'
         can_delete = True  # ✅ Allow deletion
-        extra = 1  # ✅ Show one empty form so users can create dealer profile directly from user edit
+
+        def get_extra(self, request, obj=None, **kwargs):
+            """Only offer a blank Dealer Profile to users who are dealers.
+
+            It used to be extra=1 for everyone, so every user page rendered an
+            empty 70-field dealer form. Touching any one of its inputs marked
+            the form as changed, and the save then failed on Dealer's required
+            fields (cnic_number, contact_number, address, company) for a
+            profile the user never wanted. Django draws no delete widget on a
+            server-rendered extra row either, so it could not be dismissed.
+            Non-dealers now see none; use "Add another Dealer Profile" instead,
+            which adds a row with a working Remove link.
+            """
+            if obj is None or not getattr(obj, 'is_dealer', False):
+                return 0
+            return 0 if hasattr(obj, 'dealer') else 1
         fieldsets = (
             ('Basic Info', {
                 'fields': ('card_code', 'business_name', 'cnic_number')  # name derived from user
@@ -143,9 +241,10 @@ if HAS_DEALER:
 @admin.register(User, site=admin_site)
 class CustomUserAdmin(BaseUserAdmin):
     list_display = [
-        'id', 'username', 'email', 'employee_code', 'dealer_card_code', 'phone_number', 'company', 'role', 'is_active', 'is_sales_staff', 'is_dealer'
+        'id', 'photo', 'username', 'email', 'employee_code', 'dealer_card_code', 'company', 'role', 'is_active', 'is_sales_staff', 'is_dealer'
     ]
-    list_filter = ['role', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer', 'company']
+    list_filter = ['role', 'is_active', 'is_staff', 'is_sales_staff', 'is_dealer', 'company',
+                   AttendanceMarkedFilter]
     search_fields = [
         '=id',
         'username',
@@ -158,16 +257,32 @@ class CustomUserAdmin(BaseUserAdmin):
     ordering = ['-id']
     list_per_page = 25  # Updated to 25 records per page for better admin experience
 
-    # ✅ Allow quick edits for role, is_active, is_dealer, phone_number, and company
-    list_editable = ['phone_number', 'company', 'role', 'is_active', 'is_dealer']
+    # ✅ Allow quick edits for role, is_active, is_dealer and company.
+    # phone_number was dropped from list_display, so it must also leave
+    # list_editable - Django rejects an editable field that is not displayed
+    # (admin.E122). It is still editable on the change form.
+    list_editable = ['company', 'role', 'is_active', 'is_dealer']
 
     fieldsets = BaseUserAdmin.fieldsets + (
-        ('Custom Fields', {'fields': ('role', 'phone_number', 'company', 'profile_image', 'is_sales_staff', 'is_dealer')}),
+        ('Custom Fields', {'fields': ('role', 'phone_number', 'company',
+                                      'profile_image', 'profile_image_preview',
+                                      'is_sales_staff', 'is_dealer')}),
         ('Employee IDs per Company', {
             'fields': ('company_employee_ids',),
         }),
     )
-    readonly_fields = ('company_employee_ids',)
+    readonly_fields = ('company_employee_ids', 'profile_image_preview')
+
+    @admin.display(description='Photo')
+    def photo(self, obj):
+        """Thumbnail in the changelist; a dash when there is no usable image."""
+        from web_portal.admin_thumbnails import thumb
+        return thumb(obj.profile_image)
+
+    @admin.display(description='Current photo')
+    def profile_image_preview(self, obj):
+        from web_portal.admin_thumbnails import preview
+        return preview(obj.profile_image) if obj and obj.pk else preview(None)
 
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
         (None, {'fields': ('email', 'phone_number', 'company', 'role', 'profile_image', 'is_sales_staff', 'is_dealer')}),
@@ -254,15 +369,25 @@ class CustomUserAdmin(BaseUserAdmin):
         if not profile:
             return format_html('<em style="color:#999">No sales profile yet. Save the user first, then add a Sales Profile.</em>')
         memberships = profile.company_memberships.select_related('company').filter(is_active=True)
+        profile_url = f'/admin/accounts/salesstaffprofile/{profile.pk}/change/'
+
+        # The changelist's "Employee Code" column reads this profile-level code,
+        # so show it here too - listing only the per-company rows made a user
+        # with a code look like they had none.
+        main_code = (profile.employee_code or '').strip()
+        main = format_html(
+            '<div style="margin-bottom:6px">Employee code: <strong>{}</strong>'
+            '<span style="color:#777"> &nbsp;(used to look this user up in SAP B4_EMP)</span></div>',
+            main_code or '—',
+        )
+
         if not memberships.exists():
-            profile_url = f'/admin/accounts/salesstaffprofile/{profile.pk}/change/'
             return format_html(
-                '<em style="color:#999">No company memberships yet.</em> '
+                '{}<em style="color:#999">No per-company overrides.</em> '
                 '<a href="{}" target="_blank" style="color:#cc0000;font-weight:bold">'
                 '➕ Add employee IDs on the Sales Profile page</a>',
-                profile_url
+                main, profile_url,
             )
-        profile_url = f'/admin/accounts/salesstaffprofile/{profile.pk}/change/'
         rows = mark_safe(''.join(
             '<tr>'
             f'<td style="padding:4px 10px;border:1px solid #ddd">{m.company.Company_name}</td>'
@@ -272,6 +397,7 @@ class CustomUserAdmin(BaseUserAdmin):
             for m in memberships
         ))
         return format_html(
+            '{}'
             '<table style="border-collapse:collapse;margin-bottom:6px">'
             '<thead><tr>'
             '<th style="padding:4px 10px;border:1px solid #ccc;background:#f5f5f5">Company</th>'
@@ -280,6 +406,7 @@ class CustomUserAdmin(BaseUserAdmin):
             '</tr></thead><tbody>{}</tbody></table>'
             '<a href="{}" target="_blank" style="color:#cc0000;font-weight:bold">'
             '✏️ Edit employee IDs on the Sales Profile page</a>',
+            main,
             rows,
             profile_url,
         )
@@ -447,7 +574,7 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(SalesStaffProfile, site=admin_site)
 class SalesStaffProfileAdmin(admin.ModelAdmin):
     """Admin for SalesStaffProfile with data integrity checks"""
-    list_display = ['id', 'designation', 'employee_code', 'phone_number', 'user_display', 'manager_display', 'subordinates_count', 'is_vacant']
+    list_display = ['id', 'photo', 'designation', 'employee_code', 'phone_number', 'user_display', 'manager_display', 'subordinates_count', 'is_vacant']
     list_filter = ['designation', 'is_vacant', 'employee_code']
     search_fields = ['user__email', 'user__username', 'employee_code', 'phone_number']
     filter_horizontal = ('regions', 'zones', 'territories')
@@ -457,7 +584,7 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('User Assignment', {
-            'fields': ('user', 'is_vacant')
+            'fields': ('user', 'profile_photo', 'is_vacant')
         }),
         ('Basic Info', {
             'fields': ('phone_number', 'designation', 'address'),
@@ -475,7 +602,19 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
             'fields': ('sick_leave_quota', 'casual_leave_quota', 'others_leave_quota')
         }),
     )
-    
+    readonly_fields = ('profile_photo',)
+
+    @admin.display(description='Photo')
+    def photo(self, obj):
+        """The linked user's photo - the profile row carries no image itself."""
+        from web_portal.admin_thumbnails import thumb, EMPTY
+        return thumb(obj.user.profile_image) if obj.user_id else EMPTY
+
+    @admin.display(description='Profile photo')
+    def profile_photo(self, obj):
+        from web_portal.admin_thumbnails import preview
+        return preview(obj.user.profile_image if obj and obj.user_id else None)
+
     def get_queryset(self, request):
         """
         select_related to avoid N+1 for user, designation, manager display columns.

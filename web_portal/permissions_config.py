@@ -152,6 +152,13 @@ CUSTOM_PERMISSIONS = {
         'FieldDay': [
             ('manage_field_days', 'Can manage field days'),
         ],
+        # Declared here as well as in HPMRequisition.Meta.permissions so the
+        # codename actually exists and is assignable to a role. attendance's
+        # approve check looks for 'approve_attendance_request', which was never
+        # declared anywhere and so is False for everyone but superusers.
+        'HPMRequisition': [
+            ('approve_hpmrequisition', 'Can approve or reject HPM requisitions'),
+        ],
     },
     
     # KindWise

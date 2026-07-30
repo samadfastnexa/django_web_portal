@@ -1,0 +1,55 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{# Directory casing here matches the change_form_template string in hpm_admin.py
+   exactly. FieldAdvisoryService's dealerrequest template gets this wrong (path
+   in lowercase, directory capitalised) and only works on a case-insensitive
+   filesystem - do not repeat that here. #}
+
+{% block object-tools-items %}
+  {% if original %}
+    <li>
+      <a href="{% url 'admin:farmermeetingdataentry_hpmrequisition_print' original.pk %}"
+         class="hpm-btn hpm-print" target="_blank">{% trans "Print form (PDF)" %}</a>
+    </li>
+    {% if can_approve_hpm and hpm_is_pending %}
+      <li>
+        <a href="{% url 'admin:farmermeetingdataentry_hpmrequisition_decide' original.pk 'approved' %}"
+           class="hpm-btn hpm-approve">{% trans "Approve" %}</a>
+      </li>
+      <li>
+        <a href="{% url 'admin:farmermeetingdataentry_hpmrequisition_decide' original.pk 'rejected' %}"
+           class="hpm-btn hpm-reject">{% trans "Reject" %}</a>
+      </li>
+    {% endif %}
+  {% endif %}
+  {{ block.super }}
+
+  <style>
+    .hpm-btn { color: #fff !important; font-weight: 600; }
+    .hpm-print   { background: #475569 !important; }
+    .hpm-print:hover   { background: #334155 !important; }
+    .hpm-approve { background: #16a34a !important; }
+    .hpm-approve:hover { background: #15803d !important; }
+    .hpm-reject  { background: #dc2626 !important; }
+    .hpm-reject:hover  { background: #b91c1c !important; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  {% if original and not hpm_is_pending %}
+    <p class="help" style="margin:0 0 12px;padding:10px 14px;border-radius:8px;
+              background:#f1f5f9;border-left:4px solid #64748b;">
+      {% blocktrans with status=original.get_status_display %}
+        This requisition is already {{ status }}. The decision and its date are
+        locked; re-saving will not change who decided it.
+      {% endblocktrans %}
+    </p>
+  {% elif original and not can_approve_hpm %}
+    <p class="help" style="margin:0 0 12px;padding:10px 14px;border-radius:8px;
+              background:#fff7ed;border-left:4px solid #E26830;">
+      {% trans "You can edit the requisition details, but only a user with approval permission can set the status or add remarks." %}
+    </p>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

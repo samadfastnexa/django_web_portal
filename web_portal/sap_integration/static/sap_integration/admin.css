@@ -402,32 +402,49 @@
 }
 
 /* Reserve space so filters never overlap table */
-#changelist { 
+#changelist {
   position: relative;
   display: flex;
   flex-direction: row;
+  align-items: flex-start;
+  max-width: 100%;
 }
-#changelist #content-main { 
-  flex: 1;
+/* The flex child holding the table is `.changelist-form-container`;
+   `#content-main` is #changelist's PARENT, so the old `#changelist
+   #content-main` selector matched nothing and its overflow never applied.
+   `min-width: 0` is the essential bit - without it a flex item refuses to
+   shrink below its content, so a wide table pushed the whole page sideways
+   instead of scrolling inside its own box. */
+#changelist .changelist-form-container {
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: calc(100% - 280px);
-  overflow-x: auto;
-  overflow-y: visible;
+  max-width: 100%;
   padding: 8px;
+  box-sizing: border-box;
 }
-#changelist-filter { 
+#changelist-filter {
   width: 260px;
   flex-shrink: 0;
 }
 
-/* Changelist table: compact layout with horizontal scroll */
-#changelist .results { 
-  table-layout: auto; 
-  position: relative; 
-  z-index: 1; 
+/* Changelist table: compact layout with horizontal scroll.
+   `.results` is Django's wrapper DIV around #result_list. It used to be forced
+   to `display: table`, which destroyed its ability to scroll - so the table
+   overflowed and the PAGE grew a horizontal scrollbar. Keeping it a block with
+   overflow-x confines the scrolling to the table. */
+#changelist .results {
+  display: block;
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 100%;
-  display: table;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+#changelist #result_list {
+  table-layout: auto;
+  width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -474,10 +491,25 @@
   min-width: 100px;
 }
 /* ID columns - make very slim */
-#changelist .results th.field-id, #changelist .results td.field-id { 
+#changelist .results th.field-id, #changelist .results td.field-id {
   width: 80px;
   max-width: 80px;
   min-width: 60px;
+}
+/* Short code columns. A dealer card code is 9 characters and an employee code
+   is shorter still, so these do not need the generic 260px cell width. The
+   `column-` classes match the sortable <th>, `field-` the <td>. */
+#changelist .results th.column-employee_code,
+#changelist .results td.field-employee_code {
+  width: 90px;
+  max-width: 90px;
+  min-width: 70px;
+}
+#changelist .results th.column-dealer_card_code,
+#changelist .results td.field-dealer_card_code {
+  width: 110px;
+  max-width: 110px;
+  min-width: 90px;
 }
 /* Name/title columns - moderate width */
 #changelist .results th.field-name, #changelist .results td.field-name,
@@ -516,19 +548,24 @@
 }
 
 /* Ensure filter sits above table and has opaque background */
-#changelist-filter { 
-  position: sticky; 
-  top: 70px; 
-  z-index: 6000; 
-  background: #fff; 
+#changelist-filter {
+  position: sticky;
+  top: 70px;
+  z-index: 6000;
+  background: #fff;
   box-shadow: 0 8px 20px rgba(0,0,0,0.08);
   float: right;
   margin-left: 20px;
+  /* Being sticky, the panel never scrolls with the page - without its own
+     height cap any filter past the fold (e.g. "By leave type" on Leave
+     requests) was permanently unreachable. Scroll inside the panel instead. */
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
 }
 #changelist-filter .filter, #changelist-filter .filter ul, #changelist-filter .filter li { background: #fff; }
 
 /* Ensure main content doesn't overlap with filter */
-#changelist #content-main {
+#changelist .changelist-form-container {
   box-sizing: border-box;
   padding-right: 0;
 }
@@ -588,9 +625,10 @@
   padding: 6px 10px;
 }
 
-/* Constrain filter list height and scroll if too long */
+/* Constrain each filter's option list so several sections stay visible at
+   once; the panel itself scrolls for the rest. */
 #changelist-filter .filter ul {
-  max-height: 60vh;
+  max-height: 32vh;
   overflow-y: auto;
 }
 
@@ -789,7 +827,10 @@
   border-bottom: 2px solid var(--hairline-color);
 }
 
-/* Object tools (action buttons) - position right after heading */
+/* Object tools (action buttons) - position right after heading.
+   `right` is the nudge knob. Keep it >= 0: a negative value puts the button
+   outside #content's box, which widens the page's scrollable area and was
+   part of why the whole page scrolled sideways. */
 .object-tools {
   position: absolute;
   top: 12px;
@@ -845,6 +886,11 @@
 /* Make sure content has enough top padding for the absolute positioned button */
 #content {
   padding-top: 20px;
+  /* Django's base.css ships `padding: 20px 40px`, which left a wide empty gutter
+     between the nav sidebar and the page content. Tightening it also gives the
+     changelist table ~48px more room before it needs to scroll. */
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 /* Search bar - make more compact */
@@ -871,8 +917,8 @@
   #changelist {
     flex-direction: column;
   }
-  #changelist #content-main { 
-    margin-right: 0; 
+  #changelist .changelist-form-container {
+    margin-right: 0;
     max-width: 100%;
     padding: 4px;
     width: 100%;
@@ -1336,6 +1382,17 @@ select.sap-crop-lov {
   overflow-y: visible !important;
 }
 
+/* ...but the rule above is not actually scoped away from the changelist, and
+   any changelist using `list_editable` renders <select> cells - which turned
+   the table's scroll container back into an overflowing block and pushed the
+   whole page sideways (e.g. Users). Native <select> popups are painted by the
+   browser outside the document flow, so they are not clipped by an ancestor's
+   overflow; the container can safely scroll. Higher specificity wins here. */
+#changelist .results:has(td select) {
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+
 #changelist .results td:has(select),
 #changelist .results td:has(.related-widget-wrapper),
 #changelist .results td:has(.select2-container) {
@@ -1470,8 +1527,19 @@ tbody tr td p.original {
 #changelist .results th .text a,
 #changelist .results th a { white-space: nowrap; }
 
-/* Very wide tables scroll horizontally instead of crushing every column. */
+/* Very wide tables scroll horizontally instead of crushing every column.
+   The scroll must stay inside .results; these containment rules stop a wide
+   table (or any stray wide child) from widening the page itself, which is what
+   forced the browser's global horizontal scrollbar. */
 #changelist .results { overflow-x: auto; }
+#content,
+#content-main,
+#changelist,
+#changelist-form {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+#changelist-form { min-width: 0; }
 
 /* Per-column sizing for ActivityLog / LogEntry changelists. */
 #changelist .results th.column-timestamp,   #changelist .results td.field-timestamp,
