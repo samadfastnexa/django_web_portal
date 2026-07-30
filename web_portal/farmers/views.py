@@ -1,4 +1,4 @@
-from rest_framework import generics, viewsets, filters, status
+from rest_framework import generics, viewsets, filters, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -45,7 +45,24 @@ class FarmerViewSet(viewsets.ModelViewSet):
         'education_level', 'id'
     ]
     ordering = ['-id']
-    
+
+    def get_permissions(self):
+        """Only self-signup is public; every other action needs a login.
+
+        This view previously inherited DRF's project default of AllowAny, which
+        left list/retrieve/update/destroy reachable with no credentials at all -
+        an anonymous caller could read every farmer's CNIC, phone and address,
+        and DELETE records. `create` stays open because a farmer signs up from
+        the mobile app before they have any credentials.
+
+        Deliberately IsAuthenticated only, NOT HasRolePermission: the 'Farmer'
+        role currently carries no farmer permissions, so a role check here would
+        403 every farmer opening their own profile.
+        """
+        if self.action == 'create':
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
+
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
         if self.action == 'list':
@@ -69,7 +86,14 @@ class FarmerViewSet(viewsets.ModelViewSet):
             return queryset.select_related('registered_by')
     
     @swagger_auto_schema(
-        operation_description="Retrieve a searchable and filterable list of farmers. Supports filtering by creator using either registered_by or alias created_by.",
+        operation_description=(
+            "Retrieve a searchable and filterable list of farmers.\n\n"
+            "**Filter by who registered the farmer** with `user_id` (or the "
+            "equivalent `registered_by` / `created_by`) - e.g. `?user_id=1` returns "
+            "only the farmers created by user 1. Omit it and every farmer is "
+            "returned. Note this is the staff member who registered the farmer, "
+            "not the farmer's own linked login account."
+        ),
         manual_parameters=[
             openapi.Parameter('search', openapi.IN_QUERY, description="Search across multiple fields", type=openapi.TYPE_STRING),
             openapi.Parameter('village', openapi.IN_QUERY, description="Filter by village", type=openapi.TYPE_STRING),
@@ -79,6 +103,7 @@ class FarmerViewSet(viewsets.ModelViewSet):
 
             openapi.Parameter('total_land_area_min', openapi.IN_QUERY, description="Minimum land area", type=openapi.TYPE_NUMBER),
             openapi.Parameter('total_land_area_max', openapi.IN_QUERY, description="Maximum land area", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('user_id', openapi.IN_QUERY, description="Show only farmers registered by this user ID. Omit to return all farmers.", type=openapi.TYPE_INTEGER),
             openapi.Parameter('registered_by', openapi.IN_QUERY, description="Filter by creator (user ID)", type=openapi.TYPE_INTEGER),
             openapi.Parameter('created_by', openapi.IN_QUERY, description="Alias for registered_by (user ID)", type=openapi.TYPE_INTEGER),
             openapi.Parameter('ordering', openapi.IN_QUERY, description="Order by field (prefix with - for descending)", type=openapi.TYPE_STRING),

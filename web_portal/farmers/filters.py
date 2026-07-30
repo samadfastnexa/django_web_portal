@@ -8,9 +8,14 @@ class FarmerFilter(django_filters.FilterSet):
     
     # Text search across multiple fields
     search = django_filters.CharFilter(method='filter_search', label='Search')
-    # Creator filters
+    # Creator filters. All three mean "the staff member who registered this
+    # farmer" (Farmer.registered_by) - NOT Farmer.user, which is the farmer's
+    # own login account. Omit them and every farmer is returned.
     registered_by = django_filters.NumberFilter(field_name='registered_by')
     created_by = django_filters.NumberFilter(method='filter_created_by')
+    user_id = django_filters.NumberFilter(
+        method='filter_created_by', label='Created by user ID',
+    )
     
     # Personal information filters
     first_name = django_filters.CharFilter(lookup_expr='icontains')
@@ -82,7 +87,11 @@ class FarmerFilter(django_filters.FilterSet):
         )
     
     def filter_created_by(self, queryset, name, value):
-        """Alias filter to map created_by -> registered_by"""
+        """Map the created_by / user_id aliases onto registered_by.
+
+        A blank value is treated as "no filter" so the list still returns every
+        farmer, which is what an empty query parameter should do.
+        """
         if not value:
             return queryset
         return queryset.filter(registered_by=value)

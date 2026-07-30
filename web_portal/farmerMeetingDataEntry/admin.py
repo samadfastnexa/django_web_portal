@@ -1,7 +1,7 @@
 from django.contrib import admin
 from web_portal.admin import admin_site
 from web_portal.admin_filters import date_range_filter, related_values_filter
-from .models import Meeting, FarmerAttendance, MeetingAttachment, FieldDay, FieldDayAttendance, FieldDayAttachment, FieldDayAttendanceCrop
+from .models import Meeting, FarmerAttendance, MeetingAttachment, FieldDay, FieldDayAttendance, FieldDayAttachment, FieldDayAttendanceCrop, HPMRequisition
 from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -481,3 +481,8 @@ class FieldDayAttendanceCropAdmin(admin.ModelAdmin):
     list_display = ['attendance', 'crop_name', 'acreage']
     list_filter = ['crop_name']
     search_fields = ['crop_name', 'attendance__farmer_name']
+
+
+# HPM requisition admin lives in its own module to keep this file manageable;
+# imported here so admin autodiscovery picks up its registration.
+from . import hpm_admin  # noqa: E402,F401

@@ -855,12 +855,32 @@ leave_request_example = openapi.Schema(
         "start_date": openapi.Schema(
             type=openapi.TYPE_STRING,
             format="date",
+            description="YYYY-MM-DD.",
             example="2025-08-20"
+        ),
+        "start_time": openapi.Schema(
+            type=openapi.TYPE_STRING,
+            format="time",
+            description=(
+                "Optional. 24-hour HH:MM or HH:MM:SS (e.g. 09:30). "
+                "Omit or send null for a full-day leave. Local time, no timezone."
+            ),
+            example="09:30"
         ),
         "end_date": openapi.Schema(
             type=openapi.TYPE_STRING,
             format="date",
+            description="YYYY-MM-DD.",
             example="2025-08-25"
+        ),
+        "end_time": openapi.Schema(
+            type=openapi.TYPE_STRING,
+            format="time",
+            description=(
+                "Optional. 24-hour HH:MM or HH:MM:SS (e.g. 13:00). "
+                "On a single-day leave it must be after start_time."
+            ),
+            example="13:00"
         ),
         "reason": openapi.Schema(
             type=openapi.TYPE_STRING,
@@ -881,7 +901,10 @@ leave_response_example = {
     "user": 3,
     "leave_type": 1,
     "start_date": "2025-08-20",
+    # Times are always returned as HH:MM:SS, and are null for a full-day leave.
+    "start_time": "09:30:00",
     "end_date": "2025-08-25",
+    "end_time": "13:00:00",
     "reason": "Medical leave due to illness",
     "status": "pending",
     "created_at": "2025-08-18T10:30:00Z",
@@ -957,7 +980,13 @@ class LeaveRequestListCreateView(generics.ListCreateAPIView):
             )
         },
         operation_summary="Create a new leave request",
-        operation_description="Submit a new leave request with leave_type, start_date, end_date, and reason.",
+        operation_description=(
+            "Submit a new leave request with leave_type, start_date, end_date and reason.\n\n"
+            "**Times are optional.** Send start_time / end_time as 24-hour `HH:MM` or "
+            "`HH:MM:SS` to book a part-day leave (e.g. 09:30 to 13:00); leave them out "
+            "for a full day. Responses always return times as `HH:MM:SS`, or null when "
+            "unset. On a single-day leave end_time must be after start_time."
+        ),
         tags=["11. Leave Requests"]
     )
     def post(self, request, *args, **kwargs):

@@ -545,6 +545,9 @@ class AnalyticsAdminSite(AdminSite):
             ('farmermeetingdataentry', 'Meeting', 'Farmer Meeting'),
             ('farmermeetingdataentry', 'FieldDay', 'Field Day'),
             ('fieldadvisoryservice', 'MeetingSchedule', 'Field Advisory'),
+            # Listed explicitly rather than relying on SIDEBAR_ABSORB_APPS, which
+            # would sweep it in at the bottom with an auto-generated label.
+            ('farmermeetingdataentry', 'HPMRequisition', 'HPM Requisition'),
         ]),
         # The old "Field Advisory Service" app split into focused groups.
         ('Organization', [
