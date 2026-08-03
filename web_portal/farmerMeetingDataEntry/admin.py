@@ -1,6 +1,10 @@
 from django.contrib import admin
 from web_portal.admin import admin_site
 from web_portal.admin_filters import date_range_filter, related_values_filter
+from web_portal.form_pdf import (
+    ATTENDEE_COLUMNS, ATTENDEE_WIDTHS, attendee_rows, fmt_datetime, fmt_person,
+    fmt_yesno, form_pdf_action, form_story,
+)
 from .models import Meeting, FarmerAttendance, MeetingAttachment, FieldDay, FieldDayAttendance, FieldDayAttachment, FieldDayAttendanceCrop, HPMRequisition
 from django.http import HttpResponse
 from openpyxl import Workbook
@@ -178,6 +182,41 @@ def export_farmer_meeting_to_excel(modeladmin, request, queryset):
 
 export_farmer_meeting_to_excel.short_description = "Export selected to Excel"
 
+
+def _meeting_form_story(obj):
+    """One Farmer Meeting as the printed FARMER MEETING-DATA ENTRY sheet."""
+    return form_story(
+        'FARMER MEETING-DATA ENTRY',
+        [
+            ('Meeting ID', obj.id),
+            ('Name of FSM', obj.fsm_name),
+            ('Date', fmt_datetime(obj.date)),
+            ('Location', obj.location),
+            ('Region', obj.region_fk.name if obj.region_fk else ''),
+            ('Zone', obj.zone_fk.name if obj.zone_fk else ''),
+            ('Territory', obj.territory_fk.name if obj.territory_fk else ''),
+            ('Total Attendees', obj.total_attendees),
+            ('Key Topics Discussed', obj.key_topics_discussed),
+            ('Products Discussed', obj.products_discussed),
+            # One row, as on the paper form, rather than two booleans.
+            ('Presence of ZM/RSM',
+             f'ZM: {fmt_yesno(obj.presence_of_zm)} / '
+             f'RSM: {fmt_yesno(obj.presence_of_rsm)}'),
+            ('Feedback from Attendees', obj.feedback_from_attendees),
+            ('Suggestions for Future', obj.suggestions_for_future),
+        ],
+        table_heading='Farmer Meeting:',
+        columns=ATTENDEE_COLUMNS,
+        col_widths=ATTENDEE_WIDTHS,
+        rows=attendee_rows(obj.attendees.all()),
+    )
+
+
+export_farmer_meeting_to_pdf = form_pdf_action(
+    _meeting_form_story, 'Export selected to PDF (form)', 'farmer_meetings',
+)
+
+
 @admin.register(Meeting, site=admin_site)
 class MeetingAdmin(admin.ModelAdmin):
     inlines = [FarmerAttendanceInline, MeetingAttachmentInline]
@@ -210,8 +249,8 @@ class MeetingAdmin(admin.ModelAdmin):
         related_values_filter('territory_fk__name', 'territory'),
     ]
     ordering = ['-id']
-    actions = [export_farmer_meeting_to_excel]
-    
+    actions = [export_farmer_meeting_to_excel, export_farmer_meeting_to_pdf]
+
     # Configure form to show datetime input with separate date and time fields
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if db_field.name == 'date':
@@ -395,6 +434,37 @@ def export_field_day_to_excel(modeladmin, request, queryset):
 
 export_field_day_to_excel.short_description = "Export selected to Excel"
 
+
+def _field_day_form_story(obj):
+    """One Field Day as the printed FIELD DAY-DATA ENTRY sheet."""
+    return form_story(
+        'FIELD DAY-DATA ENTRY',
+        [
+            ('Field Day ID', obj.id),
+            ('Name of FSM', obj.title),
+            ('Date', fmt_datetime(obj.date)),
+            ('Location', obj.location),
+            ('Region', obj.region_fk.name if obj.region_fk else ''),
+            ('Zone', obj.zone_fk.name if obj.zone_fk else ''),
+            ('Territory', obj.territory_fk.name if obj.territory_fk else ''),
+            # FieldDay counts participants, not attendees; same row on paper.
+            ('Total Attendees', obj.total_participants),
+            ('Demonstrations Conducted', obj.demonstrations_conducted),
+            ('Recorded By', fmt_person(obj.user)),
+            ('Feedback from Attendees', obj.feedback),
+        ],
+        table_heading='Field Day:',
+        columns=ATTENDEE_COLUMNS,
+        col_widths=ATTENDEE_WIDTHS,
+        rows=attendee_rows(obj.attendees.prefetch_related('crops').all()),
+    )
+
+
+export_field_day_to_pdf = form_pdf_action(
+    _field_day_form_story, 'Export selected to PDF (form)', 'field_days',
+)
+
+
 @admin.register(FieldDay, site=admin_site)
 class FieldDayAdmin(admin.ModelAdmin):
     list_display = (
@@ -418,7 +488,7 @@ class FieldDayAdmin(admin.ModelAdmin):
     readonly_fields = ('id',)
     ordering = ['-id']
     inlines = [FieldDayAttendanceInline, FieldDayAttachmentInline]
-    actions = [export_field_day_to_excel]
+    actions = [export_field_day_to_excel, export_field_day_to_pdf]
     
     # Configure form to show datetime input with separate date and time fields
     def formfield_for_dbfield(self, db_field, request, **kwargs):

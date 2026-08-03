@@ -408,8 +408,10 @@ LOGGING = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # change as needed
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    # 8h covers a full field shift, so staff are not logged out mid-day; 30d
+    # refresh means the app only asks for credentials about once a month.
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=8),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
     'ROTATE_REFRESH_TOKENS': True,
     # Keep rotation (new tokens are issued), but do NOT blacklist the old refresh
     # token on rotation. This tolerates a client that reuses its previous refresh
