@@ -25,10 +25,9 @@ attendance.reports.report_colors() - so the sheet can be re-themed without
 editing this module.
 """
 import datetime
-import io
+from xml.sax.saxutils import escape
 
 from django.conf import settings
-from django.http import HttpResponse
 from django.utils import timezone
 
 #: Slug of the admin-editable preferences.Setting row holding the palette.
@@ -104,15 +103,21 @@ def _stamp(value):
     return value.strftime('%d-%b-%Y')
 
 
-def render_requisition_pdf(obj, filename=None):
-    """One requisition as a print-ready A4 portrait PDF."""
+#: Narrower than the data-entry sheets in web_portal.form_pdf - the tables
+#: below are laid out for a 182mm content width.
+PAGE_MARGIN_MM = 14
+
+
+def requisition_story(obj):
+    """Flowables for one requisition, ready to drop into a document.
+
+    Split out from `render_requisition_pdf` so the changelist action can put
+    several requisitions in one PDF without re-implementing the layout.
+    """
     from reportlab.lib import colors as rl_colors
-    from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
-    from reportlab.platypus import (
-        Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
-    )
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
     palette = report_colors()
 
@@ -122,7 +127,10 @@ def render_requisition_pdf(obj, filename=None):
         except Exception:
             return rl_colors.HexColor(DEFAULT_COLORS[key])
 
-    body = ParagraphStyle('body', fontName='Helvetica', fontSize=8.5, leading=11)
+    # Paragraph cells carry their own colour - the table's TEXTCOLOR commands
+    # only reach plain-string cells, so the palette is applied on the styles.
+    body = ParagraphStyle('body', fontName='Helvetica', fontSize=8.5, leading=11,
+                          textColor=hexc('value_fg'))
     title = ParagraphStyle(
         'title', fontName='Helvetica-Bold', fontSize=13, leading=16, alignment=1,
     )
@@ -130,9 +138,19 @@ def render_requisition_pdf(obj, filename=None):
         'subtitle', fontName='Helvetica-Bold', fontSize=10.5, leading=13, alignment=1,
     )
 
-    def para(text):
-        # Paragraph so long purpose/remarks wrap instead of overflowing the cell.
-        return Paragraph((str(text or '')).replace('\n', '<br/>'), body)
+    label_style = ParagraphStyle('label', parent=body, fontName='Helvetica-Bold',
+                                 textColor=hexc('label_fg'))
+
+    def para(text, style=body):
+        # Paragraph so long purpose/remarks wrap instead of overflowing the
+        # cell. Escaped first because reportlab reads the text as mini-HTML -
+        # an "&" typed into remarks would otherwise abort the document.
+        return Paragraph(escape(str(text or '')).replace('\n', '<br/>'), style)
+
+    def label(text):
+        # The long "Purpose of Meeting (...)" label runs past the 58mm label
+        # column as a bare string, printing over the value beside it.
+        return para(text, label_style)
 
     label_w, value_w = 58 * mm, 123 * mm
 
@@ -157,17 +175,17 @@ def render_requisition_pdf(obj, filename=None):
     # --- HPM meeting details --------------------------------------------
     detail_rows = [
         ['HPM MEETING DETAILS', ''],
-        ['Zone', para(obj.zone_fk.name if obj.zone_fk else '')],
-        ['Region', para(obj.region_fk.name if obj.region_fk else '')],
-        ['Territory', para(obj.territory_fk.name if obj.territory_fk else '')],
-        ['Responsible Person', para(_person(obj.responsible_person))],
+        [label('Zone'), para(obj.zone_fk.name if obj.zone_fk else '')],
+        [label('Region'), para(obj.region_fk.name if obj.region_fk else '')],
+        [label('Territory'), para(obj.territory_fk.name if obj.territory_fk else '')],
+        [label('Responsible Person'), para(_person(obj.responsible_person))],
         # _stamp, not _date: meeting_date is a DateTimeField, so print the time.
-        ['Meeting Date & Time', _stamp(obj.meeting_date)],
-        ['Meeting Location', para(obj.meeting_location)],
-        ['No. of Farmers / Attendees', str(obj.expected_attendees or 0)],
-        ['Purpose of Meeting (Product Related Campaign & Sale Commitment)',
+        [label('Meeting Date & Time'), _stamp(obj.meeting_date)],
+        [label('Meeting Location'), para(obj.meeting_location)],
+        [label('No. of Farmers / Attendees'), str(obj.expected_attendees or 0)],
+        [label('Purpose of Meeting (Product Related Campaign & Sale Commitment)'),
          para(obj.purpose)],
-        ['Remarks', para(obj.remarks)],
+        [label('Remarks'), para(obj.remarks)],
     ]
     details = Table(detail_rows, colWidths=[label_w, value_w])
     details.setStyle(TableStyle([
@@ -229,14 +247,7 @@ def render_requisition_pdf(obj, filename=None):
                        leading=10, alignment=1),
     )
 
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        leftMargin=14 * mm, rightMargin=14 * mm,
-        topMargin=14 * mm, bottomMargin=14 * mm,
-        title=f'HPM Requisition {obj.pk}',
-    )
-    doc.build([
+    return [
         Paragraph('HIGH-PROFILE FARMER MEETING FOR GM/BM', title),
         Spacer(1, 3 * mm),
         Paragraph('REQUISITION FORM', subtitle),
@@ -248,9 +259,16 @@ def render_requisition_pdf(obj, filename=None):
         approval,
         Spacer(1, 4 * mm),
         note,
-    ])
+    ]
 
-    response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
-    name = filename or f'hpm-requisition-{obj.pk}.pdf'
-    response['Content-Disposition'] = f'attachment; filename="{name}"'
-    return response
+
+def render_requisition_pdf(obj, filename=None):
+    """One requisition as a print-ready A4 portrait PDF."""
+    from web_portal.form_pdf import render_pdf_response
+
+    return render_pdf_response(
+        [requisition_story(obj)],
+        filename or f'hpm-requisition-{obj.pk}.pdf',
+        title=f'HPM Requisition {obj.pk}',
+        margin=PAGE_MARGIN_MM,
+    )
