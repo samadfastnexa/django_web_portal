@@ -542,7 +542,7 @@ class AnalyticsAdminSite(AdminSite):
     # ------------------------------------------------------------------
     SIDEBAR_GROUPS = [
         ('Field Activities', [
-            ('farmermeetingdataentry', 'Meeting', 'Farmer Meeting'),
+            ('farmermeetingdataentry', 'Meeting', 'Field Advisory'),
             ('farmermeetingdataentry', 'FieldDay', 'Field Day'),
             ('fieldadvisoryservice', 'MeetingSchedule', 'Field Advisory'),
             # Listed explicitly rather than relying on SIDEBAR_ABSORB_APPS, which

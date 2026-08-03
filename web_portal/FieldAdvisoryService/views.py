@@ -54,8 +54,8 @@ class MeetingScheduleViewSet(HierarchyFilterMixin, viewsets.ModelViewSet):
     hierarchy_field = 'staff'  # Filter by staff who created the meeting
     filterset_fields = ["fsm_name", "region", "zone", "territory", "location", "presence_of_zm", "presence_of_rsm", "staff"]
     search_fields = ["fsm_name", "region__name", "zone__name", "territory__name", "location", "key_topics_discussed"]
-    ordering_fields = ["date", "fsm_name", "region__name", "zone__name", "territory__name", "total_attendees"]
-    ordering = ["-id"]
+    ordering_fields = ["date", "fsm_name", "region__name", "zone__name", "territory__name", "total_attendees", "created_at"]
+    ordering = ["-created_at", "-id"]
     common_parameters = [
         openapi.Parameter('fsm_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='Field Sales Manager name'),
         openapi.Parameter('territory_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='Territory ID'),

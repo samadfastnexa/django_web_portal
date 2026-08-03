@@ -39,8 +39,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
         'key_topics_discussed',
         'products_discussed',
     ]
-    ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees", "id"]
-    ordering = ["-id"]
+    ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees", "id", "created_at"]
+    ordering = ["-created_at", "-id"]
     
     def get_queryset(self):
         """
@@ -606,8 +606,8 @@ class FieldDayViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["region_fk", "zone_fk", "territory_fk", "company_fk", "location", "total_participants", "user"]
     search_fields = ["title", "region_fk__name", "zone_fk__name", "territory_fk__name", "company_fk__Company_name", "location", "feedback"]
-    ordering_fields = ["date", "title", "region_fk__name", "zone_fk__name", "territory_fk__name"]
-    ordering = ["-id"]
+    ordering_fields = ["date", "title", "region_fk__name", "zone_fk__name", "territory_fk__name", "created_at"]
+    ordering = ["-created_at", "-id"]
     
     def get_queryset(self):
         """

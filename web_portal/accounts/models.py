@@ -299,9 +299,9 @@ class SalesStaffProfile(models.Model):
     master_hod = models.ForeignKey('self', related_name='sales_master_hod', on_delete=models.SET_NULL, null=True, blank=True)
     is_vacant = models.BooleanField(default=False, help_text="Mark if this position is vacant")
      #  leave quota fields
-    sick_leave_quota = models.PositiveIntegerField(default=0)
-    casual_leave_quota = models.PositiveIntegerField(default=0)
-    others_leave_quota = models.PositiveIntegerField(default=0)
+    sick_leave_quota = models.PositiveIntegerField(default=10)
+    casual_leave_quota = models.PositiveIntegerField(default=10)
+    others_leave_quota = models.PositiveIntegerField(default=10)
     
     # ==================== REPORTING HIERARCHY METHODS ====================
     

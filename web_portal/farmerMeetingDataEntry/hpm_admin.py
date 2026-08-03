@@ -61,7 +61,7 @@ class HPMRequisitionAdmin(admin.ModelAdmin):
         'responsible_person__username', 'responsible_person__email',
     )
     autocomplete_fields = ('submitted_by', 'responsible_person')
-    ordering = ['-id']
+    ordering = ['-created_at', '-id']
     list_per_page = 25
     actions = ('approve_selected', 'reject_selected')
     change_form_template = 'admin/farmerMeetingDataEntry/hpmrequisition/change_form.html'

@@ -204,6 +204,11 @@ def _error_detail(response):
             for k in ('error', 'detail', 'message', 'non_field_errors'):
                 if data.get(k):
                     return str(data[k])[:400]
+            # DRF field-level validation errors: {"field_name": ["msg"]}
+            field_errors = {k: v for k, v in data.items() if isinstance(v, list) and v}
+            if field_errors:
+                parts = [f"{k}: {v[0]}" for k, v in field_errors.items()]
+                return '; '.join(parts)[:400]
         return ''
     except Exception:
         return ''
