@@ -15,10 +15,20 @@ from django.utils.html import format_html
 
 from web_portal.admin import admin_site
 from web_portal.admin_filters import date_range_filter, related_values_filter
+from web_portal.form_pdf import form_pdf_action
 
+from .hpm_report import PAGE_MARGIN_MM, requisition_story
 from .models import HPMRequisition
 
 APPROVE_HPM_PERM = 'farmerMeetingDataEntry.approve_hpmrequisition'
+
+# Same "Export selected to PDF (form)" action as the other Field Activities
+# sheets, but drawing the requisition's own layout - its approval and signature
+# block has no equivalent in the generic Field / Description sheet.
+export_hpm_to_pdf = form_pdf_action(
+    requisition_story, 'Export selected to PDF (form)', 'hpm_requisitions',
+    margin=PAGE_MARGIN_MM,
+)
 
 
 def can_approve_hpm(user):
@@ -63,7 +73,7 @@ class HPMRequisitionAdmin(admin.ModelAdmin):
     autocomplete_fields = ('submitted_by', 'responsible_person')
     ordering = ['-id']
     list_per_page = 25
-    actions = ('approve_selected', 'reject_selected')
+    actions = ('approve_selected', 'reject_selected', export_hpm_to_pdf)
     change_form_template = 'admin/farmerMeetingDataEntry/hpmrequisition/change_form.html'
 
     # Mirrors the three boxes on the paper form. Note the GM/BM signature pair

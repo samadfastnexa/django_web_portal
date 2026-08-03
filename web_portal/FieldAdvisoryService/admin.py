@@ -1,6 +1,10 @@
 from django.contrib import admin
 from web_portal.admin import admin_site
 from web_portal.admin_filters import date_range_filter, related_values_filter
+from web_portal.form_pdf import (
+    ATTENDEE_COLUMNS, ATTENDEE_WIDTHS, attendee_rows, fmt_datetime, fmt_person,
+    fmt_yesno, form_pdf_action, form_story,
+)
 from django.contrib import messages
 import json
 import logging
@@ -178,6 +182,43 @@ def export_meeting_schedule_to_excel(modeladmin, request, queryset):
 
 export_meeting_schedule_to_excel.short_description = "Export selected to Excel"
 
+
+def _meeting_schedule_form_story(obj):
+    """One Field Advisory Meeting as the printed data-entry sheet."""
+    return form_story(
+        'FIELD ADVISORY MEETING-DATA ENTRY',
+        [
+            ('Meeting ID', obj.meeting_id),
+            ('Name of FSM', obj.fsm_name),
+            ('Staff', fmt_person(obj.staff)),
+            ('Date', fmt_datetime(obj.date)),
+            ('Location', obj.location),
+            ('Region', obj.region.name if obj.region else ''),
+            ('Zone', obj.zone.name if obj.zone else ''),
+            ('Territory', obj.territory.name if obj.territory else ''),
+            ('Total Attendees', obj.total_attendees),
+            ('Confirmed Attendees', obj.confirmed_attendees),
+            ('Minimum Farmers Required', obj.min_farmers_required),
+            ('Key Topics Discussed', obj.key_topics_discussed),
+            # One row, as on the paper form, rather than two booleans.
+            ('Presence of ZM/RSM',
+             f'ZM: {fmt_yesno(obj.presence_of_zm)} / '
+             f'RSM: {fmt_yesno(obj.presence_of_rsm)}'),
+            ('Feedback from Attendees', obj.feedback_from_attendees),
+            ('Suggestions for Future', obj.suggestions_for_future),
+        ],
+        table_heading='Field Advisory Meeting:',
+        columns=ATTENDEE_COLUMNS,
+        col_widths=ATTENDEE_WIDTHS,
+        rows=attendee_rows(obj.attendees.all()),
+    )
+
+
+export_meeting_schedule_to_pdf = form_pdf_action(
+    _meeting_schedule_form_story, 'Export selected to PDF (form)', 'field_advisory_meetings',
+)
+
+
 @admin.register(MeetingSchedule, site=admin_site)
 class MeetingScheduleAdmin(admin.ModelAdmin):
     inlines = [MeetingScheduleAttendanceInline]
@@ -215,7 +256,7 @@ class MeetingScheduleAdmin(admin.ModelAdmin):
         'presence_of_rsm'
     ]
     ordering = ['-id']
-    actions = [export_meeting_schedule_to_excel]
+    actions = [export_meeting_schedule_to_excel, export_meeting_schedule_to_pdf]
     readonly_fields = ['meeting_id']
     
     # Configure form to show datetime input with separate date and time fields
