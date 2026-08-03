@@ -36,16 +36,18 @@ class Meeting(models.Model):
   
     # ✅ Soft delete flag
     is_active = models.BooleanField(default=True)
-  
+
     # ✅ This is your user_id foreign key field
     user_id = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        db_column='user_id',  # Optional, keeps DB column name as `user_id` 
+        db_column='user_id',  # Optional, keeps DB column name as `user_id`
         related_name='user_meetings'
     )
+
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
     def save(self, *args, **kwargs):
         if not self.id:
@@ -54,12 +56,12 @@ class Meeting(models.Model):
 
     def __str__(self):
         return f"{self.id} - {self.user_id.username if self.user_id else 'No User'}"
-    
+
     class Meta:
         db_table = 'farmermeetingdataentry_meeting'
-        ordering = ['-id']
-        verbose_name = "Farmer Advisory Meeting"
-        verbose_name_plural = "Farmer Advisory Meetings"
+        ordering = ['-created_at', '-id']
+        verbose_name = "Field Advisory"
+        verbose_name_plural = "Field Advisory"
 
 class FarmerAttendance(models.Model):
     meeting = models.ForeignKey(Meeting, related_name='attendees', on_delete=models.CASCADE)
@@ -174,18 +176,19 @@ class FieldDay(models.Model):
     feedback = models.TextField(blank=True, null=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="field_days")
     is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
     def save(self, *args, **kwargs):
         if not self.id:
             self.id = f"FD{uuid.uuid4().hex[:6].upper()}"
         super().save(*args, **kwargs)
-    
+
     def __str__(self):
         return f"{self.id} - {self.title}"
-    
+
     class Meta:
         db_table = 'farmermeetingdataentry_fieldday'
-        ordering = ['-id']
+        ordering = ['-created_at', '-id']
         verbose_name = "Field Day"
         verbose_name_plural = "Field Days"
 
@@ -378,7 +381,7 @@ class HPMRequisition(models.Model):
 
     class Meta:
         db_table = 'farmermeetingdataentry_hpmrequisition'
-        ordering = ['-id']
+        ordering = ['-created_at', '-id']
         verbose_name = 'HPM Requisition'
         verbose_name_plural = 'HPM Requisitions'
         indexes = [

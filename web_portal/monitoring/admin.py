@@ -32,7 +32,10 @@ MODULE_RULES = (
     ('Farmers', ('/api/farmers', '/admin/farmers')),
     ('Complaints', ('/api/complaints', '/admin/complaints')),
     ('Cart & Orders', ('/api/cart', '/api/orders', '/admin/cart')),
+    ('Leave Requests', ('/api/leave-requests', '/admin/attendance/leaverequest')),
     ('Attendance', ('/api/attendance', '/admin/attendance')),
+    ('General Ledger', ('/api/general-ledger',)),
+    ('Locations', ('/api/available-locations',)),
     ('Crop Management', ('/api/crop', '/admin/crop_manage', '/admin/crop_management')),
     ('Documents', ('/api/document', '/admin/document_management')),
     ('Analytics', ('/api/analytics',)),
@@ -140,7 +143,7 @@ class ActivityLogAdmin(admin.ModelAdmin):
 
     list_display = (
         'timestamp', 'username', 'attempted_identifier', 'module_label', 'method', 'path',
-        'status_badge', 'error_summary', 'suspicious_badge', 'auth_note', 'duration_ms', 'ip_address', 'view_module',
+        'status_badge', 'error_summary', 'suspicious_badge', 'auth_note', 'duration_ms', 'ip_address', 'view_module_label',
     )
     list_filter = (
         'is_error',
@@ -166,10 +169,84 @@ class ActivityLogAdmin(admin.ModelAdmin):
     ordering = ('-timestamp',)
     list_select_related = ('user',)
 
+    # Color theme per module group: (background, text)
+    MODULE_COLORS = {
+        'Login / Auth':           ('#dbeafe', '#1e40af'),
+        'Leave Requests':         ('#fef9c3', '#854d0e'),
+        'Attendance':             ('#fef9c3', '#854d0e'),
+        'Field Advisory':         ('#dcfce7', '#166534'),
+        'Farmer Meeting':         ('#dcfce7', '#166534'),
+        'Field Day':              ('#dcfce7', '#166534'),
+        'HPM':                    ('#dcfce7', '#166534'),
+        'Analytics':              ('#ede9fe', '#5b21b6'),
+        'Collection vs Achievement': ('#ede9fe', '#5b21b6'),
+        'Sales vs Achievement':   ('#ede9fe', '#5b21b6'),
+        'SAP Integration':        ('#f3e8ff', '#6b21a8'),
+        'Sales Order':            ('#f3e8ff', '#6b21a8'),
+        'Product Catalog':        ('#f3e8ff', '#6b21a8'),
+        'Accounts / Users':       ('#e0f2fe', '#0369a1'),
+        'Complaints':             ('#fee2e2', '#991b1b'),
+        'Dealers':                ('#fff7ed', '#9a3412'),
+        'Dealer Request':         ('#fff7ed', '#9a3412'),
+        'Cart & Orders':          ('#fce7f3', '#9d174d'),
+        'Farmers':                ('#ecfdf5', '#065f46'),
+        'Documents':              ('#f0fdf4', '#166534'),
+        'Crop Management':        ('#f0fdf4', '#166534'),
+        'General Ledger':         ('#f8fafc', '#334155'),
+        'Monitoring':             ('#f1f5f9', '#475569'),
+        'Admin (other)':          ('#f1f5f9', '#475569'),
+        'Other':                  ('#f1f5f9', '#6b7280'),
+    }
+
+    # Plain-English labels for Python view module paths
+    VIEW_MODULE_LABELS = {
+        'attendance.views':                  'Attendance & Leave',
+        'analytics.views':                   'Analytics Dashboard',
+        'accounts.UserViewSet':              'User Accounts',
+        'accounts.views':                    'User Accounts',
+        'rest_framework_simplejwt.views':    'Login / Token Auth',
+        'farmerMeetingDataEntry.views':      'Field Advisory / Farmer Meeting',
+        'FieldAdvisoryService.views':        'Field Advisory Service',
+        'farmers.views':                     'Farmers',
+        'complaints.views':                  'Complaints',
+        'cart.views':                        'Cart & Orders',
+        'document_management.views':         'Documents',
+        'sap_integration.views':             'SAP Integration',
+        'general_ledger.views':              'General Ledger',
+        'crop_management.views':             'Crop Management',
+        'crop_manage.views':                 'Crop Management',
+        'farm.views':                        'Farm Management',
+        'preferences.views':                 'Preferences',
+        'monitoring.security':               'Security — blocked probe',
+        'monitoring.middleware':             'Monitoring',
+        'kindwise.views':                    'Kindwise (Crop ID)',
+        'farmerMeetingDataEntry.hpm_api':    'HPM Requisition',
+    }
+
+    # Plain-English rewrites for common technical error strings
+    ERROR_PLAIN_ENGLISH = {
+        'Authentication credentials were not provided.': 'Not logged in — no token sent',
+        'Token is expired':                              'Session expired — needs re-login',
+        'Given token not valid for any token type':      'Invalid or expired token',
+        'No active account found with the given credentials': 'Wrong email or password',
+        'Overlapping leave exists.':                     'Leave dates overlap with an existing request',
+        'Date has wrong format':                         'Date sent in wrong format',
+        'Incorrect type. Expected pk value':             'Wrong field type sent by app',
+        'This field is required':                        'Required field missing',
+        'No policy found in SAP':                        'SAP: policy not found',
+        'Date range cannot exceed 12 months':            'Date range too wide — max 12 months',
+    }
+
     @admin.display(description='Module')
     def module_label(self, obj):
-        """Business-facing feature name derived from the request path."""
-        return resolve_module(obj.path)
+        """Colored badge showing business module name."""
+        label = resolve_module(obj.path)
+        bg, fg = self.MODULE_COLORS.get(label, ('#f1f5f9', '#6b7280'))
+        return format_html(
+            '<span style="background:{};color:{};padding:2px 10px;'
+            'border-radius:10px;font-weight:600;font-size:11px;white-space:nowrap;">{}</span>',
+            bg, fg, label,
+        )
 
     @admin.display(description='Status', ordering='status_code')
     def status_badge(self, obj):
@@ -191,11 +268,17 @@ class ActivityLogAdmin(admin.ModelAdmin):
 
     @admin.display(description='Error', ordering='error_detail')
     def error_summary(self, obj):
-        """Truncated error message (full text on hover); empty for non-error rows."""
+        """Plain-English error (full technical detail on hover)."""
         if not obj.error_detail:
             return ''
         full = obj.error_detail
-        short = (full[:70] + '…') if len(full) > 70 else full
+        # Find a plain-English rewrite
+        plain = full
+        for technical, english in self.ERROR_PLAIN_ENGLISH.items():
+            if technical.lower() in full.lower():
+                plain = english
+                break
+        short = (plain[:70] + '…') if len(plain) > 70 else plain
         return format_html(
             '<span title="{}" style="color:#991b1b;font-size:12px;">{}</span>', full, short
         )
@@ -213,6 +296,22 @@ class ActivityLogAdmin(admin.ModelAdmin):
             return ''
         colour = '#9a3412' if obj.auth_outcome == 'token_expired' else '#6b7280'
         return format_html('<span style="color:{};font-weight:600;">{}</span>', colour, label)
+
+    @admin.display(description='Handled By', ordering='view_module')
+    def view_module_label(self, obj):
+        """Plain-English name for the Python view that handled the request."""
+        raw = obj.view_module or ''
+        label = self.VIEW_MODULE_LABELS.get(raw)
+        if label:
+            return format_html(
+                '<span style="color:#475569;font-size:11px;" title="{}">{}</span>',
+                raw, label,
+            )
+        short = raw.replace('.views', '').replace('.api', '').replace('_', ' ').title()
+        return format_html(
+            '<span style="color:#94a3b8;font-size:11px;" title="{}">{}</span>',
+            raw, short or '—',
+        )
 
     @admin.display(description='Flag', ordering='is_suspicious')
     def suspicious_badge(self, obj):

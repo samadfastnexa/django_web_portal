@@ -255,7 +255,7 @@ class MeetingScheduleAdmin(admin.ModelAdmin):
         'presence_of_zm',
         'presence_of_rsm'
     ]
-    ordering = ['-id']
+    ordering = ['-created_at', '-id']
     actions = [export_meeting_schedule_to_excel, export_meeting_schedule_to_pdf]
     readonly_fields = ['meeting_id']
     

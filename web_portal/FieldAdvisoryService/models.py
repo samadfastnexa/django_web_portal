@@ -462,6 +462,7 @@ class MeetingSchedule(models.Model):
     suggestions_for_future = models.TextField(blank=True, null=True)
     min_farmers_required = models.PositiveIntegerField(default=5)
     confirmed_attendees = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
     def save(self, *args, **kwargs):
         if not self.meeting_id:
@@ -478,10 +479,10 @@ class MeetingSchedule(models.Model):
 
     def __str__(self):
         return f"{self.meeting_id} - Meeting on {self.date} at {self.location}"
-    
+
     class Meta:
         db_table = 'fieldadvisoryservice_meetingschedule'
-        ordering = ['-id']
+        ordering = ['-created_at', '-id']
         verbose_name = "Field Advisory Meeting"
         verbose_name_plural = "Field Advisory Meetings"
 

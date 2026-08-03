@@ -383,11 +383,38 @@ class AttendanceReportSerializer(serializers.ModelSerializer):
     
 class LeaveRequestSerializer(serializers.ModelSerializer):
         user = serializers.ReadOnlyField(source='user.username')
+        start_date = serializers.DateField(
+            input_formats=['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', 'iso-8601']
+        )
+        end_date = serializers.DateField(
+            input_formats=['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', 'iso-8601']
+        )
 
         class Meta:
             model = LeaveRequest
             fields = '__all__'
             read_only_fields = ['user', 'status', 'created_at', 'updated_at']
+
+        def to_internal_value(self, data):
+            from .models import LeaveType
+            data = data.copy() if hasattr(data, 'copy') else dict(data)
+            raw = data.get('leave_type')
+            # Accept string codes/names ("casual", "Sick") in addition to integer PKs
+            if raw is not None and not str(raw).isdigit():
+                lt = (LeaveType.objects.filter(code__iexact=str(raw)).first() or
+                      LeaveType.objects.filter(name__iexact=str(raw)).first())
+                if lt:
+                    data['leave_type'] = lt.pk
+                else:
+                    raise serializers.ValidationError(
+                        {'leave_type': [f'Invalid leave type "{raw}". Use: sick, casual, other.']}
+                    )
+            return super().to_internal_value(data)
+
+        def to_representation(self, instance):
+            data = super().to_representation(instance)
+            data['leave_type'] = instance.leave_type.name if instance.leave_type_id else None
+            return data
 
         def validate(self, data):
             user = self.context['request'].user

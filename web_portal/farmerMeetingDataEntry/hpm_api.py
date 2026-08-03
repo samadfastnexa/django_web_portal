@@ -124,8 +124,8 @@ class HPMRequisitionViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'region_fk', 'zone_fk', 'territory_fk', 'submitted_by']
     search_fields = ['id', 'meeting_location', 'purpose', 'remarks']
-    ordering_fields = ['requisition_date', 'meeting_date', 'id']
-    ordering = ['-id']
+    ordering_fields = ['requisition_date', 'meeting_date', 'id', 'created_at']
+    ordering = ['-created_at', '-id']
 
     def get_queryset(self):
         """Own requisitions plus those of anyone below the caller in the chain.

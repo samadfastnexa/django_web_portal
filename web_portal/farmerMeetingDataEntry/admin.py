@@ -248,8 +248,9 @@ class MeetingAdmin(admin.ModelAdmin):
         related_values_filter('zone_fk__name', 'zone'),
         related_values_filter('territory_fk__name', 'territory'),
     ]
-    ordering = ['-id']
+    ordering = ['-created_at', '-id']
     actions = [export_farmer_meeting_to_excel, export_farmer_meeting_to_pdf]
+
 
     # Configure form to show datetime input with separate date and time fields
     def formfield_for_dbfield(self, db_field, request, **kwargs):
@@ -486,7 +487,7 @@ class FieldDayAdmin(admin.ModelAdmin):
         'zone_fk__name', 'region_fk__name', 'user__email', 'feedback'
     )
     readonly_fields = ('id',)
-    ordering = ['-id']
+    ordering = ['-created_at', '-id']
     inlines = [FieldDayAttendanceInline, FieldDayAttachmentInline]
     actions = [export_field_day_to_excel, export_field_day_to_pdf]
     
