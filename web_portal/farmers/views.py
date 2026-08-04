@@ -73,17 +73,73 @@ class FarmerViewSet(viewsets.ModelViewSet):
             return FarmerDetailSerializer
     
     def get_queryset(self):
-        """Optimize queryset based on action"""
-        # Get base queryset without hierarchy filtering for farmers
-        # This allows all users to see all farmers regardless of who registered them
-        queryset = Farmer.objects.all()
-        
-        if self.action == 'list':
-            # For list view, we don't need farming history
-            return queryset.select_related('registered_by')
-        else:
-            # For detail views
-            return queryset.select_related('registered_by')
+        """Return farmers scoped to the logged-in user's reporting hierarchy.
+
+        Scoping rules (checked in order):
+        1. Admin / is_staff → all farmers.
+        2. Designation level ≤ 3 (GM / NSM) → all farmers.
+        3. Manager chain populated → farmers registered by self + all recursive subordinates.
+        4. Geo fallback → farmers registered by any staff sharing the same zones
+           (preferred) or regions. This covers ZMs / RSMs whose manager_id is NULL
+           but do have zone/region assignments in local DB.
+        5. No profile or no geo → only farmers registered by this user.
+
+        A caller may still narrow further with ?user_id=X / ?registered_by=X.
+        """
+        from accounts.models import SalesStaffProfile
+
+        user = getattr(self.request, 'user', None)
+        if user is None or not user.is_authenticated:
+            return Farmer.objects.none()
+
+        if user.is_staff:
+            return Farmer.objects.all().select_related('registered_by')
+
+        try:
+            profile = user.salesstaffprofile
+            level = profile.designation.level if profile.designation_id else 11
+
+            # GM / NSM and above → unrestricted
+            if level <= 3:
+                return Farmer.objects.all().select_related('registered_by')
+
+            # Try manager chain first (works when SAP import has set manager_id)
+            team_profiles = profile.get_all_subordinates(include_self=True)
+            team_user_ids = list(team_profiles.values_list('user_id', flat=True))
+            if len(team_user_ids) > 1:
+                return Farmer.objects.filter(
+                    registered_by_id__in=team_user_ids
+                ).select_related('registered_by')
+
+            # Geo fallback: only for ZM-level and above (level ≤ 8).
+            # FSMs (level > 8) fall through to own-farmers-only below.
+            if level <= 8:
+                zone_ids = list(profile.zones.values_list('id', flat=True))
+                region_ids = list(profile.regions.values_list('id', flat=True))
+
+                if zone_ids:
+                    staff_ids = list(
+                        SalesStaffProfile.objects.filter(zones__id__in=zone_ids)
+                        .values_list('user_id', flat=True).distinct()
+                    )
+                    return Farmer.objects.filter(
+                        registered_by_id__in=staff_ids
+                    ).select_related('registered_by')
+
+                if region_ids:
+                    staff_ids = list(
+                        SalesStaffProfile.objects.filter(regions__id__in=region_ids)
+                        .values_list('user_id', flat=True).distinct()
+                    )
+                    return Farmer.objects.filter(
+                        registered_by_id__in=staff_ids
+                    ).select_related('registered_by')
+
+        except Exception:
+            pass
+
+        # Fallback: own farmers only
+        return Farmer.objects.filter(registered_by=user).select_related('registered_by')
     
     @swagger_auto_schema(
         operation_description=(

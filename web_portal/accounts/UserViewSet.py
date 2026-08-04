@@ -284,6 +284,8 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'destroy':
             return [permissions.IsAdminUser()]
+        if self.action == 'create':
+            return [permissions.AllowAny()]
         return [IsAuthenticated(), IsOwnerOrAdmin()]
     
     # ----------------------
@@ -625,6 +627,14 @@ class UserViewSet(viewsets.ModelViewSet):
             user.set_password(password)
         user.is_sales_staff = is_sales_staff
         user.is_dealer = is_dealer
+
+        # Auto-assign 4B-AGRI company if none provided
+        if not user.company_id:
+            from FieldAdvisoryService.models import Company
+            agri = Company.objects.filter(Company_name='4B-AGRI').first()
+            if agri:
+                user.company = agri
+
         user.save()
 
         # Create sales profile if needed
