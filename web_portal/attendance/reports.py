@@ -21,6 +21,7 @@ import io
 import os
 
 from django.conf import settings
+from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -138,6 +139,19 @@ def _primary_name(manager):
     return f'{first} +{len(items) - 1}' if len(items) > 1 else first
 
 
+def _shorten(value):
+    """A comma-separated list as "first +N" - the sheet has one narrow cell per level.
+
+    Mirrors _primary_name's presentation so stamped and profile-derived rows read
+    the same, and keeps a national manager's ~130 territories from blowing the
+    column apart.
+    """
+    parts = [p.strip() for p in str(value or '').split(',') if p.strip()]
+    if not parts:
+        return '-'
+    return f'{parts[0]} +{len(parts) - 1}' if len(parts) > 1 else parts[0]
+
+
 def _employee_name(user):
     full = f'{user.first_name or ""} {user.last_name or ""}'.strip()
     return full or user.get_username() or (user.email or '-')
@@ -186,18 +200,24 @@ def _fmt_time(value):
     return value.strftime('%d-%b-%Y %H:%M')
 
 
-def build_rows(attendance_qs, report_date=None):
+def build_rows(attendance_qs, report_date=None, only_users=None, period=None):
     """Report rows for every active sales-staff member, ordered by hierarchy.
 
     `attendance_qs` is the scope of attendance already selected in the admin
     (its filters decide who counts as Present). `report_date` drives the leave
     lookup and defaults to today.
+
+    `only_users` limits the sheet to those user ids - without it a single-person
+    report would still list every colleague as Absent. `period` is an inclusive
+    (start, end) pair for a multi-day sheet: someone counts as on leave if their
+    approved leave overlaps the range anywhere, not just on `report_date`.
     """
     from django.contrib.auth import get_user_model
     from .models import LeaveRequest
 
     User = get_user_model()
     report_date = report_date or timezone.localdate()
+    start, end = period or (report_date, report_date)
 
     # Earliest check-in per attendee inside the scope, with the selfie taken
     # at that check-in (the photo that actually evidences the attendance).
@@ -216,21 +236,55 @@ def build_rows(attendance_qs, report_date=None):
             if photo:
                 photo_by_user[attendee_id] = photo
 
+    # Where each person worked, taken from the attendance row itself so a report
+    # of last year's attendance shows last year's posting. Rows in scope win;
+    # absentees have none, so their most recent stamp is used, and only then the
+    # profile's own assignments.
+    location_by_user = {}
+    for attendee_id, region, zone, territory in attendance_qs.values_list(
+            'attendee_id', 'region', 'zone', 'territory'):
+        if attendee_id is not None and attendee_id not in location_by_user \
+                and (region or zone or territory):
+            location_by_user[attendee_id] = (region, zone, territory)
+
     on_leave = set(
         LeaveRequest.objects.filter(
             status=LeaveRequest.STATUS_APPROVED,
-            start_date__lte=report_date,
-            end_date__gte=report_date,
+            start_date__lte=end,
+            end_date__gte=start,
         ).values_list('user_id', flat=True)
     )
 
+    # Active sales staff are who the sheet EXPECTS - they are the pool the
+    # Present/Absent split is measured against. Anyone who actually marked
+    # attendance in scope is added on top, even if they fall outside that pool:
+    # their record is visible on the changelist, so leaving them off made those
+    # rows impossible to export and the sheet look broken.
     staff = (
-        User.objects.filter(is_active=True, is_sales_staff=True, is_superuser=False)
+        User.objects.filter(
+            Q(is_active=True, is_sales_staff=True, is_superuser=False)
+            | Q(pk__in=set(check_in_by_user))
+        )
+        .distinct()
         .select_related('sales_profile', 'sales_profile__designation')
         .prefetch_related(
             'sales_profile__regions', 'sales_profile__zones', 'sales_profile__territories'
         )
     )
+    if only_users is not None:
+        staff = staff.filter(pk__in=list(only_users))
+
+    missing = [u.pk for u in staff if u.pk not in location_by_user]
+    if missing:
+        from .models import Attendance
+        latest = (
+            Attendance.objects.filter(attendee_id__in=missing)
+            .exclude(region__isnull=True, zone__isnull=True, territory__isnull=True)
+            .order_by('attendee_id', '-id')
+            .values_list('attendee_id', 'region', 'zone', 'territory')
+        )
+        for attendee_id, region, zone, territory in latest:
+            location_by_user.setdefault(attendee_id, (region, zone, territory))
 
     rows = []
     for user in staff:
@@ -247,10 +301,18 @@ def build_rows(attendance_qs, report_date=None):
         # member's profile photo so absentees still show a face on the sheet.
         photo = photo_by_user.get(user.pk) or _image_name(user.profile_image)
 
+        stamped = location_by_user.get(user.pk)
+        if stamped:
+            region_cell, zone_cell, territory_cell = (_shorten(v) for v in stamped)
+        else:
+            region_cell = _primary_name(profile.regions) if profile else '-'
+            zone_cell = _primary_name(profile.zones) if profile else '-'
+            territory_cell = _primary_name(profile.territories) if profile else '-'
+
         rows.append([
-            _primary_name(profile.regions) if profile else '-',
-            _primary_name(profile.zones) if profile else '-',
-            _primary_name(profile.territories) if profile else '-',
+            region_cell,
+            zone_cell,
+            territory_cell,
             _fmt_date(user.date_joined),
             str(profile.designation) if profile and profile.designation_id else '-',
             (profile.employee_code if profile else '') or '-',
@@ -275,6 +337,79 @@ def render_csv(rows, date_label, filename='attendance-report.csv'):
     writer.writerow([])
     writer.writerow(COLUMNS)
     writer.writerows(rows)
+    return response
+
+
+# Column widths for the Excel sheet, in characters. CSV carries no formatting
+# at all, so a spreadsheet opened from one shows every column at the default
+# width - this is the format to hand someone who wants to read the sheet rather
+# than import it.
+XLSX_WIDTHS = {
+    'Region': 24, 'Zone': 24, 'Territory': 32, 'Joining Date': 14,
+    'Designation': 30, 'File No': 12, 'Employee Name': 28, 'Status': 12,
+    'CheckIn Time': 20, 'Photo': 42,
+}
+
+
+def render_xlsx(rows, date_label, filename='attendance-report.xlsx'):
+    """The sheet as a real spreadsheet: sized columns, frozen header, filters."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    colors = report_colors()
+
+    def fill(key):
+        return PatternFill('solid', start_color=colors[key].lstrip('#').upper())
+
+    def font(key, **kw):
+        return Font(color=colors[key].lstrip('#').upper(), **kw)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Attendance'
+    last = len(COLUMNS)
+
+    ws.cell(1, 1, 'Attendance Report').font = font('title_fg', bold=True, size=14)
+    ws.cell(1, 1).fill = fill('title_bg')
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(last - 3, 1))
+    ws.cell(1, max(last - 2, 1), date_label).font = font('date_fg', bold=True)
+    ws.cell(1, max(last - 2, 1)).fill = fill('date_bg')
+    ws.merge_cells(start_row=1, start_column=max(last - 2, 1), end_row=1, end_column=last)
+    ws.row_dimensions[1].height = 22
+
+    thin = Side(style='thin', color=colors['grid'].lstrip('#').upper())
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for col, name in enumerate(COLUMNS, 1):
+        alt = name in ALT_HEADER_COLUMNS
+        cell = ws.cell(3, col, name)
+        cell.fill = fill('header_alt_bg' if alt else 'header_bg')
+        cell.font = font('header_alt_fg' if alt else 'header_fg', bold=True)
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = border
+        ws.column_dimensions[get_column_letter(col)].width = XLSX_WIDTHS.get(name, 18)
+
+    for offset, row in enumerate(rows):
+        shade = fill('row_alt_bg' if offset % 2 else 'row_bg')
+        for col, value in enumerate(row[:last], 1):
+            cell = ws.cell(4 + offset, col, value)
+            cell.fill = shade
+            cell.font = font('row_fg')
+            cell.alignment = Alignment(vertical='center', wrap_text=True)
+            cell.border = border
+
+    ws.freeze_panes = 'A4'
+    if rows:
+        ws.auto_filter.ref = f'A3:{get_column_letter(last)}{3 + len(rows)}'
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
 
@@ -356,7 +491,9 @@ def render_pdf(rows, date_label, filename='attendance-report.pdf'):
     style = [
         ('GRID', (0, 0), (-1, -1), 0.5, hexc('grid')),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('FONTSIZE', (0, 0), (-1, -1), 7),
+        # 7pt left the wider columns looking half empty and was hard to read at
+        # arm's length; 8pt still fits the same rows per page.
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('LEFTPADDING', (0, 0), (-1, -1), 3),
         ('RIGHTPADDING', (0, 0), (-1, -1), 3),
         # banner
@@ -386,13 +523,16 @@ def render_pdf(rows, date_label, filename='attendance-report.pdf'):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=landscape(A4),
-        leftMargin=8 * mm, rightMargin=8 * mm, topMargin=8 * mm, bottomMargin=8 * mm,
+        leftMargin=6 * mm, rightMargin=6 * mm, topMargin=8 * mm, bottomMargin=8 * mm,
         title='Attendance Report',
     )
-    # Sums to 250mm, inside the 281mm printable width of landscape A4.
+    # Sums to exactly the 285mm printable width of landscape A4 (297mm less the
+    # 6mm margins). Margins were trimmed from 8mm to buy the text columns another
+    # 4mm: Region/Zone/Territory now carry names like "Gujranwala Zone" rather
+    # than a short local code, and Photo needs no more than its 16mm thumbnail.
     widths = [
-        24 * mm, 24 * mm, 26 * mm, 22 * mm, 36 * mm,
-        16 * mm, 38 * mm, 18 * mm, 28 * mm, 18 * mm,
+        32 * mm, 33 * mm, 35 * mm, 20 * mm, 40 * mm,
+        16 * mm, 44 * mm, 17 * mm, 28 * mm, 20 * mm,
     ]
     table = Table(data, colWidths=widths[:len(COLUMNS)], repeatRows=2)
     table.setStyle(TableStyle(style))

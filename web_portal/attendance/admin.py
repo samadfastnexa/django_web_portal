@@ -1,16 +1,19 @@
 import datetime
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.html import format_html
 
 from web_portal.admin import admin_site
+from web_portal.admin_filters import related_values_filter
 from .models import Attendance, AttendanceRequest, Holiday, LeaveQuota, LeaveRequest, LeaveType
-from .reports import build_rows, render_csv, render_pdf
+from .reports import build_rows, render_csv, render_pdf, render_xlsx
 
 User = get_user_model()
 
@@ -75,6 +78,42 @@ def _tile_links(span, today):
         'leave_approved': f'{leave}?status__exact={LeaveRequest.STATUS_APPROVED}',
         'leave_rejected': f'{leave}?status__exact={LeaveRequest.STATUS_REJECTED}',
         'leave_today': f'{leave}?on_leave=on%3A{day}',
+        'active_users': f'{users}?is_active__exact=1',
+    }
+
+
+def _staff_breakdown():
+    """Active accounts split into the attendance pool, and staff per company.
+
+    The "Sales staff" tile counts only who is expected to mark attendance, which
+    says nothing about how many accounts exist overall or how they divide
+    between companies - both of which are what you actually want when a number
+    looks wrong.
+    """
+    from FieldAdvisoryService.models import Company
+    from accounts.models import SalesStaffCompany
+
+    pool = User.objects.filter(is_active=True, is_sales_staff=True, is_superuser=False)
+
+    per_company = []
+    for company in Company.objects.filter(is_active=True).order_by('Company_name', 'name'):
+        count = SalesStaffCompany.objects.filter(
+            company=company, is_active=True,
+            sales_profile__user__is_active=True,
+            sales_profile__user__is_sales_staff=True,
+            sales_profile__user__is_superuser=False,
+        ).values('sales_profile_id').distinct().count()
+        if count:
+            per_company.append({'name': company.Company_name or company.name, 'count': count})
+
+    # Counted over users, not membership rows: someone in two companies appears
+    # in both columns above but is still one person.
+    assigned = pool.filter(sales_profile__company_memberships__is_active=True).distinct().count()
+    return {
+        'active_users': User.objects.filter(is_active=True, is_superuser=False).count(),
+        'sales_staff': pool.count(),
+        'per_company': per_company,
+        'unassigned': max(pool.count() - assigned, 0),
     }
 
 
@@ -134,13 +173,76 @@ def _leave_stats():
 
 @admin.register(Attendance, site=admin_site)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ('attendee_photo', 'attendee', 'user', 'check_in_time', 'check_in_photo',
+    list_display = ('attendee_photo', 'attendee_name', 'staff_code',
+                    'region', 'zone', 'territory',
+                    'marked_by', 'check_in_time', 'check_in_photo',
                     'check_out_time', 'check_out_photo', 'source')
-    list_filter = ('source', 'created_at')
-    search_fields = ('attendee__username', 'user__username')
-    readonly_fields = ('check_in_image_preview', 'check_out_image_preview')
+    # The export names its own columns rather than inheriting list_display: the
+    # photo columns are thumbnails (useless in a spreadsheet), and "marked by"
+    # and "source" are audit detail nobody reads on the sheet.
+    export_fields = ('attendee_name', 'staff_code', 'region', 'zone', 'territory',
+                     'check_in_time', 'check_out_time')
+    # The sidebar buttons export what the filters select; these export what is
+    # ticked. Django refuses to run an action with an empty selection, so that
+    # half of "don't export nothing" comes for free.
+    actions = ('export_report_pdf', 'export_report_excel', 'export_report_csv')
+    list_filter = (
+        'source', 'created_at',
+        related_values_filter('region', 'region'),
+        related_values_filter('zone', 'zone'),
+        related_values_filter('territory', 'territory'),
+    )
+    search_fields = ('attendee__username', 'user__username',
+                     'region', 'zone', 'territory', 'employee_code')
+    # Resolved from the attendee's employee code, never typed - an edited region
+    # here would quietly split every report that groups on it.
+    readonly_fields = ('check_in_image_preview', 'check_out_image_preview',
+                       'employee_code', 'region', 'zone', 'territory', 'territory_code')
 
     change_list_template = 'admin/attendance/attendance/change_list.html'
+
+    def get_queryset(self, request):
+        # attendee_photo, attendee_name and staff_code all reach through the
+        # attendee, and staff_code falls back to their profile - one query per
+        # row without this.
+        return (
+            super().get_queryset(request)
+            .select_related('attendee', 'attendee__sales_profile', 'user')
+        )
+
+    @admin.display(description='Employee name', ordering='attendee__first_name')
+    def attendee_name(self, obj):
+        """The person's name. User.__str__ is their email, which reads poorly."""
+        user = obj.attendee
+        if not user:
+            return '-'
+        full = f'{user.first_name or ""} {user.last_name or ""}'.strip()
+        return full or user.get_username() or (user.email or '-')
+
+    @admin.display(description='Marked by', ordering='user__first_name')
+    def marked_by(self, obj):
+        """Who recorded it - usually the attendee, a manager when marked for them.
+
+        Labelled rather than left as "user", which sat next to "attendee" showing
+        the same email twice with nothing to tell them apart.
+        """
+        user = obj.user
+        if not user:
+            return '-'
+        full = f'{user.first_name or ""} {user.last_name or ""}'.strip()
+        return full or user.get_username() or (user.email or '-')
+
+    @admin.display(description='Employee code', ordering='employee_code')
+    def staff_code(self, obj):
+        """The code stamped on the row, falling back to the profile's own.
+
+        Rows recorded before the location columns existed have no stamp, and a
+        blank code column would make the export look broken for older data.
+        """
+        if obj.employee_code:
+            return obj.employee_code
+        profile = getattr(obj.attendee, 'sales_profile', None) if obj.attendee_id else None
+        return (profile.employee_code if profile else '') or '-'
 
     @admin.display(description='Staff')
     def attendee_photo(self, obj):
@@ -151,22 +253,22 @@ class AttendanceAdmin(admin.ModelAdmin):
     @admin.display(description='In')
     def check_in_photo(self, obj):
         from web_portal.admin_thumbnails import thumb
-        return thumb(obj.check_in_image, radius='6px')
+        return thumb(obj.check_in_image, radius='6px', downloadable=True)
 
     @admin.display(description='Out')
     def check_out_photo(self, obj):
         from web_portal.admin_thumbnails import thumb
-        return thumb(obj.check_out_image, radius='6px')
+        return thumb(obj.check_out_image, radius='6px', downloadable=True)
 
     @admin.display(description='Check-in photo')
     def check_in_image_preview(self, obj):
         from web_portal.admin_thumbnails import preview
-        return preview(obj.check_in_image if obj and obj.pk else None)
+        return preview(obj.check_in_image if obj and obj.pk else None, downloadable=True)
 
     @admin.display(description='Check-out photo')
     def check_out_image_preview(self, obj):
         from web_portal.admin_thumbnails import preview
-        return preview(obj.check_out_image if obj and obj.pk else None)
+        return preview(obj.check_out_image if obj and obj.pk else None, downloadable=True)
 
     @staticmethod
     def _today_queryset():
@@ -211,10 +313,22 @@ class AttendanceAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
+        # `period` was a date control that the sidebar's own date filter has
+        # since replaced. ChangeList treats any parameter it does not recognise
+        # as a bad field lookup and bounces the page to ?e=1, so drop it - a
+        # bookmark from when the control existed should still open the list.
+        if 'period' in request.GET:
+            cleaned = request.GET.copy()
+            cleaned.pop('period', None)
+            request.GET = cleaned
+
         # Leave status breakdown alongside attendance: part of the "Off"
         # count is approved leave rather than an unexplained absence.
         extra_context['leave_summary'] = _leave_stats()
+        extra_context['staff_breakdown'] = _staff_breakdown()
         extra_context['tile_links'] = _tile_links(self._scope_span(request), timezone.localdate())
+        # The report panel lives in the filter sidebar and takes its scope from
+        # the sidebar itself, so it needs no context of its own.
         response = super().changelist_view(request, extra_context=extra_context)
         # The ChangeList only exists after super() has built it, and it carries
         # the queryset with the sidebar filters and search already applied.
@@ -234,6 +348,8 @@ class AttendanceAdmin(admin.ModelAdmin):
                  name='attendance_attendance_report_pdf'),
             path('report/csv/', self.admin_site.admin_view(self.report_csv),
                  name='attendance_attendance_report_csv'),
+            path('report/excel/', self.admin_site.admin_view(self.report_xlsx),
+                 name='attendance_attendance_report_excel'),
         ]
         return custom + super().get_urls()
 
@@ -279,34 +395,193 @@ class AttendanceAdmin(admin.ModelAdmin):
                 return parsed
         return timezone.localdate()
 
-    def _report_scope(self, request):
-        """(attendance queryset, report date, label) for the current filter.
+    @staticmethod
+    def _day_bounds(start, end):
+        """Aware datetimes spanning [start, end] inclusive, in local time.
 
-        Reuses the changelist so the report covers exactly the rows the sidebar
-        filter selected; falls back to today when the filter is unusable.
+        Deliberately not `check_in_time__date__range`: this MySQL has no
+        timezone tables loaded, so CONVERT_TZ returns NULL and every __date
+        lookup on a datetime column silently matches nothing. Comparing whole
+        datetimes keeps the work in UTC and needs no conversion.
         """
-        queryset = self.get_queryset(request)
+        return (
+            timezone.make_aware(datetime.datetime.combine(start, datetime.time.min)),
+            timezone.make_aware(datetime.datetime.combine(end, datetime.time.max)),
+        )
+
+    @classmethod
+    def _filter_range(cls, request):
+        """The sidebar date filter as an inclusive (start, end), or None.
+
+        The report has no date control of its own - the changelist's own "By
+        created at" filter already offers Today / Past 7 days / This month /
+        This year, and a second set of buttons beside it could only disagree
+        with the rows on screen. Django's date filters are half-open
+        (`__gte` .. `__lt`), so the exclusive end is pulled back a day.
+        """
+        span = cls._scope_span(request)
+        if span == 'all':
+            return None
+        start_raw, _, end_raw = span.partition(':')
+        try:
+            start = datetime.date.fromisoformat(start_raw)
+        except ValueError:
+            return None
+        if not end_raw:
+            return start, start
+        try:
+            end = datetime.date.fromisoformat(end_raw) - datetime.timedelta(days=1)
+        except ValueError:
+            return start, start
+        return start, max(end, start)
+
+    def _report_scope(self, request):
+        """(queryset, report_date, label, only_users, period, filename_stem).
+
+        A `period` from the report toolbar wins, because it is what the person
+        The sheet covers exactly the rows on screen: the changelist queryset
+        carries the search box and every sidebar filter, and the date filter
+        also supplies the range the banner and the leave lookup use.
+        """
+        # ChangeList rejects parameters it does not recognise, and the fallback
+        # below would then quietly hand back the *unfiltered* queryset - a sheet
+        # that silently ignores the sidebar. So strip the ones that are ours:
+        # `attendee` (the staff picker) and `period`, a leftover from a date
+        # control that has since been replaced by the sidebar's own date filter
+        # and may still be sitting in someone's bookmark.
+        original = request.GET
+        cleaned = original.copy()
+        cleaned.pop('attendee', None)
+        cleaned.pop('period', None)
+        request.GET = cleaned
         label = 'All dates'
         try:
             changelist = self.get_changelist_instance(request)
             queryset = changelist.queryset
+            # The sidebar's own wording ("Today", "This month", ...) so the
+            # banner cannot contradict the filter that produced the rows.
             label = _scope_label(changelist)
         except Exception:
-            pass
+            queryset = self.get_queryset(request)
+        finally:
+            request.GET = original
 
-        # A single-day filter names the day on the banner, as on the sheet.
-        report_date = self._scope_date(request)
-        return queryset, report_date, report_date.strftime('%d-%b')
+        chosen = self._filter_range(request)
+        if chosen:
+            start, end = chosen
+            report_date, period, stem = end, (start, end), (
+                str(start) if start == end else f'{start}_{end}')
+        else:
+            report_date, period, stem = timezone.localdate(), None, 'all-dates'
+
+        # One named person, or everyone. An unknown id falls back to everyone
+        # rather than silently producing an empty sheet.
+        only_users = None
+        raw = (request.GET.get('attendee') or '').strip()
+        if raw.isdigit():
+            if User.objects.filter(pk=int(raw)).exists():
+                only_users = [int(raw)]
+                queryset = queryset.filter(attendee_id=int(raw))
+                stem = f'{stem}-user{raw}'
+
+        term = (request.GET.get('q') or '').strip()
+        if term:
+            # The search box has to narrow who the sheet LISTS, not just which
+            # attendance rows count: build_rows walks every active sales staff
+            # member, so searching one name still printed all their colleagues
+            # as Absent. Matching the staff directly also keeps someone who is
+            # absent - and therefore has no attendance row to search - on it.
+            matched = set(
+                User.objects.filter(
+                    Q(username__icontains=term) | Q(email__icontains=term)
+                    | Q(first_name__icontains=term) | Q(last_name__icontains=term)
+                    | Q(sales_profile__employee_code__icontains=term)
+                ).values_list('pk', flat=True)
+            )
+            only_users = sorted(matched if only_users is None
+                                else matched.intersection(only_users))
+        return queryset, report_date, label, only_users, period, stem
+
+    # (renderer, file extension) per format.
+    _RENDERERS = {
+        'pdf': (render_pdf, 'pdf'),
+        'excel': (render_xlsx, 'xlsx'),
+        'csv': (render_csv, 'csv'),
+    }
+
+    def _deliver(self, request, fmt, rows, label, stem):
+        """The file, or a message explaining why there is nothing in it.
+
+        Handing back an empty sheet looks like the export is broken; saying what
+        matched nothing is what actually helps.
+        """
+        if not rows:
+            self.message_user(
+                request,
+                'Nothing to export: the current search, filters or selection matches '
+                'no one. Check the date filter - a person only appears for days they '
+                'have an attendance record in, or if they are active sales staff.',
+                messages.WARNING,
+            )
+            return None
+        render, ext = self._RENDERERS[fmt]
+        return render(rows, label, f'attendance-report-{stem}.{ext}')
+
+    def _report_response(self, request, fmt):
+        """Sidebar download: everything the search and sidebar filters select."""
+        queryset, report_date, label, only_users, period, stem = self._report_scope(request)
+        rows = build_rows(queryset, report_date, only_users=only_users, period=period)
+        response = self._deliver(request, fmt, rows, label, stem)
+        if response is None:
+            # Back to the list the person came from, message and all.
+            return redirect(request.META.get('HTTP_REFERER')
+                            or reverse('admin:attendance_attendance_changelist'))
+        return response
 
     def report_pdf(self, request):
-        queryset, report_date, label = self._report_scope(request)
-        rows = build_rows(queryset, report_date)
-        return render_pdf(rows, label, f'attendance-report-{report_date}.pdf')
+        return self._report_response(request, 'pdf')
 
     def report_csv(self, request):
-        queryset, report_date, label = self._report_scope(request)
-        rows = build_rows(queryset, report_date)
-        return render_csv(rows, label, f'attendance-report-{report_date}.csv')
+        return self._report_response(request, 'csv')
+
+    def report_xlsx(self, request):
+        return self._report_response(request, 'excel')
+
+    # ---- The same three, driven by the row selection instead ---------------
+    def _report_action(self, request, queryset, fmt):
+        """Export just the people behind the ticked rows.
+
+        The sidebar buttons sit outside the admin's action form and so cannot
+        see the checkboxes; these actions can. Django already refuses to run an
+        action with nothing selected, which covers the empty-selection case.
+        """
+        only_users = sorted({a for a in queryset.values_list('attendee_id', flat=True) if a})
+        chosen = self._filter_range(request)
+        if chosen:
+            start, end = chosen
+        else:
+            # No date filter set: span the selected rows themselves.
+            times = [t for t in queryset.values_list('check_in_time', flat=True) if t]
+            days = sorted(timezone.localtime(t).date() for t in times)
+            start, end = (days[0], days[-1]) if days else (timezone.localdate(),) * 2
+        label = f"{start.strftime('%d-%b')}" if start == end else \
+            f"{start.strftime('%d-%b')} to {end.strftime('%d-%b')}"
+        stem = str(start) if start == end else f'{start}_{end}'
+
+        rows = build_rows(queryset, end, only_users=only_users, period=(start, end))
+        return self._deliver(request, fmt, rows, label, f'{stem}-selected')
+
+    @admin.action(description='Export attendance report (PDF)')
+    def export_report_pdf(self, request, queryset):
+        return self._report_action(request, queryset, 'pdf')
+
+    @admin.action(description='Export attendance report (Excel)')
+    def export_report_excel(self, request, queryset):
+        return self._report_action(request, queryset, 'excel')
+
+    @admin.action(description='Export attendance report (CSV)')
+    def export_report_csv(self, request, queryset):
+        return self._report_action(request, queryset, 'csv')
 
     def get_export_summary(self, request):
         """Summary block prepended to CSV/Excel exports (see admin_export)."""
@@ -358,12 +633,15 @@ class AttendanceRequestAdmin(admin.ModelAdmin):
                 attendance.source = 'request'
                 attendance.save()
             else:
+                from FieldAdvisoryService.sap_geo import location_fields_for_user
+                location, _ = location_fields_for_user(user)
                 attendance = Attendance.objects.create(
                     user=user,
                     attendee=user,
                     check_in_time=check_in_time if check_type == 'check_in' else None,
                     check_out_time=check_out_time if check_type == 'check_out' else None,
-                    source='request'
+                    source='request',
+                    **location,
                 )
 
             obj.attendance = attendance

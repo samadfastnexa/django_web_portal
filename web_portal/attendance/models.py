@@ -68,6 +68,37 @@ class Attendance(models.Model):
     # Removed attachment field - now using separate check_in_image and check_out_image
     SOURCE_CHOICES = [('manual', 'Manual'), ('request', 'Request')]
     source = models.CharField(max_length=50, choices=SOURCE_CHOICES, default="manual")
+
+    # Where the ATTENDEE works, stamped when the record is created from their
+    # employee code (see FieldAdvisoryService.sap_geo). Recorded on the row
+    # rather than looked up at read time so a report of last year's attendance
+    # shows where people worked then, not where they work now.
+    employee_code = models.CharField(
+        max_length=50, blank=True, null=True, db_index=True,
+        verbose_name="Employee code",
+        help_text="Employee code the location below was resolved from",
+    )
+    # Text, not CharField: a national manager covers ~130 territories and these
+    # list every one. That rules out a plain db_index too (MySQL cannot index
+    # TEXT without a prefix length); `search=` still matches inside the list.
+    region = models.TextField(
+        blank=True, null=True, verbose_name="Region",
+        help_text="Region(s) assigned to the attendee, comma separated.",
+    )
+    zone = models.TextField(
+        blank=True, null=True, verbose_name="Zone",
+        help_text="Zone(s) assigned to the attendee, comma separated.",
+    )
+    territory = models.TextField(
+        blank=True, null=True, verbose_name="Territory",
+        help_text="Territory/territories assigned to the attendee, comma separated.",
+    )
+    territory_code = models.IntegerField(
+        blank=True, null=True, db_index=True,
+        verbose_name="Territory code",
+        help_text="SAP OTER.territryID, set only when the attendee has exactly one territory.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     _current_user = None  # Temporary holder for request.user
 

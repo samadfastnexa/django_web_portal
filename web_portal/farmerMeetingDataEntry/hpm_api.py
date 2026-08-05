@@ -92,6 +92,9 @@ class HPMRequisitionSerializer(serializers.ModelSerializer):
             'zone_id', 'zone_name',
             'territory_id', 'territory_name',
             'responsible_person', 'responsible_person_name',
+            # Where the responsible person works, resolved from their employee
+            # code - read-only so a client cannot forge it.
+            'employee_code', 'region', 'zone', 'territory', 'territory_code',
             'meeting_date', 'meeting_location', 'expected_attendees',
             'purpose', 'remarks',
             'status', 'status_display', 'ceo_remarks',
@@ -103,6 +106,7 @@ class HPMRequisitionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'submitted_by', 'submitted_at', 'status', 'ceo_remarks',
             'reviewed_by', 'reviewed_at', 'created_at', 'updated_at',
+            'employee_code', 'region', 'zone', 'territory', 'territory_code',
         ]
 
 
@@ -152,10 +156,19 @@ class HPMRequisitionViewSet(viewsets.ModelViewSet):
         return qs.filter(submitted_by_id__in=allowed)
 
     def perform_create(self, serializer):
+        from FieldAdvisoryService.sap_geo import location_fields_for_user
+
+        # The location is the responsible person's, not the submitter's: a GM
+        # raises the requisition, but the meeting happens where the person
+        # accountable for arranging it works.
+        owner = serializer.validated_data.get('responsible_person') or self.request.user
+        location, _ = location_fields_for_user(owner)
+
         serializer.save(
             submitted_by=self.request.user,
             submitted_at=timezone.now(),
             status=HPMRequisition.STATUS_PENDING,
+            **location,
         )
 
     def _decide(self, request, decision):

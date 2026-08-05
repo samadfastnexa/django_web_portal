@@ -14,12 +14,14 @@ HTML from badge/image callables is stripped so the cell holds plain text.
 """
 import csv
 import datetime
+import html
 import re
 from io import BytesIO
 
 from django.contrib import admin
 from django.contrib.admin.utils import label_for_field, lookup_field
 from django.http import HttpResponse
+from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.html import strip_tags
 
@@ -38,9 +40,13 @@ def _export_columns(model_admin):
 
 def _header(model_admin, name):
     try:
-        return force_str(label_for_field(name, model_admin.model, model_admin)).strip()
+        label = force_str(label_for_field(name, model_admin.model, model_admin)).strip()
     except Exception:
-        return force_str(name).replace('_', ' ').strip().title()
+        label = force_str(name).replace('_', ' ').strip().title()
+    # Field labels arrive lower case ("check in time"), while a callable's
+    # description is written properly ("Employee name"), so a sheet mixed both.
+    # Lift only the first character - .title() would mangle acronyms like RSM.
+    return label[:1].upper() + label[1:] if label else label
 
 
 def _cell(model_admin, obj, name):
@@ -57,10 +63,20 @@ def _cell(model_admin, obj, name):
         return ''
     if isinstance(value, bool):
         return 'Yes' if value else 'No'
+    # Datetimes reach here raw, so without this a cell reads
+    # "2026-08-05 02:13:47.423000+00:00" - UTC, to the microsecond.
+    if isinstance(value, datetime.datetime):
+        if timezone.is_aware(value):
+            value = timezone.localtime(value)
+        return value.strftime('%Y-%m-%d %H:%M')
+    if isinstance(value, datetime.date):
+        return value.strftime('%Y-%m-%d')
     text = force_str(value)
     if '<' in text and '>' in text:          # HTML from a badge / image callable
         text = strip_tags(text)
-    return text.strip()
+    # Placeholders like the "&mdash;" an empty thumbnail returns carry no tags,
+    # so strip_tags leaves them as literal entity text in the sheet.
+    return html.unescape(text).strip()
 
 
 def _rows(model_admin, queryset, columns):
@@ -156,7 +172,10 @@ def export_as_xlsx(model_admin, request, queryset):
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            widths[c_idx] = min(max(widths.get(c_idx, 10), len(str(value)) + 2), 60)
+            # Floor of 16 so short columns are still comfortably readable rather
+            # than clipped to their header; ceiling so one long cell (a manager's
+            # whole territory list) cannot push the others off the screen.
+            widths[c_idx] = min(max(widths.get(c_idx, 16), len(str(value)) + 3), 60)
         r_idx += 1
 
     for c_idx, width in widths.items():

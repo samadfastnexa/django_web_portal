@@ -175,9 +175,11 @@ def requisition_story(obj):
     # --- HPM meeting details --------------------------------------------
     detail_rows = [
         ['HPM MEETING DETAILS', ''],
-        [label('Zone'), para(obj.zone_fk.name if obj.zone_fk else '')],
-        [label('Region'), para(obj.region_fk.name if obj.region_fk else '')],
-        [label('Territory'), para(obj.territory_fk.name if obj.territory_fk else '')],
+        # Resolved from the responsible person's employee code; requisitions
+        # raised before that only carry the portal's own foreign keys.
+        [label('Zone'), para(obj.zone or (obj.zone_fk.name if obj.zone_fk else ''))],
+        [label('Region'), para(obj.region or (obj.region_fk.name if obj.region_fk else ''))],
+        [label('Territory'), para(obj.territory or (obj.territory_fk.name if obj.territory_fk else ''))],
         [label('Responsible Person'), para(_person(obj.responsible_person))],
         # _stamp, not _date: meeting_date is a DateTimeField, so print the time.
         [label('Meeting Date & Time'), _stamp(obj.meeting_date)],

@@ -55,20 +55,24 @@ class HPMRequisitionAdmin(admin.ModelAdmin):
     """Raised by a manager, decided by an authorised approver."""
 
     list_display = (
-        'id', 'requisition_date', 'submitted_by', 'region_fk', 'zone_fk',
-        'territory_fk', 'meeting_when', 'expected_attendees', 'status_badge',
+        'id', 'requisition_date', 'submitted_by', 'region', 'zone',
+        'territory', 'meeting_when', 'expected_attendees', 'status_badge',
     )
     list_filter = (
         'status',
         date_range_filter('meeting_date', 'meeting date'),
-        related_values_filter('region_fk__name', 'region'),
-        related_values_filter('zone_fk__name', 'zone'),
-        related_values_filter('territory_fk__name', 'territory'),
+        related_values_filter('region', 'region'),
+        related_values_filter('zone', 'zone'),
+        related_values_filter('territory', 'territory'),
+        related_values_filter('region_fk__name', 'region (legacy)'),
+        related_values_filter('zone_fk__name', 'zone (legacy)'),
+        related_values_filter('territory_fk__name', 'territory (legacy)'),
     )
     search_fields = (
         'id', 'meeting_location', 'purpose', 'remarks', 'ceo_remarks',
         'submitted_by__username', 'submitted_by__email',
         'responsible_person__username', 'responsible_person__email',
+        'region', 'zone', 'territory', 'employee_code',
     )
     autocomplete_fields = ('submitted_by', 'responsible_person')
     ordering = ['-created_at', '-id']
@@ -142,7 +146,9 @@ class HPMRequisitionAdmin(admin.ModelAdmin):
     # ---- readonly rules ---------------------------------------------------
     def get_readonly_fields(self, request, obj=None):
         # Identity and both signature stamps are system-set, never typed.
-        readonly = ['id', 'submitted_by', 'submitted_at', 'reviewed_by', 'reviewed_at']
+        readonly = ['id', 'submitted_by', 'submitted_at', 'reviewed_by', 'reviewed_at',
+                    # Resolved from the responsible person's employee code.
+                    'employee_code', 'region', 'zone', 'territory', 'territory_code']
         if not can_approve_hpm(request.user):
             # A requester fills the form but must not decide their own request.
             readonly += ['status', 'ceo_remarks']

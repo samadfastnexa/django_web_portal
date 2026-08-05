@@ -161,12 +161,20 @@ class MeetingSerializer(serializers.ModelSerializer):
             'region_id', 'region_name',
             'zone_id', 'zone_name',
             'territory_id', 'territory_name',
+            # SAP-derived location, resolved server-side from the user's
+            # employee code - read-only so a client cannot forge it.
+            'employee_code', 'region', 'zone', 'territory', 'territory_code',
             'date', 'location', 'total_attendees',
             'key_topics_discussed', 'products_discussed', 'presence_of_zm', 'presence_of_rsm',
             'feedback_from_attendees', 'suggestions_for_future',
             'attendees', 'attachments',
             # attendee write-only lists (keep as-is)
             'attendee_farmer_id', 'attendee_name', 'attendee_contact', 'attendee_acreage', 'attendee_crop',
+        ]
+        # territory_code is settable on create, but only via the view, which
+        # checks it against the employee's own SAP territories first.
+        read_only_fields = [
+            'employee_code', 'region', 'zone', 'territory', 'territory_code',
         ]
 
     def get_attendees(self, obj):
@@ -414,12 +422,16 @@ class FieldDaySerializer(serializers.ModelSerializer):
             "region_id", "region_name",
             "zone_id", "zone_name",
             "territory_id", "territory_name",
+            # Where the owner works, resolved server-side from their employee
+            # code - read-only so a client cannot forge it.
+            "employee_code", "region", "zone", "territory", "territory_code",
             "date", "location", "total_participants", "demonstrations_conducted", "feedback",
             "attendees", "attachments",
             "attendee_farmer_id", "attendee_name", "attendee_contact", "attendee_acreage", "attendee_crop",
             "user", "is_active"
         ]
-        read_only_fields = ["user", "is_active"]
+        read_only_fields = ["user", "is_active",
+                            "employee_code", "region", "zone", "territory", "territory_code"]
 
     def get_attendees(self, obj):
         """Return serialized attendees for read operations, consolidating multiple crops per farmer"""
@@ -494,8 +506,12 @@ class FieldDaySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
 
         # ✅ Create the field day first
-        user = request.user if request and request.user.is_authenticated else None
-        field_day = FieldDay.objects.create(**validated_data, user=user, is_active=True)
+        # `user` may already be in validated_data - the view passes it to
+        # serializer.save() so the location can be resolved from the same
+        # person - so default it rather than passing it twice.
+        validated_data.setdefault(
+            'user', request.user if request and request.user.is_authenticated else None)
+        field_day = FieldDay.objects.create(**validated_data, is_active=True)
 
         # ✅ Handle farmer linking (Option 1: Link existing farmers)
         if farmer_ids:
