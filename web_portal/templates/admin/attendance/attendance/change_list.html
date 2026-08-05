@@ -1,5 +1,73 @@
 {% extends "admin/change_list.html" %}
-{% load i18n %}
+{% load i18n admin_list %}
+
+{% comment %}
+  The report downloads live inside the filter sidebar, because the sidebar is
+  what decides their contents - the date filter sets the range and the search
+  box picks the people. Rendering them anywhere else invites the two to drift
+  apart. This means re-declaring Django's own filters block; it is copied from
+  contrib/admin/templates/admin/change_list.html, so check it after a Django
+  upgrade.
+{% endcomment %}
+{% block filters %}
+  {% if cl.has_filters %}
+    <nav id="changelist-filter" aria-labelledby="changelist-filter-header">
+      <h2 id="changelist-filter-header">{% translate 'Filter' %}</h2>
+
+      <form class="att-report" method="get" action="{% url 'admin:attendance_attendance_report_pdf' %}">
+        {% comment %}
+          Carry the page's whole querystring so the sheet covers exactly the
+          rows on screen; without these a submit would navigate away and drop
+          the filters and the search.
+        {% endcomment %}
+        {% for key, values in request.GET.lists %}
+          {% for value in values %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}">
+          {% endfor %}
+        {% endfor %}
+        <h3>{% trans "Attendance report" %}</h3>
+        <div class="att-report-go">
+          <button type="submit" class="att-report-btn att-report-pdf"
+                  formaction="{% url 'admin:attendance_attendance_report_pdf' %}">PDF</button>
+          {% comment %}
+            Excel rather than CSV when the sheet is for reading: CSV carries no
+            column widths, so every column opens at the default size.
+          {% endcomment %}
+          <button type="submit" class="att-report-btn att-report-excel"
+                  formaction="{% url 'admin:attendance_attendance_report_excel' %}">Excel</button>
+          <button type="submit" class="att-report-btn att-report-csv"
+                  formaction="{% url 'admin:attendance_attendance_report_csv' %}">CSV</button>
+        </div>
+      </form>
+
+      {% if cl.is_facets_optional or cl.has_active_filters %}<div id="changelist-filter-extra-actions">
+        {% if cl.is_facets_optional %}<h3>
+          {% if cl.add_facets %}<a href="{{ cl.remove_facet_link }}" class="hidelink">{% translate "Hide counts" %}</a>
+          {% else %}<a href="{{ cl.add_facet_link }}" class="viewlink">{% translate "Show counts" %}</a>{% endif %}
+        </h3>{% endif %}
+        {% if cl.has_active_filters %}<h3>
+          <a href="{{ cl.clear_all_filters_qs }}">&#10006; {% translate "Clear all filters" %}</a>
+        </h3>{% endif %}
+      </div>{% endif %}
+      {% for spec in cl.filter_specs %}{% admin_list_filter cl spec %}{% endfor %}
+    </nav>
+
+    <style>
+      #changelist-filter .att-report { margin: 0; padding: 8px 12px 12px; border: 0; background: none; }
+      #changelist-filter .att-report h3 { margin: 0 0 8px; }
+      #changelist-filter .att-report-go { display: flex; gap: 6px; }
+      #changelist-filter .att-report-btn { flex: 1; justify-content: center; padding: 7px 4px;
+                                           border-radius: 6px; font-size: 12px; font-weight: 700;
+                                           color: #fff !important; border: 0; cursor: pointer; }
+      #changelist-filter .att-report-pdf { background: #dc2626; }
+      #changelist-filter .att-report-pdf:hover { background: #b91c1c; }
+      #changelist-filter .att-report-excel { background: #16a34a; }
+      #changelist-filter .att-report-excel:hover { background: #15803d; }
+      #changelist-filter .att-report-csv { background: #475569; }
+      #changelist-filter .att-report-csv:hover { background: #334155; }
+    </style>
+  {% endif %}
+{% endblock %}
 
 {% block search %}
   {% if attendance_summary %}
@@ -18,12 +86,26 @@
         <div class="att-num">{{ attendance_summary.off }}</div>
         <div class="att-label">{% trans "Not marked" %}</div>
       </a>
-      <a class="att-tile att-total" href="{{ tile_links.total }}"
-         title="{% trans 'Show all active sales staff' %}">
-        <div class="att-num">{{ attendance_summary.total }}</div>
-        <div class="att-label">{% trans "Sales staff" %}</div>
+      <a class="att-tile att-users" href="{{ tile_links.active_users }}"
+         title="{% trans 'Show all active user accounts' %}">
+        <div class="att-num">{{ staff_breakdown.active_users }}</div>
+        <div class="att-label">{% trans "Active users" %}</div>
       </a>
     </div>
+
+    {% if staff_breakdown.per_company or staff_breakdown.unassigned %}
+      <div class="att-bycompany">
+        <span class="att-bycompany-label">{% trans "Active employees by company" %}</span>
+        {% for c in staff_breakdown.per_company %}
+          <span class="att-chip"><b>{{ c.count }}</b> {{ c.name }}</span>
+        {% endfor %}
+        {% if staff_breakdown.unassigned %}
+          <span class="att-chip att-chip-warn"
+                title="{% trans 'Sales staff with no active company membership' %}">
+            <b>{{ staff_breakdown.unassigned }}</b> {% trans "no company" %}</span>
+        {% endif %}
+      </div>
+    {% endif %}
   </div>
 
   <style>
@@ -38,7 +120,20 @@
     .att-present .att-num { color: #16a34a; }
     .att-off { border-left-color: #dc2626; }
     .att-off .att-num { color: #dc2626; }
-    .att-total { border-left-color: #64748b; }
+    .att-users { border-left-color: #2563eb; }
+    .att-users .att-num { color: #2563eb; }
+    .att-bycompany { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+    .att-bycompany-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
+    .att-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 10px; border-radius: 999px;
+                background: #f1f5f9; border: 1px solid #e2e8f0; font-size: 12px; color: #475569; }
+    .att-chip b { font-size: 13px; font-weight: 800; color: #0f172a; }
+    .att-chip-warn { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+    .att-chip-warn b { color: #92400e; }
+    [data-theme="dark"] .att-users .att-num { color: #60a5fa; }
+    [data-theme="dark"] .att-chip { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+    [data-theme="dark"] .att-chip b { color: #e2e8f0; }
+    [data-theme="dark"] .att-chip-warn { background: #422006; border-color: #78350f; color: #fcd34d; }
+    [data-theme="dark"] .att-chip-warn b { color: #fcd34d; }
     [data-theme="dark"] .att-tile { background: #0f172a; border-color: #1f2937; }
     [data-theme="dark"] .att-tile .att-num { color: #e2e8f0; }
     [data-theme="dark"] .att-tile .att-label { color: #cbd5e1; }
@@ -51,24 +146,5 @@
   {# Part of today's "Off" figure is approved leave, so show the leave queue here too. #}
   {% include "admin/attendance/_leave_summary.html" %}
 
-  {# Report downloads. The querystring is passed straight through so the sheet
-     covers exactly the rows the sidebar filter has selected. #}
-  <div class="att-report-actions">
-    <span class="att-report-label">{% trans "Attendance Report" %}</span>
-    <a class="att-report-btn att-report-pdf"
-       href="{% url 'admin:attendance_attendance_report_pdf' %}?{{ request.GET.urlencode }}">PDF</a>
-    <a class="att-report-btn att-report-csv"
-       href="{% url 'admin:attendance_attendance_report_csv' %}?{{ request.GET.urlencode }}">CSV</a>
-  </div>
-
-  <style>
-    .att-report-actions { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; }
-    .att-report-label { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
-    .att-report-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none; color: #fff !important; border: none; }
-    .att-report-pdf { background: #dc2626; }
-    .att-report-pdf:hover { background: #b91c1c; }
-    .att-report-csv { background: #16a34a; }
-    .att-report-csv:hover { background: #15803d; }
-  </style>
-  {{ block.super }}
+{{ block.super }}
 {% endblock %}

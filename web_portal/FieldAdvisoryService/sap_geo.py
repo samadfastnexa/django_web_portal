@@ -112,6 +112,27 @@ def sap_geo_for_user(user, company=None):
     return result
 
 
+def location_fields_for_user(user, company=None):
+    """The location columns to stamp on a record, keyed as Meeting/Attendance name them.
+
+    Never raises: the record being saved is the user's work and must not be lost
+    to a bad day at SAP. On failure the columns come back empty and `geo` is
+    None, so a caller can tell "nothing known" from "known to be nothing".
+    """
+    try:
+        geo = sap_geo_for_user(user, company)
+    except Exception:
+        logger.exception('Location lookup failed for user=%s', getattr(user, 'pk', None))
+        return {}, None
+    return {
+        'employee_code': geo['employee_code'],
+        'region': geo['region'],
+        'zone': geo['zone'],
+        'territory': geo['territory'],
+        'territory_code': geo['territory_id'],
+    }, geo
+
+
 def _cached_lookup(schema, employee_codes):
     """employee_geo_scoped() with a short cache in front of it.
 
@@ -195,8 +216,8 @@ def _shortfall_note(geo):
     if count <= 1:
         return None
     return (
-        f"Employee is assigned {count} SAP territories, all listed above. To record "
-        f"the single territory this meeting was actually in, post sap_territory_id - "
+        f"Employee is assigned {count} territories, all listed above. To record the "
+        f"single territory this meeting was actually in, post territory_code - "
         f"GET my-territories/ lists the employee's own, and naming one narrows zone "
         f"and region to match."
     )

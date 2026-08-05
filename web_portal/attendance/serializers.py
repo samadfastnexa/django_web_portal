@@ -17,9 +17,12 @@ class AttendanceSerializer(serializers.ModelSerializer):
             'id', 'attendee', 'check_in_time', 'check_out_time',
             'check_in_gap', 'check_out_gap', 'check_in_latitude', 'check_in_longitude',
             'check_out_latitude', 'check_out_longitude',
-            'check_in_image', 'check_out_image', 'source', 'created_at', 'user'
+            'check_in_image', 'check_out_image', 'source', 'created_at', 'user',
+            # Where the attendee works - stamped at check-in, never client input.
+            'employee_code', 'region', 'zone', 'territory', 'territory_code',
         ]
-        read_only_fields = ['user', 'check_in_gap', 'check_out_gap', 'created_at', 'source']
+        read_only_fields = ['user', 'check_in_gap', 'check_out_gap', 'created_at', 'source',
+                            'employee_code', 'region', 'zone', 'territory', 'territory_code']
 
     # -------------------
     # Field-level validation
@@ -176,9 +179,11 @@ class AttendanceCheckInSerializer(serializers.ModelSerializer):
         model = Attendance
         fields = [
             'id', 'attendee', 'check_in_time',
-            'check_in_latitude', 'check_in_longitude', 'check_in_image', 'created_at', 'user'
+            'check_in_latitude', 'check_in_longitude', 'check_in_image', 'created_at', 'user',
+            'employee_code', 'region', 'zone', 'territory', 'territory_code',
         ]
-        read_only_fields = ['user', 'created_at']
+        read_only_fields = ['user', 'created_at',
+                            'employee_code', 'region', 'zone', 'territory', 'territory_code']
         # attendee is optional: the view defaults it to the logged-in user and
         # only lets staff/admin mark attendance on someone else's behalf.
         extra_kwargs = {

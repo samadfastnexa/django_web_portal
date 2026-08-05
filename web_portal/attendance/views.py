@@ -136,8 +136,13 @@ class AttendanceCheckInView(generics.CreateAPIView):
             attendee = requested
         else:
             attendee = user
-        
-        serializer.save(user=user, attendee=attendee)
+
+        # Stamp where the ATTENDEE works, not whoever marked it - a manager
+        # marking someone else's attendance must not stamp their own region.
+        from FieldAdvisoryService.sap_geo import location_fields_for_user
+        location, _ = location_fields_for_user(attendee)
+
+        serializer.save(user=user, attendee=attendee, **location)
 
 
 # ✅ Attendance Update/Delete View (PUT, PATCH, DELETE)

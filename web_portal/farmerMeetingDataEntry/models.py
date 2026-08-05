@@ -9,7 +9,56 @@ import os
 from django.core.validators import FileExtensionValidator
 from django.core.exceptions import ValidationError
 from FieldAdvisoryService.models import Region,Zone,Territory,Company
-class Meeting(models.Model):
+
+
+class StaffLocationFields(models.Model):
+    """Where the record's owner works, resolved from their employee code.
+
+    Deliberately separate from the *_fk columns each model also carries: those
+    point at the portal's own Region/Zone/Territory tables, which were imported
+    from SAP once and have drifted since, so writing these names into them would
+    duplicate master data instead of correcting it. See
+    FieldAdvisoryService.sap_geo for how the values are resolved.
+    """
+
+    employee_code = models.CharField(
+        max_length=50, blank=True, null=True, db_index=True,
+        verbose_name="Employee code",
+        help_text="Employee code the location below was resolved from",
+    )
+    # Text, not CharField: these list everything the employee is assigned, and a
+    # national manager covers ~130 territories - far past any sensible varchar.
+    # That also rules out a plain db_index (MySQL cannot index TEXT without a
+    # prefix length); `search=` still finds a name inside the list via LIKE.
+    region = models.TextField(
+        blank=True, null=True, verbose_name="Region",
+        help_text="Region(s) assigned to the employee, comma separated.",
+    )
+    zone = models.TextField(
+        blank=True, null=True, verbose_name="Zone",
+        help_text="Zone(s) assigned to the employee, comma separated.",
+    )
+    territory = models.TextField(
+        blank=True, null=True, verbose_name="Territory",
+        help_text=(
+            "Territory/territories assigned to the employee, comma separated. "
+            "Narrows to the single one when the record names it via territory_code."
+        ),
+    )
+    territory_code = models.IntegerField(
+        blank=True, null=True, db_index=True,
+        verbose_name="Territory code",
+        help_text=(
+            "SAP OTER.territryID - set only when one territory applies, either "
+            "because the employee has just one or because the record named it."
+        ),
+    )
+
+    class Meta:
+        abstract = True
+
+
+class Meeting(StaffLocationFields):
     id = models.CharField(
         max_length=20,
         primary_key=True,
@@ -24,43 +73,6 @@ class Meeting(models.Model):
     zone_fk   = models.ForeignKey(Zone,on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_zone')
     territory_fk = models.ForeignKey(Territory, on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_territory')
     
-    # SAP-derived location, resolved server-side from the user's employee code
-    # (see FieldAdvisoryService.sap_geo). Deliberately kept out of the *_fk
-    # columns above: those point at the portal's own Region/Zone/Territory
-    # tables, which were imported from SAP once and have drifted since, so
-    # writing SAP names into them would duplicate master data instead of
-    # correcting it. These columns record what SAP actually said, unaltered.
-    sap_employee_code = models.CharField(
-        max_length=50, blank=True, null=True, db_index=True,
-        help_text="SAP employee code the location below was resolved from",
-    )
-    # Text, not CharField: these list everything the employee is assigned, and a
-    # national manager covers ~130 territories - far past any sensible varchar.
-    # That also rules out a plain db_index (MySQL cannot index TEXT without a
-    # prefix length); `search=` still finds a name inside the list via LIKE.
-    sap_region = models.TextField(
-        blank=True, null=True,
-        help_text="Region(s) SAP assigns the employee, comma separated.",
-    )
-    sap_zone = models.TextField(
-        blank=True, null=True,
-        help_text="Zone(s) SAP assigns the employee, comma separated.",
-    )
-    sap_territory = models.TextField(
-        blank=True, null=True,
-        help_text=(
-            "Territory/territories SAP assigns the employee, comma separated. "
-            "Narrows to the single one when the meeting names it via sap_territory_id."
-        ),
-    )
-    sap_territory_id = models.IntegerField(
-        blank=True, null=True, db_index=True,
-        help_text=(
-            "SAP OTER.territryID - set only when one territory applies, either "
-            "because the employee has just one or because the meeting named it."
-        ),
-    )
-
     date = models.DateTimeField()
     location = models.CharField(max_length=200, default="Not specified", blank=True)
     total_attendees = models.PositiveIntegerField(default=0)
@@ -172,7 +184,7 @@ class MeetingAttachment(models.Model):
         super().delete(*args, **kwargs)
     
 # field day 
-class FieldDay(models.Model):
+class FieldDay(StaffLocationFields):
     id = models.CharField(max_length=20, primary_key=True, editable=False)
     title = models.CharField(max_length=200, verbose_name="Name of FSM", help_text="Enter the name of the Field Service Manager (FSM)")
     
@@ -306,7 +318,7 @@ class FieldDayAttachment(models.Model):
         super().delete(*args, **kwargs)
 
 
-class HPMRequisition(models.Model):
+class HPMRequisition(StaffLocationFields):
     """High Profile Meeting requisition - approved BEFORE the meeting is arranged.
 
     Digitises the paper form "HIGH-PROFILE FARMER MEETING FOR GM/BM - REQUISITION
