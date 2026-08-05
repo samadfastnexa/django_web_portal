@@ -12,6 +12,10 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from django.db import models
 from django.contrib.admin import widgets as admin_widgets
 from datetime import datetime
+from FieldAdvisoryService.sap_geo import sap_geo_for_user
+import logging
+
+logger = logging.getLogger(__name__)
 
 class FarmerAttendanceInline(admin.TabularInline):
     model = FarmerAttendance
@@ -24,7 +28,26 @@ class FarmerAttendanceInline(admin.TabularInline):
         js = ('admin/js/farmer_autocomplete.js',)
 
 
-class MeetingAttachmentInline(admin.TabularInline):
+class AttachmentPreviewMixin:
+    """Adds the preview + Download column to an attachment inline.
+
+    Without it the row is only Django's "Currently: <link>", which opens the
+    file in a tab - photos taken in the field then have to be saved by hand from
+    the browser, one right-click at a time.
+    """
+    fields = ('file', 'attachment_preview')
+    readonly_fields = ('attachment_preview',)
+
+    @admin.display(description='Preview / download')
+    def attachment_preview(self, obj):
+        from web_portal.admin_thumbnails import file_cell, EMPTY
+        # The `extra` blank row has no instance yet - nothing to preview.
+        if not obj or not obj.pk:
+            return EMPTY
+        return file_cell(obj.file)
+
+
+class MeetingAttachmentInline(AttachmentPreviewMixin, admin.TabularInline):
     model = MeetingAttachment
     extra = 1
 
@@ -61,10 +84,11 @@ def export_farmer_meeting_to_excel(modeladmin, request, queryset):
     # Headers - Meeting Info
     main_headers = [
         'ID', 'FSM Name', 'Date', 'Company',
+        'Region (SAP)', 'Zone (SAP)', 'Territory (SAP)',
         'Location', 'Total Attendees', 'ZM Present', 'RSM Present',
         'Key Topics', 'Feedback', 'Suggestions'
     ]
-    
+
     # Attendee headers
     attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
     
@@ -96,6 +120,7 @@ def export_farmer_meeting_to_excel(modeladmin, request, queryset):
             meeting.id, meeting.fsm_name,
             meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
             meeting.company_fk.Company_name if meeting.company_fk else '',
+            meeting.sap_region or '', meeting.sap_zone or '', meeting.sap_territory or '',
             meeting.location, meeting.total_attendees,
             'Yes' if meeting.presence_of_zm else 'No',
             'Yes' if meeting.presence_of_rsm else 'No',
@@ -192,9 +217,11 @@ def _meeting_form_story(obj):
             ('Name of FSM', obj.fsm_name),
             ('Date', fmt_datetime(obj.date)),
             ('Location', obj.location),
-            ('Region', obj.region_fk.name if obj.region_fk else ''),
-            ('Zone', obj.zone_fk.name if obj.zone_fk else ''),
-            ('Territory', obj.territory_fk.name if obj.territory_fk else ''),
+            # SAP is the source for these now; fall back to the portal's own
+            # tables for meetings recorded before that, which have only the FKs.
+            ('Region', obj.sap_region or (obj.region_fk.name if obj.region_fk else '')),
+            ('Zone', obj.sap_zone or (obj.zone_fk.name if obj.zone_fk else '')),
+            ('Territory', obj.sap_territory or (obj.territory_fk.name if obj.territory_fk else '')),
             ('Total Attendees', obj.total_attendees),
             ('Key Topics Discussed', obj.key_topics_discussed),
             ('Products Discussed', obj.products_discussed),
@@ -225,6 +252,11 @@ class MeetingAdmin(admin.ModelAdmin):
         'id',
         'fsm_name',
         'formatted_date',
+        # SAP is where the location actually comes from now, so show it first;
+        # the *_fk columns only carry what a client chose to send.
+        'sap_region',
+        'sap_zone',
+        'sap_territory',
         'region_fk',
         'zone_fk',
         'territory_fk',
@@ -236,6 +268,10 @@ class MeetingAdmin(admin.ModelAdmin):
         'region_fk__name',
         'zone_fk__name',
         'territory_fk__name',
+        'sap_region',
+        'sap_zone',
+        'sap_territory',
+        'sap_employee_code',
         'location',
     ]
 
@@ -244,6 +280,9 @@ class MeetingAdmin(admin.ModelAdmin):
     # hundreds of links.
     list_filter = [
         date_range_filter('date', 'meeting date'),
+        related_values_filter('sap_region', 'SAP region'),
+        related_values_filter('sap_zone', 'SAP zone'),
+        related_values_filter('sap_territory', 'SAP territory'),
         related_values_filter('region_fk__name', 'region'),
         related_values_filter('zone_fk__name', 'zone'),
         related_values_filter('territory_fk__name', 'territory'),
@@ -251,6 +290,37 @@ class MeetingAdmin(admin.ModelAdmin):
     ordering = ['-created_at', '-id']
     actions = [export_farmer_meeting_to_excel, export_farmer_meeting_to_pdf]
 
+    # Derived from SAP, never typed - an edited region name here would quietly
+    # split every report that groups on it.
+    readonly_fields = (
+        'sap_employee_code', 'sap_region', 'sap_zone', 'sap_territory', 'sap_territory_id',
+    )
+
+    def save_model(self, request, obj, form, change):
+        """Resolve the SAP location the same way the API does.
+
+        The sap_* fields are read-only on the form, so this is the only way a
+        meeting entered through the admin gets them. Values already present are
+        left alone: re-saving an old meeting must not re-file it against wherever
+        that employee works today. As in the API, SAP being unavailable must not
+        cost the user their entry.
+        """
+        if obj.user_id_id and not obj.sap_employee_code:
+            try:
+                geo = sap_geo_for_user(obj.user_id)
+            except Exception:
+                logger.exception('SAP geo lookup failed for user=%s; saving meeting without it',
+                                 obj.user_id_id)
+                geo = None
+            if geo:
+                obj.sap_employee_code = geo['employee_code']
+                obj.sap_region = geo['region']
+                obj.sap_zone = geo['zone']
+                obj.sap_territory = geo['territory']
+                obj.sap_territory_id = geo['territory_id']
+                if geo['company'] is not None and not obj.company_fk_id:
+                    obj.company_fk = geo['company']
+        super().save_model(request, obj, form, change)
 
     # Configure form to show datetime input with separate date and time fields
     def formfield_for_dbfield(self, db_field, request, **kwargs):
@@ -282,7 +352,7 @@ class FieldDayAttendanceInline(admin.TabularInline):
         readonly = list(self.readonly_fields)
         return readonly
 
-class FieldDayAttachmentInline(admin.TabularInline):
+class FieldDayAttachmentInline(AttachmentPreviewMixin, admin.TabularInline):
     model = FieldDayAttachment
     extra = 1
 

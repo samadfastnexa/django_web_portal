@@ -151,22 +151,22 @@ class AttendanceAdmin(admin.ModelAdmin):
     @admin.display(description='In')
     def check_in_photo(self, obj):
         from web_portal.admin_thumbnails import thumb
-        return thumb(obj.check_in_image, radius='6px')
+        return thumb(obj.check_in_image, radius='6px', downloadable=True)
 
     @admin.display(description='Out')
     def check_out_photo(self, obj):
         from web_portal.admin_thumbnails import thumb
-        return thumb(obj.check_out_image, radius='6px')
+        return thumb(obj.check_out_image, radius='6px', downloadable=True)
 
     @admin.display(description='Check-in photo')
     def check_in_image_preview(self, obj):
         from web_portal.admin_thumbnails import preview
-        return preview(obj.check_in_image if obj and obj.pk else None)
+        return preview(obj.check_in_image if obj and obj.pk else None, downloadable=True)
 
     @admin.display(description='Check-out photo')
     def check_out_image_preview(self, obj):
         from web_portal.admin_thumbnails import preview
-        return preview(obj.check_out_image if obj and obj.pk else None)
+        return preview(obj.check_out_image if obj and obj.pk else None, downloadable=True)
 
     @staticmethod
     def _today_queryset():

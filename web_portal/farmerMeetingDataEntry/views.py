@@ -14,6 +14,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from .serializers import FieldDaySerializer
 from FieldAdvisoryService.serializers import CompanySerializer, RegionSerializer, ZoneSerializer, TerritorySerializer,Company,Region,Zone,Territory
+from FieldAdvisoryService.sap_geo import primary_company_for_user, sap_geo_for_user
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,17 +30,22 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     # Filters, search, ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["fsm_name", "region_fk", "zone_fk", "territory_fk", "company_fk", "presence_of_zm", "presence_of_rsm", "location", "user_id"]
+    filterset_fields = ["fsm_name", "region_fk", "zone_fk", "territory_fk", "company_fk", "presence_of_zm", "presence_of_rsm", "location", "user_id",
+                        "sap_region", "sap_zone", "sap_territory", "sap_territory_id", "sap_employee_code"]
     search_fields = [
         'fsm_name',
         'region_fk__name',
         'zone_fk__name',
         'territory_fk__name',
+        'sap_region',
+        'sap_zone',
+        'sap_territory',
         'location',
         'key_topics_discussed',
         'products_discussed',
     ]
-    ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name", "total_attendees", "id", "created_at"]
+    ordering_fields = ["date", "fsm_name", "region_fk__name", "zone_fk__name", "territory_fk__name",
+                       "sap_region", "sap_zone", "sap_territory", "total_attendees", "id", "created_at"]
     ordering = ["-created_at", "-id"]
     
     def get_queryset(self):
@@ -118,13 +124,21 @@ class MeetingViewSet(viewsets.ModelViewSet):
         openapi.Parameter('fsm_name', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True,
                          description='Field Sales Manager name'),
         openapi.Parameter('company_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
-                         description='Company ID (Foreign Key)'),
+                         description='Company ID (Foreign Key). On create, leave blank to use the company '
+                                     'whose SAP schema recognises the user\'s employee code.'),
         openapi.Parameter('territory_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
-                         description='Territory ID (Foreign Key)'),
+                         description='Territory ID - the portal\'s own Territory table. Optional; the SAP '
+                                     'territory is recorded separately in the read-only sap_territory field.'),
         openapi.Parameter('zone_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
-                         description='Zone ID (Foreign Key)'),
+                         description='Zone ID - the portal\'s own Zone table. Optional; the SAP zone is '
+                                     'recorded separately in the read-only sap_zone field.'),
         openapi.Parameter('region_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
-                         description='Region ID (Foreign Key)'),
+                         description='Region ID - the portal\'s own Region table. Optional; the SAP region '
+                                     'is recorded separately in the read-only sap_region field.'),
+        openapi.Parameter('sap_territory_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                         description='Which of the employee\'s SAP territories this meeting was in. Only '
+                                     'needed when they cover several - with one it is filled automatically. '
+                                     'Must be one of theirs; GET my-territories/ lists the valid ids.'),
         openapi.Parameter('date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True,
                          description='Meeting date (YYYY-MM-DD)'),
         openapi.Parameter('location', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
@@ -228,6 +242,16 @@ class MeetingViewSet(viewsets.ModelViewSet):
                              description='Filter by presence of Regional Sales Manager (RSM)'),
             openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
                              description='Filter by User ID (Created By) - Use to see specific user records.'),
+            openapi.Parameter('sap_region', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
+                             description='Filter by SAP region name, e.g. "AGRI GREEN"'),
+            openapi.Parameter('sap_zone', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
+                             description='Filter by SAP zone name, e.g. "Gujranwala Zone"'),
+            openapi.Parameter('sap_territory', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
+                             description='Filter by SAP territory name, e.g. "Narang"'),
+            openapi.Parameter('sap_territory_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                             description='Filter by SAP OTER.territryID'),
+            openapi.Parameter('sap_employee_code', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False,
+                             description='Filter by the SAP employee code the location was resolved from'),
         ]
     )
     def list(self, request, *args, **kwargs):
@@ -305,8 +329,11 @@ class MeetingViewSet(viewsets.ModelViewSet):
             openapi.Parameter('presence_of_zm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Zone Manager'),
             openapi.Parameter('presence_of_rsm', openapi.IN_QUERY, type=openapi.TYPE_BOOLEAN, required=False, description='Filter by presence of Regional Sales Manager'),
             openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False, description='Filter by User ID (Created By)'),
-            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Search in FSM name, region, zone, territory, location, topics'),
-            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Order by field (e.g., date, -date, fsm_name, -id)'),
+            openapi.Parameter('sap_region', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by SAP region name'),
+            openapi.Parameter('sap_zone', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by SAP zone name'),
+            openapi.Parameter('sap_territory', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Filter by SAP territory name'),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Search in FSM name, region, zone, territory (local and SAP), location, topics'),
+            openapi.Parameter('ordering', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=False, description='Order by field (e.g., date, -date, fsm_name, -id, sap_zone)'),
         ],
         responses={
             200: openapi.Response(
@@ -372,10 +399,11 @@ class MeetingViewSet(viewsets.ModelViewSet):
         # Headers - Meeting Info
         main_headers = [
             'ID', 'FSM Name', 'Date', 'Company',
+            'Region (SAP)', 'Zone (SAP)', 'Territory (SAP)',
             'Location', 'Total Attendees', 'ZM Present', 'RSM Present',
             'Key Topics', 'Feedback', 'Suggestions'
         ]
-        
+
         # Attendee headers
         attendee_headers = ['Attendee Name', 'Contact Number', 'Acreage', 'Crop']
         
@@ -407,6 +435,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 meeting.id, meeting.fsm_name,
                 meeting.date.strftime('%Y-%m-%d %H:%M') if meeting.date else '',
                 meeting.company_fk.Company_name if meeting.company_fk else '',
+                meeting.sap_region or '', meeting.sap_zone or '', meeting.sap_territory or '',
                 meeting.location, meeting.total_attendees,
                 'Yes' if meeting.presence_of_zm else 'No',
                 'Yes' if meeting.presence_of_rsm else 'No',
@@ -490,7 +519,18 @@ class MeetingViewSet(viewsets.ModelViewSet):
     # ---------------- Create ----------------
     @swagger_auto_schema(
         tags=["12. Farmer Advisory Meeting"],
-        operation_description="Create a new farmer advisory meeting with multiple attendees and file attachments. Supports bulk attendee data entry.",
+        operation_description=(
+            "Create a new farmer advisory meeting with multiple attendees and file attachments. "
+            "Supports bulk attendee data entry.\n\n"
+            "Nothing about the user's location needs to be sent. The server resolves it from the "
+            "SAP employee code of whoever the meeting is filed under (user_id, defaulting to the "
+            "caller): employee code -> B4_EMP -> OTER. The result is returned and stored in the "
+            "read-only `sap_region` / `sap_zone` / `sap_territory` / `sap_territory_id` fields.\n\n"
+            "`region_id` / `zone_id` / `territory_id` are untouched by this - they remain optional "
+            "references to the portal's own tables. A manager covering several SAP territories "
+            "only gets the levels those territories agree on; the response carries a `sap_geo` "
+            "block explaining anything left blank."
+        ),
         manual_parameters=common_parameters,
         responses={
             201: openapi.Response(
@@ -520,41 +560,200 @@ class MeetingViewSet(viewsets.ModelViewSet):
         }
     )
     def create(self, request, *args, **kwargs):
-        # DEBUG: Log raw request data
-        # print("=== FieldDayViewSet CREATE DEBUG ===")
-        # print(f"Raw request.data: {request.data}")
-        # print(f"attendee_farmer_id: {request.data.get('attendee_farmer_id', 'NOT_PROVIDED')}")
-        # print(f"attendee_crop: {request.data.get('attendee_crop', 'NOT_PROVIDED')}")
-        # print(f"attendee_farmer_id type: {type(request.data.get('attendee_farmer_id'))}")
-        # print(f"attendee_crop type: {type(request.data.get('attendee_crop'))}")
-        # if 'attendee_crop' in request.data:
-        #     crop_data = request.data.get('attendee_crop')
-        #     if isinstance(crop_data, list):
-        #         for i, crop in enumerate(crop_data):
-        #             print(f"  attendee_crop[{i}]: '{crop}' (type: {type(crop)})")
-        # print("=== END DEBUG ===")
-        
-        # Automatically assign company based on logged-in user's sales profile
-        if hasattr(request.user, 'sales_profile') and request.user.sales_profile:
-            # Get the first company from user's sales profile (many-to-many relationship)
-            user_companies = request.user.sales_profile.companies.all()
-            if user_companies.exists() and 'company_id' not in request.data:
-                # Create a mutable copy of request.data
-                data = request.data.copy()
-                data['company_id'] = user_companies.first().id
-                request._full_data = data
-        
+        self._sap_geo = None
+        self._sap_geo_is_own = False
+        self._sap_territory_ignored = None
         response = super().create(request, *args, **kwargs)
         try:
             if getattr(response, 'status_code', None) == status.HTTP_201_CREATED:
+                if self._sap_geo is not None:
+                    note = self._sap_geo['note']
+                    if self._sap_territory_ignored:
+                        # Never let a dropped value pass silently - the client
+                        # asked for a territory and did not get one.
+                        note = (
+                            f"sap_territory_id {self._sap_territory_ignored} was ignored: "
+                            f"SAP could not confirm it belongs to this employee. "
+                            f"{note or ''}".strip()
+                        )
+                    block = {
+                        'territory_count': self._sap_geo['territory_count'],
+                        'note': note,
+                    }
+                    # An employee code and the schema it lives in identify a
+                    # colleague in SAP. Anyone may file a meeting under another
+                    # user_id, so only echo those back to the person they
+                    # describe - otherwise the endpoint enumerates staff codes.
+                    if self._sap_geo_is_own:
+                        block['employee_code'] = self._sap_geo['employee_code']
+                        block['schema'] = self._sap_geo['schema']
+                    response.data['sap_geo'] = block
                 logger.info(
-                    'Meeting created id=%s by user=%s',
+                    'Meeting created id=%s by user=%s sap_emp=%s',
                     response.data.get('id'),
                     getattr(request.user, 'pk', None) if getattr(request.user, 'is_authenticated', False) else None,
+                    (self._sap_geo or {}).get('employee_code'),
                 )
         except Exception:
             pass
         return response
+
+    def perform_create(self, serializer):
+        """Record the owner, then where SAP says that owner works.
+
+        SAP's region/zone/territory land in the meeting's own sap_* columns. The
+        region_fk/zone_fk/territory_fk columns are left exactly as the client
+        sent them: they point at the portal's Region/Zone/Territory tables, which
+        have drifted from SAP, and writing SAP names into them would duplicate
+        that master data. company_fk is still filled when the client omits it, as
+        it always was - only the source is better, being the company whose HANA
+        schema recognised the employee code rather than `companies.first()`.
+        """
+        data = serializer.validated_data
+        owner = data.get('user_id') or self._meeting_owner(self.request)
+        extra = {'user_id': owner} if owner is not None else {}
+
+        if owner is not None:
+            # A posted company pins the lookup to one HANA schema, since an
+            # employee code is only unique within a schema.
+            company_id = data.get('company_fk_id')
+            company = Company.objects.filter(pk=company_id).first() if company_id else None
+            self._sap_geo_is_own = (owner.pk == getattr(self.request.user, 'pk', None))
+            try:
+                geo = self._sap_geo = sap_geo_for_user(owner, company)
+            except Exception:
+                # The meeting is the user's work and needs nothing from SAP to
+                # be recorded; a bad day at SAP must not cost them the entry.
+                logger.exception('SAP geo lookup failed for user=%s; saving meeting without it', owner.pk)
+                geo = None
+            if geo:
+                extra.update({
+                    'sap_employee_code': geo['employee_code'],
+                    'sap_region': geo['region'],
+                    'sap_zone': geo['zone'],
+                    'sap_territory': geo['territory'],
+                    'sap_territory_id': geo['territory_id'],
+                })
+                chosen = self._chosen_territory(geo)
+                if chosen is not None:
+                    # Naming a territory settles zone and region too - taken from
+                    # that territory's own SAP chain, not from what the employee's
+                    # territories happen to agree on. A manager spanning several
+                    # regions gets all three filled, not just the territory.
+                    extra['sap_territory'] = chosen['name']
+                    extra['sap_territory_id'] = chosen['id']
+                    extra['sap_zone'] = chosen['zone'] or geo['zone']
+                    extra['sap_region'] = chosen['region'] or geo['region']
+                if geo['company'] is not None and not company_id:
+                    extra['company_fk_id'] = geo['company'].pk
+            else:
+                # The lookup itself blew up, so there is likewise nothing to
+                # check a posted territory against.
+                self._chosen_territory(None)
+
+        if not data.get('company_fk_id') and not extra.get('company_fk_id'):
+            # SAP could not place the user, but the meeting should still file
+            # under a company so it stays visible to their colleagues.
+            fallback = primary_company_for_user(owner)
+            if fallback is not None:
+                extra['company_fk_id'] = fallback.pk
+
+        serializer.save(**extra)
+
+    def _meeting_owner(self, request):
+        """Whose SAP record to read - an explicit user_id, else the caller."""
+        raw = str(request.query_params.get('user_id') or request.data.get('user_id') or '').strip()
+        if raw.isdigit():
+            from django.contrib.auth import get_user_model
+            return get_user_model().objects.filter(pk=int(raw)).first()
+        return request.user if request.user.is_authenticated else None
+
+    def _chosen_territory(self, geo):
+        """The territory the client named, checked against the employee's own list.
+
+        Only SAP decides which territories an employee covers, so a posted id has
+        to be one of them - otherwise a meeting could be filed against any
+        territory in the company just by guessing a number.
+
+        With no list to check against - SAP unreachable, or the employee not
+        mapped in B4_EMP - the id is dropped rather than trusted, and the meeting
+        still saves. Rejecting it there would fail the POST during an outage,
+        which is precisely when losing the entry costs the most; the response
+        note says the value was ignored.
+        """
+        raw = str(self.request.data.get('sap_territory_id') or '').strip()
+        if not raw:
+            return None
+        options = geo.get('territories') if geo else None
+        if not options:
+            self._sap_territory_ignored = raw
+            return None
+        try:
+            wanted = int(raw)
+        except (TypeError, ValueError):
+            wanted = None
+        match = next((t for t in options if t['id'] == wanted), None)
+        if match is None:
+            raise serializers.ValidationError({'sap_territory_id': [
+                f"{raw!r} is not one of this employee's SAP territories.",
+                {str(t['id']): t['name'] for t in options},
+            ]})
+        return match
+
+    @swagger_auto_schema(
+        tags=["12. Farmer Advisory Meeting"],
+        operation_description=(
+            "The SAP territories assigned to a user - the valid values for "
+            "sap_territory_id when creating a meeting. Defaults to the calling "
+            "user; pass user_id to look up someone else. Returns an empty list "
+            "(not an error) when SAP knows nothing about them."
+        ),
+        manual_parameters=[
+            openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=False,
+                             description='Whose territories to list. Defaults to the caller.'),
+        ],
+        responses={200: openapi.Response(
+            description="The employee's SAP territories",
+            examples={'application/json': {
+                'employee_code': '1100',
+                'region': 'AGRI GREEN',
+                'zone': 'Vehari Zone',
+                'territories': [
+                    {'id': 130, 'name': 'Burewala'},
+                    {'id': 411, 'name': 'Gaggo'},
+                    {'id': 118, 'name': 'Mailsi-1'},
+                    {'id': 459, 'name': 'Mailsi-2'},
+                    {'id': 134, 'name': 'Vehari'},
+                ],
+                'note': None,
+            }},
+        )},
+    )
+    @action(detail=False, methods=['get'], url_path='my-territories')
+    def my_territories(self, request):
+        """Let a client offer the employee their own territories, not all 130."""
+        blank = {'employee_code': None, 'region': None, 'zone': None, 'territories': []}
+        owner = self._meeting_owner(request)
+        if owner is None:
+            # An unknown user_id is a different problem from a SAP outage, and
+            # saying so saves someone chasing the wrong one.
+            return Response(dict(blank, note='No such user.'))
+        try:
+            geo = sap_geo_for_user(owner)
+        except Exception:
+            logger.exception('SAP territory lookup failed for user=%s', owner.pk)
+            return Response(dict(blank, note='SAP could not be reached.'))
+        payload = {
+            'region': geo['region'],
+            'zone': geo['zone'],
+            'territories': geo['territories'],
+            'note': geo['note'],
+        }
+        # Same rule as create(): an employee code identifies a colleague in SAP,
+        # so it only goes back to the person it describes.
+        if owner.pk == getattr(request.user, 'pk', None):
+            payload['employee_code'] = geo['employee_code']
+        return Response(payload)
 
     # ---------------- Update ----------------
     @swagger_auto_schema(

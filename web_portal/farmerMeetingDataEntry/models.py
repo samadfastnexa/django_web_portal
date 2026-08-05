@@ -24,6 +24,43 @@ class Meeting(models.Model):
     zone_fk   = models.ForeignKey(Zone,on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_zone')
     territory_fk = models.ForeignKey(Territory, on_delete=models.SET_NULL, null=True, blank=True, related_name='meetings_territory')
     
+    # SAP-derived location, resolved server-side from the user's employee code
+    # (see FieldAdvisoryService.sap_geo). Deliberately kept out of the *_fk
+    # columns above: those point at the portal's own Region/Zone/Territory
+    # tables, which were imported from SAP once and have drifted since, so
+    # writing SAP names into them would duplicate master data instead of
+    # correcting it. These columns record what SAP actually said, unaltered.
+    sap_employee_code = models.CharField(
+        max_length=50, blank=True, null=True, db_index=True,
+        help_text="SAP employee code the location below was resolved from",
+    )
+    # Text, not CharField: these list everything the employee is assigned, and a
+    # national manager covers ~130 territories - far past any sensible varchar.
+    # That also rules out a plain db_index (MySQL cannot index TEXT without a
+    # prefix length); `search=` still finds a name inside the list via LIKE.
+    sap_region = models.TextField(
+        blank=True, null=True,
+        help_text="Region(s) SAP assigns the employee, comma separated.",
+    )
+    sap_zone = models.TextField(
+        blank=True, null=True,
+        help_text="Zone(s) SAP assigns the employee, comma separated.",
+    )
+    sap_territory = models.TextField(
+        blank=True, null=True,
+        help_text=(
+            "Territory/territories SAP assigns the employee, comma separated. "
+            "Narrows to the single one when the meeting names it via sap_territory_id."
+        ),
+    )
+    sap_territory_id = models.IntegerField(
+        blank=True, null=True, db_index=True,
+        help_text=(
+            "SAP OTER.territryID - set only when one territory applies, either "
+            "because the employee has just one or because the meeting named it."
+        ),
+    )
+
     date = models.DateTimeField()
     location = models.CharField(max_length=200, default="Not specified", blank=True)
     total_attendees = models.PositiveIntegerField(default=0)

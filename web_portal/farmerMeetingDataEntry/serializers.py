@@ -161,12 +161,20 @@ class MeetingSerializer(serializers.ModelSerializer):
             'region_id', 'region_name',
             'zone_id', 'zone_name',
             'territory_id', 'territory_name',
+            # SAP-derived location, resolved server-side from the user's
+            # employee code - read-only so a client cannot forge it.
+            'sap_employee_code', 'sap_region', 'sap_zone', 'sap_territory', 'sap_territory_id',
             'date', 'location', 'total_attendees',
             'key_topics_discussed', 'products_discussed', 'presence_of_zm', 'presence_of_rsm',
             'feedback_from_attendees', 'suggestions_for_future',
             'attendees', 'attachments',
             # attendee write-only lists (keep as-is)
             'attendee_farmer_id', 'attendee_name', 'attendee_contact', 'attendee_acreage', 'attendee_crop',
+        ]
+        # sap_territory_id is settable on create, but only via the view, which
+        # checks it against the employee's own SAP territories first.
+        read_only_fields = [
+            'sap_employee_code', 'sap_region', 'sap_zone', 'sap_territory', 'sap_territory_id',
         ]
 
     def get_attendees(self, obj):

@@ -2199,7 +2199,7 @@ def _build_conn_str_host(driver: str, host: str, port: str, user: str, password:
     if ssl_validate is not None:
         s += f";sslValidateCertificate={ssl_validate}"
     return s
-def _connect_hdbcli(host: str, port: str, user: str, password: str, database: str, encrypt: str | None, ssl_validate: str | None):
+def _connect_hdbcli(host: str, port: str, user: str, password: str, database: str, encrypt: str | None, ssl_validate: str | None, timeout_ms: int | None = None):
     from hdbcli import dbapi
     use_encrypt = (encrypt == 'true') if encrypt is not None else False
     kwargs = {
@@ -2212,6 +2212,13 @@ def _connect_hdbcli(host: str, port: str, user: str, password: str, database: st
         kwargs['encrypt'] = True
         if ssl_validate is not None:
             kwargs['sslValidateCertificate'] = (ssl_validate == 'true')
+    if timeout_ms:
+        # Callers that sit on a web request's write path pass this so an
+        # unreachable HANA fails in seconds instead of blocking on the OS TCP
+        # timeout. Left unset elsewhere, so reports and batch jobs keep waiting
+        # as long as they always have.
+        kwargs['connectTimeout'] = int(timeout_ms)
+        kwargs['communicationTimeout'] = int(timeout_ms)
     return dbapi.connect(**kwargs)
 
 def main():
@@ -2471,6 +2478,92 @@ def employee_territory_ids(db, employee_code) -> list:
         except (TypeError, ValueError):
             continue
     return sorted(set(ids))
+
+
+def employee_geo(db, employee_code) -> dict:
+    """The Region / Zone / Territory a sales employee covers, from B4_EMP -> OTER.
+
+    Climbs the same OTER chain the sales and collection reports use (Territory ->
+    Sub Zone -> Zone -> Sub Region -> Region) so anything filed against these
+    names lines up with what those reports show.
+
+    B4_EMP holds one row per employee-territory pair, so a field officer resolves
+    to one territory while a zone or national manager resolves to ~150.
+
+    `region` / `zone` / `territory` list everything the employee is assigned,
+    comma separated and de-duplicated. With one assignment each reads as a plain
+    name; with several the whole coverage is there rather than a blank or a
+    guess. `territory_id` is set only when there is exactly one territory, since
+    an id cannot describe a list.
+
+    Also returns territory_count, so a caller can tell "unmapped employee" (0)
+    from "covers many" (>1), and `territories` - each assignment as
+    {'id', 'name', 'zone', 'region'} carrying its own chain, so naming one
+    territory settles all three levels at once even for a manager spanning
+    several regions.
+    """
+    result = {'region': None, 'zone': None, 'territory': None,
+              'territory_id': None, 'territory_count': 0, 'territories': []}
+    code = str(employee_code or '').strip()
+    if not code:
+        return result
+
+    # B4_EMP is a view whose columns only exist in upper case; OTER's are mixed.
+    sql = (
+        'SELECT DISTINCT '
+        '  E."U_TID" AS "TerritoryId", '
+        '  T."descript" AS "Territory", '
+        '  R1."descript" AS "Zone", '
+        '  COALESCE(R3."descript", R2."descript", R1."descript") AS "Region" '
+        'FROM "B4_EMP" E '
+        'INNER JOIN OTER T ON T."territryID" = E."U_TID" '
+        'LEFT JOIN OTER Z  ON Z."territryID"  = T."parent" '
+        'LEFT JOIN OTER R1 ON R1."territryID" = Z."parent" '
+        'LEFT JOIN OTER R2 ON R2."territryID" = R1."parent" '
+        'LEFT JOIN OTER R3 ON R3."territryID" = R2."parent" '
+        'WHERE E."CODE" = ? AND T."inactive" = \'N\' '
+    )
+    rows = _fetch_all(db, sql, (code,)) or []
+    if not rows:
+        return result
+
+    def _clean(name):
+        # The portal stores territories without SAP's " Territory" suffix - see
+        # import_sap_territories, which strips it on the way in.
+        name = str(name or '').strip()
+        if name.lower().endswith(' territory'):
+            name = name[: -len(' territory')].rstrip()
+        return name
+
+    territories = {}
+    for r in rows:
+        try:
+            tid = int(str(r.get('TerritoryId')).strip())
+        except (TypeError, ValueError):
+            continue
+        name = _clean(r.get('Territory'))
+        if name:
+            territories[tid] = {
+                'id': tid,
+                'name': name,
+                'zone': (str(r.get('Zone') or '').strip() or None),
+                'region': (str(r.get('Region') or '').strip() or None),
+            }
+
+    result['territories'] = sorted(territories.values(), key=lambda t: t['name'])
+    result['territory_count'] = len(territories)
+
+    def _listed(key):
+        """Every distinct value across the employee's assignments, in order."""
+        return ', '.join(sorted({t[key] for t in result['territories'] if t.get(key)})) or None
+
+    result['region'] = _listed('region')
+    result['zone'] = _listed('zone')
+    result['territory'] = _listed('name')
+    if len(territories) == 1:
+        result['territory_id'] = result['territories'][0]['id']
+
+    return result
 
 
 def territory_descendants(db, root_ids, max_depth: int = 12) -> list:
@@ -2743,6 +2836,78 @@ def dealers_for_employee_scoped(schema, employee_code, search=None, status='acti
         return dealers_for_employee(conn, employee_code, search=search, status=status, limit=limit)
     except Exception:
         logger.exception('dealers_for_employee_scoped failed (schema=%s, emp=%s)', schema, employee_code)
+        return None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# This lookup runs while a user waits for a meeting to save, so it gives up on an
+# unreachable HANA quickly; a healthy connect measures 0.6-1.7s against the live
+# host. A user with no company membership tries every company, so the worst case
+# during an outage is 3x this - which has to stay clear of the web worker's own
+# timeout. Only the first such request pays it; the schema is then marked down.
+EMPLOYEE_GEO_TIMEOUT_MS = 5000
+
+
+def employee_geo_scoped(schema, employee_code):
+    """
+    Open a HANA connection for `schema`, return employee_geo() for the employee,
+    and close it. Returns None on any failure so the caller can fall back rather
+    than record a half-resolved location.
+
+    `employee_code` may be one code or several to try in order - a user can carry
+    a company-specific code alongside the one on their profile, and only SAP can
+    say which is real. They share the one connection, and the code that answered
+    comes back on the result as `employee_code`.
+    """
+    codes = [employee_code] if isinstance(employee_code, str) else list(employee_code or [])
+    codes = [str(c).strip() for c in codes if str(c or '').strip()]
+    if not (schema and codes):
+        return None
+    _here = os.path.dirname(__file__)
+    for _p in (
+        os.path.join(_here, '.env'),
+        os.path.join(_here, '..', '.env'),
+        os.path.join(_here, '..', '..', '.env'),
+        os.path.join(os.getcwd(), '.env'),
+    ):
+        _load_env_file(_p)
+    host = os.environ.get('HANA_HOST')
+    if not host:
+        return None
+    conn = None
+    try:
+        conn = _connect_hdbcli(
+            host,
+            os.environ.get('HANA_PORT') or '30015',
+            os.environ.get('HANA_USER') or '',
+            os.environ.get('HANA_PASSWORD') or '',
+            schema,
+            os.environ.get('HANA_ENCRYPT'),
+            os.environ.get('HANA_SSL_VALIDATE'),
+            timeout_ms=EMPLOYEE_GEO_TIMEOUT_MS,
+        )
+        cur = conn.cursor()
+        cur.execute(f'SET SCHEMA "{str(schema).strip()}"')
+        cur.close()
+        geo = None
+        for code in codes:
+            geo = employee_geo(conn, code)
+            geo['employee_code'] = code
+            if geo['territory_count']:
+                return geo
+        # Every code drew a blank: hand back the last one so the caller can say
+        # which codes it tried.
+        geo['employee_code'] = None
+        return geo
+    except Exception as e:
+        # Placeholder companies carry a name that is not a real schema; warn
+        # without a traceback so a two-company loop stays readable.
+        logger.warning('employee_geo_scoped skipped schema=%s emp=%s: %s', schema, codes, e)
         return None
     finally:
         if conn is not None:
