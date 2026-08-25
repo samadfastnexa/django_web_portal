@@ -1,5 +1,7 @@
+from django import forms
 from django.conf import settings
 from django.contrib import admin
+from django.contrib.admin.widgets import FilteredSelectMultiple
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib import messages
 from django.db.models import Q
@@ -8,6 +10,7 @@ from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
 from .models import User, Role, SalesStaffProfile, SalesStaffCompany, DesignationModel, AccountDeletionRequest
+from FieldAdvisoryService.models import Company
 from web_portal.admin import admin_site
 
 # Import Dealer model for the inline
@@ -92,6 +95,68 @@ class AttendanceMarkedFilter(admin.SimpleListFilter):
         return pool.filter(pk__in=marked_ids) if mode == 'marked' else pool.exclude(pk__in=marked_ids)
 
 
+class SalesStaffProfileAdminForm(forms.ModelForm):
+    """Gives SalesStaffProfile a normal multi-select for companies.
+
+    `companies` is a M2M with a `through` model, which the admin rejects
+    outright (admin.E013) wherever that name appears in fields/fieldsets/
+    filter_horizontal. So the field is declared under a different name and the
+    SalesStaffCompany rows are written by hand in _sync_companies(); the
+    per-company employee codes stay on the Staff Company Memberships table.
+    """
+
+    assigned_companies = forms.ModelMultipleChoiceField(
+        queryset=Company.objects.all(),
+        required=False,
+        label='Companies',
+        widget=FilteredSelectMultiple('companies', is_stacked=False),
+        help_text='Per-company employee IDs are set in the table below.',
+    )
+
+    class Meta:
+        model = SalesStaffProfile
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields['assigned_companies'].initial = list(
+                self.instance.company_memberships.values_list('company_id', flat=True)
+            )
+
+    def save(self, commit=True):
+        instance = super().save(commit=commit)
+        if commit:
+            self._sync_companies(instance)
+        else:
+            # The admin saves the instance between save(commit=False) and
+            # save_m2m(), so deferring to save_m2m guarantees a pk to hang the
+            # rows off - needed when the profile is created from the User page.
+            base_save_m2m = self.save_m2m
+
+            def save_m2m():
+                base_save_m2m()
+                self._sync_companies(self.instance)
+
+            self.save_m2m = save_m2m
+        return instance
+
+    def _sync_companies(self, instance):
+        if not instance.pk or 'assigned_companies' not in self.cleaned_data:
+            return
+
+        selected = {c.pk for c in self.cleaned_data['assigned_companies']}
+        existing = set(instance.company_memberships.values_list('company_id', flat=True))
+
+        instance.company_memberships.exclude(company_id__in=selected).delete()
+        # Rows that survive keep their employee_code - re-picking companies
+        # must not wipe the SAP codes entered on the inline.
+        for company_id in selected - existing:
+            SalesStaffCompany.objects.create(
+                sales_profile=instance, company_id=company_id, is_active=True
+            )
+
+
 class SalesStaffCompanyInline(admin.TabularInline):
     """Inline to manage per-company employee codes directly from a SalesStaffProfile."""
     model = SalesStaffCompany
@@ -109,6 +174,7 @@ class SalesStaffCompanyInline(admin.TabularInline):
 # Inline for Sales Staff profile
 class SalesProfileInline(admin.StackedInline):
     model = SalesStaffProfile
+    form = SalesStaffProfileAdminForm
     can_delete = True
     verbose_name_plural = 'Sales Profile'
     extra = 0
@@ -147,7 +213,7 @@ class SalesProfileInline(admin.StackedInline):
             'fields': ('phone_number', 'designation', 'address'),
         }),
         ('Location', {
-            'fields': ('regions', 'zones', 'territories')
+            'fields': ('assigned_companies', 'regions', 'zones', 'territories')
         }),
         ('Reporting Hierarchy', {
             'fields': ('manager', 'hod', 'master_hod'),
@@ -328,7 +394,7 @@ class CustomUserAdmin(BaseUserAdmin):
                 'fields': ('phone_number', 'designation', 'address'),
                 'description': desc,
             }),
-            ('Location', {'fields': ('regions', 'zones', 'territories')}),
+            ('Location', {'fields': ('assigned_companies', 'regions', 'zones', 'territories')}),
             ('Reporting Hierarchy', {
                 'fields': ('manager', 'hod', 'master_hod'),
                 'description': 'Reporting hierarchy: manager = direct supervisor in reporting chain',
@@ -345,7 +411,9 @@ class CustomUserAdmin(BaseUserAdmin):
         """
         qs = super().get_queryset(request)
         qs = qs.select_related('role', 'company')
-        qs = qs.prefetch_related('sales_profile', 'dealer')
+        # company_memberships feeds the Employee Code column - without it that
+        # column costs a query per row.
+        qs = qs.prefetch_related('sales_profile__company_memberships', 'dealer')
         return qs
 
     def get_search_fields(self, request):
@@ -359,8 +427,16 @@ class CustomUserAdmin(BaseUserAdmin):
 
     @admin.display(description='Employee Code', ordering='sales_profile__employee_code')
     def employee_code(self, obj):
-        sales_profile = getattr(obj, 'sales_profile', None)
-        return getattr(sales_profile, 'employee_code', '') if sales_profile else ''
+        profile = getattr(obj, 'sales_profile', None)
+        if not profile:
+            return ''
+        # Per-company codes are what actually get used - analytics and
+        # sap_integration resolve the membership first and only fall back to
+        # this flat field. Showing just the flat field left the column stale
+        # the moment someone edited the memberships table.
+        codes = [m.employee_code for m in profile.company_memberships.all()
+                 if m.is_active and m.employee_code]
+        return ', '.join(dict.fromkeys(codes)) if codes else (profile.employee_code or '')
 
     @admin.display(description='Employee IDs per Company')
     def company_employee_ids(self, obj):
@@ -574,7 +650,8 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(SalesStaffProfile, site=admin_site)
 class SalesStaffProfileAdmin(admin.ModelAdmin):
     """Admin for SalesStaffProfile with data integrity checks"""
-    list_display = ['id', 'photo', 'designation', 'employee_code', 'phone_number', 'user_display', 'manager_display', 'subordinates_count', 'is_vacant']
+    form = SalesStaffProfileAdminForm
+    list_display = ['id', 'photo', 'designation', 'employee_codes', 'phone_number', 'user_display', 'manager_display', 'subordinates_count', 'is_vacant']
     list_filter = ['designation', 'is_vacant', 'employee_code']
     search_fields = ['user__email', 'user__username', 'employee_code', 'phone_number']
     filter_horizontal = ('regions', 'zones', 'territories')
@@ -591,7 +668,7 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
             'description': '📱 Phone number can be used for login instead of email'
         }),
         ('Location', {
-            'fields': ('regions', 'zones', 'territories'),
+            'fields': ('assigned_companies', 'regions', 'zones', 'territories'),
             'description': '⬇️ Employee IDs per company are assigned in the "Staff Company Memberships" table below.'
         }),
         ('Reporting Hierarchy', {
@@ -603,6 +680,17 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('profile_photo',)
+
+    @admin.display(description='Employee Code', ordering='employee_code')
+    def employee_codes(self, obj):
+        """Per-company codes, falling back to the flat profile field.
+
+        Mirrors how analytics and sap_integration resolve a code at runtime, so
+        editing the memberships table is reflected here straight away.
+        """
+        codes = [m.employee_code for m in obj.company_memberships.all()
+                 if m.is_active and m.employee_code]
+        return ', '.join(dict.fromkeys(codes)) if codes else (obj.employee_code or '')
 
     @admin.display(description='Photo')
     def photo(self, obj):
@@ -623,6 +711,7 @@ class SalesStaffProfileAdmin(admin.ModelAdmin):
         from django.db.models import Count
         qs = super().get_queryset(request)
         qs = qs.select_related('user', 'designation', 'manager__user')
+        qs = qs.prefetch_related('company_memberships')  # feeds the Employee Code column
         qs = qs.annotate(_subordinates_count=Count('subordinates', filter=Q(subordinates__is_vacant=False)))
         return qs
 

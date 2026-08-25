@@ -1,5 +1,6 @@
 from django.contrib import admin
 from web_portal.admin import admin_site
+from web_portal.admin_export import HideGenericExportsMixin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.urls import path
@@ -115,7 +116,7 @@ class CropStageAdmin(admin.ModelAdmin):
 
 
 @admin.register(Trial, site=admin_site)
-class TrialAdmin(admin.ModelAdmin):
+class TrialAdmin(HideGenericExportsMixin, admin.ModelAdmin):
     """Admin interface for Trial model (separate from crops)."""
     list_display = [
         'station', 'trial_name', 'location_area', 'crop_variety',

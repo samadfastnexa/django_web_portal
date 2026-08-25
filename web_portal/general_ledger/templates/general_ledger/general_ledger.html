@@ -166,6 +166,42 @@
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
   
+  /* Searchable dropdown (see the JS at the foot of the page). The native
+     <select> stays in the DOM and keeps carrying the value, so the form
+     submits exactly as before and the page still works with JS disabled. */
+  .ss { position: relative; }
+  .ss select.ss-native { position: absolute; opacity: 0; pointer-events: none;
+                         height: 0; width: 0; padding: 0; border: 0; }
+  .ss-input { width: 100%; padding: 12px 34px 12px 14px; border: 1px solid #cbd5e1;
+              border-radius: 8px; font-size: 14px; background: #fff;
+              transition: all 0.2s; cursor: pointer; }
+  .ss-input:focus { outline: none; border-color: #3b82f6;
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); cursor: text; }
+  .ss-input.ss-chosen { font-weight: 600; color: #0f172a; }
+  .ss-caret { position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+              color: #64748b; font-size: 12px; pointer-events: none; }
+  .ss-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+              border: 0; background: none; color: #94a3b8; font-size: 18px;
+              line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+  .ss-clear:hover { color: #ef4444; background: #fee2e2; }
+  .ss-menu { position: absolute; z-index: 60; left: 0; right: 0; top: calc(100% + 4px);
+             max-height: 320px; overflow-y: auto; background: #fff;
+             border: 1px solid #cbd5e1; border-radius: 8px;
+             box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15); }
+  .ss-opt { padding: 9px 12px; font-size: 13px; cursor: pointer; color: #0f172a;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ss-opt:hover, .ss-opt.ss-active { background: #eff6ff; }
+  .ss-opt.ss-current { font-weight: 700; }
+  /* Group headings carry no postings - shown, because they are the natural
+     bound for an account range, but never dressed up as a real account. */
+  .ss-opt.ss-group { color: #64748b; background: #f8fafc; font-weight: 600; }
+  .ss-opt.ss-group::after { content: 'group'; float: right; font-size: 10px;
+                            text-transform: uppercase; letter-spacing: .04em;
+                            color: #94a3b8; font-weight: 700; }
+  .ss-note { padding: 8px 12px; font-size: 11px; color: #64748b; background: #f8fafc;
+             border-top: 1px solid #e2e8f0; position: sticky; bottom: 0; }
+  .ss-empty { padding: 14px 12px; font-size: 13px; color: #94a3b8; }
+
   .filter-actions {
     display: flex;
     gap: 12px;
@@ -522,25 +558,25 @@
     <div class="filter-grid">
       <div class="filter-field">
         <label>Account From</label>
-        <select name="account_from" id="account_from">
+        <select name="account_from" id="account_from" data-searchable
+                data-placeholder="Search code or name...">
           <option value="">-- Select Account --</option>
-          {% for account in chart_of_accounts %}
-            <option value="{{ account.AcctCode }}" {% if filters.account_from == account.AcctCode %}selected{% endif %}>
-              {{ account.AcctCode }} - {{ account.AcctName }}
-            </option>
-          {% endfor %}
+          {% comment %}
+            One line per loop on purpose: ~7,400 options across these dropdowns,
+            and the indented form spent ~60 bytes of whitespace on each of them.
+            Nothing gzips this response, so that was ~400KB of nothing on every
+            page load.
+          {% endcomment %}
+          {% for account in chart_of_accounts %}<option value="{{ account.AcctCode }}" data-postable="{{ account.Postable }}"{% if filters.account_from == account.AcctCode %} selected{% endif %}>{{ account.AcctCode }} - {{ account.AcctName }}</option>{% endfor %}
         </select>
       </div>
       
       <div class="filter-field">
         <label>Account To</label>
-        <select name="account_to" id="account_to">
+        <select name="account_to" id="account_to" data-searchable
+                data-placeholder="Search code or name...">
           <option value="">-- Select Account --</option>
-          {% for account in chart_of_accounts %}
-            <option value="{{ account.AcctCode }}" {% if filters.account_to == account.AcctCode %}selected{% endif %}>
-              {{ account.AcctCode }} - {{ account.AcctName }}
-            </option>
-          {% endfor %}
+          {% for account in chart_of_accounts %}<option value="{{ account.AcctCode }}" data-postable="{{ account.Postable }}"{% if filters.account_to == account.AcctCode %} selected{% endif %}>{{ account.AcctCode }} - {{ account.AcctName }}</option>{% endfor %}
         </select>
       </div>
       
@@ -555,32 +591,27 @@
       </div>
       
       <div class="filter-field">
-        <label>Business Partner</label>
-        <select name="bp_code">
-          <option value="">-- All Partners --</option>
-          {% for bp in business_partners %}
-            <option value="{{ bp.CardCode }}" {% if filters.bp_code == bp.CardCode %}selected{% endif %}>
-              {{ bp.CardCode }} - {{ bp.CardName }}
-            </option>
-          {% endfor %}
+        <label>Customer</label>
+        <select name="bp_code" data-searchable
+                data-placeholder="Search customer code or name...">
+          <option value="">-- All Customers --</option>
+          {% for bp in business_partners %}<option value="{{ bp.CardCode }}"{% if filters.bp_code == bp.CardCode %} selected{% endif %}>{{ bp.CardCode }} - {{ bp.CardName }}</option>{% endfor %}
         </select>
       </div>
       
       <div class="filter-field">
         <label>Project</label>
-        <select name="project_code">
+        <select name="project_code" data-searchable
+                data-placeholder="Search project...">
           <option value="">-- All Projects --</option>
-          {% for project in projects %}
-            <option value="{{ project.PrjCode }}" {% if filters.project_code == project.PrjCode %}selected{% endif %}>
-              {{ project.PrjCode }} - {{ project.PrjName }}
-            </option>
-          {% endfor %}
+          {% for project in projects %}<option value="{{ project.PrjCode }}"{% if filters.project_code == project.PrjCode %} selected{% endif %}>{{ project.PrjCode }} - {{ project.PrjName }}</option>{% endfor %}
         </select>
       </div>
       
       <div class="filter-field">
         <label>Transaction Type</label>
-        <select name="trans_type">
+        <select name="trans_type" data-searchable
+                data-placeholder="Search type...">
           <option value="">-- All Types --</option>
           {% for tt in trans_types %}
             <option value="{{ tt.Code }}" {% if filters.trans_type == tt.Code %}selected{% endif %}>
@@ -780,5 +811,188 @@
   document.getElementById('company').addEventListener('change', function() {
     document.getElementById('loading-overlay').classList.add('active');
   });
+
+  /* ------------------------------------------------------------------
+     Searchable dropdowns.
+
+     The chart of accounts runs to ~1,300 entries and the partner list to
+     ~4,400, which is not a list anyone can scroll. Each select[data-searchable]
+     gets a text box that filters its own options; the select itself is kept
+     (hidden, still named, still holding the value) so the GET form, the
+     "selected" state after a reload and the no-JS fallback all keep working
+     untouched. Filtering is client-side over markup already sent, so there is
+     no request per keystroke - a HANA round trip here costs seconds.
+     ------------------------------------------------------------------ */
+  (function () {
+    var MAX_ROWS = 300;   // menu cap; typing narrows the list rather than paging it
+
+    document.querySelectorAll('select[data-searchable]').forEach(function (select) {
+      var wrap = document.createElement('div');
+      wrap.className = 'ss';
+      select.parentNode.insertBefore(wrap, select);
+      wrap.appendChild(select);
+      select.classList.add('ss-native');
+
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'ss-input';
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      input.placeholder = select.dataset.placeholder || 'Type to search...';
+
+      var caret = document.createElement('span');
+      caret.className = 'ss-caret';
+      caret.textContent = '\u25be';
+
+      var clear = document.createElement('button');
+      clear.type = 'button';           // never submits the filter form
+      clear.className = 'ss-clear';
+      clear.innerHTML = '&times;';
+      clear.title = 'Clear';
+      clear.hidden = true;
+
+      var menu = document.createElement('div');
+      menu.className = 'ss-menu';
+      menu.hidden = true;
+
+      wrap.appendChild(input);
+      wrap.appendChild(caret);
+      wrap.appendChild(clear);
+      wrap.appendChild(menu);
+
+      // Snapshot the options once. Index 0 is the "-- All --" / "-- Select --"
+      // placeholder, which is the empty value rather than a real choice.
+      var items = Array.prototype.map.call(select.options, function (o, i) {
+        var text = o.textContent.trim().replace(/\s+/g, ' ');
+        return {
+          i: i,
+          value: o.value,
+          text: text,
+          hay: text.toLowerCase(),
+          group: o.getAttribute('data-postable') === 'N'
+        };
+      });
+      var real = items.filter(function (it) { return it.value !== ''; });
+      var active = -1;
+      var shown = [];
+
+      function currentLabel() {
+        var opt = select.options[select.selectedIndex];
+        if (!opt || opt.value === '') return '';
+        return opt.textContent.trim().replace(/\s+/g, ' ');
+      }
+
+      function paintInput() {
+        var label = currentLabel();
+        input.value = label;
+        input.classList.toggle('ss-chosen', !!label);
+        clear.hidden = !label;
+        caret.hidden = !!label;
+      }
+
+      function render(query) {
+        var q = query.trim().toLowerCase();
+        var matches = q ? real.filter(function (it) { return it.hay.indexOf(q) !== -1; }) : real;
+        shown = matches.slice(0, MAX_ROWS);
+        active = -1;
+        menu.innerHTML = '';
+
+        if (!matches.length) {
+          var none = document.createElement('div');
+          none.className = 'ss-empty';
+          none.textContent = 'No match for "' + query.trim() + '"';
+          menu.appendChild(none);
+          return;
+        }
+
+        var chosen = select.value;
+        shown.forEach(function (it, row) {
+          var el = document.createElement('div');
+          el.className = 'ss-opt' + (it.group ? ' ss-group' : '') +
+                         (it.value === chosen ? ' ss-current' : '');
+          el.textContent = it.text;
+          el.title = it.text;
+          el.dataset.row = row;
+          el.addEventListener('mousedown', function (e) {
+            e.preventDefault();          // keep focus so blur does not fight us
+            choose(it);
+          });
+          menu.appendChild(el);
+        });
+
+        // Say so when the list is cut short - a silent cap reads as "that is
+        // everything there is".
+        if (matches.length > shown.length) {
+          var note = document.createElement('div');
+          note.className = 'ss-note';
+          note.textContent = 'Showing ' + shown.length + ' of ' + matches.length +
+                             ' matches - keep typing to narrow it down';
+          menu.appendChild(note);
+        }
+      }
+
+      function open() {
+        render(input.classList.contains('ss-chosen') ? '' : input.value);
+        menu.hidden = false;
+      }
+
+      function close() {
+        menu.hidden = true;
+        paintInput();
+      }
+
+      function choose(item) {
+        select.selectedIndex = item.i;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        close();
+      }
+
+      function setActive(row) {
+        var opts = menu.querySelectorAll('.ss-opt');
+        if (!opts.length) return;
+        if (active >= 0 && opts[active]) opts[active].classList.remove('ss-active');
+        active = Math.max(0, Math.min(row, opts.length - 1));
+        opts[active].classList.add('ss-active');
+        opts[active].scrollIntoView({ block: 'nearest' });
+      }
+
+      input.addEventListener('focus', function () {
+        if (input.classList.contains('ss-chosen')) {
+          input.select();              // start typing replaces the current pick
+        }
+        open();
+      });
+
+      input.addEventListener('input', function () {
+        input.classList.remove('ss-chosen');
+        caret.hidden = false;
+        render(input.value);
+        menu.hidden = false;
+      });
+
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); if (menu.hidden) open(); setActive(active + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(active - 1); }
+        else if (e.key === 'Enter') {
+          // Only swallow Enter when it is picking from the menu; otherwise let
+          // it submit the filter form the way it always has.
+          if (!menu.hidden && active >= 0 && shown[active]) { e.preventDefault(); choose(shown[active]); }
+        } else if (e.key === 'Escape') { close(); }
+      });
+
+      clear.addEventListener('click', function () {
+        select.selectedIndex = 0;      // back to the "-- All --" placeholder
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        close();
+        input.focus();
+      });
+
+      document.addEventListener('click', function (e) {
+        if (!wrap.contains(e.target) && !menu.hidden) close();
+      });
+
+      paintInput();
+    });
+  })();
 </script>
 {% endblock %}

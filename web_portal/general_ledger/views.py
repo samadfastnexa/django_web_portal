@@ -202,6 +202,7 @@ if REPORTLAB_AVAILABLE:
         print(f"[General Ledger] Error during font registration: {e}")
 
 from . import hana_queries
+from sap_integration.hana_connect import customer_lov
 from .utils import (
     get_hana_connection,
     get_company_options,
@@ -900,6 +901,13 @@ def general_ledger_admin(request):
     # Get company database options
     db_options = get_company_options()
     selected_db_key = (request.GET.get('company') or '').strip()
+    # First load carries no ?company=, and the selector below then shows its
+    # first option as the current one. Resolve to that same key rather than
+    # leaving it blank: blank falls through to HANA_SCHEMA in .env, so the
+    # moment that variable and the first option name different companies the
+    # page labels one company's accounts and balances with another's name.
+    if not selected_db_key and db_options:
+        selected_db_key = next(iter(db_options))
     
     # Get filter parameters
     account_from = (request.GET.get('account_from') or '').strip()
@@ -923,7 +931,17 @@ def general_ledger_admin(request):
     try:
         conn = get_hana_connection(selected_db_key)
         chart_of_accounts = hana_queries.chart_of_accounts_list(conn)
-        business_partners = hana_queries.business_partner_lov(conn, limit=500)
+        # The customer list comes from sap_integration.customer_lov - the same
+        # query behind GET /api/sap/customer-lov/ - so this page and the rest
+        # of the portal agree on what counts as a customer. The general
+        # ledger's own business_partner_lov is not used here: it reaches the
+        # supplier side of OCRD, which is banks and lease contracts, and it
+        # was capped at 500 rows.
+        #
+        # status=None on purpose. The API defaults to active customers, but a
+        # ledger is history: a customer SAP has since marked validFor='N' still
+        # has postings someone needs to read, and ~1,170 of them do here.
+        business_partners = customer_lov(conn, status=None, limit=50000)
         projects = hana_queries.projects_lov(conn)
         trans_types = hana_queries.transaction_types_lov(conn)
         conn.close()
