@@ -3347,5 +3347,213 @@ def crop_lov(db, search: str | None = None) -> list:
     
     return _fetch_all(db, sql)
 
+# ---------------------------------------------------------------------------
+# WhatsApp message log  (SAP UDT "@WAMSGS")
+# ---------------------------------------------------------------------------
+
+# Date columns are NVARCHAR(8) 'YYYYMMDD', so a lexicographic compare is chronological.
+WAMSGS_DATE_FIELDS = {
+    'created': ('U_CreatedOn', 'Created On'),
+    'sent': ('U_SentOn', 'Sent On'),
+    'doc': ('U_DocDate', 'Document Date'),
+}
+
+WAMSGS_SORT_FIELDS = {
+    'created': 'U_CreatedOn',
+    'sent': 'U_SentOn',
+    'doc': 'U_DocDate',
+    'docnum': 'U_DocNum',
+    'card': 'U_CardName',
+    'status': 'U_Status',
+    'type': 'U_MsgType',
+}
+
+
+def wamsgs_compact_date(value):
+    """'2026-08-19' or '20260819' -> '20260819'. Unusable input -> None."""
+    digits = re.sub(r'\D', '', str(value or ''))
+    return digits[:8] if len(digits) >= 8 else None
+
+
+def wamsgs_display_date(value):
+    """'20260819' -> '2026-08-19', '20260819030602' -> '2026-08-19 03:06:02'."""
+    s = str(value or '').strip()
+    if len(s) == 8 and s.isdigit():
+        return s[0:4] + '-' + s[4:6] + '-' + s[6:8]
+    if len(s) == 14 and s.isdigit():
+        return s[0:4] + '-' + s[4:6] + '-' + s[6:8] + ' ' + s[8:10] + ':' + s[10:12] + ':' + s[12:14]
+    return s
+
+
+def _wamsgs_table_columns(db) -> set:
+    """Column names of @WAMSGS in the connection's current schema."""
+    try:
+        rows = _fetch_all(
+            db,
+            'SELECT COLUMN_NAME AS "C" FROM SYS.TABLE_COLUMNS '
+            'WHERE SCHEMA_NAME = CURRENT_SCHEMA AND TABLE_NAME = \'@WAMSGS\'',
+        )
+        return set(r.get('C') for r in rows if r.get('C'))
+    except Exception:
+        return set()
+
+
+def _wamsgs_text_expr(present: set, short_col: str, long_col: str) -> str:
+    """Prefer the short NVARCHAR column, fall back to the NCLOB one; some schemas lack either."""
+    short_sql = 'NULLIF(T0."%s", \'\')' % short_col
+    long_sql = 'LEFT(TO_NVARCHAR(T0."%s"), 300)' % long_col
+    if short_col in present and long_col in present:
+        return 'COALESCE(%s, %s)' % (short_sql, long_sql)
+    if short_col in present:
+        return short_sql
+    if long_col in present:
+        return long_sql
+    return "CAST(NULL AS NVARCHAR(300))"
+
+
+def _wamsgs_where(start_date=None, end_date=None, date_field='created', status=None,
+                  msg_type=None, template=None, phone_source=None, card_code=None,
+                  search=None):
+    """Build the shared WHERE clause for @WAMSGS. Returns (sql_fragment, params)."""
+    col = WAMSGS_DATE_FIELDS.get((date_field or 'created').strip().lower(),
+                                 WAMSGS_DATE_FIELDS['created'])[0]
+    # SAP seeds every UDT with a '*' placeholder row that carries no message.
+    clauses = ['T0."Code" <> \'*\'']
+    params = []
+
+    start = wamsgs_compact_date(start_date)
+    end = wamsgs_compact_date(end_date)
+    if start or end:
+        # Blank/NULL dates must not slip through a one-sided range.
+        clauses.append('T0."%s" IS NOT NULL AND LENGTH(T0."%s") = 8' % (col, col))
+    if start:
+        clauses.append('T0."%s" >= ?' % col)
+        params.append(start)
+    if end:
+        clauses.append('T0."%s" <= ?' % col)
+        params.append(end)
+
+    for value, column in ((status, 'U_Status'), (msg_type, 'U_MsgType'),
+                          (template, 'U_Template'), (phone_source, 'U_PhoneSource')):
+        value = (value or '').strip()
+        if value and value.lower() != 'all':
+            clauses.append('T0."%s" = ?' % column)
+            params.append(value)
+
+    card_code = (card_code or '').strip()
+    if card_code:
+        clauses.append('UPPER(T0."U_CardCode") = UPPER(?)')
+        params.append(card_code)
+
+    search = (search or '').strip()
+    if search:
+        like = '%' + search + '%'
+        clauses.append(
+            '(UPPER(T0."U_CardName") LIKE UPPER(?) OR UPPER(T0."U_CardCode") LIKE UPPER(?) '
+            'OR T0."U_Phone" LIKE ? OR T0."U_DocNum" LIKE ? OR UPPER(T0."Code") LIKE UPPER(?))'
+        )
+        params.extend([like, like, like, like, like])
+
+    return ((' WHERE ' + ' AND '.join(clauses)) if clauses else ''), params
+
+
+def whatsapp_messages(db, start_date=None, end_date=None, date_field='created', status=None,
+                      msg_type=None, template=None, phone_source=None, card_code=None,
+                      search=None, sort_by='created', sort_dir='desc',
+                      limit: int = 1000, offset: int = 0) -> list:
+    """Rows from the WhatsApp message log UDT @WAMSGS, newest first by default."""
+    sort_col = WAMSGS_SORT_FIELDS.get((sort_by or 'created').strip().lower(), 'U_CreatedOn')
+    direction = 'ASC' if (sort_dir or 'desc').strip().lower() == 'asc' else 'DESC'
+
+    where_sql, params = _wamsgs_where(start_date, end_date, date_field, status, msg_type,
+                                      template, phone_source, card_code, search)
+
+    # Older company schemas only carry the NCLOB "...long" variants of the text columns.
+    present = _wamsgs_table_columns(db)
+    error_expr = _wamsgs_text_expr(present, 'U_ErrorMsg', 'U_ErrorMsglong')
+    message_expr = _wamsgs_text_expr(present, 'U_Message', 'U_Messagelong')
+
+    sql = (
+        'SELECT '
+        ' T0."Code", '
+        ' T0."U_DocNum" AS "DocNum", '
+        ' T0."U_MsgType" AS "MsgType", '
+        ' T0."U_Template" AS "Template", '
+        ' T0."U_CardCode" AS "CardCode", '
+        ' T0."U_CardName" AS "CardName", '
+        ' T0."U_Phone" AS "Phone", '
+        ' T0."U_PhoneSource" AS "PhoneSource", '
+        ' T0."U_DocTotal" AS "DocTotal", '
+        ' T0."U_Currency" AS "Currency", '
+        ' T0."U_Balance" AS "Balance", '
+        ' T0."U_DocDate" AS "DocDate", '
+        ' T0."U_CreatedOn" AS "CreatedOn", '
+        ' T0."U_SentOn" AS "SentOn", '
+        ' T0."U_RetryOn" AS "RetryOn", '
+        ' T0."U_Status" AS "Status", '
+        ' T0."U_RetryCount" AS "RetryCount", '
+        ' ' + error_expr + ' AS "ErrorMsg", '
+        ' ' + message_expr + ' AS "Message" '
+        'FROM "@WAMSGS" T0'
+        + where_sql +
+        ' ORDER BY T0."%s" %s, T0."DocEntry" %s' % (sort_col, direction, direction)
+    )
+
+    try:
+        limit = max(1, min(int(limit or 1000), 20000))
+    except Exception:
+        limit = 1000
+    try:
+        offset = max(0, int(offset or 0))
+    except Exception:
+        offset = 0
+    sql += ' LIMIT %d OFFSET %d' % (limit, offset)
+
+    rows = _fetch_all(db, sql, tuple(params))
+    for row in rows:
+        for key in ('DocDate', 'CreatedOn', 'SentOn', 'RetryOn'):
+            row[key] = wamsgs_display_date(row.get(key))
+    return rows
+
+
+def whatsapp_messages_stats(db, start_date=None, end_date=None, date_field='created', status=None,
+                            msg_type=None, template=None, phone_source=None, card_code=None,
+                            search=None) -> dict:
+    """Totals for the same filter set, so the header shows real counts, not page counts."""
+    where_sql, params = _wamsgs_where(start_date, end_date, date_field, status, msg_type,
+                                      template, phone_source, card_code, search)
+    sql = (
+        'SELECT COUNT(*) AS "Total", '
+        ' SUM(CASE WHEN T0."U_Status" = \'Sent\' THEN 1 ELSE 0 END) AS "Sent", '
+        ' SUM(CASE WHEN T0."U_Status" = \'Failed\' THEN 1 ELSE 0 END) AS "Failed", '
+        ' COUNT(DISTINCT T0."U_CardCode") AS "Customers" '
+        'FROM "@WAMSGS" T0' + where_sql
+    )
+    row = _fetch_one(db, sql, tuple(params)) or {}
+    return {
+        'total': int(row.get('Total') or 0),
+        'sent': int(row.get('Sent') or 0),
+        'failed': int(row.get('Failed') or 0),
+        'customers': int(row.get('Customers') or 0),
+    }
+
+
+def whatsapp_message_filter_options(db) -> dict:
+    """Distinct values for the @WAMSGS filter dropdowns."""
+    options = {}
+    for key, column in (('statuses', 'U_Status'), ('msg_types', 'U_MsgType'),
+                        ('templates', 'U_Template'), ('phone_sources', 'U_PhoneSource')):
+        try:
+            rows = _fetch_all(
+                db,
+                'SELECT DISTINCT T0."%s" AS "V" FROM "@WAMSGS" T0 '
+                'WHERE T0."%s" IS NOT NULL AND T0."%s" <> \'\' ORDER BY "V"' % (column, column, column),
+            )
+            options[key] = [r.get('V') for r in rows if r.get('V')]
+        except Exception:
+            options[key] = []
+    return options
+
+
 if __name__ == '__main__':
     main()

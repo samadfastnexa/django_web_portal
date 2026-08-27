@@ -1,6 +1,7 @@
 from django.contrib import admin
 from web_portal.admin import admin_site
 from web_portal.admin_filters import date_range_filter, related_values_filter
+from web_portal.admin_export import HideGenericExportsMixin
 from web_portal.form_pdf import (
     ATTENDEE_COLUMNS, ATTENDEE_WIDTHS, attendee_rows, fmt_datetime, fmt_person,
     fmt_yesno, form_pdf_action, form_story,
@@ -220,7 +221,7 @@ export_meeting_schedule_to_pdf = form_pdf_action(
 
 
 @admin.register(MeetingSchedule, site=admin_site)
-class MeetingScheduleAdmin(admin.ModelAdmin):
+class MeetingScheduleAdmin(HideGenericExportsMixin, admin.ModelAdmin):
     inlines = [MeetingScheduleAttendanceInline]
     list_display = [
         'meeting_id',

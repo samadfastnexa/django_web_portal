@@ -404,6 +404,7 @@
       <a class="button {% if current_action == 'list_territories_full' %}active{% endif %}" href="?action=list_territories_full&company_db={{ selected_db_key }}">All Territories</a>
       {# <a class="button {% if current_action == 'list_cwl' %}active{% endif %}" href="?action=list_cwl&company_db={{ selected_db_key }}">CWL</a> #}
       <a class="button {% if current_action == 'sales_orders' %}active{% endif %}" href="?action=sales_orders&company_db={{ selected_db_key }}">Sales Orders</a>
+      <a class="button {% if current_action == 'whatsapp_messages' %}active{% endif %}" href="?action=whatsapp_messages&company_db={{ selected_db_key }}">WhatsApp Messages</a>
     </div>
   </div>
   
@@ -2382,6 +2383,216 @@ textContent=count+' active'}
         {% endif %}
       </form>
     {% endif %}
+    {% if current_action == 'whatsapp_messages' %}
+      <style>
+        :root{--filter-bg:#ffffff;--filter-border:#e5e7eb;--filter-shadow:0 6px 20px rgba(15,23,42,0.08);--filter-text:#0f172a;--filter-muted:#64748b;--filter-primary:#25d366;--filter-primary-600:#128c7e;--filter-radius:12px}
+        .filter-card{background:var(--filter-bg);border:1px solid var(--filter-border);box-shadow:var(--filter-shadow);border-radius:var(--filter-radius);padding:16px;margin-top:12px}
+        .filter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--filter-text)}
+        .filter-title{font-size:16px;font-weight:600}
+        .filter-grid{display:grid;grid-template-columns:repeat(4, minmax(170px,1fr));gap:12px}
+        @media (max-width:1200px){.filter-grid{grid-template-columns:repeat(2, minmax(160px,1fr))}}
+        @media (max-width:720px){.filter-grid{grid-template-columns:1fr}}
+        .filter-field{display:flex;flex-direction:column;gap:6px}
+        .filter-label{display:flex;align-items:center;gap:8px;color:var(--filter-muted);font-weight:600;font-size:13px}
+        .filter-input{display:flex;align-items:center;gap:8px}
+        .filter-input input,.filter-input select{width:100%;padding:10px 12px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;transition:border-color .2s, box-shadow .2s}
+        .filter-input input:focus,.filter-input select:focus{outline:none;border-color:var(--filter-primary);box-shadow:0 0 0 4px rgba(37,211,102,0.15)}
+        .filter-actions{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--filter-primary);background:var(--filter-primary);color:#fff;font-weight:600;transition:transform .12s ease, box-shadow .2s}
+        .btn:hover{background:var(--filter-primary-600);transform:translateY(-1px);box-shadow:0 8px 24px rgba(18,140,126,0.25)}
+        .btn-secondary{background:#fff;color:var(--filter-primary-600);border-color:var(--filter-primary)}
+        .btn-secondary:hover{background:#ecfdf5}
+        .icon{width:16px;height:16px;fill:currentColor}
+        .wa-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}
+        @media (max-width:720px){.wa-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        .wa-stat{background:#fff;border:1px solid var(--filter-border);border-radius:12px;padding:14px 16px}
+        .wa-stat .k{color:var(--filter-muted);font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase}
+        .wa-stat .v{font-size:24px;font-weight:800;color:#0f172a;margin-top:4px}
+        .wa-stat.ok .v{color:#059669}
+        .wa-stat.bad .v{color:#dc2626}
+        .wa-note{color:#64748b;font-size:13px;margin-top:10px}
+        .wa-empty{margin-top:14px;padding:12px 14px;border:1px solid #bfdbfe;background:#eff6ff;color:#1e3a8a;border-radius:10px;font-size:14px}
+        /* Header: title + one-line purpose, with the SAP table name tucked
+           behind a "Data source" affordance instead of sitting in the heading. */
+        .filter-header{align-items:flex-start}
+        .wa-mark{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;flex:0 0 34px;border-radius:9px;background:var(--filter-primary);color:#fff}
+        .wa-heading{min-width:0}
+        .wa-heading .filter-title{font-size:17px;line-height:1.25}
+        .wa-sub{color:var(--filter-muted);font-size:13px;margin-top:2px}
+        .wa-source{margin-left:auto;position:relative;flex:0 0 auto}
+        .wa-info{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--filter-border);background:#f8fafc;color:var(--filter-muted);font-size:12px;font-weight:700;cursor:help}
+        .wa-info:hover,.wa-source:focus-within .wa-info{border-color:var(--filter-primary);color:var(--filter-primary-600);background:#ecfdf5}
+        .wa-info .icon{width:14px;height:14px}
+        .wa-pop{position:absolute;right:0;top:calc(100% + 8px);z-index:40;width:330px;max-width:78vw;padding:12px 14px;border:1px solid var(--filter-border);border-radius:10px;background:#fff;box-shadow:0 12px 28px rgba(15,23,42,0.16);opacity:0;visibility:hidden;transform:translateY(-4px);transition:opacity .15s,transform .15s,visibility .15s}
+        .wa-source:hover .wa-pop,.wa-source:focus-within .wa-pop{opacity:1;visibility:visible;transform:none}
+        .wa-pop-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:5px 0;border-bottom:1px dashed #eef2f7;font-size:13px;color:var(--filter-muted)}
+        .wa-pop-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:#0f172a;background:#f1f5f9;border-radius:6px;padding:2px 7px;font-weight:700}
+        .wa-pop-note{margin:9px 0 0;font-size:12px;line-height:1.5;color:var(--filter-muted)}
+        @media (max-width:720px){.wa-source{margin-left:0;width:100%}.wa-pop{right:auto;left:0}}
+      </style>
+      <form method="get" class="filter-card" id="wa-filter-form">
+        <input type="hidden" name="action" value="whatsapp_messages" />
+        <input type="hidden" name="company_db" value="{{ selected_db_key }}" />
+        <div class="filter-header">
+          <span class="wa-mark">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.9 6.96L4 20l1.1-3.98A8 8 0 1 1 20 12zm-8-6a6 6 0 0 0-5.13 9.12l.28.46-.6 2.17 2.23-.58.44.26A6 6 0 1 0 12 6z"/></svg>
+          </span>
+          <div class="wa-heading">
+            <div class="filter-title">WhatsApp Message Log</div>
+            <div class="wa-sub">Delivery status of invoice, credit note and payment notifications sent to business partners</div>
+          </div>
+          {# The raw UDT name belongs in the data-source panel, not in the heading. #}
+          <div class="wa-source">
+            <button type="button" class="wa-info" aria-label="Show data source details">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"/></svg>
+              <span>Data source</span>
+            </button>
+            <div class="wa-pop" role="tooltip">
+              <div class="wa-pop-row"><span>SAP table</span><code>@WAMSGS</code></div>
+              <div class="wa-pop-row"><span>Company schema</span><code>{{ selected_db_key }}</code></div>
+              <div class="wa-pop-row"><span>Access</span><code>HANA direct, read only</code></div>
+              <p class="wa-pop-note">User-defined table written by the SAP Business One WhatsApp add-on &mdash; one row per outgoing message. Nothing on this screen writes back to SAP.</p>
+            </div>
+          </div>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-field" data-key="date_field">
+            <div class="filter-label" title="Which date column the range applies to">Date Field</div>
+            <div class="filter-input">
+              <select name="date_field">
+                <option value="created" {% if wamsgs_filters.date_field == 'created' %}selected{% endif %}>Created On</option>
+                <option value="sent" {% if wamsgs_filters.date_field == 'sent' %}selected{% endif %}>Sent On</option>
+                <option value="doc" {% if wamsgs_filters.date_field == 'doc' %}selected{% endif %}>Document Date</option>
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="wa_period">
+            <div class="filter-label" title="Preset date range (overrides From/To)">Quick Range</div>
+            <div class="filter-input">
+              <select name="wa_period">
+                <option value="" {% if not wamsgs_filters.period %}selected{% endif %}>Custom Date Range</option>
+                <option value="today" {% if wamsgs_filters.period == 'today' %}selected{% endif %}>Today</option>
+                <option value="weekly" {% if wamsgs_filters.period == 'weekly' %}selected{% endif %}>Last 7 Days</option>
+                <option value="monthly" {% if wamsgs_filters.period == 'monthly' %}selected{% endif %}>Current Month</option>
+                <option value="yearly" {% if wamsgs_filters.period == 'yearly' %}selected{% endif %}>Current Year</option>
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="start_date">
+            <div class="filter-label" title="Range start (inclusive)">From</div>
+            <div class="filter-input">
+              <input type="date" name="start_date" value="{{ wamsgs_filters.start_date }}" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="end_date">
+            <div class="filter-label" title="Range end (inclusive)">To</div>
+            <div class="filter-input">
+              <input type="date" name="end_date" value="{{ wamsgs_filters.end_date }}" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="wa_status">
+            <div class="filter-label" title="Delivery status">Status</div>
+            <div class="filter-input">
+              <select name="wa_status">
+                <option value="">All Statuses</option>
+                {% for s in wamsgs_options.statuses %}
+                  <option value="{{ s }}" {% if wamsgs_filters.status == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="msg_type">
+            <div class="filter-label" title="Message type">Message Type</div>
+            <div class="filter-input">
+              <select name="msg_type">
+                <option value="">All Types</option>
+                {% for t in wamsgs_options.msg_types %}
+                  <option value="{{ t }}" {% if wamsgs_filters.msg_type == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="template">
+            <div class="filter-label" title="WhatsApp template name">Template</div>
+            <div class="filter-input">
+              <select name="template">
+                <option value="">All Templates</option>
+                {% for t in wamsgs_options.templates %}
+                  <option value="{{ t }}" {% if wamsgs_filters.template == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="phone_source">
+            <div class="filter-label" title="Which BP phone field was used">Phone Source</div>
+            <div class="filter-input">
+              <select name="phone_source">
+                <option value="">All Sources</option>
+                {% for p in wamsgs_options.phone_sources %}
+                  <option value="{{ p }}" {% if wamsgs_filters.phone_source == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="wa_card_code">
+            <div class="filter-label" title="Exact business partner code">Customer Code</div>
+            <div class="filter-input">
+              <input type="text" name="wa_card_code" value="{{ wamsgs_filters.card_code }}" placeholder="e.g. AGC00980" />
+            </div>
+          </div>
+          <div class="filter-field" data-key="wa_search">
+            <div class="filter-label" title="Matches customer name/code, phone, document number or code">Search</div>
+            <div class="filter-input">
+              <input type="text" name="wa_search" value="{{ wamsgs_filters.search }}" placeholder="Name, phone, doc no." />
+            </div>
+          </div>
+          <div class="filter-field" data-key="sort_by">
+            <div class="filter-label" title="Sort column">Sort By</div>
+            <div class="filter-input">
+              <select name="sort_by">
+                <option value="created" {% if wamsgs_filters.sort_by == 'created' %}selected{% endif %}>Created On</option>
+                <option value="sent" {% if wamsgs_filters.sort_by == 'sent' %}selected{% endif %}>Sent On</option>
+                <option value="doc" {% if wamsgs_filters.sort_by == 'doc' %}selected{% endif %}>Document Date</option>
+                <option value="docnum" {% if wamsgs_filters.sort_by == 'docnum' %}selected{% endif %}>Document No.</option>
+                <option value="card" {% if wamsgs_filters.sort_by == 'card' %}selected{% endif %}>Customer Name</option>
+                <option value="status" {% if wamsgs_filters.sort_by == 'status' %}selected{% endif %}>Status</option>
+                <option value="type" {% if wamsgs_filters.sort_by == 'type' %}selected{% endif %}>Message Type</option>
+              </select>
+            </div>
+          </div>
+          <div class="filter-field" data-key="sort_dir">
+            <div class="filter-label" title="Sort direction">Order</div>
+            <div class="filter-input">
+              <select name="sort_dir">
+                <option value="desc" {% if wamsgs_filters.sort_dir != 'asc' %}selected{% endif %}>Descending (newest first)</option>
+                <option value="asc" {% if wamsgs_filters.sort_dir == 'asc' %}selected{% endif %}>Ascending (oldest first)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Apply
+          </button>
+          <a class="btn btn-secondary" href="?action=whatsapp_messages&amp;company_db={{ selected_db_key }}">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6 6h12v2H6V6zm0 4h8v2H6v-2zm0 4h12v2H6v-2z"/></svg>
+            Clear
+          </a>
+        </div>
+        {% if wamsgs_stats %}
+          <div class="wa-stats">
+            <div class="wa-stat"><div class="k">Messages</div><div class="v">{{ wamsgs_stats.total }}</div></div>
+            <div class="wa-stat ok"><div class="k">Sent</div><div class="v">{{ wamsgs_stats.sent }}</div></div>
+            <div class="wa-stat bad"><div class="k">Failed</div><div class="v">{{ wamsgs_stats.failed }}</div></div>
+            <div class="wa-stat"><div class="k">Customers</div><div class="v">{{ wamsgs_stats.customers }}</div></div>
+          </div>
+        {% endif %}
+      </form>
+      {% if wamsgs_notice %}
+        <p class="wa-empty">{{ wamsgs_notice }}</p>
+      {% endif %}
+    {% endif %}
     {% if error %}
       <p style="color:#b91c1c; font-weight:600;">Error: {{ error }}</p>
     {% endif %}
@@ -2743,6 +2954,24 @@ textContent=count+' active'}
         .result-table thead th{background:#f8fafc;color:#0f172a;text-align:left;padding:10px 12px;font-weight:700;border-bottom:1px solid #e5e7eb}
         .result-table tbody td{padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155}
         .result-table tbody tr:hover{background:#f9fafb}
+        /* WhatsApp log only: the MESSAGE column carries ~300-char bodies that
+           wrap into ~20 lines and stretch every row, leaving big empty gaps in
+           the narrow columns. Clamp each cell to one line with an ellipsis and
+           put the full value in the title attribute. */
+        .wa-table{table-layout:auto}
+        .wa-table thead th{padding:9px 12px;white-space:nowrap}
+        .wa-table tbody td{padding:7px 12px;vertical-align:middle;line-height:1.35}
+        .wa-table tbody tr:nth-child(even){background:#fbfdff}
+        .wa-table tbody tr:hover{background:#eff6ff}
+        .wa-table .c{display:block;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .wa-table td:last-child .c{max-width:420px}
+        /* Column order is fixed by the SELECT in whatsapp_messages():
+           9 = DocTotal, 11 = Balance, 17 = RetryCount. */
+        .wa-table th:nth-child(9),.wa-table td:nth-child(9),
+        .wa-table th:nth-child(11),.wa-table td:nth-child(11),
+        .wa-table th:nth-child(17),.wa-table td:nth-child(17){text-align:right}
+        .wa-table td:nth-child(9) .c,.wa-table td:nth-child(11) .c,
+        .wa-table td:nth-child(17) .c{font-variant-numeric:tabular-nums}
         .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid #0ea5e9;background:#0ea5e9;color:#fff;font-weight:600}
         .btn:hover{background:#0284c7}
         .btn-secondary{background:#fff;color:#0ea5e9;border-color:#0ea5e9}
@@ -2750,7 +2979,7 @@ textContent=count+' active'}
       </style>
       <h3>Result</h3>
       <div class="table-responsive">
-      <table class="result-table">
+      <table class="result-table{% if current_action == 'whatsapp_messages' %} wa-table{% endif %}">
         <thead>
           <tr>
             {% for c in result_cols %}
@@ -2763,7 +2992,11 @@ textContent=count+' active'}
             {% for rowvals in table_rows %}
               <tr>
                 {% for v in rowvals %}
-                  <td>{{ v }}</td>
+                  {% if current_action == 'whatsapp_messages' %}
+                    <td><span class="c" title="{{ v|default_if_none:'' }}">{{ v }}</span></td>
+                  {% else %}
+                    <td>{{ v }}</td>
+                  {% endif %}
                 {% endfor %}
               </tr>
             {% endfor %}

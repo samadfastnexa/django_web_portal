@@ -1468,8 +1468,13 @@ tbody tr td p.original {
     vertical-align: middle !important;
 }
 
-/* Fix table row display */
-.inline-group .tabular tbody tr {
+/* Fix table row display.
+   :not(.empty-form) is load-bearing - that row is Django's hidden template for
+   adding new inline rows. Forcing it visible made it look like an ordinary
+   blank row, and anything typed into it posted under the __prefix__ name that
+   Django ignores, so the record silently vanished on save. inlines.js strips
+   the class from the clone it inserts, so real rows still match this rule. */
+.inline-group .tabular tbody tr:not(.empty-form) {
     display: table-row !important;
 }
 

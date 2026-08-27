@@ -417,6 +417,109 @@ def get_valid_company_schemas():
     # logger.warning("[VALID_SCHEMAS] No active companies found in database")
     return []
 
+WAMSGS_PERIODS = ('today', 'weekly', 'monthly', 'yearly')
+WAMSGS_DATE_LABELS = {'created': 'Created On', 'sent': 'Sent On', 'doc': 'Document Date'}
+
+
+def _wamsgs_last_page(total, page_size):
+    return max(1, (max(0, total) + page_size - 1) // page_size)
+
+
+def _wamsgs_empty_notice(conn, wa):
+    """Explain an empty @WAMSGS result and name a date field that does have rows.
+
+    SAP writes the batch during the day, so early on nothing is *created* yet
+    today while hundreds were already *sent* today - without this the report
+    just looks broken.
+    """
+    from .hana_connect import whatsapp_messages_stats
+
+    label = WAMSGS_DATE_LABELS.get(wa['date_field'], 'Created On')
+    if wa['start_date'] and wa['end_date']:
+        span = '%s to %s' % (wa['start_date'], wa['end_date'])
+    elif wa['start_date']:
+        span = 'on or after %s' % wa['start_date']
+    elif wa['end_date']:
+        span = 'on or before %s' % wa['end_date']
+    else:
+        span = 'the selected filters'
+
+    parts = ['No WhatsApp messages with a %s date in %s.' % (label, span)]
+    alternatives = []
+    if wa['start_date'] or wa['end_date']:
+        for key, name in WAMSGS_DATE_LABELS.items():
+            if key == wa['date_field']:
+                continue
+            try:
+                found = whatsapp_messages_stats(
+                    conn,
+                    start_date=wa['start_date'], end_date=wa['end_date'], date_field=key,
+                    status=wa['status'], msg_type=wa['msg_type'], template=wa['template'],
+                    phone_source=wa['phone_source'], card_code=wa['card_code'],
+                    search=wa['search'],
+                )['total']
+            except Exception:
+                found = 0
+            if found:
+                alternatives.append('%s (%s)' % (name, found))
+    if alternatives:
+        parts.append('The same range has rows by ' + ' and '.join(alternatives)
+                     + ' - switch Date Field to see them.')
+    return ' '.join(parts)
+
+
+def wamsgs_filters_from_request(request):
+    """Read the @WAMSGS report filters off the querystring, resolving date presets."""
+    get = request.GET.get
+    period = (get('wa_period') or '').strip().lower()
+    start_date = (get('start_date') or '').strip()
+    end_date = (get('end_date') or '').strip()
+
+    if period in WAMSGS_PERIODS:
+        from datetime import date, timedelta
+        from calendar import monthrange
+        today = date.today()
+        if period == 'today':
+            start_date = end_date = today.strftime('%Y-%m-%d')
+        elif period == 'weekly':
+            start_date = (today - timedelta(days=6)).strftime('%Y-%m-%d')
+            end_date = today.strftime('%Y-%m-%d')
+        elif period == 'monthly':
+            start_date = today.replace(day=1).strftime('%Y-%m-%d')
+            end_date = today.replace(day=monthrange(today.year, today.month)[1]).strftime('%Y-%m-%d')
+        elif period == 'yearly':
+            start_date = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+            end_date = today.replace(month=12, day=31).strftime('%Y-%m-%d')
+
+    # Paging is served straight from HANA (LIMIT/OFFSET), so the page controls
+    # under the table are the only ones - there is no separate "max rows" cap.
+    try:
+        page = max(1, int((get('page') or '1').strip() or 1))
+    except Exception:
+        page = 1
+    try:
+        page_size = int((get('page_size') or '50').strip() or 50)
+    except Exception:
+        page_size = 50
+
+    return {
+        'period': period,
+        'start_date': start_date,
+        'end_date': end_date,
+        'date_field': (get('date_field') or 'created').strip().lower(),
+        'status': (get('wa_status') or '').strip(),
+        'msg_type': (get('msg_type') or '').strip(),
+        'template': (get('template') or '').strip(),
+        'phone_source': (get('phone_source') or '').strip(),
+        'card_code': (get('wa_card_code') or '').strip(),
+        'search': (get('wa_search') or '').strip(),
+        'sort_by': (get('sort_by') or 'created').strip().lower(),
+        'sort_dir': (get('sort_dir') or 'desc').strip().lower(),
+        'page': page,
+        'page_size': max(1, min(page_size, 200)),
+    }
+
+
 @staff_member_required
 def sales_order_admin(request):
     error = None
@@ -958,6 +1061,48 @@ def hana_connect_admin(request):
                                 error = 'No CWL rows found'
                         except Exception as e_cwl:
                             error = str(e_cwl)
+                    elif action == 'whatsapp_messages':
+                        try:
+                            from .hana_connect import (
+                                whatsapp_messages,
+                                whatsapp_messages_stats,
+                                whatsapp_message_filter_options,
+                            )
+                            wa = wamsgs_filters_from_request(request)
+                            request._wamsgs_filters = wa
+                            request._wamsgs_options = whatsapp_message_filter_options(conn)
+                            request._wamsgs_stats = whatsapp_messages_stats(
+                                conn,
+                                start_date=wa['start_date'], end_date=wa['end_date'],
+                                date_field=wa['date_field'], status=wa['status'],
+                                msg_type=wa['msg_type'], template=wa['template'],
+                                phone_source=wa['phone_source'], card_code=wa['card_code'],
+                                search=wa['search'],
+                            )
+                            # Only the requested page is pulled from HANA; the
+                            # row count for the pager comes from the stats query.
+                            request._wamsgs_total_count = request._wamsgs_stats['total']
+                            # A hand-edited ?page= past the end should land on the
+                            # last page, not on an empty "nothing found" screen.
+                            wa['page'] = min(wa['page'], _wamsgs_last_page(
+                                request._wamsgs_total_count, wa['page_size']))
+                            result = whatsapp_messages(
+                                conn,
+                                start_date=wa['start_date'], end_date=wa['end_date'],
+                                date_field=wa['date_field'], status=wa['status'],
+                                msg_type=wa['msg_type'], template=wa['template'],
+                                phone_source=wa['phone_source'], card_code=wa['card_code'],
+                                search=wa['search'], sort_by=wa['sort_by'],
+                                sort_dir=wa['sort_dir'], limit=wa['page_size'],
+                                offset=(wa['page'] - 1) * wa['page_size'],
+                            )
+                            diagnostics['whatsapp_filters'] = wa
+                            if isinstance(result, list) and len(result) == 0:
+                                # An empty range is a normal answer, not a failure -
+                                # keep it out of the red error banner.
+                                request._wamsgs_notice = _wamsgs_empty_notice(conn, wa)
+                        except Exception as e_wa:
+                            error = str(e_wa)
                     elif action == 'policy_customer_balance':
                         try:
                             cc = (request.GET.get('card_code') or '').strip()
@@ -2839,7 +2984,7 @@ def hana_connect_admin(request):
     except Exception:
         page_num = 1
     # Use default page size for products_catalog
-    if action == 'products_catalog':
+    if action in ('products_catalog', 'whatsapp_messages'):
         default_page_size = 50
     else:
         default_page_size = 10
@@ -2851,11 +2996,16 @@ def hana_connect_admin(request):
         page_size = int(page_size_param) if page_size_param else default_page_size
     except Exception:
         page_size = default_page_size
+    if action == 'whatsapp_messages':
+        # Must match the clamp in wamsgs_filters_from_request(), or the page
+        # count here would disagree with the slice HANA actually returned.
+        page_size = max(1, min(page_size, 200))
     paginator = None
     page_obj = None
     paged_rows = result_rows
     try:
-        if isinstance(result_rows, list) and result_rows:
+        # whatsapp_messages already holds exactly one page from HANA.
+        if isinstance(result_rows, list) and result_rows and action != 'whatsapp_messages':
             paginator = Paginator(result_rows, page_size)
             page_obj = paginator.get_page(page_num)
             paged_rows = list(page_obj.object_list)
@@ -2940,7 +3090,19 @@ def hana_connect_admin(request):
 
     req_page = _safe_int(request.GET.get('page'), 1)
     req_page_size = _safe_int(request.GET.get('page_size'), 50)
-    
+
+    # Actions that ask HANA for a single page (LIMIT/OFFSET) report their real
+    # row count here; None means the Django Paginator above owns the pager.
+    if action == 'products_catalog':
+        server_total = getattr(request, '_products_catalog_total_count', None)
+    elif action == 'whatsapp_messages':
+        server_total = getattr(request, '_wamsgs_total_count', None)
+        if server_total is not None:
+            # Keep the pager on the same page the fetch above clamped to.
+            req_page = min(req_page, _wamsgs_last_page(server_total, page_size))
+    else:
+        server_total = None
+
     import json as _json
     try:
         result_rows_json = _json.dumps(paged_rows, default=str)
@@ -2973,7 +3135,7 @@ def hana_connect_admin(request):
             'result_cols': result_cols,
             'table_rows': table_rows,
             'product_categories': product_categories,
-            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_geo','sales_vs_achievement_geo_inv','sales_vs_achievement_geo_profit','collection_vs_achievement','sales_vs_achievement_by_emp','sales_vs_achievement_territory','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses','products_catalog','item_price')),
+            'is_tabular': (action in ('territory_summary','sales_vs_achievement','sales_vs_achievement_geo','sales_vs_achievement_geo_inv','sales_vs_achievement_geo_profit','collection_vs_achievement','sales_vs_achievement_by_emp','sales_vs_achievement_territory','policy_customer_balance','list_territories','list_territories_full','list_cwl','sales_orders','customer_lov','child_customers','item_lov','projects_lov','crop_lov','policy_balance_by_customer','warehouse_for_item','contact_person_name','project_balance','customer_addresses','products_catalog','item_price','whatsapp_messages')),
             'current_card_code': (request.GET.get('card_code_manual') or request.GET.get('card_code') or '').strip(),
             'customer_options': customer_options,
             'customer_list': customer_list,
@@ -2984,27 +3146,27 @@ def hana_connect_admin(request):
             'item_options': item_options,
             'project_options': project_options,
             'geo_totals': geo_totals,
+            'wamsgs_options': getattr(request, '_wamsgs_options', {}),
+            'wamsgs_stats': getattr(request, '_wamsgs_stats', None),
+            'wamsgs_notice': getattr(request, '_wamsgs_notice', None),
+            'wamsgs_filters': getattr(request, '_wamsgs_filters', wamsgs_filters_from_request(request)),
             'pagination': {
-                'page': (page_obj.number if page_obj else 1) if action != 'products_catalog' else req_page,
-                # Fix num_pages calculation for products_catalog to use correct total_count
-                'num_pages': ((getattr(request, '_products_catalog_total_count', 0) + page_size - 1) // page_size
-                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                'page': req_page if server_total is not None else (page_obj.number if page_obj else 1),
+                # Server-paged actions already asked HANA for one page only, so the
+                # Django Paginator above would double-paginate - drive the pager off
+                # the database total instead.
+                'num_pages': (max(1, (server_total + page_size - 1) // page_size) if server_total is not None
                              else (paginator.num_pages if paginator else 1)),
-                # Fix has_next/has_prev for products_catalog to use correct total_count
-                'has_next': ((req_page * page_size < getattr(request, '_products_catalog_total_count', 0))
-                            if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                'has_next': ((req_page * page_size < server_total) if server_total is not None
                             else (page_obj.has_next() if page_obj else False)),
-                'has_prev': ((req_page > 1)
-                            if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                'has_prev': ((req_page > 1) if server_total is not None
                             else (page_obj.has_previous() if page_obj else False)),
-                'next_page': ((req_page + 1 if req_page * page_size < getattr(request, '_products_catalog_total_count', 0) else None)
-                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                'next_page': ((req_page + 1 if req_page * page_size < server_total else None)
+                             if server_total is not None
                              else (page_obj.next_page_number() if page_obj and page_obj.has_next() else None)),
-                'prev_page': ((req_page - 1 if req_page > 1 else None)
-                             if action == 'products_catalog' and hasattr(request, '_products_catalog_total_count')
+                'prev_page': ((req_page - 1 if req_page > 1 else None) if server_total is not None
                              else (page_obj.previous_page_number() if page_obj and page_obj.has_previous() else None)),
-                # Fix double-pagination bug for products_catalog: use database total_count instead of Django paginator count
-                'count': (getattr(request, '_products_catalog_total_count', None) if action == 'products_catalog'
+                'count': (server_total if server_total is not None
                          else (paginator.count if paginator else len(result_rows))),
                 'page_size': page_size,
             },

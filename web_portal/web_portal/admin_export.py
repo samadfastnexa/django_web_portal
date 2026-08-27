@@ -28,6 +28,29 @@ from django.utils.html import strip_tags
 _SHEET_TITLE_BAD = re.compile(r'[\[\]:*?/\\]')
 
 
+class HideGenericExportsMixin:
+    """Drop the site-wide export actions from one changelist's dropdown.
+
+    Because the two actions below are registered on the admin site itself they
+    land on every model, including the ones that ship a purpose-built export of
+    their own. The dropdown then reads "Export selected -> Excel (.xlsx)" right
+    above "Export selected to Excel" - the same word twice, pointing at two
+    different sheets. Mix this in to hide the generic pair and leave the
+    admin's own actions as the only exports.
+
+    Override `hide_generic_exports` to hide only part of it: an admin with a
+    PDF export but no Excel of its own still wants the generic Excel.
+    """
+
+    hide_generic_exports = ('export_as_csv', 'export_as_xlsx')
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        for name in self.hide_generic_exports:
+            actions.pop(name, None)
+        return actions
+
+
 def _export_columns(model_admin):
     fields = getattr(model_admin, 'export_fields', None)
     if fields:

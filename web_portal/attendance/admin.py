@@ -12,6 +12,7 @@ from django.utils.html import format_html
 
 from web_portal.admin import admin_site
 from web_portal.admin_filters import related_values_filter
+from web_portal.admin_export import HideGenericExportsMixin
 from .models import Attendance, AttendanceRequest, Holiday, LeaveQuota, LeaveRequest, LeaveType
 from .reports import build_rows, render_csv, render_pdf, render_xlsx
 
@@ -172,7 +173,7 @@ def _leave_stats():
 
 
 @admin.register(Attendance, site=admin_site)
-class AttendanceAdmin(admin.ModelAdmin):
+class AttendanceAdmin(HideGenericExportsMixin, admin.ModelAdmin):
     list_display = ('attendee_photo', 'attendee_name', 'staff_code',
                     'region', 'zone', 'territory',
                     'marked_by', 'check_in_time', 'check_in_photo',
@@ -184,8 +185,11 @@ class AttendanceAdmin(admin.ModelAdmin):
                      'check_in_time', 'check_out_time')
     # The sidebar buttons export what the filters select; these export what is
     # ticked. Django refuses to run an action with an empty selection, so that
-    # half of "don't export nothing" comes for free.
-    actions = ('export_report_pdf', 'export_report_excel', 'export_report_csv')
+    # half of "don't export nothing" comes for free. PDF and Excel only: the
+    # dropdown had grown two Excels and two CSVs once the site-wide generic
+    # exports were added, and HideGenericExportsMixin drops those. The
+    # sidebar still carries the filter-driven CSV for the raw rows.
+    actions = ('export_report_pdf', 'export_report_excel')
     list_filter = (
         'source', 'created_at',
         related_values_filter('region', 'region'),
@@ -578,10 +582,6 @@ class AttendanceAdmin(admin.ModelAdmin):
     @admin.action(description='Export attendance report (Excel)')
     def export_report_excel(self, request, queryset):
         return self._report_action(request, queryset, 'excel')
-
-    @admin.action(description='Export attendance report (CSV)')
-    def export_report_csv(self, request, queryset):
-        return self._report_action(request, queryset, 'csv')
 
     def get_export_summary(self, request):
         """Summary block prepended to CSV/Excel exports (see admin_export)."""

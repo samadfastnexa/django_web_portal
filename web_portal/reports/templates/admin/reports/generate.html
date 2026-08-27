@@ -1,0 +1,153 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label='reports' %}">Reports</a>
+    &rsaquo; Generate Report
+  </div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .rg-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 20px rgba(15,23,42,.08);padding:18px;margin-top:12px;max-width:1100px}
+  .rg-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:6px}
+  .rg-mark{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;flex:0 0 34px;border-radius:9px;background:#0ea5e9;color:#fff;font-weight:800}
+  .rg-title{font-size:17px;font-weight:600;color:#0f172a;line-height:1.25}
+  .rg-sub{color:#64748b;font-size:13px;margin-top:2px}
+  .rg-grid{display:grid;grid-template-columns:repeat(3,minmax(200px,1fr));gap:14px;margin-top:16px}
+  @media (max-width:1000px){.rg-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}}
+  @media (max-width:680px){.rg-grid{grid-template-columns:1fr}}
+  .rg-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .rg-label{color:#475569;font-weight:600;font-size:13px;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+  .rg-label code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;font-weight:600;color:#94a3b8;background:#f8fafc;border:1px solid #eef2f7;border-radius:5px;padding:1px 5px}
+  /* height:auto is load-bearing. Django admin's base.css sets a flat
+     `select { height: 1.875rem }` (30px); with 9px of padding top and bottom
+     that leaves a 12px content box and the option text is sliced in half. */
+  .rg-field input,.rg-field select{width:100%;height:auto;min-height:40px;line-height:1.35;font-size:14px;padding:9px 11px;border:1px solid #e5e7eb;border-radius:9px;background:#fff;box-sizing:border-box}
+  .rg-field input:focus,.rg-field select:focus{outline:none;border-color:#0ea5e9;box-shadow:0 0 0 4px rgba(14,165,233,.15)}
+  .rg-hint{color:#94a3b8;font-size:11.5px;line-height:1.4}
+  .rg-actions{display:flex;align-items:center;gap:12px;margin-top:18px;flex-wrap:wrap}
+  .rg-btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:9px;border:1px solid #0ea5e9;background:#0ea5e9;color:#fff;font-weight:700;cursor:pointer}
+  .rg-btn:hover{background:#0284c7}
+  .rg-note{color:#64748b;font-size:12.5px}
+  .rg-error{margin-top:14px;padding:12px 14px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;border-radius:10px;font-size:14px}
+  .rg-empty{margin-top:14px;padding:12px 14px;border:1px solid #bfdbfe;background:#eff6ff;color:#1e3a8a;border-radius:10px;font-size:14px}
+  .rg-reportnote{margin-top:10px;padding:10px 12px;border:1px solid #fde68a;background:#fffbeb;color:#78350f;border-radius:9px;font-size:12.5px;display:none}
+  .rg-req{display:none;font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:1px 5px}
+  .rg-danger .rg-hint{color:#b45309}
+  .rg-danger input{border-color:#fcd34d;background:#fffdf7}
+  .rg-section{margin-top:20px;padding-top:14px;border-top:1px dashed #e5e7eb;color:#475569;font-weight:700;font-size:12px;letter-spacing:.4px;text-transform:uppercase}
+</style>
+
+<div class="rg-card">
+  <div class="rg-head">
+    <span class="rg-mark">R</span>
+    <div>
+      <div class="rg-title">Generate Report</div>
+      <div class="rg-sub">Runs the report on the Crystal Reports service and downloads the file. Same access rules as <code>POST /api/reports/generate</code>.</div>
+    </div>
+  </div>
+
+  {% if error %}<p class="rg-error">{{ error }}</p>{% endif %}
+
+  {% if not reports %}
+    <p class="rg-empty">
+      You have no reports granted. Add a row in
+      <a href="{% url 'admin:reports_userreportaccess_changelist' %}">User report access</a>,
+      or run <code>manage.py grant_report_access {{ request.user.email|default:request.user }} --all</code>.
+      This applies to superusers too — access is by grant, not by role.
+    </p>
+  {% else %}
+  <form method="post">
+    {% csrf_token %}
+    <div class="rg-grid">
+      <div class="rg-field">
+        <label class="rg-label" for="report_name">Report</label>
+        <select name="report_name" id="report_name" required>
+          <option value="">— select —</option>
+          {% for r in reports %}
+            <option value="{{ r.name }}" {% if submitted.report_name == r.name %}selected{% endif %}>{{ r.display_name }}</option>
+          {% endfor %}
+        </select>
+        <span class="rg-hint">Only reports granted to you appear here.</span>
+      </div>
+      <div class="rg-field">
+        <label class="rg-label" for="company">Company</label>
+        <select name="company" id="company">
+          <option value="">As authored (report default)</option>
+          {% for cmp in companies %}
+            <option value="{{ cmp }}" {% if submitted.company == cmp %}selected{% endif %}>{{ cmp }}</option>
+          {% endfor %}
+        </select>
+        <span class="rg-hint">Customer codes are company-specific — this must match the code below.</span>
+      </div>
+      <div class="rg-field">
+        <label class="rg-label" for="format">Format</label>
+        <select name="format" id="format">
+          {% for value, label in formats %}
+            <option value="{{ value }}" {% if submitted.format == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="rg-reportnote" id="report-note"></div>
+
+    <div class="rg-section">Filters — leave blank to omit</div>
+    <div class="rg-grid">
+      {% for field in fields %}
+        <div class="rg-field{% if field.danger %} rg-danger{% endif %}" data-param="{{ field.name }}">
+          <label class="rg-label" for="{{ field.name }}">{{ field.label }}<code>{{ field.name }}</code><span class="rg-req">required</span></label>
+          <input type="{{ field.type }}" name="{{ field.name }}" id="{{ field.name }}"
+                 value="{{ field.value }}"{% if field.placeholder %} placeholder="{{ field.placeholder }}"{% endif %} />
+          {% if field.hint %}<span class="rg-hint">{{ field.hint }}</span>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="rg-actions">
+      <button type="submit" class="rg-btn">Generate &amp; download</button>
+      <span class="rg-note">Large reports can take a while — the download starts when the service finishes.</span>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<script>
+  (function () {
+    var meta = {{ report_meta_json|safe }};
+    var select = document.getElementById('report_name');
+    var box = document.getElementById('report-note');
+    var company = document.getElementById('company');
+    if (!select || !box) return;
+
+    function sync() {
+      var info = meta[select.value];
+      box.textContent = info ? info.notes : '';
+      box.style.display = (info && info.notes) ? 'block' : 'none';
+
+      // Show only the prompts this report owns - sending any other one is a 400.
+      var owns = info ? info.params : null;
+      var required = info ? info.required : [];
+      document.querySelectorAll('[data-param]').forEach(function (cell) {
+        var name = cell.getAttribute('data-param');
+        var on = !owns || owns.indexOf(name) !== -1;
+        cell.style.display = on ? '' : 'none';
+        var input = cell.querySelector('input');
+        var flag = cell.querySelector('.rg-req');
+        var req = on && required.indexOf(name) !== -1;
+        if (input) { input.required = req; if (!on) { input.value = ''; } }
+        if (flag) { flag.style.display = req ? 'inline' : 'none'; }
+      });
+
+      // Reports authored against one company default to it.
+      if (company && info && info.defaultCompany && !company.value) {
+        company.value = info.defaultCompany;
+      }
+    }
+    select.addEventListener('change', sync);
+    sync();
+  })();
+</script>
+{% endblock %}

@@ -14,6 +14,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from web_portal.admin import admin_site
+from web_portal.admin_export import HideGenericExportsMixin
 from web_portal.admin_filters import date_range_filter, related_values_filter
 from web_portal.form_pdf import form_pdf_action
 
@@ -51,7 +52,7 @@ def can_approve_hpm(user):
 
 
 @admin.register(HPMRequisition, site=admin_site)
-class HPMRequisitionAdmin(admin.ModelAdmin):
+class HPMRequisitionAdmin(HideGenericExportsMixin, admin.ModelAdmin):
     """Raised by a manager, decided by an authorised approver."""
 
     list_display = (
@@ -78,6 +79,9 @@ class HPMRequisitionAdmin(admin.ModelAdmin):
     ordering = ['-created_at', '-id']
     list_per_page = 25
     actions = ('approve_selected', 'reject_selected', export_hpm_to_pdf)
+    # Only the CSV goes: unlike the other Field Activities sheets this one
+    # has no Excel export of its own, so the site-wide one is the Excel.
+    hide_generic_exports = ('export_as_csv',)
     change_form_template = 'admin/farmerMeetingDataEntry/hpmrequisition/change_form.html'
 
     # Mirrors the three boxes on the paper form. Note the GM/BM signature pair

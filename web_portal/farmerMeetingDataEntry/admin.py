@@ -1,5 +1,6 @@
 from django.contrib import admin
 from web_portal.admin import admin_site
+from web_portal.admin_export import HideGenericExportsMixin
 from web_portal.admin_filters import date_range_filter, related_values_filter
 from web_portal.form_pdf import (
     ATTENDEE_COLUMNS, ATTENDEE_WIDTHS, attendee_rows, fmt_datetime, fmt_person,
@@ -248,7 +249,7 @@ export_farmer_meeting_to_pdf = form_pdf_action(
 
 
 @admin.register(Meeting, site=admin_site)
-class MeetingAdmin(admin.ModelAdmin):
+class MeetingAdmin(HideGenericExportsMixin, admin.ModelAdmin):
     inlines = [FarmerAttendanceInline, MeetingAttachmentInline]
 
     # The *_fk columns are deliberately absent: nothing has written them since
@@ -545,7 +546,7 @@ export_field_day_to_pdf = form_pdf_action(
 
 
 @admin.register(FieldDay, site=admin_site)
-class FieldDayAdmin(admin.ModelAdmin):
+class FieldDayAdmin(HideGenericExportsMixin, admin.ModelAdmin):
     # The *_fk columns are absent: nothing has written them since the location
     # moved to the columns below, so showing both put two "Region" columns side
     # by side with only one ever filled.
