@@ -115,6 +115,7 @@ INSTALLED_APPS = [
     'cart',  # app for shopping cart and order management
     'document_management',  # app for document/attachment management
     'monitoring',  # request/usage activity logging + audit
+    'reports',  # Crystal Reports proxy - POST /api/reports/generate
 ]
 
 MIDDLEWARE = [
@@ -293,6 +294,24 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'monitoring.exceptions.logging_exception_handler',
 }
 
+# ---------------------------------------------------------------------------
+# Crystal Reports service (reports app) - a separate .NET app that renders the
+# .rpt files. Blank base URL is allowed so the portal still boots without it;
+# only POST /api/reports/generate fails, with a message saying it is unset.
+# NOTE: the reports app deliberately does NOT set a global EXCEPTION_HANDLER or
+# URL_FORMAT_OVERRIDE (its INSTALL.md asks for both). The handler is scoped to
+# its own view, and ?format=csv/xlsx exports elsewhere must keep working.
+# ---------------------------------------------------------------------------
+CRYSTAL_SERVICE_BASE_URL = config('CRYSTAL_SERVICE_BASE_URL', default='')
+CRYSTAL_SERVICE_API_KEY = config('CRYSTAL_SERVICE_API_KEY', default='')
+CRYSTAL_SERVICE_API_KEY_HEADER = config('CRYSTAL_SERVICE_API_KEY_HEADER', default='X-Internal-Api-Key')
+# 120 s read budget: the slowest render on record is ~24 s and the reporting
+# project's own client uses 120. Connect is separate so a dead host fails in 10 s
+# instead of hanging for the whole read budget.
+CRYSTAL_SERVICE_TIMEOUT_SECONDS = config('CRYSTAL_SERVICE_TIMEOUT_SECONDS', default=120, cast=float)
+CRYSTAL_SERVICE_CONNECT_TIMEOUT_SECONDS = config('CRYSTAL_SERVICE_CONNECT_TIMEOUT_SECONDS', default=10, cast=float)
+CRYSTAL_SERVICE_VERIFY_TLS = config('CRYSTAL_SERVICE_VERIFY_TLS', default='true').strip().lower() == 'true'
+
 # Ensure logs directory exists (must be defined before LOGGING references it)
 LOG_DIR = BASE_DIR / 'logs'
 if not LOG_DIR.exists():
@@ -396,6 +415,12 @@ LOGGING = {
         # Per-request access log; kept separate so request noise stays out of app.log.
         'access': {
             'handlers': ['access_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Crystal Reports proxy: one line per generate attempt (user/report/ms).
+        'reports': {
+            'handlers': ['console', 'app_file', 'error_file'],
             'level': 'INFO',
             'propagate': False,
         },

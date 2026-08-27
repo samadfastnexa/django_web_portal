@@ -686,6 +686,16 @@ class AnalyticsAdminSite(AdminSite):
                 or self._prettify_app_name(app.get('name'))
             )
 
+        # "Generate Report" is a page, not a model, so it can never come from the
+        # model registry - put it at the top of the Reports section. The button on
+        # the Report changelist alone was too easy to miss.
+        for app in app_list:
+            if app['app_label'].lower() == 'reports':
+                link = self._plain_admin_link('Generate Report', 'reports_generate_admin')
+                if link:
+                    app['models'].insert(0, link)
+                break
+
         # Prepend the custom groups, then order the whole sidebar.
         for group_name, _ in self.SIDEBAR_GROUPS:
             found = sorted(collected[group_name], key=lambda item: item[0])
@@ -727,6 +737,29 @@ class AnalyticsAdminSite(AdminSite):
             })
         return rows
 
+
+    def _plain_admin_link(self, label, url_name):
+        """A sidebar row for an admin page that lives in the root urlconf.
+
+        _extra_group_links() reverses inside the 'admin:' namespace, which only
+        covers ModelAdmin views; custom pages like /admin/reports/generate/ are
+        registered in web_portal/urls.py and need a plain reverse. Returns None
+        if the URL isn't wired, so the sidebar degrades instead of breaking.
+        """
+        from django.urls import NoReverseMatch, reverse
+
+        try:
+            url = reverse(url_name)
+        except NoReverseMatch:
+            return None
+        return {
+            'name': label,
+            'object_name': label.replace(' ', ''),
+            'admin_url': url,
+            'add_url': None,
+            'view_only': True,
+            'perms': {'add': False, 'change': False, 'delete': False, 'view': True},
+        }
 
     def _calculate_percentage_change(self, current, previous):
         """Calculate percentage change between two values"""
