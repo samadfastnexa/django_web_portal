@@ -689,12 +689,25 @@ class AnalyticsAdminSite(AdminSite):
         # "Generate Report" is a page, not a model, so it can never come from the
         # model registry - put it at the top of the Reports section. The button on
         # the Report changelist alone was too easy to miss.
-        for app in app_list:
-            if app['app_label'].lower() == 'reports':
-                link = self._plain_admin_link('Generate Report', 'reports_generate_admin')
-                if link:
-                    app['models'].insert(0, link)
-                break
+        if request.user.has_perm('reports.generate_report'):
+            link = self._plain_admin_link('Generate Report', 'reports_generate_admin')
+            reports_app = next(
+                (a for a in app_list if a['app_label'].lower() == 'reports'), None
+            )
+            if link and reports_app is not None:
+                reports_app['models'].insert(0, link)
+            elif link:
+                # Django drops an app from the list when the user has no MODEL
+                # permission in it. Someone granted only `generate_report` has
+                # none, so the section has to be built here or the page they are
+                # allowed to open would be unreachable from the menu.
+                app_list.append({
+                    'name': 'Reports',
+                    'app_label': 'reports',
+                    'app_url': link['admin_url'],
+                    'has_module_perms': True,
+                    'models': [link],
+                })
 
         # Prepend the custom groups, then order the whole sidebar.
         for group_name, _ in self.SIDEBAR_GROUPS:

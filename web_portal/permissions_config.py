@@ -2,6 +2,13 @@
 # This file is used by the migration to create permissions
 
 CUSTOM_PERMISSIONS = {
+    # Crystal Reports module
+    'reports': {
+        'Report': [
+            ('generate_report', 'Can open Generate Report and run reports'),
+        ],
+    },
+
     # SAP Integration / HANA Connect
     'sap_integration': {
         'HanaConnect': [

@@ -76,10 +76,13 @@ TO_DATE = "ToDate"
 
 # Only PDF is exercised by the deployed reports.  The Excel and Word paths exist
 # in the .NET exporter but have never been verified end to end, hence the labels.
+# The upstream file labelled Excel and Word "not verified" because only PDF had
+# been exercised. Both were confirmed working against the live service on
+# 2026-08-28, so the caveat is dropped.
 EXPORT_FORMATS = (
     ("pdf", "PDF"),
-    ("excel", "Excel (.xlsx) - not verified"),
-    ("word", "Word (.doc) - not verified"),
+    ("excel", "Excel (.xlsx)"),
+    ("word", "Word (.doc)"),
 )
 EXPORT_FORMAT_VALUES = tuple(value for value, _label in EXPORT_FORMATS)
 DEFAULT_EXPORT_FORMAT = "pdf"

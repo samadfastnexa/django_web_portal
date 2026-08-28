@@ -38,7 +38,7 @@ from .media_views import serve_media_file
 # Import custom admin site
 from django.utils.module_loading import autodiscover_modules
 from web_portal.admin import admin_site
-from reports.admin_views import generate_report_admin
+from reports.admin_views import generate_report_admin, report_lov_admin
 
 # Ensure all admin modules load into the custom admin site registry
 autodiscover_modules("admin", register_to=admin_site)
@@ -97,6 +97,7 @@ urlpatterns = [
     path('admin/general-ledger/settings/', admin_site.admin_view(ledger_settings_redirect), name='ledger_settings_redirect'),
     path('admin/hana-connect/', admin_site.admin_view(hana_connect_admin), name='hana_connect_admin'),
     path('admin/reports/generate/', admin_site.admin_view(generate_report_admin), name='reports_generate_admin'),
+    path('admin/reports/lov/', admin_site.admin_view(report_lov_admin), name='reports_lov_admin'),
     path('admin/sap-bp-entry/', admin_site.admin_view(bp_entry_admin), name='sap_bp_entry_admin'),
     path('admin/sap-bp-lookup/', admin_site.admin_view(bp_lookup_admin), name='sap_bp_lookup_admin'),
     path('admin/sap-sales-order/', admin_site.admin_view(sales_order_admin), name='sap_sales_order_admin'),

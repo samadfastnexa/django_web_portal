@@ -1,3 +1,5 @@
+import logging
+
 import requests
 from django.conf import settings
 
@@ -9,6 +11,8 @@ from .exceptions import (
     ReportValidationError,
 )
 from .models import BranchAccess, SalesEmployeeAccess
+
+logger = logging.getLogger("reports")
 
 # Parameter aliases, report catalogue and format names all live in registry.py,
 # which is the file shipped by the reporting project. Re-exported here so the
@@ -86,14 +90,25 @@ class CrystalReportServiceClient:
         except requests.Timeout as exc:
             raise CrystalServiceTimeout() from exc
         except requests.RequestException as exc:
-            raise CrystalServiceError(f"Could not reach the reporting service: {exc}") from exc
+            logger.error(
+                "Crystal service unreachable at %s: %s", self.base_url, exc, exc_info=True
+            )
+            raise CrystalServiceError(
+                "The reporting service is not responding. It may be offline or "
+                "unreachable from this server - please try again, and tell IT if "
+                "it keeps happening."
+            ) from exc
 
         if response.status_code == 404:
             raise ReportNotFoundError(self._error_message(response, "Report not found."))
         if response.status_code == 400:
             raise ReportValidationError(self._error_message(response, "Invalid report parameters."))
         if response.status_code == 401:
-            raise CrystalServiceError("Rejected by the reporting service (invalid internal API key).")
+            logger.error("Crystal service rejected the API key configured for %s", self.base_url)
+            raise CrystalServiceError(
+                "The reporting service rejected this server's credentials. "
+                "This needs an administrator - reports cannot run until it is fixed."
+            )
         if not response.ok:
             raise CrystalServiceError(
                 self._error_message(response, "The reporting service failed to generate the report.")
