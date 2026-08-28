@@ -1,26 +1,32 @@
 {% extends "admin/base_site.html" %}
 
+{# Admin CSS scopes some layout rules on the body class; a custom page that
+   omits it renders subtly differently from the model pages beside it. #}
+{% block bodyclass %}{{ block.super }} app-reports generate-report{% endblock %}
+
+{# base_site.html forces `.breadcrumbs { display:flex; gap:8px }`, which turns a
+   bare "&rsaquo;" text node into its own flex item and adds gap on BOTH sides on
+   top of the literal spaces around it - the chevron ends up floating in so much
+   space it reads as two. Wrapping each crumb and separator in an element, with
+   no whitespace between them, gives the same spacing as the model pages. #}
 {% block breadcrumbs %}
-  <div class="breadcrumbs">
-    <a href="{% url 'admin:index' %}">Home</a>
-    &rsaquo; <a href="{% url 'admin:app_list' app_label='reports' %}">Reports</a>
-    &rsaquo; Generate Report
-  </div>
+  <div class="breadcrumbs"><a href="{% url 'admin:index' %}">Home</a><span class="rg-crumb-sep">&rsaquo;</span><a href="{% url 'admin:app_list' app_label='reports' %}">Reports</a><span class="rg-crumb-sep">&rsaquo;</span><span>Generate Report</span></div>
 {% endblock %}
 
 {% block content %}
 <style>
-  .rg-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 20px rgba(15,23,42,.08);padding:18px;margin-top:12px;max-width:1100px}
+  .breadcrumbs .rg-crumb-sep{color:#c9a08b;font-weight:400;-webkit-user-select:none;user-select:none}
+  .rg-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 20px rgba(15,23,42,.08);padding:18px;margin-top:12px;max-width:1100px;width:100%;box-sizing:border-box;overflow-x:hidden}
   .rg-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:6px}
   .rg-mark{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;flex:0 0 34px;border-radius:9px;background:#0ea5e9;color:#fff;font-weight:800}
   .rg-title{font-size:17px;font-weight:600;color:#0f172a;line-height:1.25}
-  .rg-sub{color:#64748b;font-size:13px;margin-top:2px}
-  .rg-grid{display:grid;grid-template-columns:repeat(3,minmax(200px,1fr));gap:14px;margin-top:16px}
-  @media (max-width:1000px){.rg-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}}
+  .rg-sub{color:#64748b;font-size:13px;margin-top:2px;overflow-wrap:anywhere}
+  .rg-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:16px}
+  @media (max-width:1000px){.rg-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:680px){.rg-grid{grid-template-columns:1fr}}
   .rg-field{display:flex;flex-direction:column;gap:6px;min-width:0}
-  .rg-label{color:#475569;font-weight:600;font-size:13px;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
-  .rg-label code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;font-weight:600;color:#94a3b8;background:#f8fafc;border:1px solid #eef2f7;border-radius:5px;padding:1px 5px}
+  .rg-label{color:#475569;font-weight:600;font-size:13px;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;min-width:0}
+  .rg-label code{max-width:100%;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;font-weight:600;color:#94a3b8;background:#f8fafc;border:1px solid #eef2f7;border-radius:5px;padding:1px 5px}
   /* height:auto is load-bearing. Django admin's base.css sets a flat
      `select { height: 1.875rem }` (30px); with 9px of padding top and bottom
      that leaves a 12px content box and the option text is sliced in half. */
@@ -37,6 +43,45 @@
   .rg-req{display:none;font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:1px 5px}
   .rg-danger .rg-hint{color:#b45309}
   .rg-danger input{border-color:#fcd34d;background:#fffdf7}
+  .rg-card{position:relative}
+  .rg-overlay{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.86);backdrop-filter:blur(2px);border-radius:12px}
+  .rg-overlay.on{display:flex}
+  .rg-panel{text-align:center;max-width:420px;padding:0 20px}
+  .rg-spin{width:44px;height:44px;margin:0 auto 14px;border-radius:50%;
+    border:4px solid #e0f2fe;border-top-color:#0ea5e9;animation:rg-rot .9s linear infinite}
+  @keyframes rg-rot{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.rg-spin{animation-duration:2.4s}}
+  .rg-ptitle{font-size:15px;font-weight:700;color:#0f172a}
+  .rg-pmsg{font-size:13px;color:#64748b;margin-top:6px;line-height:1.5}
+  .rg-elapsed{font-variant-numeric:tabular-nums;font-weight:700;color:#0ea5e9}
+  .rg-ok{margin-top:14px;padding:12px 14px;border:1px solid #bbf7d0;background:#f0fdf4;color:#14532d;border-radius:10px;font-size:14px;display:none}
+  .rg-btn[disabled]{opacity:.55;cursor:not-allowed}
+  .rg-field input[readonly]{background:#f8fafc;color:#475569;cursor:default}
+  .rg-combo{position:relative}
+  .rg-options{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;max-height:260px;overflow-y:auto;
+    background:#fff;border:1px solid #e5e7eb;border-radius:9px;box-shadow:0 10px 26px rgba(15,23,42,.14);display:none}
+  .rg-options.on{display:block}
+  .rg-opt{padding:8px 11px;font-size:13px;cursor:pointer;border-bottom:1px solid #f4f6f8}
+  .rg-opt:last-child{border-bottom:0}
+  .rg-opt:hover,.rg-opt.active{background:#e0f2fe}
+  .rg-opt .c{font-weight:700;color:#0f172a}
+  .rg-opt .n{color:#475569}
+  .rg-opt .t{display:block;color:#94a3b8;font-size:11.5px;margin-top:1px}
+  .rg-optmsg{padding:10px 11px;font-size:12.5px;color:#64748b}
+  .rg-preview{display:none;margin-top:18px;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;background:#fff}
+  .rg-preview.on{display:block}
+  .rg-pvbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:#f8fafc;border-bottom:1px solid #e5e7eb}
+  .rg-pvname{font-weight:700;color:#0f172a;font-size:13px;min-width:0;overflow-wrap:anywhere}
+  .rg-pvmeta{color:#64748b;font-size:12px}
+  .rg-pvspacer{margin-left:auto}
+  .rg-mini{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;font-size:13px;
+    font-weight:700;cursor:pointer;border:1px solid #0ea5e9;background:#0ea5e9;color:#fff;text-decoration:none}
+  .rg-mini:hover{background:#0284c7;color:#fff}
+  .rg-mini.ghost{background:#fff;color:#0ea5e9}
+  .rg-mini.ghost:hover{background:#e0f2fe}
+  .rg-frame{width:100%;height:70vh;min-height:420px;border:0;display:block;background:#f1f5f9}
+  .rg-nopv{padding:22px 16px;text-align:center;color:#475569;font-size:14px;line-height:1.6}
   .rg-section{margin-top:20px;padding-top:14px;border-top:1px dashed #e5e7eb;color:#475569;font-weight:700;font-size:12px;letter-spacing:.4px;text-transform:uppercase}
 </style>
 
@@ -45,11 +90,24 @@
     <span class="rg-mark">R</span>
     <div>
       <div class="rg-title">Generate Report</div>
-      <div class="rg-sub">Runs the report on the Crystal Reports service and downloads the file. Same access rules as <code>POST /api/reports/generate</code>.</div>
+      <div class="rg-sub">Choose a report, set the filters, and download it as PDF, Excel or Word. You can only run reports that have been granted to you.</div>
     </div>
   </div>
 
-  {% if error %}<p class="rg-error">{{ error }}</p>{% endif %}
+  <div class="rg-overlay" id="rg-overlay" role="status" aria-live="polite" aria-hidden="true">
+    <div class="rg-panel">
+      <div class="rg-spin"></div>
+      <div class="rg-ptitle" id="rg-ptitle">Generating report…</div>
+      <div class="rg-pmsg">
+        The Crystal service is rendering this on SAP data. Renders take up to about
+        25 seconds; large date ranges take longer. Please keep this tab open.
+      </div>
+      <div class="rg-pmsg">Elapsed <span class="rg-elapsed" id="rg-elapsed">0s</span></div>
+    </div>
+  </div>
+
+  <p class="rg-error" id="rg-error" {% if not error %}style="display:none"{% endif %}>{{ error }}</p>
+  <p class="rg-ok" id="rg-ok"></p>
 
   {% if not reports %}
     <p class="rg-empty">
@@ -59,7 +117,7 @@
       This applies to superusers too — access is by grant, not by role.
     </p>
   {% else %}
-  <form method="post">
+  <form method="post" id="rg-form">
     {% csrf_token %}
     <div class="rg-grid">
       <div class="rg-field">
@@ -74,13 +132,20 @@
       </div>
       <div class="rg-field">
         <label class="rg-label" for="company">Company</label>
-        <select name="company" id="company">
-          <option value="">As authored (report default)</option>
-          {% for cmp in companies %}
-            <option value="{{ cmp }}" {% if submitted.company == cmp %}selected{% endif %}>{{ cmp }}</option>
-          {% endfor %}
-        </select>
-        <span class="rg-hint">Customer codes are company-specific — this must match the code below.</span>
+        {% if company_locked %}
+          {# One company on the account: show which, but do not let it be changed.
+             The value is applied server-side, so a hand-added field is ignored. #}
+          <input type="text" id="company" value="{{ companies.0 }}" readonly disabled />
+          <span class="rg-hint">Your account is linked to this company.</span>
+        {% else %}
+          <select name="company" id="company">
+            <option value="">Select a company</option>
+            {% for cmp in companies %}
+              <option value="{{ cmp }}" {% if submitted.company == cmp %}selected{% endif %}>{{ cmp }}</option>
+            {% endfor %}
+          </select>
+          <span class="rg-hint">Customers and territories below are listed for the company you pick.</span>
+        {% endif %}
       </div>
       <div class="rg-field">
         <label class="rg-label" for="format">Format</label>
@@ -98,20 +163,42 @@
     <div class="rg-grid">
       {% for field in fields %}
         <div class="rg-field{% if field.danger %} rg-danger{% endif %}" data-param="{{ field.name }}">
-          <label class="rg-label" for="{{ field.name }}">{{ field.label }}<code>{{ field.name }}</code><span class="rg-req">required</span></label>
-          <input type="{{ field.type }}" name="{{ field.name }}" id="{{ field.name }}"
-                 value="{{ field.value }}"{% if field.placeholder %} placeholder="{{ field.placeholder }}"{% endif %} />
+          <label class="rg-label" for="{{ field.name }}">{{ field.label }}<span class="rg-req">required</span></label>
+          {% if field.lookup %}
+            <div class="rg-combo" data-lookup="{{ field.lookup }}">
+              <input type="text" name="{{ field.name }}" id="{{ field.name }}" autocomplete="off"
+                     value="{{ field.value }}" placeholder="Type to search…"
+                     role="combobox" aria-expanded="false" aria-autocomplete="list" />
+              <div class="rg-options" role="listbox"></div>
+            </div>
+          {% else %}
+            <input type="{{ field.type }}" name="{{ field.name }}" id="{{ field.name }}"
+                   value="{{ field.value }}"{% if field.placeholder %} placeholder="{{ field.placeholder }}"{% endif %} />
+          {% endif %}
           {% if field.hint %}<span class="rg-hint">{{ field.hint }}</span>{% endif %}
         </div>
       {% endfor %}
     </div>
 
     <div class="rg-actions">
-      <button type="submit" class="rg-btn">Generate &amp; download</button>
-      <span class="rg-note">Large reports can take a while — the download starts when the service finishes.</span>
+      <button type="submit" class="rg-btn" id="rg-submit">Generate report</button>
+      <span class="rg-note">Large reports can take a while. PDFs open in a preview below, where you can read them before downloading.</span>
     </div>
   </form>
   {% endif %}
+
+  <div class="rg-preview" id="rg-preview">
+    <div class="rg-pvbar">
+      <span class="rg-pvname" id="rg-pvname"></span>
+      <span class="rg-pvmeta" id="rg-pvmeta"></span>
+      <span class="rg-pvspacer"></span>
+      <a class="rg-mini" id="rg-download" download>Download</a>
+      <a class="rg-mini ghost" id="rg-newtab" target="_blank" rel="noopener">Open in new tab</a>
+      <button type="button" class="rg-mini ghost" id="rg-close">Close</button>
+    </div>
+    <iframe class="rg-frame" id="rg-frame" title="Report preview"></iframe>
+    <div class="rg-nopv" id="rg-nopv" style="display:none"></div>
+  </div>
 </div>
 
 <script>
@@ -148,6 +235,292 @@
     }
     select.addEventListener('change', sync);
     sync();
+  })();
+
+  // ---------------------------------------------------------------------
+  // Submit through fetch so the page can show progress and stay put.
+  // Progressive enhancement: with JS off the form posts normally and the
+  // view returns HTML, so nothing here is required for the page to work.
+  // ---------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------
+  // Searchable pickers for customer / region / zone / territory.
+  // Options come from /admin/reports/lov/, which derives the SAP employee
+  // code from the session - the browser never says whose data it wants.
+  // ---------------------------------------------------------------------
+  (function () {
+    var boxes = document.querySelectorAll('.rg-combo');
+    if (!boxes.length || !window.fetch) { return; }
+    var companyEl = document.getElementById('company');
+    var LOV_URL = '{% url "reports_lov_admin" %}';
+
+    function currentCompany() { return companyEl ? (companyEl.value || '') : ''; }
+
+    boxes.forEach(function (box) {
+      var input = box.querySelector('input');
+      var list  = box.querySelector('.rg-options');
+      var kind  = box.getAttribute('data-lookup');
+      var timer = null, lastQuery = null, items = [], active = -1;
+
+      function close() { list.classList.remove('on'); input.setAttribute('aria-expanded', 'false'); active = -1; }
+      function message(text) {
+        list.innerHTML = '<div class="rg-optmsg"></div>';
+        list.firstChild.textContent = text;
+        list.classList.add('on'); input.setAttribute('aria-expanded', 'true');
+      }
+
+      function draw(rows) {
+        items = rows;
+        if (!rows.length) { message('No matches.'); return; }
+        list.innerHTML = '';
+        rows.forEach(function (row, i) {
+          var el = document.createElement('div');
+          el.className = 'rg-opt'; el.setAttribute('role', 'option'); el.dataset.index = i;
+          var code = document.createElement('span'); code.className = 'c'; code.textContent = row.code;
+          el.appendChild(code);
+          if (row.name && row.name !== row.code) {
+            var nm = document.createElement('span'); nm.className = 'n';
+            nm.textContent = ' — ' + row.name; el.appendChild(nm);
+          }
+          if (row.territory) {
+            var t = document.createElement('span'); t.className = 't'; t.textContent = row.territory;
+            el.appendChild(t);
+          }
+          el.addEventListener('mousedown', function (ev) {   // mousedown beats blur
+            ev.preventDefault(); input.value = row.code; close();
+          });
+          list.appendChild(el);
+        });
+        list.classList.add('on'); input.setAttribute('aria-expanded', 'true');
+      }
+
+      function load() {
+        var company = currentCompany();
+        if (companyEl && companyEl.tagName === 'SELECT' && !company) {
+          message('Choose a company first.'); return;
+        }
+        var query = input.value.trim();
+        var url = LOV_URL + '?kind=' + encodeURIComponent(kind)
+                + '&company=' + encodeURIComponent(company)
+                + '&q=' + encodeURIComponent(query);
+        if (url === lastQuery) { return; }
+        lastQuery = url;
+        message('Searching…');
+        fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+          .then(function (r) { return r.json().catch(function () { return {}; }); })
+          .then(function (data) {
+            if (data.error && (!data.results || !data.results.length)) { message(data.error); return; }
+            draw(data.results || []);
+          })
+          .catch(function () { message('Could not load the list.'); });
+      }
+
+      input.addEventListener('focus', load);
+      input.addEventListener('input', function () {
+        clearTimeout(timer);
+        timer = setTimeout(load, 250);          // debounce: SAP call per keystroke is costly
+      });
+      input.addEventListener('blur', function () { setTimeout(close, 150); });
+      input.addEventListener('keydown', function (e) {
+        if (!list.classList.contains('on')) { return; }
+        var opts = list.querySelectorAll('.rg-opt');
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (!opts.length) { return; }
+          if (active >= 0) { opts[active].classList.remove('active'); }
+          active = e.key === 'ArrowDown'
+            ? (active + 1) % opts.length
+            : (active <= 0 ? opts.length - 1 : active - 1);
+          opts[active].classList.add('active');
+          opts[active].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter' && active >= 0) {
+          e.preventDefault(); input.value = items[active].code; close();
+        } else if (e.key === 'Escape') { close(); }
+      });
+
+      // Changing company invalidates every list and any value picked from one.
+      if (companyEl && companyEl.tagName === 'SELECT') {
+        companyEl.addEventListener('change', function () {
+          lastQuery = null; input.value = ''; close();
+        });
+      }
+    });
+  })();
+
+  (function () {
+    var form = document.getElementById('rg-form');
+    var overlay = document.getElementById('rg-overlay');
+    var button = document.getElementById('rg-submit');
+    var errorBox = document.getElementById('rg-error');
+    var okBox = document.getElementById('rg-ok');
+    var titleBox = document.getElementById('rg-ptitle');
+    var elapsedBox = document.getElementById('rg-elapsed');
+    if (!form || !overlay || !window.fetch || !window.AbortController) return;
+
+    var running = false, ticker = null, started = 0;
+
+    // Read the token from the cookie, not the hidden input: the input is baked
+    // into the HTML and goes stale if the token rotates (a login in another tab,
+    // a page left open). The cookie is always current, which is what the
+    // "CSRF token missing" 403 on a long-open page comes down to.
+    function csrfToken() {
+      var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
+      if (m) { return decodeURIComponent(m[1]); }
+      var input = form.querySelector('[name=csrfmiddlewaretoken]');
+      return input ? input.value : '';
+    }
+
+    function show(box, text) { box.textContent = text; box.style.display = text ? 'block' : 'none'; }
+
+    function startOverlay(label) {
+      running = true; started = Date.now();
+      titleBox.textContent = 'Generating ' + label + '…';
+      overlay.classList.add('on');
+      overlay.setAttribute('aria-hidden', 'false');
+      button.disabled = true;
+      elapsedBox.textContent = '0s';
+      ticker = setInterval(function () {
+        elapsedBox.textContent = Math.round((Date.now() - started) / 1000) + 's';
+      }, 1000);
+    }
+
+    function stopOverlay() {
+      running = false;
+      clearInterval(ticker);
+      overlay.classList.remove('on');
+      overlay.setAttribute('aria-hidden', 'true');
+      button.disabled = false;
+    }
+
+    function filenameFrom(header, fallback) {
+      if (!header) { return fallback; }
+      var star = /filename\*=UTF-8''([^;]+)/i.exec(header);
+      if (star) { try { return decodeURIComponent(star[1]); } catch (e) { /* fall through */ } }
+      var plain = /filename="?([^";]+)"?/i.exec(header);
+      return plain ? plain[1] : fallback;
+    }
+
+    function saveBlob(blob, name) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      // Revoke late: Safari needs the URL alive until the download is handed off.
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    }
+
+    // --- preview ------------------------------------------------------
+    var preview  = document.getElementById('rg-preview');
+    var frame    = document.getElementById('rg-frame');
+    var noPv     = document.getElementById('rg-nopv');
+    var pvName   = document.getElementById('rg-pvname');
+    var pvMeta   = document.getElementById('rg-pvmeta');
+    var dlLink   = document.getElementById('rg-download');
+    var tabLink  = document.getElementById('rg-newtab');
+    var closeBtn = document.getElementById('rg-close');
+    var currentUrl = null;
+
+    function readableSize(bytes) {
+      if (bytes < 1024) { return bytes + ' B'; }
+      if (bytes < 1024 * 1024) { return Math.round(bytes / 1024) + ' KB'; }
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function clearPreview() {
+      preview.classList.remove('on');
+      frame.removeAttribute('src');
+      // One blob at a time: a long session would otherwise pin every report
+      // it has generated in memory until the tab is closed.
+      if (currentUrl) { URL.revokeObjectURL(currentUrl); currentUrl = null; }
+    }
+
+    function showPreview(blob, name, secs) {
+      clearPreview();
+      currentUrl = URL.createObjectURL(blob);
+      pvName.textContent = name;
+      pvMeta.textContent = readableSize(blob.size) + ' · generated in ' + secs + 's';
+      dlLink.href = currentUrl; dlLink.setAttribute('download', name);
+      tabLink.href = currentUrl;
+
+      // Only PDF renders inline; browsers download .xlsx/.doc rather than show
+      // them, so say so instead of presenting an empty frame.
+      var isPdf = blob.type.indexOf('pdf') !== -1 || /\.pdf$/i.test(name);
+      frame.style.display = isPdf ? 'block' : 'none';
+      noPv.style.display = isPdf ? 'none' : 'block';
+      if (isPdf) {
+        frame.src = currentUrl;
+      } else {
+        noPv.textContent = 'This format cannot be previewed in the browser. '
+          + 'Use Download to save the file, then open it in Excel or Word.';
+      }
+      preview.classList.add('on');
+      preview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    if (closeBtn) { closeBtn.addEventListener('click', clearPreview); }
+    window.addEventListener('pagehide', clearPreview);
+
+    form.addEventListener('submit', function (event) {
+      if (running) { event.preventDefault(); return; }   // no double submits
+      event.preventDefault();
+      show(errorBox, ''); show(okBox, ''); clearPreview();
+
+      var picker = document.getElementById('report_name');
+      var label = picker && picker.selectedIndex > 0
+        ? picker.options[picker.selectedIndex].text : 'report';
+      startOverlay(label);
+
+      // Slightly beyond the server's own 120s read budget, so the server's
+      // message wins whenever it has one.
+      var aborter = new AbortController();
+      var killer = setTimeout(function () { aborter.abort(); }, 135000);
+
+      fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrfToken() },
+        signal: aborter.signal
+      }).then(function (response) {
+        clearTimeout(killer);
+        var type = response.headers.get('Content-Type') || '';
+        if (response.ok && type.indexOf('application/json') === -1 && type.indexOf('text/html') === -1) {
+          return response.blob().then(function (blob) {
+            var name = filenameFrom(response.headers.get('Content-Disposition'), 'report');
+            var secs = Math.round((Date.now() - started) / 1000);
+            stopOverlay();
+            showPreview(blob, name, secs);
+            show(okBox, label + ' is ready — review it below, then Download to save it.');
+          });
+        }
+        if (response.status === 403) {
+          stopOverlay();
+          show(errorBox, 'Your session expired while this page was open. Reload the page and try again.');
+          return;
+        }
+        return response.text().then(function (body) {
+          stopOverlay();
+          var message = '';
+          try { message = JSON.parse(body).error || ''; } catch (e) { /* not JSON */ }
+          if (!message) {
+            var found = new DOMParser().parseFromString(body, 'text/html')
+              .querySelector('.rg-error, #summary, title');
+            message = found ? found.textContent.trim() : '';
+          }
+          show(errorBox, message || ('The report could not be generated (HTTP ' + response.status + ').'));
+        });
+      }).catch(function (err) {
+        clearTimeout(killer);
+        stopOverlay();
+        show(errorBox, err && err.name === 'AbortError'
+          ? 'Timed out after 135 seconds. The reporting service did not finish — try a narrower date range.'
+          : 'Could not reach the server: ' + (err && err.message ? err.message : 'network error'));
+      });
+    });
+
+    window.addEventListener('beforeunload', function (e) {
+      if (running) { e.preventDefault(); e.returnValue = ''; }
+    });
   })();
 </script>
 {% endblock %}

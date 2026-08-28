@@ -310,7 +310,21 @@ CRYSTAL_SERVICE_API_KEY_HEADER = config('CRYSTAL_SERVICE_API_KEY_HEADER', defaul
 # instead of hanging for the whole read budget.
 CRYSTAL_SERVICE_TIMEOUT_SECONDS = config('CRYSTAL_SERVICE_TIMEOUT_SECONDS', default=120, cast=float)
 CRYSTAL_SERVICE_CONNECT_TIMEOUT_SECONDS = config('CRYSTAL_SERVICE_CONNECT_TIMEOUT_SECONDS', default=10, cast=float)
-CRYSTAL_SERVICE_VERIFY_TLS = config('CRYSTAL_SERVICE_VERIFY_TLS', default='true').strip().lower() == 'true'
+def _crystal_verify_tls(raw):
+    """True/False, or a path to a CA bundle for an internal certificate authority.
+
+    Only the exact words are treated as booleans; anything else is passed to
+    requests as a path, which is how the reporting package documents it.
+    """
+    value = str(raw or '').strip()
+    if value.lower() in ('1', 'true', 'yes', 'on', ''):
+        return True
+    if value.lower() in ('0', 'false', 'no', 'off'):
+        return False
+    return value
+
+
+CRYSTAL_SERVICE_VERIFY_TLS = _crystal_verify_tls(config('CRYSTAL_SERVICE_VERIFY_TLS', default='true'))
 
 # Ensure logs directory exists (must be defined before LOGGING references it)
 LOG_DIR = BASE_DIR / 'logs'

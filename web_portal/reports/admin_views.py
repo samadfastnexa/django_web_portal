@@ -11,11 +11,12 @@ import json
 import logging
 import time
 
-from django.http import HttpResponse
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from rest_framework.exceptions import APIException
 
-from . import registry
+from . import registry, scoping
 from .models import Report
 from .permissions import CanAccessReport
 from .serializers import ISO_DATE_PATTERN
@@ -76,17 +77,101 @@ def _accessible_reports(user):
     return Report.objects.filter(is_active=True, user_access__user=user).order_by("display_name")
 
 
+def _admin_context(request):
+    """The custom admin site's own context (nav sidebar, app list, branding)."""
+    try:
+        from web_portal.admin import admin_site
+    except ImportError:  # pragma: no cover - standalone install
+        from django.contrib import admin as _admin
+        admin_site = _admin.site
+    return admin_site.each_context(request)
+
+
+def _is_ajax(request):
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _fail(request, context, message):
+    """One error path for both submit styles.
+
+    The page posts through fetch() so it can show a progress overlay, and a
+    fetch caller wants JSON, not a whole re-rendered page. A plain form POST
+    (JS off, or an older cached page) still gets the HTML.
+    """
+    if _is_ajax(request):
+        return JsonResponse({"error": message}, status=400)
+    context["error"] = message
+    return render(request, "admin/reports/generate.html", context)
+
+
+PERMISSION = "reports.generate_report"
+
+# Fields whose values are chosen from a SAP-backed, user-scoped list rather
+# than typed. The server re-derives the scope on submit, so a hand-edited
+# value cannot widen it.
+LOOKUP_FIELDS = {
+    "CustomerCardCode": "customers",
+    "Region": "region",
+    "Zone": "zone",
+    "Territory": "territory",
+}
+
+
+def report_lov_admin(request):
+    """Options for the page's searchable pickers, scoped to the caller.
+
+    The employee code is taken from request.user here and nowhere else - it is
+    never accepted from the querystring, or a sales user could read another
+    employee's dealers by editing the URL.
+    """
+    if not request.user.has_perm(PERMISSION):
+        raise PermissionDenied
+
+    kind = (request.GET.get("kind") or "").strip().lower()
+    company = (request.GET.get("company") or "").strip()
+    search = (request.GET.get("q") or "").strip()
+
+    allowed = scoping.allowed_companies(request.user, ALLOWED_COMPANIES)
+    if company and company not in allowed:
+        return JsonResponse(
+            {"results": [], "error": "You do not have access to that company."}, status=403
+        )
+    if not company:
+        if len(allowed) != 1:
+            return JsonResponse({"results": [], "error": "Choose a company first."})
+        company = allowed[0]
+
+    if kind == "customers":
+        rows, error = scoping.customers_for(request.user, company, search=search, limit=50)
+    elif kind in ("region", "zone", "territory"):
+        rows, error = scoping.geo_for(request.user, company, kind, search=search)
+    else:
+        return JsonResponse({"results": [], "error": f"Unknown list '{kind}'."}, status=400)
+
+    return JsonResponse({"results": rows, "error": error})
+
+
 def generate_report_admin(request):
+    if not request.user.has_perm(PERMISSION):
+        raise PermissionDenied
     reports = list(_accessible_reports(request.user))
     submitted = {key: (request.POST.get(key) or "").strip() for key in
                  ("report_name", "company", "format") + _QUERY_OVERRIDABLE_PARAMETERS}
     # Built here rather than in the template: Django templates can't look a key
     # up in a dict by a loop variable, so everything a box needs travels with it.
-    fields = [dict(entry, value=submitted[entry["name"]]) for entry in _field_catalogue()]
+    fields = [
+        dict(entry, value=submitted[entry["name"]], lookup=LOOKUP_FIELDS.get(entry["name"], ""))
+        for entry in _field_catalogue()
+    ]
+    # each_context() carries is_nav_sidebar_enabled and available_apps; without
+    # it the admin renders this page with no left navigation at all.
     context = {
+        **_admin_context(request),
         "title": "Generate Report",
         "reports": reports,
-        "companies": sorted(ALLOWED_COMPANIES),
+        "companies": scoping.allowed_companies(request.user, ALLOWED_COMPANIES),
+        "company_locked": len(scoping.allowed_companies(request.user, ALLOWED_COMPANIES)) == 1,
+        "lookup_fields_json": json.dumps(LOOKUP_FIELDS),
         "formats": FORMATS,
         "fields": fields,
         "report_meta_json": json.dumps(_report_meta()),
@@ -103,17 +188,18 @@ def generate_report_admin(request):
 
     report = Report.objects.filter(name=report_name, is_active=True).first()
     if report is None:
-        context["error"] = "Pick a report to run."
-        return render(request, "admin/reports/generate.html", context)
+        return _fail(request, context, "Pick a report to run.")
     if not CanAccessReport().has_object_permission(request, None, report):
-        context["error"] = (
+        return _fail(request, context, (
             f"You do not have access to '{report.display_name}'. "
             "Ask an administrator for a User report access row."
-        )
-        return render(request, "admin/reports/generate.html", context)
-    if company and company not in ALLOWED_COMPANIES:
-        context["error"] = f"Unknown company '{company}'."
-        return render(request, "admin/reports/generate.html", context)
+        ))
+    permitted = scoping.allowed_companies(request.user, ALLOWED_COMPANIES)
+    if not company and len(permitted) == 1:
+        company = permitted[0]           # locked field posts nothing; apply it here
+    if company and company not in permitted:
+        return _fail(request, context,
+                     "You do not have access to that company. Pick one of your own.")
 
     # Only send prompts this report actually owns. Boxes for other reports are
     # hidden by CSS, but hidden inputs still post, and the service answers 400
@@ -129,8 +215,8 @@ def generate_report_admin(request):
             # value to Crystal ("CardCode = ''") and matches nothing.
             continue
         if name.endswith("Date") and not ISO_DATE_PATTERN.match(value):
-            context["error"] = f"'{name}' must be in YYYY-MM-DD format, got '{value}'."
-            return render(request, "admin/reports/generate.html", context)
+            return _fail(request, context,
+                         f"'{name}' must be in YYYY-MM-DD format, got '{value}'.")
         parameters[name] = value
 
     log_context = {
@@ -154,15 +240,15 @@ def generate_report_admin(request):
         logger.warning(
             "Report generation failed", extra={**log_context, "success": False, "elapsed_ms": elapsed_ms}
         )
-        context["error"] = str(exc.detail if hasattr(exc, "detail") else exc)
-        return render(request, "admin/reports/generate.html", context)
+        return _fail(request, context, str(exc.detail if hasattr(exc, "detail") else exc))
     except Exception as exc:  # noqa: BLE001 - the page must not 500 on a bad report
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
         logger.exception(
             "Report generation failed", extra={**log_context, "success": False, "elapsed_ms": elapsed_ms}
         )
-        context["error"] = f"Unexpected error: {exc}"
-        return render(request, "admin/reports/generate.html", context)
+        return _fail(request, context,
+                     "Something went wrong while generating this report. The details "
+                     "have been logged - please tell IT if it keeps happening.")
 
     elapsed_ms = int((time.monotonic() - started_at) * 1000)
     logger.info(
